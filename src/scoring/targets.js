@@ -257,6 +257,59 @@ export function longTermTarget(snapshot, bars, rules = RULES, midPrice = null) {
   };
 }
 
+/**
+ * The targets-table estimate, in the original desk's vocabulary.
+ *
+ * The desk shows a RANGE badge ("2–4 أسابيع") plus a momentum marker, not a
+ * single session count. The original derived weeks from a per-sector speed
+ * table; this keeps that presentation but drives it from the measured
+ * Efficiency-Ratio estimate, falling back to the sector heuristic only when the
+ * stock is too choppy for ER to say anything honest. Same visual language,
+ * better arithmetic underneath.
+ */
+const SECTOR_SPEED_PCT_PER_WEEK = {
+  energy: 4.5, materials: 4, industrials: 3.5, consumer: 2.5, telecom: 2,
+  holding: 1.8, financials: 1.8, banks: 2.5, realestate: 3, tech: 3,
+  healthcare: 2.5, tourism: 3, transport: 3, education: 2.5,
+};
+
+export function targetEstimate({ price, target, dayChangePct = 0, sector, sessions = null }, rules = RULES) {
+  if (!target || target <= price) {
+    return { label: 'وصل الهدف 🎯', weeks: 0, note: 'جني أرباح', reached: true };
+  }
+
+  const distancePct = ((target - price) / price) * 100;
+
+  let weeks;
+  if (sessions != null) {
+    weeks = Math.max(1, Math.round(sessions / rules.horizon.sessionsPerWeek));
+  } else {
+    // Fallback: sector speed, slowed or quickened by today's move.
+    const speed = SECTOR_SPEED_PCT_PER_WEEK[sector] ?? 3;
+    const momentum =
+      dayChangePct > 3 ? 0.75 : dayChangePct > 1 ? 0.9 : dayChangePct < -2 ? 1.35 : dayChangePct < 0 ? 1.15 : 1;
+    weeks = Math.max(1, Math.round((distancePct / speed) * momentum));
+  }
+
+  const label =
+    distancePct <= 2 ? '1–3 جلسات'
+    : weeks <= 2 ? '1–2 أسبوع'
+    : weeks <= 4 ? '2–4 أسابيع'
+    : weeks <= 6 ? '4–6 أسابيع'
+    : weeks <= 10 ? '6–10 أسابيع'
+    : weeks <= 16 ? '2–4 أشهر'
+    : weeks <= 24 ? '4–6 أشهر'
+    : '+6 أشهر';
+
+  const note =
+    dayChangePct > 3 ? '↑ زخم'
+    : dayChangePct < -2 ? '↓ ضغط'
+    : distancePct <= 5 ? 'قريب'
+    : '';
+
+  return { label, weeks, note, reached: false, distancePct: +distancePct.toFixed(1) };
+}
+
 /** Convenience: both targets plus the efficiency reading behind their ETAs. */
 export function buildTargets(snapshot, bars, { entry = null, stop = null } = {}, rules = RULES) {
   const closes = bars.map((b) => b.c);

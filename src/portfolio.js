@@ -22,6 +22,11 @@ const EMPTY = {
   positions: {},   // code -> { shares, avgCost, stop, target, openedAt }
   watchlist: {},   // code -> { entry, stop, target, qty, note }
   trades: [],      // { date, code, side, shares, price, commission, note }
+  // One entry per saved close, keyed YYYY-MM-DD. This is what the calendar and
+  // the equity curve read — without it the app can show today but has no
+  // memory, so "how did the book do this month" is unanswerable.
+  log: {},         // date -> { total, positionsValue, cash, dayChange, pl, prices, stops, note, changes }
+  settings: { commissionPct: 0.20 },
   realizedPnl: 0,
   updatedAt: null,
 };
@@ -113,4 +118,63 @@ export function setLevels(portfolio, code, { stop, target }) {
 /** Codes to analyze: everything held plus everything watched. */
 export function trackedCodes(portfolio) {
   return [...new Set([...Object.keys(portfolio.positions), ...Object.keys(portfolio.watchlist)])];
+}
+
+/**
+ * Record one day's close into the log, and ratchet any trailing stops it moved.
+ *
+ * `dayChange` is measured against the previous *saved* entry rather than
+ * against yesterday's calendar date — the market is shut two days a week and
+ * the app may not be opened daily, so consecutive log entries are the only
+ * honest baseline.
+ */
+export function recordSnapshot(portfolio, analyses, date = null) {
+  const day = date ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  const held = analyses.filter((a) => a.usable && a.position);
+
+  const prices = {};
+  const stops = {};
+  const recs = {};
+  const changes = [];
+
+  let positionsValue = 0;
+  let pl = 0;
+
+  for (const a of held) {
+    prices[a.code] = a.snapshot.price.close;
+    stops[a.code] = a.position.stop;
+    recs[a.code] = { action: a.position.recommendation?.action, text: a.position.recommendation?.text };
+    positionsValue += a.position.marketValue;
+    pl += a.position.unrealizedEgp;
+    if (a.position.trailing?.moved) {
+      changes.push(`${a.code}: الوقف ارتفع من ${a.position.trailing.from} إلى ${a.position.stop} (وقف متحرك)`);
+    }
+  }
+
+  const total = positionsValue + portfolio.cash;
+  const prior = Object.keys(portfolio.log ?? {}).sort().filter((d) => d < day).pop();
+  const priorTotal = prior ? portfolio.log[prior].total : null;
+
+  const entry = {
+    date: day,
+    total: +total.toFixed(2),
+    positionsValue: +positionsValue.toFixed(2),
+    cash: portfolio.cash,
+    pl: +pl.toFixed(2),
+    dayChange: priorTotal == null ? 0 : +(total - priorTotal).toFixed(2),
+    dayChangePct: priorTotal ? +(((total - priorTotal) / priorTotal) * 100).toFixed(2) : 0,
+    prices,
+    stops,
+    recs,
+    changes,
+    note: portfolio.log?.[day]?.note ?? null, // never clobber a note already written
+  };
+
+  return { ...portfolio, log: { ...(portfolio.log ?? {}), [day]: entry } };
+}
+
+export function setNote(portfolio, date, note) {
+  const existing = portfolio.log?.[date];
+  if (!existing) throw new Error(`مفيش بيانات محفوظة ليوم ${date}`);
+  return { ...portfolio, log: { ...portfolio.log, [date]: { ...existing, note } } };
 }

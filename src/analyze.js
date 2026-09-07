@@ -16,7 +16,7 @@ import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
 import { computeStop, computeTrailingStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
-import { buildTargets } from './scoring/targets.js';
+import { buildTargets, targetEstimate } from './scoring/targets.js';
 import RULES from './config/rules.js';
 
 const r2 = (x) => (x == null ? null : +x.toFixed(2));
@@ -151,6 +151,14 @@ export async function analyzeTicker(code, opts = {}) {
       distanceToStopPct: r2(((price - effectiveStop) / price) * 100),
       distanceToTargetPct: targets.mid?.price ? r2(((targets.mid.price - price) / price) * 100) : null,
       riskRewardFromHere: targets.mid?.price ? riskReward(price, effectiveStop, targets.mid.price) : null,
+      // The targets-table badge: a week range plus a momentum marker.
+      estimate: targetEstimate({
+        price,
+        target: targets.mid?.price ?? null,
+        dayChangePct: snapshot.price.changePct ?? 0,
+        sector: meta.sector,
+        sessions: targets.mid?.horizon?.sessions ?? null,
+      }, rules),
       // What the desk view shows on this position's card.
       recommendation: positionRecommendation(
         { snapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: targets.mid?.price ?? null },

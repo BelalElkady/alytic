@@ -17,8 +17,9 @@ import { fileURLToPath } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { ALL_CODES, UNIVERSE, lookup } from '../config/universe.js';
 import RULES from '../config/rules.js';
-import { loadPortfolio, savePortfolio, recordTrade, setLevels, trackedCodes } from '../portfolio.js';
+import { loadPortfolio, savePortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
 import { aiAvailable } from '../agent/client.js';
+import { readBars } from '../data/cache.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
@@ -141,6 +142,131 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
   else watchlist[c] = { entry: Number(entry) || null, stop: Number(stop) || null, target: Number(target) || null, qty: Number(qty) || null, note: note ?? null };
   const updated = await savePortfolio({ ...p, watchlist });
   res.json(updated);
+}));
+
+/** Save today's close into the daily log — the calendar and charts read this. */
+app.post('/api/snapshot', wrap(async (req, res) => {
+  const portfolio = await loadPortfolio();
+  const codes = Object.keys(portfolio.positions);
+  if (!codes.length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة تتسجّل' });
+
+  const { results } = await analyzeMany(codes, {
+    capital: capitalOf(portfolio),
+    positions: portfolio.positions,
+    concurrency: 5,
+  });
+
+  const updated = recordSnapshot(portfolio, results, req.body?.date ?? null);
+  await savePortfolio(updated);
+  const day = Object.keys(updated.log).sort().pop();
+  res.json({ saved: day, entry: updated.log[day], days: Object.keys(updated.log).length });
+}));
+
+/**
+ * Backfill the daily log from real historical closes.
+ *
+ * A fresh install has no history, so the calendar and the equity curve have
+ * nothing to draw. This reconstructs them from actual EGX closes valued against
+ * the shares you hold TODAY — so it answers "what would this book have been
+ * worth", not "what was my book worth". Entries are marked `reconstructed` and
+ * never overwrite a real saved close.
+ */
+app.post('/api/log/backfill', wrap(async (req, res) => {
+  const portfolio = await loadPortfolio();
+  const codes = Object.keys(portfolio.positions);
+  if (!codes.length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة' });
+
+  const days = Math.min(Math.max(Number(req.body?.days) || 60, 5), 250);
+  const series = new Map();
+  for (const code of codes) {
+    const bars = (await readBars(code))?.bars ?? [];
+    series.set(code, new Map(bars.slice(-days - 5).map((b) => [b.date, b.c])));
+  }
+
+  const dates = [...new Set([...series.values()].flatMap((m) => [...m.keys()]))].sort().slice(-days);
+  const log = { ...(portfolio.log ?? {}) };
+  let added = 0;
+  let priorTotal = null;
+
+  for (const date of dates) {
+    let value = 0;
+    const prices = {};
+    let complete = true;
+    for (const code of codes) {
+      const px = series.get(code).get(date);
+      // Skip days where any holding didn't trade — a partial valuation would
+      // show as a phantom drop in the equity curve.
+      if (px == null) { complete = false; break; }
+      prices[code] = px;
+      value += portfolio.positions[code].shares * px;
+    }
+    if (!complete) continue;
+
+    const total = value + portfolio.cash;
+    if (!log[date]?.reconstructed && log[date]) { priorTotal = log[date].total; continue; }
+
+    const cost = codes.reduce((a, c) => a + portfolio.positions[c].shares * portfolio.positions[c].avgCost, 0);
+    log[date] = {
+      date,
+      total: +total.toFixed(2),
+      positionsValue: +value.toFixed(2),
+      cash: portfolio.cash,
+      pl: +(value - cost).toFixed(2),
+      dayChange: priorTotal == null ? 0 : +(total - priorTotal).toFixed(2),
+      dayChangePct: priorTotal ? +(((total - priorTotal) / priorTotal) * 100).toFixed(2) : 0,
+      prices,
+      stops: {},
+      recs: {},
+      changes: [],
+      note: log[date]?.note ?? null,
+      reconstructed: true,
+    };
+    priorTotal = total;
+    added++;
+  }
+
+  await savePortfolio({ ...portfolio, log });
+  res.json({ added, days: Object.keys(log).length, from: dates[0], to: dates.at(-1) });
+}));
+
+app.get('/api/log', wrap(async (_req, res) => {
+  const p = await loadPortfolio();
+  res.json({ log: p.log ?? {}, days: Object.keys(p.log ?? {}).sort() });
+}));
+
+app.post('/api/log/note', wrap(async (req, res) => {
+  const { date, note } = req.body ?? {};
+  if (!date) return res.status(400).json({ error: 'محتاج date' });
+  const updated = setNote(await loadPortfolio(), date, note ?? '');
+  await savePortfolio(updated);
+  res.json({ ok: true, entry: updated.log[date] });
+}));
+
+app.get('/api/settings', wrap(async (_req, res) => {
+  const p = await loadPortfolio();
+  res.json({ settings: { ...RULES, ...(p.settings ?? {}) }, rules: RULES });
+}));
+
+app.post('/api/settings', wrap(async (req, res) => {
+  const p = await loadPortfolio();
+  const commissionPct = Number(req.body?.commissionPct);
+  if (!Number.isFinite(commissionPct) || commissionPct < 0 || commissionPct > 5) {
+    return res.status(400).json({ error: 'نسبة عمولة غير منطقية' });
+  }
+  const updated = await savePortfolio({ ...p, settings: { ...(p.settings ?? {}), commissionPct } });
+  res.json({ ok: true, settings: updated.settings });
+}));
+
+/** Wipe the log and trades, keeping positions. Destructive and irreversible. */
+app.post('/api/reset', wrap(async (req, res) => {
+  const p = await loadPortfolio();
+  const scope = req.body?.scope ?? 'log';
+  const updated =
+    scope === 'all'
+      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: p.settings, realizedPnl: 0 }
+      : { ...p, log: {}, trades: [], realizedPnl: 0 };
+  await savePortfolio(updated);
+  res.json({ ok: true, scope });
 }));
 
 // ---- AI endpoints ----------------------------------------------------------
