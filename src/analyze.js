@@ -11,6 +11,7 @@
 import { fetchDaily } from './data/yahoo.js';
 import { getBars } from './data/cache.js';
 import { checkQuality } from './data/quality.js';
+import { fetchFundamentals } from './data/tradingview.js';
 import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
@@ -32,6 +33,13 @@ export async function analyzeTicker(code, opts = {}) {
   const { range = '2y', force = false, position = null, capital = null, rules = RULES } = opts;
 
   const meta = lookup(code) ?? { code, ar: code, sector: null, shariah: 'review' };
+  // Accept either a pre-fetched Map (batch path) or fetch for this one ticker.
+  const fundamentals =
+    opts.fundamentals instanceof Map
+      ? opts.fundamentals.get(code.toUpperCase()) ?? null
+      : opts.withFundamentals === false
+        ? null
+        : (await fetchFundamentals([code])).get(code.toUpperCase()) ?? null;
   const data = await getBars(code, toYahoo(code), fetchDaily, { range, force });
   const bars = data.bars;
 
@@ -161,6 +169,9 @@ export async function analyzeTicker(code, opts = {}) {
     fromCache: data.fromCache,
     usable: true,
     quality,
+    // Free fundamentals from the screener. Frequently null on small caps —
+    // absence is normal and must not be read as a negative signal.
+    fundamentals: fundamentals ?? null,
 
     snapshot,
     technical,
@@ -196,6 +207,11 @@ export async function analyzeMany(codes, opts = {}) {
   const queue = [...codes];
   const positions = opts.positions ?? {};
 
+  // One screener call covers every ticker, so fundamentals are fetched once
+  // here rather than per-stock. Failure is non-fatal — coverage is partial even
+  // when it succeeds, so callers already handle missing fundamentals.
+  const fundamentals = opts.fundamentals ?? (opts.withFundamentals === false ? new Map() : await fetchFundamentals());
+
   async function worker() {
     while (queue.length) {
       const code = queue.shift();
@@ -203,6 +219,7 @@ export async function analyzeMany(codes, opts = {}) {
         const r = await analyzeTicker(code, {
           ...opts,
           position: positions[code.toUpperCase()] ?? opts.position ?? null,
+          fundamentals,
         });
         if (r.usable) results.push(r);
         else errors.push({ code, error: r.error, quality: r.quality });

@@ -1,30 +1,36 @@
 /**
- * EGX universe.
+ * EGX universe — generated, not typed.
  *
- * PROVENANCE — read this before trusting anything here.
+ * Identity (ticker → company, sector, industry) comes from
+ * `universe.generated.json`, built by `npm run build:universe` from
+ * TradingView's screener and validated against Yahoo for usable price history.
  *
- * The `en` field is Yahoo's own `meta.longName` for the symbol, checked against
- * the live endpoint, so ticker→company is verified rather than remembered. The
- * first draft of this file was typed from recall and had NINE tickers pointing
- * at the wrong company (KZPC read as Kima rather than Kafr El Zayat Pesticides;
- * MCQE as a chemicals firm rather than Misr Cement Qena; AXPH and PHAR swapped;
- * CPCI labelled a poultry company when it is Kahira Pharmaceuticals). Two of
- * those reached a recommendation list. Re-run `npm run verify:universe` after
- * editing — a mislabelled ticker means buying the wrong company.
+ * WHY IT IS GENERATED: the first version of this file was typed from memory.
+ * Nine tickers pointed at the wrong company — KZPC read as Kima rather than
+ * Kafr El Zayat Pesticides, CPCI as a poultry firm when it is Kahira
+ * Pharmaceuticals, AXPH and PHAR swapped with each other. Two of them reached a
+ * recommendation list. Every price and indicator was correct; only the identity
+ * was wrong, so nothing downstream could catch it. Regenerating from a feed
+ * removes that whole class of error rather than fixing instances of it.
  *
- * `ar` and `sector` are translations/classifications derived from the verified
- * English name. They are not from an exchange feed.
- *
- * `shariah` is INDICATIVE ONLY. It reflects the obvious business-activity
- * screen (conventional banking, tobacco, conventional insurance), never the
- * financial-ratio screens, which need each quarter's balance sheet. Treat
- * 'review' as "check this yourself before relying on it".
- *
- * COVERAGE: 46 symbols. EGX lists well over 200 companies, so this is a
- * curated subset weighted toward large, liquid names — a screener over it will
- * not surface opportunities outside it. Add symbols freely; `toYahoo()` falls
- * back to `<CODE>.CA`, and the quality gate rejects anything that doesn't trade.
+ * The Arabic overlay below is the one hand-maintained part, and is deliberately
+ * partial: it covers names that have been checked against the verified English
+ * name. Anything absent falls back to English rather than inventing a
+ * translation — a wrong Arabic name is the same failure in a new coat.
  */
+
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+
+/** @type {{generatedAt:string,stocks:Array<object>,rejected:Array<object>,listedTotal:number}} */
+let generated;
+try {
+  generated = require('./universe.generated.json');
+} catch {
+  generated = { generatedAt: null, stocks: [], rejected: [], listedTotal: 0 };
+  console.warn('[universe] universe.generated.json مش موجود — شغّل: npm run build:universe');
+}
 
 export const SECTORS = {
   banks: 'بنوك',
@@ -32,8 +38,8 @@ export const SECTORS = {
   realestate: 'عقارات',
   industrials: 'صناعة',
   materials: 'أسمدة وكيماويات',
-  energy: 'طاقة وبتروكيماويات',
-  consumer: 'أغذية ومشروبات',
+  energy: 'طاقة ومرافق',
+  consumer: 'سلع استهلاكية',
   healthcare: 'رعاية صحية',
   telecom: 'اتصالات',
   tech: 'تكنولوجيا ومدفوعات',
@@ -43,84 +49,102 @@ export const SECTORS = {
   education: 'تعليم',
 };
 
-/** @type {Array<{code:string,yahoo:string,ar:string,en:string,sector:keyof SECTORS,shariah:'compliant'|'non_compliant'|'review'}>} */
-export const UNIVERSE = [
-  // --- Banks ---
-  { code: 'COMI', yahoo: 'COMI.CA', ar: 'البنك التجاري الدولي', en: 'Commercial International Bank Egypt (CIB) S.A.E.', sector: 'banks', shariah: 'non_compliant' },
-  { code: 'ADIB', yahoo: 'ADIB.CA', ar: 'مصرف أبوظبي الإسلامي — مصر', en: 'Abu Dhabi Islamic Bank - Egypt - S.A.E', sector: 'banks', shariah: 'compliant' },
-  { code: 'CIEB', yahoo: 'CIEB.CA', ar: 'كريدي أجريكول مصر', en: 'Credit Agricole - Egypt Bank (S.A.E.)', sector: 'banks', shariah: 'non_compliant' },
-  // Corrected: SAUD is alBaraka (an Islamic bank), not "Saudi Egyptian Bank".
-  { code: 'SAUD', yahoo: 'SAUD.CA', ar: 'بنك البركة مصر', en: 'alBaraka Bank Egypt S.A.E.', sector: 'banks', shariah: 'compliant' },
-  { code: 'CANA', yahoo: 'CANA.CA', ar: 'بنك قناة السويس', en: 'Suez Canal Bank (S.A.E)', sector: 'banks', shariah: 'non_compliant' },
+/**
+ * Arabic names for tickers whose identity has been individually confirmed
+ * against the generated English name. Partial by design — see the header.
+ */
+const AR_NAMES = {
+  COMI: 'البنك التجاري الدولي',
+  ADIB: 'مصرف أبوظبي الإسلامي — مصر',
+  CIEB: 'كريدي أجريكول مصر',
+  SAUD: 'بنك البركة مصر',
+  CANA: 'بنك قناة السويس',
+  HDBK: 'بنك التعمير والإسكان',
+  FAIT: 'بنك فيصل الإسلامي المصري',
+  EXPA: 'البنك المصري لتنمية الصادرات',
+  HRHO: 'المجموعة المالية هيرميس',
+  CCAP: 'القلعة للاستثمارات المالية',
+  BINV: 'بي إنفستمنتس القابضة',
+  ATLC: 'التوفيق للتأجير التمويلي',
+  BTFH: 'بلتون القابضة',
+  ETEL: 'المصرية للاتصالات',
+  FWRY: 'فوري',
+  EFIH: 'إي فاينانس للاستثمارات المالية والرقمية',
+  RAYA: 'راية القابضة',
+  ABUK: 'أبوقير للأسمدة والصناعات الكيماوية',
+  MFPC: 'موبكو — مصر لإنتاج الأسمدة',
+  KZPC: 'كفر الزيات للمبيدات والكيماويات',
+  EGCH: 'كيما — المصرية للصناعات الكيماوية',
+  SKPC: 'سيدي كرير للبتروكيماويات',
+  AMOC: 'الإسكندرية للزيوت المعدنية',
+  SWDY: 'السويدي إليكتريك',
+  ORWE: 'النساجون الشرقيون للسجاد',
+  GBCO: 'جي بي كوربوريشن',
+  EGAL: 'مصر للألومنيوم',
+  IRON: 'الحديد والصلب المصرية',
+  ARCC: 'العربية للأسمنت',
+  MCQE: 'مصر للأسمنت — قنا',
+  SCEM: 'أسمنت سيناء',
+  MBSC: 'مصر بني سويف للأسمنت',
+  SPIN: 'الإسكندرية للغزل والنسيج',
+  ALCN: 'الإسكندرية لتداول الحاويات والبضائع',
+  JUFO: 'جهينة للصناعات الغذائية',
+  OLFI: 'عبور لاند للصناعات الغذائية',
+  EFID: 'إيديتا للصناعات الغذائية',
+  DOMT: 'دومتي — العربية للصناعات الغذائية',
+  SUGR: 'الدلتا للسكر',
+  EAST: 'الشرقية — إيسترن كومباني',
+  POUL: 'القاهرة للدواجن',
+  ISPH: 'ابن سينا فارما',
+  CPCI: 'القاهرة للأدوية والصناعات الكيماوية',
+  AXPH: 'الإسكندرية للأدوية والصناعات الكيماوية',
+  PHAR: 'المصرية الدولية للصناعات الدوائية — إيبيكو',
+  NIPH: 'النيل للأدوية والصناعات الكيماوية',
+  CLHO: 'مستشفى كليوباترا',
+  BIOC: 'جلاكسو سميثكلاين مصر',
+  TMGH: 'مجموعة طلعت مصطفى القابضة',
+  PHDC: 'بالم هيلز للتعمير',
+  HELI: 'مصر الجديدة للإسكان والتعمير',
+  MASR: 'مدينة مصر للإسكان والتعمير',
+  EMFD: 'إعمار مصر للتنمية',
+  OCDI: 'السادس من أكتوبر للتنمية والاستثمار — سوديك',
+  ORHD: 'أوراسكوم للتنمية مصر',
+  ZMID: 'زهراء المعادي للاستثمار والتعمير',
+  EGTS: 'المصرية للمنتجعات السياحية',
+  CIRA: 'القاهرة للاستثمار والتنمية العقارية',
+  MTIE: 'إم إم جروب للصناعة والتجارة',
+};
 
-  // --- Financials & holdings ---
-  { code: 'HRHO', yahoo: 'HRHO.CA', ar: 'المجموعة المالية هيرميس', en: 'EFG Holding Company S.A.E', sector: 'financials', shariah: 'non_compliant' },
-  { code: 'CCAP', yahoo: 'CCAP.CA', ar: 'القلعة للاستثمارات المالية', en: 'QALA For Financial Investments', sector: 'holding', shariah: 'review' },
-  { code: 'BINV', yahoo: 'BINV.CA', ar: 'بي إنفستمنتس القابضة', en: 'B Investments Holding S.A.E.', sector: 'financials', shariah: 'review' },
-  // Corrected: ATLC is Al Tawfeek Leasing, not Orascom Financial Holding.
-  { code: 'ATLC', yahoo: 'ATLC.CA', ar: 'التوفيق للتأجير التمويلي', en: 'Al Tawfeek Leasing Company', sector: 'financials', shariah: 'review' },
-  { code: 'AFDI', yahoo: 'AFDI.CA', ar: 'الأهلي للتنمية والاستثمار', en: 'Al Ahly for Development & Investment', sector: 'financials', shariah: 'review' },
-  { code: 'BTFH', yahoo: 'BTFH.CA', ar: 'بلتون القابضة', en: 'Beltone Holding S.A.E', sector: 'financials', shariah: 'non_compliant' },
-  { code: 'EKHO', yahoo: 'EKHO.CA', ar: 'فالمور القابضة', en: 'Valmore Holding', sector: 'holding', shariah: 'review' },
+/** Banks are the one sector TradingView lumps into a generic "Finance" bucket. */
+function refineSector(entry) {
+  const text = `${entry.en} ${entry.industry ?? ''}`.toLowerCase();
+  if (/\bbank|banks\b/.test(text)) return 'banks';
+  if (/real estate|housing|development|urban/.test(text) && entry.sector === 'financials') return 'realestate';
+  if (/hotel|resort|tourism|touristic/.test(text)) return 'tourism';
+  return entry.sector;
+}
 
-  // --- Telecom & tech ---
-  { code: 'ETEL', yahoo: 'ETEL.CA', ar: 'المصرية للاتصالات', en: 'Telecom Egypt Company', sector: 'telecom', shariah: 'compliant' },
-  { code: 'FWRY', yahoo: 'FWRY.CA', ar: 'فوري', en: 'Fawry for Banking Technology and Electronic Payments S.A.E.', sector: 'tech', shariah: 'compliant' },
-  { code: 'EFIH', yahoo: 'EFIH.CA', ar: 'إي فاينانس للاستثمارات المالية والرقمية', en: 'e-finance for Digital and Financial Investments S.A.E.', sector: 'tech', shariah: 'review' },
-  { code: 'RAYA', yahoo: 'RAYA.CA', ar: 'راية القابضة للاستثمارات المالية', en: 'Raya Holding Company for Financial Investments (S.A.E)', sector: 'tech', shariah: 'review' },
+export const UNIVERSE = generated.stocks.map((s) => ({
+  code: s.code,
+  yahoo: s.yahoo,
+  ar: AR_NAMES[s.code] ?? s.en,
+  en: s.en,
+  sector: refineSector(s),
+  industry: s.industry,
+  shariah: s.shariah,
+  marketCapEgp: s.marketCapEgp,
+  avgTurnoverEgp: s.avgTurnoverEgp,
+  // True when the Arabic name has been individually confirmed; the UI can mark
+  // the rest as untranslated rather than presenting English as a translation.
+  arVerified: Boolean(AR_NAMES[s.code]),
+}));
 
-  // --- Fertilizers, chemicals, energy ---
-  { code: 'ABUK', yahoo: 'ABUK.CA', ar: 'أبوقير للأسمدة والصناعات الكيماوية', en: 'Abu Qir Fertilizers & Chemical Industries Company (S.A.E)', sector: 'materials', shariah: 'compliant' },
-  { code: 'MFPC', yahoo: 'MFPC.CA', ar: 'موبكو — مصر لإنتاج الأسمدة', en: 'Misr Fertilizer Production Company', sector: 'materials', shariah: 'compliant' },
-  // Corrected: KZPC is Kafr El Zayat Pesticides, not Kima.
-  { code: 'KZPC', yahoo: 'KZPC.CA', ar: 'كفر الزيات للمبيدات والكيماويات', en: 'Kafr El Zayat For Pesticides & Chemicals Co.(S.A.E)', sector: 'materials', shariah: 'compliant' },
-  { code: 'SKPC', yahoo: 'SKPC.CA', ar: 'سيدي كرير للبتروكيماويات', en: 'Sidi Kerir Petrochemicals Co.', sector: 'energy', shariah: 'compliant' },
-  { code: 'AMOC', yahoo: 'AMOC.CA', ar: 'الإسكندرية للزيوت المعدنية', en: 'Alexandria Mineral Oils Company', sector: 'energy', shariah: 'compliant' },
-
-  // --- Industrials & building materials ---
-  { code: 'SWDY', yahoo: 'SWDY.CA', ar: 'السويدي إليكتريك', en: 'El Sewedy Electric Company', sector: 'industrials', shariah: 'compliant' },
-  { code: 'ORWE', yahoo: 'ORWE.CA', ar: 'النساجون الشرقيون للسجاد', en: 'Oriental Weavers Carpets Company (S.A.E)', sector: 'industrials', shariah: 'compliant' },
-  { code: 'ORAS', yahoo: 'ORAS.CA', ar: 'أوراسكوم كونستراكشون', en: 'Orascom Construction PLC', sector: 'industrials', shariah: 'compliant' },
-  { code: 'GBCO', yahoo: 'GBCO.CA', ar: 'جي بي كوربوريشن', en: 'GB Corp', sector: 'industrials', shariah: 'review' },
-  { code: 'EGAL', yahoo: 'EGAL.CA', ar: 'مصر للألومنيوم', en: 'Egypt Aluminum', sector: 'industrials', shariah: 'compliant' },
-  { code: 'IRON', yahoo: 'IRON.CA', ar: 'الحديد والصلب المصرية', en: 'Egyptian Iron and Steel Company', sector: 'industrials', shariah: 'review' },
-  { code: 'ESRS', yahoo: 'ESRS.CA', ar: 'حديد عز', en: 'Ezz Steel', sector: 'industrials', shariah: 'review' },
-  { code: 'ARCC', yahoo: 'ARCC.CA', ar: 'العربية للأسمنت', en: 'Arabian Cement Company S.A.E.', sector: 'industrials', shariah: 'compliant' },
-  // Corrected: MCQE is Misr Cement (Qena) — a cement producer, not a chemicals firm.
-  { code: 'MCQE', yahoo: 'MCQE.CA', ar: 'مصر للأسمنت — قنا', en: 'Misr Cement (Qena) Company (S.A.E)', sector: 'industrials', shariah: 'compliant' },
-  // Corrected: SPIN is Alexandria Spinning & Weaving, not Nasr Clothing (Kabo).
-  { code: 'SPIN', yahoo: 'SPIN.CA', ar: 'الإسكندرية للغزل والنسيج', en: 'Alexandria Spinning & Weaving Co.', sector: 'industrials', shariah: 'review' },
-
-  // --- Consumer & food ---
-  { code: 'JUFO', yahoo: 'JUFO.CA', ar: 'جهينة للصناعات الغذائية', en: 'Juhayna Food Industries S.A.E.', sector: 'consumer', shariah: 'compliant' },
-  { code: 'OLFI', yahoo: 'OLFI.CA', ar: 'عبور لاند للصناعات الغذائية', en: 'Obour Land for Food Industries S.A.E.', sector: 'consumer', shariah: 'compliant' },
-  { code: 'EFID', yahoo: 'EFID.CA', ar: 'إيديتا للصناعات الغذائية', en: 'Edita Food Industries Company (S.A.E)', sector: 'consumer', shariah: 'compliant' },
-  { code: 'DOMT', yahoo: 'DOMT.CA', ar: 'دومتي — العربية للصناعات الغذائية', en: 'Arabian Food Industries Company (DOMTY) - S.A.E', sector: 'consumer', shariah: 'compliant' },
-  { code: 'SUGR', yahoo: 'SUGR.CA', ar: 'الدلتا للسكر', en: 'Delta Sugar Company', sector: 'consumer', shariah: 'compliant' },
-  // Tobacco — excluded on business activity.
-  { code: 'EAST', yahoo: 'EAST.CA', ar: 'الشرقية — إيسترن كومباني', en: 'Eastern Company S.A.E', sector: 'consumer', shariah: 'non_compliant' },
-
-  // --- Healthcare & pharma ---
-  { code: 'ISPH', yahoo: 'ISPH.CA', ar: 'ابن سينا فارما', en: 'Ibnsina Pharma', sector: 'healthcare', shariah: 'compliant' },
-  // Corrected: CPCI is Kahira Pharmaceuticals — NOT Cairo Poultry, and not a food company.
-  { code: 'CPCI', yahoo: 'CPCI.CA', ar: 'القاهرة للأدوية والصناعات الكيماوية', en: 'Kahira Pharmaceuticals & Chemical Industries Company', sector: 'healthcare', shariah: 'compliant' },
-  // Corrected: AXPH is Alexandria Pharmaceuticals (previously mislabelled "Axis Pharma").
-  { code: 'AXPH', yahoo: 'AXPH.CA', ar: 'الإسكندرية للأدوية والصناعات الكيماوية', en: 'Alexandria Co. For Pharmaceuticals & Chemical Industries', sector: 'healthcare', shariah: 'compliant' },
-  // Corrected: PHAR is EIPICO — it had been given Alexandria Pharma's identity.
-  { code: 'PHAR', yahoo: 'PHAR.CA', ar: 'المصرية الدولية للصناعات الدوائية — إيبيكو', en: 'Egyptian International Pharmaceutical Industries Company', sector: 'healthcare', shariah: 'compliant' },
-
-  // --- Real estate & tourism ---
-  { code: 'TMGH', yahoo: 'TMGH.CA', ar: 'مجموعة طلعت مصطفى القابضة', en: 'Talaat Moustafa Group Holding', sector: 'realestate', shariah: 'review' },
-  { code: 'PHDC', yahoo: 'PHDC.CA', ar: 'بالم هيلز للتعمير', en: 'Palm Hills Developments S.A.E.', sector: 'realestate', shariah: 'review' },
-  { code: 'HELI', yahoo: 'HELI.CA', ar: 'مصر الجديدة للإسكان والتعمير', en: 'Heliopolis Co. for Housing & Development', sector: 'realestate', shariah: 'review' },
-  // Corrected: ZMID is Zahraa El Maadi (real estate) — NOT an edible-oils company.
-  { code: 'ZMID', yahoo: 'ZMID.CA', ar: 'زهراء المعادي للاستثمار والتعمير', en: 'Zahraa El Maadi Investment and Development Company SAE', sector: 'realestate', shariah: 'review' },
-  { code: 'EGTS', yahoo: 'EGTS.CA', ar: 'المصرية للمنتجعات السياحية', en: 'Egyptian Resorts Company (S.A.E)', sector: 'tourism', shariah: 'review' },
-
-  // Removed: MNHD (Madinet Nasr Housing) — actively traded on EGX but Yahoo
-  // serves no data for MNHD.CA, so it cannot be analyzed here. Restore it if a
-  // working symbol or another data source is added.
-];
+export const UNIVERSE_META = {
+  generatedAt: generated.generatedAt,
+  listedTotal: generated.listedTotal,
+  analyzable: UNIVERSE.length,
+  rejected: generated.rejected ?? [],
+};
 
 const BY_CODE = new Map(UNIVERSE.map((s) => [s.code, s]));
 
@@ -139,3 +163,8 @@ export function sectorLabel(key) {
 }
 
 export const ALL_CODES = UNIVERSE.map((s) => s.code);
+
+/** The liquid core — a scan over 176 names is slow and mostly noise. */
+export function liquidCodes(minTurnoverEgp = 5_000_000) {
+  return UNIVERSE.filter((s) => (s.avgTurnoverEgp ?? 0) >= minTurnoverEgp).map((s) => s.code);
+}

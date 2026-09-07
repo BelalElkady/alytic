@@ -113,12 +113,26 @@ export function briefFor(a) {
 
   if (a.fundamentals) {
     const f = a.fundamentals;
-    lines.push(
-      `**الأساسيات (${f.asOf}، ثقة ${f.confidence}):** مكرر ربحية ${n(f.peRatio)} | ربحية السهم ${n(f.epsEgp)} ج | ` +
-        `توزيعات ${n(f.dividendYieldPct, '%')} | نمو أرباح ${n(f.profitGrowthPct, '%')} | التقييم: ${f.fundamentalStrength}`,
-    );
-    lines.push(`  ${f.businessSummary}`);
-    if (f.keyRisks?.length) lines.push(`  مخاطر: ${f.keyRisks.join(' · ')}`);
+    const facts = [
+      f.peRatio != null && `مكرر ربحية ${f.peRatio}`,
+      f.epsEgp != null && `ربحية السهم ${f.epsEgp} ج`,
+      f.priceToBook != null && `السعر/القيمة الدفترية ${f.priceToBook}`,
+      f.dividendYieldPct != null && `توزيعات ${f.dividendYieldPct}%`,
+      f.returnOnEquityPct != null && `عائد على حقوق الملكية ${f.returnOnEquityPct}%`,
+      f.debtToEquity != null && `مديونية/ملكية ${f.debtToEquity}`,
+      f.marketCapEgp != null && `قيمة سوقية ${Math.round(f.marketCapEgp / 1e9)} مليار ج`,
+    ].filter(Boolean);
+
+    if (facts.length) {
+      lines.push(`**الأساسيات** (${f.industry ?? '—'}، ${f.asOf}): ${facts.join(' | ')}`);
+      if (f.valuation) lines.push(`  ${f.valuation}`);
+    }
+    // Coverage is partial on EGX small caps. Say so, so the model reads a gap
+    // as a gap rather than as a weak balance sheet.
+    const missing = ['peRatio', 'epsEgp', 'returnOnEquityPct'].filter((k) => f[k] == null);
+    if (missing.length) lines.push('  ملاحظة: بعض البيانات الأساسية مش متاحة للسهم ده — الغياب مش إشارة سلبية.');
+  } else {
+    lines.push('**الأساسيات:** مش متاحة لهذا السهم — احكم على الفني بس.');
   }
 
   if (a.shariah && a.shariah !== 'compliant') {

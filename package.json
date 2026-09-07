@@ -13,7 +13,8 @@
     "analyze": "node src/cli.js analyze",
     "scan": "node src/cli.js scan",
     "review": "node src/cli.js review",
-    "verify:universe": "node scripts/verify-universe.js"
+    "verify:universe": "node scripts/verify-universe.js",
+    "build:universe": "node scripts/build-universe.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
