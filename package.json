@@ -1,0 +1,23 @@
+{
+  "name": "alytic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "EGX stock analyzer — technical + fundamental engine with an AI analyst layer",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "serve": "node src/api/server.js",
+    "sync": "node src/cli.js sync",
+    "analyze": "node src/cli.js analyze",
+    "scan": "node src/cli.js scan",
+    "review": "node src/cli.js review"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "zod": "^4.5.4"
+  }
+}

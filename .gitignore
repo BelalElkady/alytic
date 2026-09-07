@@ -1,0 +1,6 @@
+node_modules/
+.env
+data/bars/
+data/fundamentals/
+data/portfolio.json
+*.log
