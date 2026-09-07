@@ -185,6 +185,10 @@ tbody tr:hover{background:var(--accent-soft)}
 const $ = (s) => document.querySelector(s);
 const fmt = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const int = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
+// Always carry an explicit sign on money. Wrapping a figure in parentheses is
+// accounting notation for a NEGATIVE number, so a +5,620 EGP gain shown as
+// "(5,620)" reads as a loss to anyone who reads financial statements.
+const signed = (n) => (n == null ? '—' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(Math.round(n)).toLocaleString('en-US')}`);
 const pct = (n) => (n == null ? '—' : `${n > 0 ? '+' : ''}${Number(n).toFixed(2)}%`);
 const cls = (n) => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
 const scoreCls = (s) => (s >= 72 ? 's-hi' : s >= 42 ? 's-mid' : 's-lo');
@@ -363,7 +367,8 @@ async function loadPortfolio() {
       <td class="num">${fmt(ps.avgCost)}</td>
       <td class="num">${fmt(r.price)}</td>
       <td class="num">${int(ps.marketValue)}</td>
-      <td class="num ${cls(ps.unrealizedPct)}">${pct(ps.unrealizedPct)} <span class="muted">(${int(ps.unrealizedEgp)})</span></td>
+      <td class="num ${cls(ps.unrealizedPct)}">${pct(ps.unrealizedPct)}
+        <span class="muted">${signed(ps.unrealizedEgp)} ج</span></td>
       <td class="num down">${fmt(ps.stop)}${ps.trailing.active ? ' <span class="tag">متحرك</span>' : ''}</td>
       <td class="num">${pct(ps.distanceToStopPct)}</td>
       <td>${state}</td>
