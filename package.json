@@ -12,7 +12,8 @@
     "sync": "node src/cli.js sync",
     "analyze": "node src/cli.js analyze",
     "scan": "node src/cli.js scan",
-    "review": "node src/cli.js review"
+    "review": "node src/cli.js review",
+    "verify:universe": "node scripts/verify-universe.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
