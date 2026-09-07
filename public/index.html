@@ -3,104 +3,188 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Alytic — مكتب البورصة المصرية</title>
+<title>Alytic — مكتب المحفظة · البورصة المصرية</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2316202E'/%3E%3Cpath d='M7 22l5-9 4 6 3-4 6 7z' fill='%2310b981'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* Design notes: one accent colour, generous whitespace, and numbers set in a
-   tabular font so columns line up — a table of prices that jitters between rows
-   is hard to scan, which is the whole job of this page. */
+/* Design carried over from the original egx-desk: a slate/emerald/rose palette
+   on an off-white ground, 2xl-radius cards, and numbers set in a tabular figure
+   so columns never jitter. Hand-written rather than Tailwind so the page stays
+   a single readable file with no build step. */
 :root{
-  --bg:#f6f7f9; --card:#fff; --ink:#16202e; --muted:#69758a; --line:#e4e8ee;
-  --up:#0f8a5f; --down:#d0402c; --warn:#b8791b; --accent:#2b5fd9; --accent-soft:#eef3fe;
-  --radius:10px;
-}
-@media (prefers-color-scheme:dark){
-  :root{--bg:#0e1420;--card:#161e2c;--ink:#e8edf5;--muted:#8d9aae;--line:#26304180;
-        --up:#3fbb8a;--down:#f2705a;--warn:#e0a244;--accent:#6f97f5;--accent-soft:#1b2740;}
+  --ink:#16202E; --bg:#f1f5f9; --card:#fff; --line:#e2e8f0; --line-soft:#f1f5f9;
+  --slate-400:#94a3b8; --slate-500:#64748b; --slate-700:#334155; --slate-800:#1e293b;
+  --emerald-50:#ecfdf5; --emerald-100:#d1fae5; --emerald-500:#10b981; --emerald-700:#047857; --emerald-900:#064e3b;
+  --rose-50:#fff1f2; --rose-100:#ffe4e6; --rose-600:#e11d48; --rose-700:#be123c; --rose-900:#881337;
+  --amber-50:#fffbeb; --amber-100:#fef3c7; --amber-900:#78350f;
+  --sky-50:#f0f9ff; --sky-950:#082f49;
+  --indigo-50:#eef2ff; --indigo-600:#4f46e5; --indigo-900:#312e81;
+  /* the rail's three zones: below stop, stop→cost, above cost */
+  --rail-loss:#f0c7c1; --rail-mid:#d9dee6; --rail-gain:#cfe9da;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-     font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;font-size:14px;line-height:1.6}
+     font-family:'IBM Plex Sans Arabic',system-ui,-apple-system,Segoe UI,Tahoma,sans-serif;
+     font-size:14px;line-height:1.5}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 20px;
-       display:flex;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
-h1{font-size:17px;margin:0;font-weight:700;letter-spacing:-.2px}
-h1 span{color:var(--accent)}
-.status{font-size:12px;color:var(--muted);margin-inline-start:auto}
-.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-inline-end:5px}
-.dot.on{background:var(--up)} .dot.off{background:var(--muted)}
-nav{display:flex;gap:4px;padding:0 20px;background:var(--card);border-bottom:1px solid var(--line)}
-nav button{background:none;border:none;padding:11px 15px;font:inherit;font-weight:600;font-size:13px;
-           color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
-nav button.active{color:var(--accent);border-bottom-color:var(--accent)}
-nav button:hover:not(.active){color:var(--ink)}
-main{padding:20px;max-width:1400px;margin:0 auto}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-      padding:16px;margin-bottom:16px}
-.card h2{font-size:14px;margin:0 0 4px;font-weight:700}
-.card .sub{font-size:12px;color:var(--muted);margin-bottom:12px}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-button.act{background:var(--accent);color:#fff;border:none;border-radius:7px;padding:8px 15px;
+h1,h2,h3{margin:0;font-size:inherit;font-weight:inherit}
+
+header{background:var(--card);border-bottom:1px solid var(--line);padding:13px 18px;
+       display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+.brand{font-size:16px;font-weight:700;letter-spacing:-.2px}
+.brand span{color:var(--slate-500);font-weight:500}
+.status{font-size:11.5px;color:var(--slate-500);margin-inline-start:auto}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-inline-end:5px;vertical-align:1px}
+.dot.on{background:var(--emerald-500)} .dot.off{background:var(--slate-400)}
+
+nav{display:flex;gap:2px;padding:0 14px;background:var(--card);border-bottom:1px solid var(--line);
+    position:sticky;top:52px;z-index:19;overflow-x:auto}
+nav button{background:none;border:none;padding:10px 14px;font:inherit;font-weight:600;font-size:13px;
+           color:var(--slate-500);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+nav button.active{color:var(--ink);border-bottom-color:var(--ink)}
+nav button:hover:not(.active){color:var(--slate-800)}
+
+main{padding:14px;max-width:1180px;margin:0 auto}
+.stack>*+*{margin-top:12px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+.card.hit{border-color:var(--rose-600)} .card.near{border-color:#fbbf24}
+.card-title{font-weight:600;margin-bottom:2px}
+.card-sub{font-size:11.5px;color:var(--slate-500);margin-bottom:12px}
+
+/* ── alert pills ───────────────────────────────────────── */
+.alert{display:flex;align-items:center;gap:8px;border-radius:12px;padding:9px 13px;font-size:13.5px}
+.alert i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.alert.hit{background:var(--rose-100);color:var(--rose-900)}
+.alert.near{background:var(--amber-100);color:var(--amber-900)}
+.alert.ok{background:var(--emerald-100);color:var(--emerald-900)}
+
+/* ── summary strip ─────────────────────────────────────── */
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.summary div{font-size:11px;color:var(--slate-500)}
+.summary b{display:block;font-size:19px;font-weight:600;color:var(--slate-800);margin-top:1px}
+
+/* ── position card ─────────────────────────────────────── */
+.pos-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.ticker{font-size:18px;font-weight:700}
+.badge{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap}
+.b-hold{background:#f1f5f9;color:var(--slate-700)}
+.b-sell_part{background:var(--amber-100);color:var(--amber-900)}
+.b-take_target{background:var(--emerald-100);color:var(--emerald-900)}
+.b-sell_all{background:var(--rose-100);color:var(--rose-900)}
+.b-exit_stop{background:var(--rose-600);color:#fff}
+.b-buy_more{background:#e0f2fe;color:var(--sky-950)}
+.pos-meta{font-size:11.5px;color:var(--slate-500);margin-top:2px}
+.pos-price{text-align:left}
+.pos-price .p{font-size:18px;font-weight:600}
+.pos-price .d{font-size:11.5px}
+
+/* The rail: a price ruler from just below the stop to just above the target,
+   with the live price riding on it. This is the fastest way to see where a
+   position actually stands without reading four numbers. */
+.rail{position:relative;height:52px;margin:16px 4px 4px}
+.rail-bar{position:absolute;left:0;right:0;top:20px;height:6px;border-radius:3px}
+.rail-tick{position:absolute;width:2px;transform:translateX(50%)}
+.rail-lbl{position:absolute;transform:translateX(50%);white-space:nowrap;font-size:10px;line-height:1.2}
+.rail-dot{position:absolute;width:18px;height:18px;transform:translateX(50%);top:12px;
+  border-radius:50%;border:3px solid #fff;background:var(--ink);box-shadow:0 0 0 1.5px var(--ink)}
+
+.stats4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;font-size:11px;color:var(--slate-500)}
+.stats4 b{display:block;font-size:13.5px;font-weight:500;color:var(--slate-800);margin-top:1px}
+
+.rec{margin-top:12px;border-radius:12px;padding:9px 13px;font-size:13.5px;line-height:1.65}
+.rec .when{font-size:11px;color:var(--slate-500)}
+.rec .order{font-size:12px;font-weight:600;margin-top:4px}
+.r-exit_stop,.r-sell_all{background:var(--rose-50);color:#4c0519}
+.r-buy_more{background:var(--sky-50);color:var(--sky-950)}
+.r-hold{background:#f8fafc;color:var(--slate-800)}
+.r-sell_part,.r-take_target{background:var(--amber-50);color:#451a03}
+
+/* ── tables ────────────────────────────────────────────── */
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:right;font-weight:500;color:var(--slate-500);padding:0 8px 8px;
+   border-bottom:1px solid var(--line-soft);white-space:nowrap;font-size:11px}
+td{padding:7px 8px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+tbody tr.clickable{cursor:pointer}
+tbody tr.clickable:hover{background:#f8fafc}
+.d0{background:var(--emerald-100);color:var(--emerald-900);font-weight:600}
+.d1{background:var(--amber-50);color:var(--amber-900)}
+.d2{background:#f8fafc;color:var(--slate-700)}
+.d3{color:var(--slate-400)}
+
+.up{color:var(--emerald-700)} .down{color:var(--rose-700)} .muted{color:var(--slate-500)}
+.score{display:inline-block;min-width:28px;text-align:center;padding:2px 6px;border-radius:5px;font-weight:700;font-size:11.5px}
+.s-hi{background:var(--emerald-100);color:var(--emerald-900)}
+.s-mid{background:var(--amber-100);color:var(--amber-900)}
+.s-lo{background:var(--rose-100);color:var(--rose-900)}
+.tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:#f1f5f9;color:var(--slate-500)}
+.tag.go{background:var(--emerald-100);color:var(--emerald-900)}
+.tag.wait{background:var(--amber-100);color:var(--amber-900)}
+
+button.act{background:var(--ink);color:#fff;border:none;border-radius:9px;padding:8px 15px;
            font:inherit;font-weight:600;font-size:13px;cursor:pointer}
 button.act:disabled{opacity:.5;cursor:default}
-button.ghost{background:none;border:1px solid var(--line);color:var(--ink);border-radius:7px;
+button.ghost{background:none;border:1px solid var(--line);color:var(--ink);border-radius:9px;
              padding:7px 13px;font:inherit;font-size:13px;cursor:pointer}
-input{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px 10px;
-      font:inherit;font-size:13px;color:var(--ink);width:110px}
-/* Wide tables must scroll inside their own box, never push the page sideways. */
-.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
-th{text-align:right;font-size:11px;color:var(--muted);font-weight:600;padding:8px 9px;
-   border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:9px;border-bottom:1px solid var(--line);white-space:nowrap}
-tbody tr{cursor:pointer}
-tbody tr:hover{background:var(--accent-soft)}
-.score{display:inline-block;min-width:30px;text-align:center;padding:2px 7px;border-radius:5px;
-       font-weight:700;font-size:12px}
-.s-hi{background:color-mix(in srgb,var(--up) 16%,transparent);color:var(--up)}
-.s-mid{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
-.s-lo{background:color-mix(in srgb,var(--down) 16%,transparent);color:var(--down)}
-.up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
-.tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--bg);
-     color:var(--muted);border:1px solid var(--line)}
-.tag.go{background:color-mix(in srgb,var(--up) 14%,transparent);color:var(--up);border-color:transparent}
-.tag.wait{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);border-color:transparent}
-.empty{text-align:center;color:var(--muted);padding:36px 16px;font-size:13px}
-.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
-.stat{background:var(--bg);border-radius:8px;padding:11px 13px}
-.stat .k{font-size:11px;color:var(--muted)} .stat .v{font-size:17px;font-weight:700;margin-top:2px}
-.bullets{margin:6px 0 0;padding-inline-start:18px;font-size:13px}
-.bullets li{margin-bottom:3px}
-/* Modal for the per-stock detail view. */
-.overlay{position:fixed;inset:0;background:#0009;display:none;z-index:50;overflow-y:auto;padding:24px}
+input,select{background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:8px 10px;
+             font:inherit;font-size:13px;color:var(--ink);width:105px}
+.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.empty{text-align:center;color:var(--slate-500);padding:30px 14px;font-size:12.5px}
+
+.overlay{position:fixed;inset:0;background:#0f172acc;display:none;z-index:50;overflow-y:auto;padding:22px}
 .overlay.show{display:block}
-.modal{background:var(--card);border-radius:12px;max-width:820px;margin:0 auto;padding:22px;position:relative}
-.close{position:absolute;left:16px;top:14px;background:none;border:none;font-size:22px;
-       color:var(--muted);cursor:pointer;line-height:1}
-.lvl{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px}
-.verdict{border-inline-start:3px solid var(--accent);padding:2px 12px;margin-bottom:14px}
-.verdict h3{margin:0 0 3px;font-size:14px}
-.spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);
-      border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+.modal{background:var(--card);border-radius:16px;max-width:800px;margin:0 auto;padding:20px;position:relative}
+.close{position:absolute;left:14px;top:12px;background:none;border:none;font-size:22px;color:var(--slate-400);cursor:pointer;line-height:1}
+.lvl{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px}
+.bullets{margin:5px 0 0;padding-inline-start:17px;font-size:12.5px}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--ink);
+      border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px}
 @keyframes sp{to{transform:rotate(360deg)}}
+@media (max-width:640px){ .stats4{grid-template-columns:repeat(2,1fr)} main{padding:10px} }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>Alytic <span>· البورصة المصرية</span></h1>
+  <h1 class="brand">Alytic <span>· مكتب المحفظة</span></h1>
   <div class="status" id="status">جارٍ التحميل…</div>
 </header>
 
 <nav>
-  <button class="active" data-tab="scan">مسح السوق</button>
-  <button data-tab="portfolio">المحفظة</button>
+  <button class="active" data-tab="today">اليوم</button>
+  <button data-tab="scan">مسح السوق</button>
+  <button data-tab="trades">الصفقات</button>
   <button data-tab="review">توصيات المحلل</button>
 </nav>
 
 <main>
-  <!-- ── Scan ─────────────────────────────────────────────── -->
-  <section id="tab-scan">
+  <!-- ══ اليوم — the desk ══════════════════════════════ -->
+  <section id="tab-today" class="stack">
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="summary" id="summary"></div>
+    </div>
+
+    <div class="card" id="targets-card">
+      <div class="card-title">⏱ جدول الأهداف</div>
+      <div class="card-sub">مرتب من الأقرب للأبعد. التقدير الزمني بيتحدث مع كل إغلاق جديد.</div>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th>السهم</th><th>الحالي</th><th>الهدف</th><th>المسافة</th><th>التقدير الزمني</th><th>الوقف</th>
+          </tr></thead>
+          <tbody id="targets-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="positions"></div>
+  </section>
+
+  <!-- ══ مسح السوق ═════════════════════════════════════ -->
+  <section id="tab-scan" class="stack" hidden>
     <div class="card">
       <div class="row">
         <button class="act" id="btn-scan">حدّث المسح</button>
@@ -112,14 +196,13 @@ tbody tr:hover{background:var(--accent-soft)}
       </div>
     </div>
     <div class="card">
-      <h2>ترتيب السوق بالتقييم الفني</h2>
-      <div class="sub">التقييم محسوب آليًا من الاتجاه والزخم والحجم والموقع من الدعم والمقاومة. اضغط على أي سهم للتفاصيل.</div>
+      <div class="card-title">ترتيب السوق بالتقييم الفني</div>
+      <div class="card-sub">محسوب آليًا من الاتجاه والزخم والحجم والموقع من الدعم والمقاومة. اضغط على أي سهم للتفاصيل.</div>
       <div class="scroll">
         <table>
           <thead><tr>
             <th>الكود</th><th>الشركة</th><th>التقييم</th><th>القرار</th><th>السعر</th>
-            <th>اليوم</th><th>الوقف</th><th>هدف متوسط</th><th>صعود</th><th>ع/م</th>
-            <th>الدخول</th><th>التوقيت</th>
+            <th>اليوم</th><th>الوقف</th><th>هدف متوسط</th><th>صعود</th><th>ع/م</th><th>الدخول</th><th>التوقيت</th>
           </tr></thead>
           <tbody id="scan-body"><tr><td colspan="12" class="empty">اضغط «حدّث المسح» للبدء</td></tr></tbody>
         </table>
@@ -127,51 +210,42 @@ tbody tr:hover{background:var(--accent-soft)}
     </div>
   </section>
 
-  <!-- ── Portfolio ────────────────────────────────────────── -->
-  <section id="tab-portfolio" hidden>
+  <!-- ══ الصفقات ═══════════════════════════════════════ -->
+  <section id="tab-trades" class="stack" hidden>
     <div class="card">
-      <h2>الوضع المالي</h2>
-      <div class="grid" id="pf-stats"></div>
-    </div>
-    <div class="card">
-      <h2>سجّل صفقة</h2>
-      <div class="sub">المتوسط والكاش بيتحدثوا تلقائيًا. العمولة محسوبة على السعر المدخل.</div>
+      <div class="card-title">سجّل صفقة</div>
+      <div class="card-sub">المتوسط والكاش بيتحدثوا تلقائيًا. العمولة محسوبة على السعر المدخل.</div>
       <div class="row">
-        <input id="t-code" placeholder="الكود" style="width:90px">
-        <select id="t-side" style="padding:7px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit">
-          <option value="buy">شراء</option><option value="sell">بيع</option>
-        </select>
+        <input id="t-code" placeholder="الكود" style="width:88px">
+        <select id="t-side" style="width:auto"><option value="buy">شراء</option><option value="sell">بيع</option></select>
         <input id="t-shares" placeholder="العدد" type="number">
         <input id="t-price" placeholder="السعر" type="number" step="0.01">
         <button class="act" id="btn-trade">تسجيل</button>
       </div>
-      <div class="row" style="margin-top:10px">
+      <div class="row" style="margin-top:9px">
         <input id="t-cash" placeholder="الكاش" type="number">
         <button class="ghost" id="btn-cash">تحديث الكاش</button>
       </div>
     </div>
     <div class="card">
-      <h2>المراكز المفتوحة</h2>
+      <div class="card-title">سجل الصفقات</div>
       <div class="scroll">
         <table>
-          <thead><tr>
-            <th>الكود</th><th>العدد</th><th>المتوسط</th><th>السعر</th><th>القيمة</th>
-            <th>الربح/الخسارة</th><th>الوقف</th><th>للوقف</th><th>الحالة</th>
-          </tr></thead>
-          <tbody id="pf-body"><tr><td colspan="9" class="empty">مفيش مراكز مفتوحة</td></tr></tbody>
+          <thead><tr><th>التاريخ</th><th>الكود</th><th>النوع</th><th>العدد</th><th>السعر</th><th>عمولة</th><th>ربح محقق</th></tr></thead>
+          <tbody id="trades-body"></tbody>
         </table>
       </div>
     </div>
   </section>
 
-  <!-- ── AI review ────────────────────────────────────────── -->
-  <section id="tab-review" hidden>
+  <!-- ══ توصيات المحلل ═════════════════════════════════ -->
+  <section id="tab-review" class="stack" hidden>
     <div class="card">
       <div class="row">
         <button class="act" id="btn-review">اطلب مراجعة المحلل</button>
         <span class="status" id="review-meta"></span>
       </div>
-      <div class="sub" style="margin:10px 0 0">
+      <div class="card-sub" style="margin:9px 0 0">
         المحلل بيشوف نفس الأرقام المحسوبة بالظبط — شغله إنه يحكم عليها ويحل التناقضات، مش إنه يحسبها من تاني.
       </div>
     </div>
@@ -185,20 +259,12 @@ tbody tr:hover{background:var(--accent-soft)}
 const $ = (s) => document.querySelector(s);
 const fmt = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const int = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
-// Always carry an explicit sign on money. Wrapping a figure in parentheses is
-// accounting notation for a NEGATIVE number, so a +5,620 EGP gain shown as
-// "(5,620)" reads as a loss to anyone who reads financial statements.
+const pct = (n, d = 2) => (n == null ? '—' : `${n > 0 ? '+' : ''}${Number(n).toFixed(d)}%`);
+// Money always carries an explicit sign — parentheses are accounting notation
+// for a negative, so "(5,620)" on a gain reads as a loss.
 const signed = (n) => (n == null ? '—' : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(Math.round(n)).toLocaleString('en-US')}`);
-const pct = (n) => (n == null ? '—' : `${n > 0 ? '+' : ''}${Number(n).toFixed(2)}%`);
 const cls = (n) => (n == null ? '' : n > 0 ? 'up' : n < 0 ? 'down' : '');
-const scoreCls = (s) => (s >= 72 ? 's-hi' : s >= 42 ? 's-mid' : 's-lo');
-
-const ENTRY_LABEL = {
-  buy_now: ['دلوقتي', 'go'],
-  limit_pullback: ['أمر محدد', ''],
-  too_extended: ['ممتد — استنى', 'wait'],
-  wait: ['استنى', 'wait'],
-};
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -207,12 +273,60 @@ async function api(path, opts) {
   return body;
 }
 
+// ── The price rail ───────────────────────────────────────
+// Domain runs a little below the lowest of stop/cost/price and a little above
+// the highest of target/price, so every marker sits inside the bar. Labels
+// alternate above/below when two would collide.
+function rail({ stop, cost, target, price }) {
+  const lo = Math.min(stop, cost, price) * 0.96;
+  const hi = Math.max(target ?? price, price) * 1.04;
+  const at = (v) => `${(((v - lo) / (hi - lo)) * 100).toFixed(1)}%`;
+  const p = (v) => ((v - lo) / (hi - lo)) * 100;
+
+  const marks = [
+    { v: stop, label: `وقف ${fmt(stop)}`, color: 'var(--indigo-600)', text: 'color:#3730a3;font-weight:600', side: 'bot' },
+    { v: cost, label: `شراء ${fmt(cost)}`, color: 'var(--slate-400)', text: 'color:#64748b', side: 'top' },
+  ];
+  if (target) marks.push({ v: target, label: `هدف ${fmt(target)}`, color: 'var(--emerald-500)', text: 'color:#047857', side: 'bot' });
+
+  // Nudge the cost label to the other side if it crowds a neighbour.
+  const bots = marks.filter((m) => m.side === 'bot');
+  for (const b of bots) {
+    const c = marks.find((m) => m.label.startsWith('شراء'));
+    if (c && c.side === 'bot' && Math.abs(p(b.v) - p(c.v)) < 12 && b !== c) c.side = 'top';
+  }
+
+  // Zone colouring. Below the stop is always red — you are out. Above cost is
+  // green. The grey band between them only exists while the stop sits BELOW
+  // cost; once a trailing stop ratchets past the entry price the position is
+  // fully protected and there is no underwater zone left. Emitting the two
+  // gradient stops in the wrong order (as happens when stop > cost) produces a
+  // malformed gradient, which is what made TAQA's rail render red-to-green
+  // with no band at all.
+  const sPct = p(stop);
+  const cPct = p(cost);
+  const bar = cPct > sPct
+    ? `var(--rail-loss) 0%, var(--rail-loss) ${at(stop)}, var(--rail-mid) ${at(stop)},
+       var(--rail-mid) ${at(cost)}, var(--rail-gain) ${at(cost)}, var(--rail-gain) 100%`
+    : `var(--rail-loss) 0%, var(--rail-loss) ${at(stop)}, var(--rail-gain) ${at(stop)}, var(--rail-gain) 100%`;
+
+  return `<div class="rail">
+    <div class="rail-bar" style="background:linear-gradient(to right,${bar})"></div>
+    ${marks.map((m) => `
+      <div class="rail-tick" style="left:${at(m.v)};background:${m.color};top:${m.side === 'top' ? '8px' : '20px'};height:12px"></div>
+      <div class="rail-lbl num" style="left:${at(m.v)};top:${m.side === 'top' ? '0' : '34px'};${m.text}">${m.label}</div>`).join('')}
+    <div class="rail-dot" style="left:${at(price)}"></div>
+  </div>`;
+}
+
 // ── Tabs ─────────────────────────────────────────────────
+const TABS = ['today', 'scan', 'trades', 'review'];
 document.querySelectorAll('nav button').forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('active', x === b));
-    for (const t of ['scan', 'portfolio', 'review']) $(`#tab-${t}`).hidden = t !== b.dataset.tab;
-    if (b.dataset.tab === 'portfolio') loadPortfolio();
+    for (const t of TABS) $(`#tab-${t}`).hidden = t !== b.dataset.tab;
+    if (b.dataset.tab === 'today') loadDesk();
+    if (b.dataset.tab === 'trades') loadTrades();
   };
 });
 
@@ -222,218 +336,259 @@ try {
   const h = await api('/api/health');
   aiOn = h.aiAvailable;
   $('#status').innerHTML = `<span class="dot ${aiOn ? 'on' : 'off'}"></span>` +
-    (aiOn ? 'المحلل الذكي مفعّل' : 'المحلل الذكي متوقف — محتاج ANTHROPIC_API_KEY') +
-    ` · ${h.universeSize} سهم`;
+    (aiOn ? 'المحلل الذكي مفعّل' : 'المحلل الذكي متوقف — محتاج ANTHROPIC_API_KEY') + ` · ${h.universeSize} سهم`;
 } catch { $('#status').textContent = 'الخادم مش شغال'; }
 
-// ── Scan ─────────────────────────────────────────────────
+// ── اليوم (the desk) ─────────────────────────────────────
+async function loadDesk() {
+  const pf = await api('/api/portfolio');
+  const codes = Object.keys(pf.positions);
+
+  if (!codes.length) {
+    $('#alerts').innerHTML = '';
+    $('#summary').innerHTML = `<div>الكاش<b class="num">${int(pf.cash)}</b></div>`;
+    $('#targets-card').hidden = true;
+    $('#positions').innerHTML = `<div class="card"><div class="empty">
+      مفيش مراكز مفتوحة. سجّل أول صفقة من تبويب «الصفقات» وهتلاقي المكتب هنا.
+    </div></div>`;
+    return;
+  }
+  $('#targets-card').hidden = false;
+  $('#positions').innerHTML = `<div class="card"><div class="empty"><span class="spin"></span> بيحدّث الأسعار…</div></div>`;
+
+  const { results } = await api(`/api/scan?codes=${codes.join(',')}`);
+  const held = results.filter((r) => r.position);
+
+  // ── alerts ──
+  const alerts = held.map((r) => {
+    const p = r.position;
+    if (p.stopBreached) return { k: 'hit', t: `${r.code}: أغلق تحت وقف الخسارة ${fmt(p.stop)} — خروج` };
+    if (p.distanceToStopPct != null && p.distanceToStopPct <= 3) return { k: 'near', t: `${r.code}: قريب من الوقف (${fmt(p.distanceToStopPct, 1)}%)` };
+    if (p.triggers.atTarget) return { k: 'ok', t: `${r.code}: وصل الهدف ${fmt(r.midTarget?.price)}` };
+    return null;
+  }).filter(Boolean);
+
+  $('#alerts').innerHTML = (alerts.length ? alerts : [{ k: 'ok', t: 'لا توجد تنبيهات — كل الأسهم داخل نطاقها.' }])
+    .map((a) => `<div class="alert ${a.k}" style="margin-bottom:8px"><i></i>${esc(a.t)}</div>`).join('');
+
+  // ── summary ──
+  const mv = held.reduce((a, r) => a + r.position.marketValue, 0);
+  const pl = held.reduce((a, r) => a + r.position.unrealizedEgp, 0);
+  const dayChange = held.reduce((a, r) => a + (r.position.shares * r.price * (r.changePct ?? 0)) / 100, 0);
+  $('#summary').innerHTML = `
+    <div>قيمة المحفظة<b class="num">${int(mv + pf.cash)}</b></div>
+    <div>تغيّر اليوم<b class="num ${cls(dayChange)}">${signed(dayChange)}</b></div>
+    <div>إجمالي الربح<b class="num ${cls(pl)}">${signed(pl)}</b></div>
+    <div>الكاش<b class="num">${int(pf.cash)}</b></div>
+    <div>ربح محقق<b class="num ${cls(pf.realizedPnl)}">${signed(pf.realizedPnl)}</b></div>`;
+
+  // ── targets table ──
+  const rows = held.filter((r) => r.midTarget?.price > r.price)
+    .map((r) => ({ r, dist: ((r.midTarget.price - r.price) / r.price) * 100 }))
+    .sort((a, b) => a.dist - b.dist);
+  const band = (d) => (d <= 2 ? 'd0' : d <= 6 ? 'd1' : d <= 16 ? 'd2' : 'd3');
+  $('#targets-body').innerHTML = rows.length ? rows.map(({ r, dist }) => `
+    <tr class="${band(dist)}">
+      <td><b>${r.code}</b></td>
+      <td class="num">${fmt(r.price)}</td>
+      <td class="num">${fmt(r.midTarget.price)}</td>
+      <td class="num">${pct(dist, 1)}</td>
+      <td>${esc(r.midTarget.horizon?.ar ?? '—')}</td>
+      <td class="num down">${fmt(r.position.stop)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="empty">كل المراكز وصلت أهدافها أو فوقها.</td></tr>';
+
+  // ── position cards ──
+  $('#positions').innerHTML = held.map((r) => {
+    const p = r.position;
+    // Never let one absent field blank the whole desk — an older server build
+    // without `recommendation` should still render every position and price.
+    const rec = p.recommendation ?? { action: 'hold', label: 'احتفاظ', text: 'التوصية مش متاحة — أعد تشغيل الخادم.', order: null };
+    const state = p.stopBreached ? 'hit' : (p.distanceToStopPct ?? 99) <= 3 ? 'near' : '';
+    return `<div class="card ${state}" style="margin-bottom:12px">
+      <div class="pos-head">
+        <div>
+          <div class="row" style="gap:8px">
+            <span class="ticker">${r.code}</span>
+            <span class="badge b-${rec.action}">${esc(rec.label)}</span>
+          </div>
+          <div class="pos-meta">${esc(r.name)} · <span class="num">${int(p.shares)}</span> سهم @ <span class="num">${fmt(p.avgCost)}</span></div>
+        </div>
+        <div class="pos-price">
+          <div class="p num">${fmt(r.price)}</div>
+          <div class="d num ${cls(r.changePct)}">${r.changePct != null ? pct(r.changePct) + ' اليوم' : ''}</div>
+        </div>
+      </div>
+
+      ${rail({ stop: p.stop, cost: p.avgCost, target: r.midTarget?.price, price: r.price })}
+
+      <div class="stats4">
+        <div>القيمة<b class="num">${int(p.marketValue)}</b></div>
+        <div>الربح<b class="num ${cls(p.unrealizedEgp)}">${signed(p.unrealizedEgp)} <span style="font-size:11px">(${pct(p.unrealizedPct, 1)})</span></b></div>
+        <div>للوقف<b class="num" style="${(p.distanceToStopPct ?? 99) <= 3 ? 'color:var(--rose-700)' : ''}">${pct(p.distanceToStopPct, 1)}</b></div>
+        <div>للهدف<b class="num">${r.midTarget ? pct(((r.midTarget.price - r.price) / r.price) * 100, 1) : '—'}</b></div>
+      </div>
+
+      <div class="rec r-${rec.action}">
+        <span class="when">توصية اليوم · </span>${esc(rec.text)}
+        ${rec.order ? `<div class="order num" dir="rtl">الأمر: ${rec.order.side === 'buy' ? 'شراء' : 'بيع'}
+          ${int(rec.order.qty)} سهم عند ${fmt(rec.order.price)} ≈ ${int(rec.order.qty * rec.order.price)} ج</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  $('#positions').querySelectorAll('.ticker').forEach((el) => {
+    el.style.cursor = 'pointer';
+    el.onclick = () => showDetail(el.textContent.trim());
+  });
+}
+
+// ── مسح السوق ────────────────────────────────────────────
 let scanRows = [];
+const ENTRY_LABEL = { buy_now: ['دلوقتي', 'go'], limit_pullback: ['أمر محدد', ''], too_extended: ['ممتد — استنى', 'wait'], wait: ['استنى', 'wait'] };
+const scoreCls = (s) => (s >= 72 ? 's-hi' : s >= 42 ? 's-mid' : 's-lo');
 
 function renderScan() {
   const only = $('#only-actionable').checked;
-  const rows = only ? scanRows.filter((r) => r.worthBuyingNow && r.score >= 58 &&
-                                       ['buy_now', 'limit_pullback'].includes(r.entryStatus)) : scanRows;
+  const rows = only ? scanRows.filter((r) => r.worthBuyingNow && r.score >= 58 && ['buy_now', 'limit_pullback'].includes(r.entryStatus)) : scanRows;
   const body = $('#scan-body');
   if (!rows.length) { body.innerHTML = '<tr><td colspan="12" class="empty">مفيش نتائج</td></tr>'; return; }
-
   body.innerHTML = rows.map((r) => {
     const m = r.midTarget;
     const [lbl, tone] = ENTRY_LABEL[r.entryStatus] ?? ['—', ''];
-    return `<tr data-code="${r.code}">
-      <td><b>${r.code}</b></td>
-      <td class="muted">${r.name ?? ''}</td>
+    return `<tr class="clickable" data-code="${r.code}">
+      <td><b>${r.code}</b></td><td class="muted">${esc(r.name ?? '')}</td>
       <td><span class="score ${scoreCls(r.score)}">${r.score}</span></td>
-      <td>${r.signal.ar}</td>
-      <td class="num">${fmt(r.price)}</td>
+      <td>${esc(r.signal.ar)}</td><td class="num">${fmt(r.price)}</td>
       <td class="num ${cls(r.changePct)}">${pct(r.changePct)}</td>
       <td class="num down">${fmt(r.stop)}</td>
       <td class="num up">${m ? fmt(m.price) : '—'}</td>
       <td class="num up">${m ? pct(m.upsidePct) : '—'}</td>
       <td class="num">${r.riskRewardNow ?? '—'}</td>
       <td><span class="tag ${tone}">${lbl}</span></td>
-      <td class="muted" style="font-size:12px">${m?.horizon?.ar ?? '—'}</td>
+      <td class="muted">${esc(m?.horizon?.ar ?? '—')}</td>
     </tr>`;
   }).join('');
-
-  body.querySelectorAll('tr').forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.code); });
+  body.querySelectorAll('tr[data-code]').forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.code); });
 }
-
 $('#only-actionable').onchange = renderScan;
 $('#btn-scan').onclick = async () => {
-  const btn = $('#btn-scan');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> بيحلل…';
+  const b = $('#btn-scan'); b.disabled = true; b.innerHTML = '<span class="spin"></span> بيحلل…';
   try {
     const d = await api('/api/scan');
     scanRows = d.results;
-    $('#scan-meta').textContent = `${d.count} سهم · إغلاق ${d.asOf}` +
-      (d.errors.length ? ` · ${d.errors.length} مستبعد (بيانات غير صالحة)` : '');
+    $('#scan-meta').textContent = `${d.count} سهم · إغلاق ${d.asOf}` + (d.errors.length ? ` · ${d.errors.length} مستبعد` : '');
     renderScan();
   } catch (e) { $('#scan-meta').textContent = e.message; }
-  btn.disabled = false; btn.textContent = 'حدّث المسح';
+  b.disabled = false; b.textContent = 'حدّث المسح';
 };
 
-// ── Stock detail ─────────────────────────────────────────
+// ── detail modal ─────────────────────────────────────────
 async function showDetail(code) {
   $('#overlay').classList.add('show');
   $('#modal').innerHTML = '<div class="empty"><span class="spin"></span> بيحمّل…</div>';
+  const close = () => $('#overlay').classList.remove('show');
   try {
     const a = await api(`/api/analyze/${code}`);
-    const s = a.snapshot, p = a.plan, t = a.technical;
+    const s = a.snapshot, p = a.plan, t = a.technical, f = a.fundamentals;
     $('#modal').innerHTML = `
       <button class="close" id="x">×</button>
-      <h2 style="margin:0 0 2px">${a.code} — ${a.name}</h2>
-      <div class="sub muted">${a.sectorAr ?? ''} · إغلاق ${a.asOf}</div>
-
-      <div class="grid" style="margin:14px 0">
-        <div class="stat"><div class="k">السعر</div><div class="v num">${fmt(s.price.close)}
-          <span style="font-size:12px" class="${cls(s.price.changePct)}">${pct(s.price.changePct)}</span></div></div>
-        <div class="stat"><div class="k">التقييم الفني</div><div class="v">${t.score}<span style="font-size:12px" class="muted">/100 · ${t.signal.ar}</span></div></div>
-        <div class="stat"><div class="k">الاتجاه</div><div class="v" style="font-size:14px">${s.trend.label}</div></div>
-        <div class="stat"><div class="k">RSI</div><div class="v num">${fmt(s.momentum.rsi14, 1)}</div></div>
+      <div style="font-size:17px;font-weight:700">${a.code} — ${esc(a.name)}</div>
+      <div class="card-sub">${esc(a.sectorAr ?? '')} · إغلاق ${a.asOf}</div>
+      <div class="summary" style="margin:12px 0">
+        <div>السعر<b class="num">${fmt(s.price.close)} <span style="font-size:12px" class="${cls(s.price.changePct)}">${pct(s.price.changePct)}</span></b></div>
+        <div>التقييم<b class="num">${t.score}<span class="muted" style="font-size:12px">/100 · ${esc(t.signal.ar)}</span></b></div>
+        <div>الاتجاه<b style="font-size:14px">${esc(s.trend.label)}</b></div>
+        <div>RSI<b class="num">${fmt(s.momentum.rsi14, 1)}</b></div>
       </div>
-
-      <div class="card" style="background:var(--bg);margin-bottom:12px">
-        <h2>الخطة</h2>
-        <div class="lvl"><span>الدخول</span><span>${p.entryNote}</span></div>
+      ${f ? `<div class="rec r-hold" style="margin-top:0">
+        <b>الأساسيات:</b> ${esc(f.valuation ?? '—')}
+        ${f.peRatio != null ? ` · مكرر ${f.peRatio}` : ''}${f.epsEgp != null ? ` · ربحية السهم ${f.epsEgp} ج` : ''}
+      </div>` : ''}
+      <div class="card" style="background:#f8fafc;margin-top:12px">
+        <div class="card-title">الخطة</div>
+        <div class="lvl"><span>الدخول</span><span>${esc(p.entryNote)}</span></div>
         <div class="lvl"><span>الوقف</span><span class="num down">${fmt(p.stop.stop)} ج · مخاطرة ${p.stop.riskPct}%</span></div>
-        <div class="lvl muted" style="font-size:12px"><span></span><span>${p.stop.note}</span></div>
-        ${p.targets.mid ? `
-        <div class="lvl"><span>الهدف المتوسط</span><span class="num up">${fmt(p.targets.mid.price)} ج · ${pct(p.targets.mid.upsidePct)}</span></div>
-        <div class="lvl muted" style="font-size:12px"><span>${p.targets.mid.basis}</span><span>${p.targets.mid.horizon.ar} · ع/م ${p.targets.mid.riskReward}</span></div>` : ''}
-        ${p.targets.long?.price ? `
-        <div class="lvl"><span>الهدف البعيد</span><span class="num up">${fmt(p.targets.long.price)} ج · ${pct(p.targets.long.upsidePct)}</span></div>
-        <div class="lvl muted" style="font-size:12px"><span>${p.targets.long.basis}</span><span>${p.targets.long.horizon.ar}</span></div>`
-        : `<div class="lvl muted"><span>الهدف البعيد</span><span>${p.targets.long?.note ?? '—'}</span></div>`}
-        <div class="lvl"><span>لو اشتريت بسعر السوق</span><span class="${p.buyingNow.worthIt ? 'up' : 'down'}">
-          ع/م ${p.buyingNow.riskReward ?? '—'} — ${p.buyingNow.worthIt ? 'مقبول' : 'مش مقبول'}</span></div>
+        ${p.targets.mid ? `<div class="lvl"><span>الهدف المتوسط</span><span class="num up">${fmt(p.targets.mid.price)} ج · ${pct(p.targets.mid.upsidePct)}</span></div>
+        <div class="lvl muted" style="font-size:11.5px"><span>${esc(p.targets.mid.basis)}</span><span>${esc(p.targets.mid.horizon.ar)} · ع/م ${p.targets.mid.riskReward}</span></div>` : ''}
+        ${p.targets.long?.price ? `<div class="lvl"><span>الهدف البعيد</span><span class="num up">${fmt(p.targets.long.price)} ج · ${pct(p.targets.long.upsidePct)}</span></div>
+        <div class="lvl muted" style="font-size:11.5px"><span>${esc(p.targets.long.basis)}</span><span>${esc(p.targets.long.horizon.ar)}</span></div>`
+        : `<div class="lvl muted"><span>الهدف البعيد</span><span>${esc(p.targets.long?.note ?? '—')}</span></div>`}
+        <div class="lvl"><span>لو اشتريت بسعر السوق</span><span class="${p.buyingNow.worthIt ? 'up' : 'down'}">ع/م ${p.buyingNow.riskReward ?? '—'} — ${p.buyingNow.worthIt ? 'مقبول' : 'مش مقبول'}</span></div>
       </div>
-
-      <div class="row" style="align-items:flex-start;gap:20px">
-        <div style="flex:1;min-width:210px">
-          <h2 style="font-size:13px">الدعوم</h2>
-          ${s.levels.supports.slice(0, 4).map((l) => `<div class="lvl"><span class="num">${fmt(l.price)}</span><span class="muted">${l.distancePct}% · قوة ${l.strength}</span></div>`).join('') || '<div class="muted">مفيش</div>'}
-        </div>
-        <div style="flex:1;min-width:210px">
-          <h2 style="font-size:13px">المقاومات</h2>
-          ${s.levels.resistances.slice(0, 4).map((l) => `<div class="lvl"><span class="num">${fmt(l.price)}</span><span class="muted">+${l.distancePct}% · قوة ${l.strength}</span></div>`).join('') || '<div class="muted">مساحة مفتوحة فوق السعر</div>'}
-        </div>
+      <div class="row" style="align-items:flex-start;gap:18px;margin-top:12px">
+        <div style="flex:1;min-width:200px"><div class="card-title" style="font-size:13px">الدعوم</div>
+          ${s.levels.supports.slice(0, 4).map((l) => `<div class="lvl"><span class="num">${fmt(l.price)}</span><span class="muted">${l.distancePct}% · قوة ${l.strength}</span></div>`).join('') || '<div class="muted">مفيش</div>'}</div>
+        <div style="flex:1;min-width:200px"><div class="card-title" style="font-size:13px">المقاومات</div>
+          ${s.levels.resistances.slice(0, 4).map((l) => `<div class="lvl"><span class="num">${fmt(l.price)}</span><span class="muted">+${l.distancePct}% · قوة ${l.strength}</span></div>`).join('') || '<div class="muted">مساحة مفتوحة فوق السعر</div>'}</div>
       </div>
-
-      <div style="margin-top:14px">
-        ${t.reasons.bullish.length ? `<h2 style="font-size:13px" class="up">مؤيد</h2><ul class="bullets">${t.reasons.bullish.map((x) => `<li>${x}</li>`).join('')}</ul>` : ''}
-        ${t.reasons.bearish.length ? `<h2 style="font-size:13px;margin-top:10px" class="down">معارض</h2><ul class="bullets">${t.reasons.bearish.map((x) => `<li>${x}</li>`).join('')}</ul>` : ''}
-        ${t.reasons.neutral.length ? `<h2 style="font-size:13px;margin-top:10px" class="muted">ملاحظات</h2><ul class="bullets muted">${t.reasons.neutral.map((x) => `<li>${x}</li>`).join('')}</ul>` : ''}
+      <div style="margin-top:12px">
+        ${t.reasons.bullish.length ? `<div class="card-title up" style="font-size:13px">مؤيد</div><ul class="bullets">${t.reasons.bullish.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${t.reasons.bearish.length ? `<div class="card-title down" style="font-size:13px;margin-top:8px">معارض</div><ul class="bullets">${t.reasons.bearish.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${t.reasons.neutral.length ? `<div class="card-title muted" style="font-size:13px;margin-top:8px">ملاحظات</div><ul class="bullets muted">${t.reasons.neutral.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
       </div>`;
-    $('#x').onclick = () => $('#overlay').classList.remove('show');
+    $('#x').onclick = close;
   } catch (e) {
-    $('#modal').innerHTML = `<button class="close" id="x">×</button><div class="empty">${e.message}</div>`;
-    $('#x').onclick = () => $('#overlay').classList.remove('show');
+    $('#modal').innerHTML = `<button class="close" id="x">×</button><div class="empty">${esc(e.message)}</div>`;
+    $('#x').onclick = close;
   }
 }
 $('#overlay').onclick = (e) => { if (e.target.id === 'overlay') $('#overlay').classList.remove('show'); };
 
-// ── Portfolio ────────────────────────────────────────────
-async function loadPortfolio() {
+// ── الصفقات ──────────────────────────────────────────────
+async function loadTrades() {
   const p = await api('/api/portfolio');
-  const codes = Object.keys(p.positions);
-
-  let rows = [];
-  if (codes.length) {
-    const d = await api(`/api/scan?codes=${codes.join(',')}`);
-    rows = d.results;
-  }
-
-  const marketValue = rows.reduce((a, r) => a + (r.position?.marketValue ?? 0), 0);
-  const unrealized = rows.reduce((a, r) => a + (r.position?.unrealizedEgp ?? 0), 0);
-  const total = marketValue + p.cash;
-
-  $('#pf-stats').innerHTML = `
-    <div class="stat"><div class="k">قيمة الأسهم</div><div class="v num">${int(marketValue)}</div></div>
-    <div class="stat"><div class="k">الكاش</div><div class="v num">${int(p.cash)}</div></div>
-    <div class="stat"><div class="k">الإجمالي</div><div class="v num">${int(total)}</div></div>
-    <div class="stat"><div class="k">ربح غير محقق</div><div class="v num ${cls(unrealized)}">${int(unrealized)}</div></div>
-    <div class="stat"><div class="k">ربح محقق</div><div class="v num ${cls(p.realizedPnl)}">${int(p.realizedPnl)}</div></div>`;
-
-  $('#pf-body').innerHTML = rows.length ? rows.map((r) => {
-    const ps = r.position;
-    if (!ps) return '';
-    const fired = Object.entries(ps.triggers).filter(([, v]) => v).map(([k]) => k);
-    const state = ps.stopBreached ? '<span class="tag wait">كسر الوقف — خروج</span>'
-      : fired.length ? `<span class="tag wait">${fired.join(', ')}</span>`
-      : '<span class="tag go">داخل النطاق</span>';
-    return `<tr data-code="${r.code}">
-      <td><b>${r.code}</b></td>
-      <td class="num">${int(ps.shares)}</td>
-      <td class="num">${fmt(ps.avgCost)}</td>
-      <td class="num">${fmt(r.price)}</td>
-      <td class="num">${int(ps.marketValue)}</td>
-      <td class="num ${cls(ps.unrealizedPct)}">${pct(ps.unrealizedPct)}
-        <span class="muted">${signed(ps.unrealizedEgp)} ج</span></td>
-      <td class="num down">${fmt(ps.stop)}${ps.trailing.active ? ' <span class="tag">متحرك</span>' : ''}</td>
-      <td class="num">${pct(ps.distanceToStopPct)}</td>
-      <td>${state}</td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="9" class="empty">مفيش مراكز مفتوحة</td></tr>';
-
-  $('#pf-body').querySelectorAll('tr[data-code]').forEach((tr) => { tr.onclick = () => showDetail(tr.dataset.code); });
+  $('#trades-body').innerHTML = p.trades.length ? [...p.trades].reverse().map((t) => `
+    <tr><td class="num">${t.date}</td><td><b>${t.code}</b></td>
+      <td class="${t.side === 'buy' ? 'up' : 'down'}">${t.side === 'buy' ? 'شراء' : 'بيع'}</td>
+      <td class="num">${int(t.shares)}</td><td class="num">${fmt(t.price)}</td>
+      <td class="num muted">${fmt(t.commission)}</td>
+      <td class="num ${cls(t.realized)}">${t.realized != null ? signed(t.realized) : '—'}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty">لا توجد صفقات مسجلة بعد.</td></tr>';
 }
-
 $('#btn-trade').onclick = async () => {
   try {
-    await api('/api/portfolio/trade', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: $('#t-code').value, side: $('#t-side').value,
-        shares: +$('#t-shares').value, price: +$('#t-price').value,
-      }),
-    });
+    await api('/api/portfolio/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: $('#t-code').value, side: $('#t-side').value, shares: +$('#t-shares').value, price: +$('#t-price').value }) });
     $('#t-code').value = $('#t-shares').value = $('#t-price').value = '';
-    loadPortfolio();
+    loadTrades();
   } catch (e) { alert(e.message); }
 };
-
 $('#btn-cash').onclick = async () => {
   try {
-    await api('/api/portfolio/cash', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cash: +$('#t-cash').value }),
-    });
-    $('#t-cash').value = '';
-    loadPortfolio();
+    await api('/api/portfolio/cash', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cash: +$('#t-cash').value }) });
+    $('#t-cash').value = ''; loadTrades();
   } catch (e) { alert(e.message); }
 };
 
-// ── AI review ────────────────────────────────────────────
+// ── توصيات المحلل ────────────────────────────────────────
 $('#btn-review').onclick = async () => {
-  const btn = $('#btn-review');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> المحلل بيراجع…';
+  const b = $('#btn-review'); b.disabled = true; b.innerHTML = '<span class="spin"></span> المحلل بيراجع…';
   $('#review-out').innerHTML = '';
   try {
     const { review } = await api('/api/review', { method: 'POST' });
     $('#review-meta').textContent = `${review._meta.stocksReviewed} سهم · ${review._meta.model}`;
     $('#review-out').innerHTML = `
-      <div class="card"><h2>قراءة السوق</h2><div>${review.marketRead}</div></div>
-      <div class="card"><h2>أهم إجراء لبكرة</h2><div class="up" style="font-weight:600">${review.topPriority}</div></div>
-      <div class="card"><h2>الكاش</h2><div>${review.cashAdvice}</div></div>
-      <div class="card">
-        <h2>القرارات</h2>
-        ${review.verdicts.map((v) => `
-          <div class="verdict">
-            <h3>${v.code} — ${v.action} <span class="tag">ثقة ${v.conviction}</span></h3>
-            <div style="font-weight:600">${v.headline}</div>
-            <div class="muted" style="font-size:13px">${v.reasoning}</div>
-            ${v.conflictNoted ? `<div style="color:var(--warn);font-size:13px">⚖️ ${v.conflictNoted}</div>` : ''}
-            ${v.orderInstruction ? `<div class="up" style="font-weight:600;font-size:13px">▸ ${v.orderInstruction}</div>` : ''}
-            <div class="muted" style="font-size:12px">التوقيت: ${v.timingNote} · يبطل لو: ${v.invalidation}</div>
-            ${(v.riskFlags ?? []).map((f) => `<div class="down" style="font-size:12px">⚠ ${f}</div>`).join('')}
-          </div>`).join('')}
-      </div>
-      ${review.portfolioRisks?.length ? `<div class="card"><h2>مخاطر المحفظة</h2><ul class="bullets">${review.portfolioRisks.map((r) => `<li>${r}</li>`).join('')}</ul></div>` : ''}`;
+      <div class="card"><div class="card-title">قراءة السوق</div><div>${esc(review.marketRead)}</div></div>
+      <div class="card"><div class="card-title">أهم إجراء لبكرة</div><div class="up" style="font-weight:600">${esc(review.topPriority)}</div></div>
+      <div class="card"><div class="card-title">الكاش</div><div>${esc(review.cashAdvice)}</div></div>
+      ${review.verdicts.map((v) => `<div class="card">
+        <div class="row" style="gap:8px"><span class="ticker">${v.code}</span>
+          <span class="badge b-hold">${esc(v.action)}</span><span class="tag">ثقة ${esc(v.conviction)}</span></div>
+        <div style="font-weight:600;margin-top:6px">${esc(v.headline)}</div>
+        <div class="muted" style="font-size:13px">${esc(v.reasoning)}</div>
+        ${v.conflictNoted ? `<div style="color:#78350f;font-size:13px;margin-top:4px">⚖️ ${esc(v.conflictNoted)}</div>` : ''}
+        ${v.orderInstruction ? `<div class="rec r-sell_part" style="margin-top:8px"><b>▸ ${esc(v.orderInstruction)}</b></div>` : ''}
+        <div class="muted" style="font-size:11.5px;margin-top:6px">التوقيت: ${esc(v.timingNote)} · يبطل لو: ${esc(v.invalidation)}</div>
+        ${(v.riskFlags ?? []).map((f) => `<div class="down" style="font-size:12px">⚠ ${esc(f)}</div>`).join('')}
+      </div>`).join('')}
+      ${review.portfolioRisks?.length ? `<div class="card"><div class="card-title">مخاطر المحفظة</div><ul class="bullets">${review.portfolioRisks.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}`;
   } catch (e) {
-    $('#review-out').innerHTML = `<div class="card"><div class="empty">${e.message}</div></div>`;
+    $('#review-out').innerHTML = `<div class="card"><div class="empty">${esc(e.message)}</div></div>`;
   }
-  btn.disabled = false; btn.textContent = 'اطلب مراجعة المحلل';
+  b.disabled = false; b.textContent = 'اطلب مراجعة المحلل';
 };
+
+loadDesk();
 </script>
 </body>
 </html>

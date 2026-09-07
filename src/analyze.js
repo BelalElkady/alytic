@@ -15,7 +15,7 @@ import { fetchFundamentals } from './data/tradingview.js';
 import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
-import { computeStop, computeTrailingStop, positionSize, liquidityCheck, riskReward } from './scoring/risk.js';
+import { computeStop, computeTrailingStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
 import { buildTargets } from './scoring/targets.js';
 import RULES from './config/rules.js';
 
@@ -151,6 +151,11 @@ export async function analyzeTicker(code, opts = {}) {
       distanceToStopPct: r2(((price - effectiveStop) / price) * 100),
       distanceToTargetPct: targets.mid?.price ? r2(((targets.mid.price - price) / price) * 100) : null,
       riskRewardFromHere: targets.mid?.price ? riskReward(price, effectiveStop, targets.mid.price) : null,
+      // What the desk view shows on this position's card.
+      recommendation: positionRecommendation(
+        { snapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: targets.mid?.price ?? null },
+        rules,
+      ),
       // The rule set, applied. These are the mechanical triggers the AI must respect.
       triggers: {
         exitOnStop: price < effectiveStop,

@@ -148,6 +148,89 @@ export function riskReward(entry, stop, target) {
   return +(((target - entry) / risk)).toFixed(2);
 }
 
+/**
+ * The standing recommendation for an open position, in Egyptian Arabic.
+ *
+ * This is the mechanical verdict the desk view shows on each card. It applies
+ * the rule set in order of severity — a breached stop overrides everything,
+ * because the one discipline that must never be negotiated is the stop. The AI
+ * analyst may add colour on top of this, but it cannot contradict it.
+ */
+export function positionRecommendation({ snapshot, position, trailing, midTarget }, rules = RULES) {
+  const price = snapshot.price.close;
+  const { avgCost, shares } = position;
+  const stop = trailing.stop;
+  const profitPct = ((price - avgCost) / avgCost) * 100;
+  const toStopPct = ((price - stop) / price) * 100;
+
+  // 1. Stop breached — nothing else matters.
+  if (price < stop) {
+    return {
+      action: 'exit_stop',
+      label: 'خروج — وقف',
+      text: `أغلق تحت الوقف ${r2(stop)}. ما نجادلش الوقف — بيع كلي بسعر السوق عند الافتتاح.`,
+      order: { side: 'sell', qty: shares, price: r2(price) },
+    };
+  }
+
+  // 2. Mid target reached — take a third, trail the rest.
+  if (midTarget && price >= midTarget) {
+    const qty = Math.floor(shares * rules.takeProfit.atTargetFraction);
+    return {
+      action: 'take_target',
+      label: 'جني أرباح',
+      text: `وصل الهدف ${r2(midTarget)}. بيع ${qty} سهم وارفع الوقف للباقي لـ ${r2(price * (1 - rules.takeProfit.raiseStopAfterTargetPct / 100))}.`,
+      order: { side: 'sell', qty, price: r2(price) },
+    };
+  }
+
+  // 3. Enough profit to bank some, and the trail hasn't taken over yet.
+  if (profitPct >= rules.takeProfit.partialAtProfitPct && !trailing.active) {
+    const qty = Math.round(shares * rules.takeProfit.partialFraction);
+    const limit = price * (1 + rules.takeProfit.limitAbovePricePct / 100);
+    return {
+      action: 'sell_part',
+      label: 'بيع جزئي',
+      text: `مربح ${r2(profitPct)}% — أمّن جزء. بيع ${qty} سهم بأمر محدد عند ${r2(limit)} (صلاحية أسبوع). الباقي بوقف متحرك.`,
+      order: { side: 'sell', qty, price: r2(limit) },
+    };
+  }
+
+  // 4. Close to the stop — a warning, not an action.
+  if (toStopPct <= 3) {
+    return {
+      action: 'hold',
+      label: 'احتفاظ',
+      text: `قريب من الوقف (${r2(toStopPct)}% بس). احتفظ، بس إغلاق تحت ${r2(stop)} يبقى خروج كامل.`,
+      order: null,
+    };
+  }
+
+  // 5. A leader that has pulled back — the only case where adding is allowed.
+  if (
+    profitPct < 0 &&
+    rules.averagingDown.allowed &&
+    snapshot.trend.score > rules.averagingDown.onlyIfTrendScoreAbove &&
+    (snapshot.movingAverages.priceVsSma200Pct ?? -1) > 0
+  ) {
+    return {
+      action: 'buy_more',
+      label: 'زيادة شراء',
+      text: `سهم قيادي نازل ${r2(Math.abs(profitPct))}% من غير سبب أساسي وفوق متوسط 200 — فرصة تحسين متوسط بأمر محدد عند الدعم.`,
+      order: null,
+    };
+  }
+
+  // 6. Nothing to do.
+  const moved = trailing.moved ? ` الوقف المتحرك ارتفع لـ ${r2(stop)}.` : '';
+  return {
+    action: 'hold',
+    label: 'احتفاظ',
+    text: `${profitPct >= 0 ? 'مربح' : 'خاسر'} ${r2(Math.abs(profitPct))}% وداخل النطاق. الحركة هادية ومش محتاجة أي قرار.${moved}`,
+    order: null,
+  };
+}
+
 /** Does this name clear the liquidity gate at all? */
 export function liquidityCheck(snapshot, rules = RULES) {
   const turnover = snapshot.volume.avgTurnoverEgp ?? 0;
