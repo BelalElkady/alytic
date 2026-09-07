@@ -2,8 +2,9 @@
  * EGX universe — generated, not typed.
  *
  * Identity (ticker → company, sector, industry) comes from
- * `universe.generated.json`, built by `npm run build:universe` from
- * TradingView's screener and validated against Yahoo for usable price history.
+ * `universe.generated.json`, built by `npm run build:universe` from three
+ * sources — the EGX listing CSV, TradingView's screener, and the Yahoo /
+ * TradingView chart feeds that must prove a usable price series exists.
  *
  * WHY IT IS GENERATED: the first version of this file was typed from memory.
  * Nine tickers pointed at the wrong company — KZPC read as Kima rather than
@@ -23,12 +24,12 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 
-/** @type {{generatedAt:string,stocks:Array<object>,rejected:Array<object>,listedTotal:number}} */
+/** @type {{generatedAt:string,stocks:Array<object>,rejected:Array<object>,candidateTotal:number,bySource:object,sources:object}} */
 let generated;
 try {
   generated = require('./universe.generated.json');
 } catch {
-  generated = { generatedAt: null, stocks: [], rejected: [], listedTotal: 0 };
+  generated = { generatedAt: null, stocks: [], rejected: [], candidateTotal: 0, bySource: {}, sources: {} };
   console.warn('[universe] universe.generated.json مش موجود — شغّل: npm run build:universe');
 }
 
@@ -127,6 +128,8 @@ function refineSector(entry) {
 export const UNIVERSE = generated.stocks.map((s) => ({
   code: s.code,
   yahoo: s.yahoo,
+  // Which feed serves this stock's history: 'yahoo' or 'tradingview'.
+  source: s.source ?? 'yahoo',
   ar: AR_NAMES[s.code] ?? s.en,
   en: s.en,
   sector: refineSector(s),
@@ -141,8 +144,10 @@ export const UNIVERSE = generated.stocks.map((s) => ({
 
 export const UNIVERSE_META = {
   generatedAt: generated.generatedAt,
-  listedTotal: generated.listedTotal,
+  sources: generated.sources ?? {},
+  candidateTotal: generated.candidateTotal ?? UNIVERSE.length,
   analyzable: UNIVERSE.length,
+  bySource: generated.bySource ?? {},
   rejected: generated.rejected ?? [],
 };
 
@@ -152,10 +157,15 @@ export function lookup(code) {
   return BY_CODE.get(String(code).toUpperCase().trim()) ?? null;
 }
 
-/** Yahoo symbol for a ticker, falling back to `<CODE>.CA` for names not in the table. */
+/**
+ * Yahoo symbol for a ticker. Null for stocks served by TradingView instead, so
+ * the fetcher skips Yahoo for them; falls back to `<CODE>.CA` for unknown codes.
+ */
 export function toYahoo(code) {
   const c = String(code).toUpperCase().trim();
-  return BY_CODE.get(c)?.yahoo ?? `${c}.CA`;
+  const hit = BY_CODE.get(c);
+  if (!hit) return `${c}.CA`;
+  return hit.yahoo ?? `${c}.CA`;
 }
 
 export function sectorLabel(key) {
@@ -164,7 +174,7 @@ export function sectorLabel(key) {
 
 export const ALL_CODES = UNIVERSE.map((s) => s.code);
 
-/** The liquid core — a scan over 176 names is slow and mostly noise. */
+/** The liquid core — scanning every listed name is slow and mostly noise. */
 export function liquidCodes(minTurnoverEgp = 5_000_000) {
   return UNIVERSE.filter((s) => (s.avgTurnoverEgp ?? 0) >= minTurnoverEgp).map((s) => s.code);
 }

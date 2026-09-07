@@ -1,2435 +1,3443 @@
 {
-  "generatedAt": "2026-09-07T18:56:01.862Z",
-  "source": "TradingView screener (identity, sector, fundamentals) + Yahoo chart (history validation)",
-  "minTurnoverEgp": 2000000,
+  "generatedAt": "2026-09-07T19:31:38.321Z",
+  "sources": {
+    "listing": "egx-listing.csv (280)",
+    "screener": "TradingView (284)",
+    "history": "Yahoo chart, TradingView chart fallback"
+  },
+  "minTurnoverEgp": 0,
   "minBars": 60,
-  "listedTotal": 284,
-  "accepted": 176,
+  "candidateTotal": 307,
+  "accepted": 234,
+  "bySource": {
+    "yahoo": 195,
+    "tradingview": 39
+  },
   "stocks": [
     {
       "code": "COMI",
+      "source": "yahoo",
       "yahoo": "COMI.CA",
       "en": "Commercial International Bank - Egypt (CIB) S.A.E.",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Regional Banks",
       "shariah": "non_compliant",
       "marketCapEgp": 480124518311,
       "avgTurnoverEgp": 541636811,
-      "bars": 249,
-      "priceDriftPct": 1.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SWDY",
+      "source": "yahoo",
       "yahoo": "SWDY.CA",
       "en": "El Sewedy Electric Company",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Electrical Products",
       "shariah": "review",
       "marketCapEgp": 278116242676,
       "avgTurnoverEgp": 67180334,
-      "bars": 249,
-      "priceDriftPct": 0.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "TMGH",
+      "source": "yahoo",
       "yahoo": "TMGH.CA",
       "en": "Talaat Moustafa Group Holding",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 201531948769,
       "avgTurnoverEgp": 420718139,
-      "bars": 249,
-      "priceDriftPct": 0.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ETEL",
+      "source": "yahoo",
       "yahoo": "ETEL.CA",
       "en": "Telecom Egypt",
       "sector": "telecom",
-      "tvSector": "Communications",
       "industry": "Major Telecommunications",
       "shariah": "compliant",
       "marketCapEgp": 198003237648,
       "avgTurnoverEgp": 403175074,
-      "bars": 249,
-      "priceDriftPct": 2.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EGAL",
+      "source": "yahoo",
       "yahoo": "EGAL.CA",
       "en": "Egypt Aluminum",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Aluminum",
       "shariah": "review",
       "marketCapEgp": 154275000000,
       "avgTurnoverEgp": 51279780,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MFPC",
+      "source": "yahoo",
       "yahoo": "MFPC.CA",
       "en": "Misr Fertilizers Production Company MOPCO",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Agricultural",
       "shariah": "compliant",
       "marketCapEgp": 132651481323.00002,
       "avgTurnoverEgp": 319611404,
-      "bars": 249,
-      "priceDriftPct": 3.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "HDBK",
+      "source": "yahoo",
       "yahoo": "HDBK.CA",
       "en": "Housing & Development Bank",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Regional Banks",
       "shariah": "non_compliant",
       "marketCapEgp": 128521463804,
       "avgTurnoverEgp": 36061106,
-      "bars": 250,
-      "priceDriftPct": 11.9
+      "bars": 490,
+      "origin": "tradingview",
+      "note": "قفزة -50% يوم 2026-06-29 — يحتمل تجزئة أسهم غير معدّلة"
+    },
+    {
+      "code": "QNBE",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Qatar National Bank",
+      "sector": "financials",
+      "industry": "Regional Banks",
+      "shariah": "non_compliant",
+      "marketCapEgp": 125884755600,
+      "avgTurnoverEgp": 43957872,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "ABUK",
+      "source": "yahoo",
       "yahoo": "ABUK.CA",
       "en": "Abou Kir Fertilizers & Chemical Industries Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Agricultural",
       "shariah": "compliant",
       "marketCapEgp": 116584698148,
       "avgTurnoverEgp": 102157290,
-      "bars": 249,
-      "priceDriftPct": 2.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EAST",
+      "source": "yahoo",
       "yahoo": "EAST.CA",
       "en": "Eastern Company",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Tobacco",
       "shariah": "non_compliant",
       "marketCapEgp": 108089996338,
       "avgTurnoverEgp": 28114355,
-      "bars": 249,
-      "priceDriftPct": 0.2
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "ORAS",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Orascom Construction Plc",
+      "sector": "industrials",
+      "industry": "Engineering & Construction",
+      "shariah": "review",
+      "marketCapEgp": 101273689720.3557,
+      "avgTurnoverEgp": 203668088,
+      "bars": 1500,
+      "origin": "tradingview",
+      "note": "Yahoo بيرجّع 71.05000305175781 — رمز ميت، اتاخد من TradingView"
     },
     {
       "code": "ALCN",
+      "source": "yahoo",
       "yahoo": "ALCN.CA",
       "en": "Alexandria Containers & Goods",
       "sector": "transport",
-      "tvSector": "Transportation",
       "industry": "Other Transportation",
       "shariah": "review",
       "marketCapEgp": 98919629226,
       "avgTurnoverEgp": 23628470,
-      "bars": 249,
-      "priceDriftPct": 2.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EFIH",
+      "source": "yahoo",
       "yahoo": "EFIH.CA",
       "en": "e-finance for Digital and Financial Investments S.A.E.",
       "sector": "tech",
-      "tvSector": "Technology Services",
       "industry": "Packaged Software",
       "shariah": "non_compliant",
       "marketCapEgp": 81466668579,
       "avgTurnoverEgp": 45007200,
-      "bars": 249,
-      "priceDriftPct": 1.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ADIB",
+      "source": "yahoo",
       "yahoo": "ADIB.CA",
       "en": "Abu Dhabi Islamic Bank-Egypt",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Regional Banks",
       "shariah": "compliant",
       "marketCapEgp": 79125000000,
       "avgTurnoverEgp": 127283526,
-      "bars": 250,
-      "priceDriftPct": 0.4
+      "bars": 490,
+      "origin": "tradingview"
     },
     {
       "code": "EMFD",
+      "source": "yahoo",
       "yahoo": "EMFD.CA",
       "en": "Emaar Misr for Development SAE",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 78326849530,
       "avgTurnoverEgp": 197862309,
-      "bars": 249,
-      "priceDriftPct": 0.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "FWRY",
+      "source": "yahoo",
       "yahoo": "FWRY.CA",
       "en": "Fawry For Banking Technology And Electronic Payment",
       "sector": "tech",
-      "tvSector": "Technology Services",
       "industry": "Packaged Software",
       "shariah": "non_compliant",
       "marketCapEgp": 64723940674,
       "avgTurnoverEgp": 245053820,
-      "bars": 249,
-      "priceDriftPct": 1.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SCTS",
+      "source": "yahoo",
       "yahoo": "SCTS.CA",
       "en": "Sues Canal Co. for Technology Settling",
       "sector": "financials",
-      "tvSector": "Commercial Services",
       "industry": "Miscellaneous Commercial Services",
       "shariah": "review",
       "marketCapEgp": 55988037274,
       "avgTurnoverEgp": 4361066,
-      "bars": 249,
-      "priceDriftPct": 1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ORHD",
+      "source": "yahoo",
       "yahoo": "ORHD.CA",
       "en": "Orascom Development Egypt (S.A.E)",
       "sector": "consumer",
-      "tvSector": "Consumer Durables",
       "industry": "Homebuilding",
       "shariah": "review",
       "marketCapEgp": 48384265397,
       "avgTurnoverEgp": 98336313,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "OCDI",
+      "source": "yahoo",
       "yahoo": "OCDI.CA",
       "en": "Six of October Development & Investment (SODIC)",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 43513658295,
       "avgTurnoverEgp": 59311286,
-      "bars": 249,
-      "priceDriftPct": 2.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CANA",
+      "source": "yahoo",
       "yahoo": "CANA.CA",
       "en": "Suez Canal Bank SAE",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Regional Banks",
       "shariah": "non_compliant",
       "marketCapEgp": 42900001526,
       "avgTurnoverEgp": 15791547,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EFID",
+      "source": "yahoo",
       "yahoo": "EFID.CA",
       "en": "Edita Food Industries SAE",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Specialty/Candy",
       "shariah": "compliant",
       "marketCapEgp": 42518827897,
       "avgTurnoverEgp": 131937745,
-      "bars": 249,
-      "priceDriftPct": 2.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "PHDC",
+      "source": "yahoo",
       "yahoo": "PHDC.CA",
       "en": "Palm Hills Development Co.",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 42441128747,
       "avgTurnoverEgp": 98325071,
-      "bars": 249,
-      "priceDriftPct": 1.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "JUFO",
+      "source": "yahoo",
       "yahoo": "JUFO.CA",
       "en": "Juhayna Food Industries",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Meat/Fish/Dairy",
       "shariah": "compliant",
       "marketCapEgp": 40303907691,
       "avgTurnoverEgp": 47642844,
-      "bars": 249,
-      "priceDriftPct": 1.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "HRHO",
+      "source": "yahoo",
       "yahoo": "HRHO.CA",
       "en": "EFG Holding S.A.E.",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 37333216553,
       "avgTurnoverEgp": 134547996,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "HELI",
+      "source": "yahoo",
       "yahoo": "HELI.CA",
       "en": "Heliopolis Housing",
       "sector": "consumer",
-      "tvSector": "Consumer Durables",
       "industry": "Homebuilding",
       "shariah": "review",
       "marketCapEgp": 32682885209,
       "avgTurnoverEgp": 135211097,
-      "bars": 249,
-      "priceDriftPct": 1.2
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة -68% يوم 2025-09-16 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "BTFH",
+      "source": "yahoo",
       "yahoo": "BTFH.CA",
       "en": "Beltone Holding",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 32475865182,
       "avgTurnoverEgp": 101441994,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "RAYA",
+      "source": "yahoo",
       "yahoo": "RAYA.CA",
       "en": "Raya Holding for Financial Investments SAE",
       "sector": "tech",
-      "tvSector": "Technology Services",
       "industry": "Information Technology Services",
       "shariah": "non_compliant",
       "marketCapEgp": 32109733887,
       "avgTurnoverEgp": 62477248,
-      "bars": 249,
-      "priceDriftPct": 2.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CIEB",
+      "source": "yahoo",
       "yahoo": "CIEB.CA",
       "en": "Credit Agricole Egypt",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Major Banks",
       "shariah": "non_compliant",
       "marketCapEgp": 31862499714,
       "avgTurnoverEgp": 40509872,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "GBCO",
+      "source": "yahoo",
       "yahoo": "GBCO.CA",
       "en": "GB Corp",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Wholesale Distributors",
       "shariah": "review",
       "marketCapEgp": 31772585497,
       "avgTurnoverEgp": 93279629,
-      "bars": 249,
-      "priceDriftPct": 3.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "FAIT",
+      "source": "yahoo",
       "yahoo": "FAIT.CA",
       "en": "Faisal Islamic Bank of Egypt",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Regional Banks",
       "shariah": "compliant",
       "marketCapEgp": 30660327320,
       "avgTurnoverEgp": 18515173,
-      "bars": 249,
-      "priceDriftPct": 4.1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "FAITA",
+      "source": "yahoo",
+      "yahoo": "FAITA.CA",
+      "en": "Faisal Islamic Bank of Egypt",
+      "sector": "financials",
+      "industry": "Regional Banks",
+      "shariah": "compliant",
+      "marketCapEgp": 30660327270.943478,
+      "avgTurnoverEgp": 76537,
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "VLMRA",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Valmore Holding",
+      "sector": "financials",
+      "industry": "Financial Conglomerates",
+      "shariah": "non_compliant",
+      "marketCapEgp": 29811743473.73895,
+      "avgTurnoverEgp": 150260248,
+      "bars": 1203,
+      "origin": "tradingview"
+    },
+    {
+      "code": "VLMR",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Valmore Holding",
+      "sector": "financials",
+      "industry": "Financial Conglomerates",
+      "shariah": "non_compliant",
+      "marketCapEgp": 29811743426.04016,
+      "avgTurnoverEgp": 333078,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "EXPA",
+      "source": "yahoo",
       "yahoo": "EXPA.CA",
       "en": "Export Development Bank of Egypt",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Regional Banks",
       "shariah": "non_compliant",
       "marketCapEgp": 29362400208,
       "avgTurnoverEgp": 66111556,
-      "bars": 249,
-      "priceDriftPct": 1.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "IRON",
+      "source": "yahoo",
       "yahoo": "IRON.CA",
       "en": "Egyptian Iron & Steel",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Steel",
       "shariah": "compliant",
       "marketCapEgp": 29306167603,
       "avgTurnoverEgp": 15171717,
-      "bars": 249,
-      "priceDriftPct": 1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ARCC",
+      "source": "yahoo",
       "yahoo": "ARCC.CA",
       "en": "Arabian Cement Company",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Construction Materials",
       "shariah": "compliant",
       "marketCapEgp": 29052225952,
       "avgTurnoverEgp": 23858603,
-      "bars": 249,
-      "priceDriftPct": 1.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EGCH",
+      "source": "yahoo",
       "yahoo": "EGCH.CA",
       "en": "Egyptian Chemical Industries",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Agricultural",
       "shariah": "compliant",
       "marketCapEgp": 28805395203,
       "avgTurnoverEgp": 126133843,
-      "bars": 249,
-      "priceDriftPct": 0.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "BIOC",
+      "source": "yahoo",
       "yahoo": "BIOC.CA",
       "en": "GlaxoSmithKline S.A.E.",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Medical Distributors",
       "shariah": "review",
       "marketCapEgp": 27851987679,
       "avgTurnoverEgp": 55859344,
-      "bars": 249,
-      "priceDriftPct": 0.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SCEM",
+      "source": "yahoo",
       "yahoo": "SCEM.CA",
       "en": "Sinai Cement Co.",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Construction Materials",
       "shariah": "compliant",
       "marketCapEgp": 25872596177,
       "avgTurnoverEgp": 116397805,
-      "bars": 249,
-      "priceDriftPct": 4.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CLHO",
+      "source": "yahoo",
       "yahoo": "CLHO.CA",
       "en": "Cleopatra Hospital Company",
       "sector": "healthcare",
-      "tvSector": "Health Services",
       "industry": "Hospital/Nursing Management",
       "shariah": "review",
       "marketCapEgp": 25655267402,
       "avgTurnoverEgp": 63578918,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MCQE",
+      "source": "yahoo",
       "yahoo": "MCQE.CA",
       "en": "Misr Cement Co. (Qena)",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Construction Materials",
       "shariah": "compliant",
       "marketCapEgp": 23846399414,
       "avgTurnoverEgp": 21748529,
-      "bars": 249,
-      "priceDriftPct": 2.3
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "VALU",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "U Consumer Finance S.A.E",
+      "sector": "financials",
+      "industry": "Finance/Rental/Leasing",
+      "shariah": "non_compliant",
+      "marketCapEgp": 23085666721,
+      "avgTurnoverEgp": 33414880,
+      "bars": 293,
+      "origin": "tradingview"
     },
     {
       "code": "MBSC",
+      "source": "yahoo",
       "yahoo": "MBSC.CA",
       "en": "Misr Beni Suef Cement Co. SAE",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Construction Materials",
       "shariah": "compliant",
       "marketCapEgp": 22999332863,
       "avgTurnoverEgp": 36627812,
-      "bars": 249,
-      "priceDriftPct": 5.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "PHAR",
+      "source": "yahoo",
       "yahoo": "PHAR.CA",
       "en": "Egyptian International Pharmaceutical Industries Co.",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Other",
       "shariah": "compliant",
       "marketCapEgp": 21887620592,
       "avgTurnoverEgp": 59540129,
-      "bars": 249,
-      "priceDriftPct": 0.1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "TAQA",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "TAQA Arabia",
+      "sector": "energy",
+      "industry": "Electric Utilities",
+      "shariah": "review",
+      "marketCapEgp": 21840512704,
+      "avgTurnoverEgp": 260321038,
+      "bars": 766,
+      "origin": "tradingview"
     },
     {
       "code": "SKPC",
+      "source": "yahoo",
       "yahoo": "SKPC.CA",
       "en": "Sidi Kerir Petrochemicals",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Specialty",
       "shariah": "compliant",
       "marketCapEgp": 21353219913,
       "avgTurnoverEgp": 77845539,
-      "bars": 249,
-      "priceDriftPct": 1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AMES",
+      "source": "yahoo",
       "yahoo": "AMES.CA",
       "en": "Alexandria New Medical Center Co.",
       "sector": "healthcare",
-      "tvSector": "Health Services",
       "industry": "Hospital/Nursing Management",
       "shariah": "review",
       "marketCapEgp": 21278598221,
       "avgTurnoverEgp": 427539079,
-      "bars": 249,
-      "priceDriftPct": 9
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة -49% يوم 2026-04-19 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "CIRA",
+      "source": "yahoo",
       "yahoo": "CIRA.CA",
       "en": "Cairo For Investment And Real Estate Developments -CIRA Education",
       "sector": "consumer",
-      "tvSector": "Consumer Services",
       "industry": "Other Consumer Services",
       "shariah": "review",
       "marketCapEgp": 20397659912,
       "avgTurnoverEgp": 16811545,
-      "bars": 249,
-      "priceDriftPct": 2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MTIE",
+      "source": "yahoo",
       "yahoo": "MTIE.CA",
       "en": "MM Group for Industry & International Trade",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Electronics Distributors",
       "shariah": "review",
       "marketCapEgp": 19804229218,
       "avgTurnoverEgp": 25606467,
-      "bars": 250,
-      "priceDriftPct": 0.2
+      "bars": 490,
+      "origin": "tradingview"
     },
     {
       "code": "EFIC",
+      "source": "yahoo",
       "yahoo": "EFIC.CA",
       "en": "Egyptian Financial & Industrial Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Agricultural",
       "shariah": "non_compliant",
       "marketCapEgp": 19399000549,
       "avgTurnoverEgp": 5302253043,
-      "bars": 249,
-      "priceDriftPct": 4.8
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CCAP",
+      "source": "yahoo",
       "yahoo": "CCAP.CA",
       "en": "QALA For Financial Investments",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Managers",
       "shariah": "non_compliant",
       "marketCapEgp": 19298835938,
       "avgTurnoverEgp": 341008842,
-      "bars": 249,
-      "priceDriftPct": 1.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "POUL",
+      "source": "yahoo",
       "yahoo": "POUL.CA",
       "en": "Cairo Poultry Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 19289394124,
       "avgTurnoverEgp": 21977962,
-      "bars": 249,
-      "priceDriftPct": 0.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ORWE",
+      "source": "yahoo",
       "yahoo": "ORWE.CA",
       "en": "Oriental Weavers Carpet",
       "sector": "consumer",
-      "tvSector": "Consumer Durables",
       "industry": "Home Furnishings",
       "shariah": "compliant",
       "marketCapEgp": 17858129615,
       "avgTurnoverEgp": 83061837,
-      "bars": 249,
-      "priceDriftPct": 0.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EGTS",
+      "source": "yahoo",
       "yahoo": "EGTS.CA",
       "en": "Egyptian for Tourism Resorts",
       "sector": "energy",
-      "tvSector": "Utilities",
       "industry": "Electric Utilities",
       "shariah": "review",
       "marketCapEgp": 17850000000,
       "avgTurnoverEgp": 30092193,
-      "bars": 249,
-      "priceDriftPct": 3.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AMOC",
+      "source": "yahoo",
       "yahoo": "AMOC.CA",
       "en": "Alexandria Mineral Oils Co.",
       "sector": "energy",
-      "tvSector": "Energy Minerals",
       "industry": "Oil Refining/Marketing",
       "shariah": "compliant",
       "marketCapEgp": 17435250000,
       "avgTurnoverEgp": 131012883,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SAUD",
+      "source": "yahoo",
       "yahoo": "SAUD.CA",
       "en": "Al Baraka Bank Egypt",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Regional Banks",
       "shariah": "compliant",
       "marketCapEgp": 17327724677,
       "avgTurnoverEgp": 14403389,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "NIPH",
+      "source": "yahoo",
       "yahoo": "NIPH.CA",
       "en": "El-Nile Co. for Pharmaceuticals & Chemical Industries",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 17300500488,
       "avgTurnoverEgp": 109255354,
-      "bars": 249,
-      "priceDriftPct": 0.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MASR",
+      "source": "yahoo",
       "yahoo": "MASR.CA",
       "en": "Madinet Masr for Housing & Development",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 17037300040.999998,
       "avgTurnoverEgp": 127228360,
-      "bars": 249,
-      "priceDriftPct": 0.6
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "MOIL",
+      "source": "yahoo",
+      "yahoo": "MOIL.CA",
+      "en": "Maridive & Oil Services SAE",
+      "sector": "industrials",
+      "industry": "Oilfield Services/Equipment",
+      "shariah": "compliant",
+      "marketCapEgp": 16506636895.06624,
+      "avgTurnoverEgp": 286069,
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "UBEE",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "United Bank SAE",
+      "sector": "financials",
+      "industry": "Major Banks",
+      "shariah": "non_compliant",
+      "marketCapEgp": 15950000000,
+      "avgTurnoverEgp": 2449756,
+      "bars": 419,
+      "origin": "tradingview"
     },
     {
       "code": "ISPH",
+      "source": "yahoo",
       "yahoo": "ISPH.CA",
       "en": "Ibnsina Pharma",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Medical Distributors",
       "shariah": "compliant",
       "marketCapEgp": 14727999573,
       "avgTurnoverEgp": 177578602,
-      "bars": 249,
-      "priceDriftPct": 2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ATQA",
+      "source": "yahoo",
       "yahoo": "ATQA.CA",
       "en": "Misr National Steel",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Metal Fabrication",
       "shariah": "compliant",
       "marketCapEgp": 14604000092,
       "avgTurnoverEgp": 68069815,
-      "bars": 249,
-      "priceDriftPct": 1.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MHOT",
+      "source": "yahoo",
       "yahoo": "MHOT.CA",
       "en": "Misr Hotels Co.",
       "sector": "consumer",
-      "tvSector": "Consumer Services",
       "industry": "Hotels/Resorts/Cruise lines",
-      "shariah": "non_compliant",
+      "shariah": "review",
       "marketCapEgp": 14493599396,
       "avgTurnoverEgp": 3637152,
-      "bars": 250,
-      "priceDriftPct": 0.9
+      "bars": 490,
+      "origin": "tradingview",
+      "note": "قفزة -49% يوم 2026-06-29 — يحتمل تجزئة أسهم غير معدّلة"
+    },
+    {
+      "code": "EGBE",
+      "source": "yahoo",
+      "yahoo": "EGBE.CA",
+      "en": "Egyptian Gulf Bank",
+      "sector": "financials",
+      "industry": "Regional Banks",
+      "shariah": "non_compliant",
+      "marketCapEgp": 14250884168.56624,
+      "avgTurnoverEgp": 69055,
+      "bars": 491,
+      "origin": "tradingview"
     },
     {
       "code": "TALM",
+      "source": "yahoo",
       "yahoo": "TALM.CA",
       "en": "Taaleem Management Services S.A.E",
       "sector": "consumer",
-      "tvSector": "Consumer Services",
       "industry": "Other Consumer Services",
       "shariah": "review",
       "marketCapEgp": 13432879658,
       "avgTurnoverEgp": 14726651,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CSAG",
+      "source": "yahoo",
       "yahoo": "CSAG.CA",
       "en": "Canal Shipping Agencies Co.",
       "sector": "transport",
-      "tvSector": "Transportation",
       "industry": "Other Transportation",
       "shariah": "review",
       "marketCapEgp": 12600000000,
       "avgTurnoverEgp": 24867284,
-      "bars": 249,
-      "priceDriftPct": 2.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CICH",
+      "source": "yahoo",
       "yahoo": "CICH.CA",
       "en": "CI Capital Holding for Financial Investments",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Finance/Rental/Leasing",
       "shariah": "non_compliant",
       "marketCapEgp": 12250000000,
       "avgTurnoverEgp": 25299519,
-      "bars": 249,
-      "priceDriftPct": 0.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "RMDA",
+      "source": "yahoo",
       "yahoo": "RMDA.CA",
       "en": "Tenth of Ramadan Pharmaceutical Industries & Diagnostic-Rameda",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 12196904297,
       "avgTurnoverEgp": 158636215,
-      "bars": 249,
-      "priceDriftPct": 3.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SVCE",
+      "source": "yahoo",
       "yahoo": "SVCE.CA",
       "en": "South Valley Cement Co.",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Construction Materials",
       "shariah": "compliant",
       "marketCapEgp": 12104646766,
       "avgTurnoverEgp": 529083732,
-      "bars": 249,
-      "priceDriftPct": 5.3
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "CPME",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Catalyst Partners Middle East",
+      "sector": "financials",
+      "industry": "Financial Conglomerates",
+      "shariah": "non_compliant",
+      "marketCapEgp": 11330380183.5,
+      "avgTurnoverEgp": 450249,
+      "bars": 124,
+      "origin": "tradingview"
     },
     {
       "code": "BINV",
+      "source": "yahoo",
       "yahoo": "BINV.CA",
       "en": "B Investments Holding SAE",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Managers",
       "shariah": "review",
       "marketCapEgp": 10826426919,
       "avgTurnoverEgp": 5105518,
-      "bars": 249,
-      "priceDriftPct": 0.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "OIH",
+      "source": "yahoo",
       "yahoo": "OIH.CA",
       "en": "Orascom Investment Holding SAE",
       "sector": "telecom",
-      "tvSector": "Communications",
       "industry": "Wireless Telecommunications",
       "shariah": "compliant",
       "marketCapEgp": 10701208276,
       "avgTurnoverEgp": 146284238,
-      "bars": 249,
-      "priceDriftPct": 1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "IFAP",
+      "source": "yahoo",
       "yahoo": "IFAP.CA",
       "en": "International Agricultural Products",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 10567377663,
       "avgTurnoverEgp": 104931002,
-      "bars": 249,
-      "priceDriftPct": 2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AMIA",
+      "source": "yahoo",
       "yahoo": "AMIA.CA",
       "en": "Arab Moltaqa Investments Company",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Finance/Rental/Leasing",
       "shariah": "non_compliant",
       "marketCapEgp": 10145037389,
       "avgTurnoverEgp": 54595080,
-      "bars": 249,
-      "priceDriftPct": 2.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MOIN",
+      "source": "yahoo",
       "yahoo": "MOIN.CA",
       "en": "Mohandes Insurance Co.",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Multi-Line Insurance",
       "shariah": "non_compliant",
       "marketCapEgp": 9724000397,
       "avgTurnoverEgp": 62669894,
-      "bars": 249,
-      "priceDriftPct": 1.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MPCI",
+      "source": "yahoo",
       "yahoo": "MPCI.CA",
       "en": "Memphis Pharmaceutical & Chemical Industries",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 9673300278,
       "avgTurnoverEgp": 148303133,
-      "bars": 249,
-      "priceDriftPct": 2.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ZMID",
+      "source": "yahoo",
       "yahoo": "ZMID.CA",
       "en": "Zahraa Maadi Investment & Development",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 9500000000,
       "avgTurnoverEgp": 148043393,
-      "bars": 249,
-      "priceDriftPct": 2.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ISMQ",
+      "source": "yahoo",
       "yahoo": "ISMQ.CA",
       "en": "Iron & Steel for Mines & Quarries",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Steel",
       "shariah": "compliant",
       "marketCapEgp": 9143523957,
       "avgTurnoverEgp": 22694319,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "PHTV",
+      "source": "yahoo",
       "yahoo": "PHTV.CA",
       "en": "Pyramisa Hotels",
       "sector": "consumer",
-      "tvSector": "Consumer Services",
       "industry": "Hotels/Resorts/Cruise lines",
-      "shariah": "non_compliant",
+      "shariah": "review",
       "marketCapEgp": 9089242327,
       "avgTurnoverEgp": 3948670,
-      "bars": 249,
-      "priceDriftPct": 2.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "PRDC",
+      "source": "yahoo",
       "yahoo": "PRDC.CA",
       "en": "Pioneers Properties for Urban Development",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 8994715472,
       "avgTurnoverEgp": 111907369,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "MIPH",
+      "source": "yahoo",
+      "yahoo": "MIPH.CA",
+      "en": "Minapharm Pharmaceuticals",
+      "sector": "healthcare",
+      "industry": "Pharmaceuticals: Major",
+      "shariah": "compliant",
+      "marketCapEgp": 8945902192,
+      "avgTurnoverEgp": 378786,
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "OLFI",
+      "source": "yahoo",
       "yahoo": "OLFI.CA",
       "en": "Obour Land for Food Industries",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Meat/Fish/Dairy",
       "shariah": "compliant",
       "marketCapEgp": 8880000305,
       "avgTurnoverEgp": 14783627,
-      "bars": 249,
-      "priceDriftPct": 0.2
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "GTHE",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Global Telecom Holding S.A.E.",
+      "sector": "telecom",
+      "industry": "Specialty Telecommunications",
+      "shariah": "compliant",
+      "marketCapEgp": 8828498294,
+      "avgTurnoverEgp": 247277,
+      "bars": 629,
+      "origin": "tradingview"
     },
     {
       "code": "EGAS",
+      "source": "yahoo",
       "yahoo": "EGAS.CA",
       "en": "Egypt Gas Co.",
       "sector": "energy",
-      "tvSector": "Utilities",
       "industry": "Gas Distributors",
       "shariah": "review",
       "marketCapEgp": 8539405274.999999,
       "avgTurnoverEgp": 10986896,
-      "bars": 249,
-      "priceDriftPct": 1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SUGR",
+      "source": "yahoo",
       "yahoo": "SUGR.CA",
       "en": "Delta Sugar",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 8531884459.999999,
       "avgTurnoverEgp": 28949563,
-      "bars": 249,
-      "priceDriftPct": 1.1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "BONY",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Bonyan for Development and Trade",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 8530538309,
+      "avgTurnoverEgp": 95534202,
+      "bars": 275,
+      "origin": "tradingview"
     },
     {
       "code": "AXPH",
+      "source": "yahoo",
       "yahoo": "AXPH.CA",
       "en": "Alexandria Company for Pharmaceuticals and Chemical Industries",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 8454000244.000001,
       "avgTurnoverEgp": 5499760,
-      "bars": 249,
-      "priceDriftPct": 1.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MPRC",
+      "source": "yahoo",
       "yahoo": "MPRC.CA",
       "en": "Egyptian Media Production City",
       "sector": "consumer",
-      "tvSector": "Consumer Services",
       "industry": "Movies/Entertainment",
       "shariah": "review",
       "marketCapEgp": 8154090210,
       "avgTurnoverEgp": 77577850,
-      "bars": 249,
-      "priceDriftPct": 0.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CPCI",
+      "source": "yahoo",
       "yahoo": "CPCI.CA",
       "en": "Kahira Pharmaceuticals & Chemical Industries Co.",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 8126241438,
       "avgTurnoverEgp": 2431412,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "DOMT",
+      "source": "yahoo",
       "yahoo": "DOMT.CA",
       "en": "Arabian Food Industries Co.",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Meat/Fish/Dairy",
       "shariah": "compliant",
       "marketCapEgp": 8054348053,
       "avgTurnoverEgp": 3436035,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "NINH",
+      "source": "yahoo",
       "yahoo": "NINH.CA",
       "en": "Nozha International Hospital",
       "sector": "healthcare",
-      "tvSector": "Health Services",
       "industry": "Hospital/Nursing Management",
       "shariah": "review",
       "marketCapEgp": 7091999817,
       "avgTurnoverEgp": 10803735,
-      "bars": 250,
-      "priceDriftPct": 2.5
+      "bars": 490,
+      "origin": "tradingview"
     },
     {
       "code": "ELEC",
+      "source": "yahoo",
       "yahoo": "ELEC.CA",
       "en": "Electro Cable Egypt",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Electrical Products",
       "shariah": "review",
       "marketCapEgp": 6991569650,
       "avgTurnoverEgp": 40886394,
-      "bars": 249,
-      "priceDriftPct": 0.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SPIN",
+      "source": "yahoo",
       "yahoo": "SPIN.CA",
       "en": "Alexandria Spinning & Weaving",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Textiles",
       "shariah": "compliant",
       "marketCapEgp": 6896984231,
       "avgTurnoverEgp": 6531360,
-      "bars": 249,
-      "priceDriftPct": 2.5
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "GOUR",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Gourmet Egypt.Com Foods",
+      "sector": "consumer",
+      "industry": "Food Retail",
+      "shariah": "compliant",
+      "marketCapEgp": 6564000000,
+      "avgTurnoverEgp": 10072554,
+      "bars": 136,
+      "origin": "tradingview"
+    },
+    {
+      "code": "ACAP",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "A Capital Holding",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 6515524400,
+      "avgTurnoverEgp": 7797709,
+      "bars": 792,
+      "origin": "tradingview"
     },
     {
       "code": "ENGC",
+      "source": "yahoo",
       "yahoo": "ENGC.CA",
       "en": "Industrial Engineering Co. for Construction & Development",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Building Products",
       "shariah": "review",
       "marketCapEgp": 6514035067,
       "avgTurnoverEgp": 15016102,
-      "bars": 249,
-      "priceDriftPct": 4.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ARAB",
+      "source": "yahoo",
       "yahoo": "ARAB.CA",
       "en": "Arab Developers Holding",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 6095255921,
       "avgTurnoverEgp": 256416936,
-      "bars": 250,
-      "priceDriftPct": 0.4
+      "bars": 490,
+      "origin": "tradingview"
+    },
+    {
+      "code": "NBKE",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "National Bank of Kuwait - Egypt",
+      "sector": "financials",
+      "industry": "Regional Banks",
+      "shariah": "non_compliant",
+      "marketCapEgp": 6009999495,
+      "avgTurnoverEgp": 15295,
+      "bars": 363,
+      "origin": "tradingview"
     },
     {
       "code": "OCPH",
+      "source": "yahoo",
       "yahoo": "OCPH.CA",
       "en": "October Pharma Co.",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 6002400146,
       "avgTurnoverEgp": 13490239,
-      "bars": 249,
-      "priceDriftPct": 2.4
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة -49% يوم 2026-07-28 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "CNFN",
+      "source": "yahoo",
       "yahoo": "CNFN.CA",
       "en": "Contact Financial Holding SAE",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Finance/Rental/Leasing",
       "shariah": "non_compliant",
       "marketCapEgp": 5733505410,
       "avgTurnoverEgp": 43405126,
-      "bars": 249,
-      "priceDriftPct": 2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AFMC",
+      "source": "yahoo",
       "yahoo": "AFMC.CA",
       "en": "Alexandria Flour Mills Co.",
       "sector": "consumer",
-      "tvSector": "Retail Trade",
       "industry": "Food Retail",
       "shariah": "compliant",
       "marketCapEgp": 5593575523,
       "avgTurnoverEgp": 370784522,
-      "bars": 249,
-      "priceDriftPct": 15
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MICH",
+      "source": "yahoo",
       "yahoo": "MICH.CA",
       "en": "Misr Chemical Industries Ltd.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Specialty",
       "shariah": "compliant",
       "marketCapEgp": 5565543934,
       "avgTurnoverEgp": 11923145,
-      "bars": 249,
-      "priceDriftPct": 1.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "GSSC",
+      "source": "yahoo",
       "yahoo": "GSSC.CA",
       "en": "General Silos & Storage Co.",
       "sector": "consumer",
-      "tvSector": "Retail Trade",
       "industry": "Food Retail",
       "shariah": "compliant",
       "marketCapEgp": 5302500000,
       "avgTurnoverEgp": 13941867,
-      "bars": 249,
-      "priceDriftPct": 3.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "DSCW",
+      "source": "yahoo",
       "yahoo": "DSCW.CA",
       "en": "Dice Sports & Casual Wear Manufacturers SAE",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Apparel/Footwear",
       "shariah": "review",
       "marketCapEgp": 5225936334,
       "avgTurnoverEgp": 47716374,
-      "bars": 249,
-      "priceDriftPct": 1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MCRO",
+      "source": "yahoo",
       "yahoo": "MCRO.CA",
       "en": "Macro Group Pharmaceutical S.A.E.",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 5222102070,
       "avgTurnoverEgp": 228469297,
-      "bars": 249,
-      "priceDriftPct": 1.2
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة -79% يوم 2025-11-09 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "KABO",
+      "source": "yahoo",
       "yahoo": "KABO.CA",
       "en": "El Nasr Clothing & Textiles Co.",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Apparel/Footwear",
       "shariah": "compliant",
       "marketCapEgp": 5212123392,
       "avgTurnoverEgp": 27648372,
-      "bars": 249,
-      "priceDriftPct": 0.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "WCDF",
+      "source": "yahoo",
       "yahoo": "WCDF.CA",
       "en": "Middle & West Delta Flour Mills Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 5072774963,
       "avgTurnoverEgp": 27771288,
-      "bars": 249,
-      "priceDriftPct": 4
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "ALEX",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Alexandria Cement Co.",
+      "sector": "industrials",
+      "industry": "Construction Materials",
+      "shariah": "compliant",
+      "marketCapEgp": 5038324280,
+      "avgTurnoverEgp": 68900,
+      "bars": 480,
+      "origin": "tradingview"
     },
     {
       "code": "AMER",
+      "source": "yahoo",
       "yahoo": "AMER.CA",
       "en": "Amer Group Holding",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 4992427325,
       "avgTurnoverEgp": 42981797,
-      "bars": 249,
-      "priceDriftPct": 3.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MFSC",
+      "source": "yahoo",
       "yahoo": "MFSC.CA",
       "en": "Misr Duty Free Shops Co.",
       "sector": "consumer",
-      "tvSector": "Retail Trade",
       "industry": "Specialty Stores",
       "shariah": "review",
       "marketCapEgp": 4897500157,
       "avgTurnoverEgp": 5505841,
-      "bars": 249,
-      "priceDriftPct": 1.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "OFH",
+      "source": "yahoo",
       "yahoo": "OFH.CA",
       "en": "O B Financial Holding",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Financial Conglomerates",
       "shariah": "non_compliant",
       "marketCapEgp": 4587070673,
       "avgTurnoverEgp": 325645870,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "GDWA",
+      "source": "yahoo",
       "yahoo": "GDWA.CA",
       "en": "Gadwa For Industrial Development",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Industrial Machinery",
       "shariah": "review",
       "marketCapEgp": 4442790111,
       "avgTurnoverEgp": 127814937,
-      "bars": 249,
-      "priceDriftPct": 0.4
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة -81% يوم 2025-10-05 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "UNIT",
+      "source": "yahoo",
       "yahoo": "UNIT.CA",
       "en": "United Housing Construction SA",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 4348273998,
       "avgTurnoverEgp": 4715534,
-      "bars": 249,
-      "priceDriftPct": 2.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ACGC",
+      "source": "yahoo",
       "yahoo": "ACGC.CA",
       "en": "Arab Cotton Ginning Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 4055496531,
       "avgTurnoverEgp": 26419518,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "UEFM",
+      "source": "yahoo",
       "yahoo": "UEFM.CA",
       "en": "Upper Egypt Flour Mills Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 3747730103,
       "avgTurnoverEgp": 10274419,
-      "bars": 249,
-      "priceDriftPct": 1.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SDTI",
+      "source": "yahoo",
       "yahoo": "SDTI.CA",
       "en": "Sharm Dreams Co. for Tourism Investment",
       "sector": "consumer",
-      "tvSector": "Consumer Services",
       "industry": "Hotels/Resorts/Cruise lines",
-      "shariah": "non_compliant",
+      "shariah": "review",
       "marketCapEgp": 3740773550,
       "avgTurnoverEgp": 25760846,
-      "bars": 249,
-      "priceDriftPct": 3.8
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "KZPC",
+      "source": "yahoo",
       "yahoo": "KZPC.CA",
       "en": "Kafr El Zayat Pesticides & Chemical Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Agricultural",
       "shariah": "compliant",
       "marketCapEgp": 3719464803,
       "avgTurnoverEgp": 104695661,
-      "bars": 249,
-      "priceDriftPct": 3.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AJWA",
+      "source": "yahoo",
       "yahoo": "AJWA.CA",
       "en": "Ajwa for Food Industries Co. Egypt",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Specialty/Candy",
       "shariah": "compliant",
       "marketCapEgp": 3596857978,
       "avgTurnoverEgp": 38859730,
-      "bars": 249,
-      "priceDriftPct": 3.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ADCI",
+      "source": "yahoo",
       "yahoo": "ADCI.CA",
       "en": "Arab Pharmaceuticals",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 3547680176,
       "avgTurnoverEgp": 2198785,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "CRST",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Creast Mark For Contracting And Real Estate Development",
+      "sector": "industrials",
+      "industry": "Engineering & Construction",
+      "shariah": "review",
+      "marketCapEgp": 3535911252,
+      "avgTurnoverEgp": 133971960,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "ELKA",
+      "source": "yahoo",
       "yahoo": "ELKA.CA",
       "en": "El Kahera Housing",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 3472149673,
       "avgTurnoverEgp": 22605917,
-      "bars": 249,
-      "priceDriftPct": 2.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ASCM",
+      "source": "yahoo",
       "yahoo": "ASCM.CA",
       "en": "ASEC Co. for Mining",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Construction Materials",
       "shariah": "review",
       "marketCapEgp": 3465000000,
       "avgTurnoverEgp": 74004204,
-      "bars": 249,
-      "priceDriftPct": 2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "GTWL",
+      "source": "yahoo",
       "yahoo": "GTWL.CA",
       "en": "Golden Textiles & Clothes Wool",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Textiles",
       "shariah": "compliant",
       "marketCapEgp": 3370873749,
       "avgTurnoverEgp": 99538720,
-      "bars": 249,
-      "priceDriftPct": 1.7
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "ACTF",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Act Financial",
+      "sector": "financials",
+      "industry": "Investment Banks/Brokers",
+      "shariah": "non_compliant",
+      "marketCapEgp": 3176348151,
+      "avgTurnoverEgp": 46102875,
+      "bars": 511,
+      "origin": "tradingview"
     },
     {
       "code": "ELSH",
+      "source": "yahoo",
       "yahoo": "ELSH.CA",
       "en": "El-Shams Housing & Development SA",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 3060543698,
       "avgTurnoverEgp": 35928027,
-      "bars": 249,
-      "priceDriftPct": 0.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "DAPH",
+      "source": "yahoo",
       "yahoo": "DAPH.CA",
       "en": "Development & Engineering Consultants",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 3057911987,
       "avgTurnoverEgp": 15677490,
-      "bars": 249,
-      "priceDriftPct": 0.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ISMA",
+      "source": "yahoo",
       "yahoo": "ISMA.CA",
       "en": "Ismailia Misr Poultry",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 3000308183,
       "avgTurnoverEgp": 10733769,
-      "bars": 249,
-      "priceDriftPct": 2.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "INFI",
+      "source": "yahoo",
       "yahoo": "INFI.CA",
       "en": "Ismailia National Food Industries",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Specialty/Candy",
       "shariah": "compliant",
       "marketCapEgp": 2993875626,
       "avgTurnoverEgp": 27678366,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AIFI",
+      "source": "yahoo",
       "yahoo": "AIFI.CA",
       "en": "Atlas for Investment & Food Industries SAE",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 2958803402,
       "avgTurnoverEgp": 9135735,
-      "bars": 250,
-      "priceDriftPct": 0.4
+      "bars": 490,
+      "origin": "tradingview"
     },
     {
       "code": "LCSW",
+      "source": "yahoo",
       "yahoo": "LCSW.CA",
       "en": "Lecico Egypt SAE",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Building Products",
       "shariah": "review",
       "marketCapEgp": 2895833422,
       "avgTurnoverEgp": 20224409,
-      "bars": 250,
-      "priceDriftPct": 0.6
+      "bars": 490,
+      "origin": "tradingview"
     },
     {
       "code": "ICFC",
+      "source": "yahoo",
       "yahoo": "ICFC.CA",
       "en": "International Co. for Fertilizers & Chemicals",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Agricultural",
       "shariah": "compliant",
       "marketCapEgp": 2872665082,
       "avgTurnoverEgp": 41888444,
-      "bars": 249,
-      "priceDriftPct": 11.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ZEOT",
+      "source": "yahoo",
       "yahoo": "ZEOT.CA",
       "en": "Extracted Oils & Derivatives Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 2855999947,
       "avgTurnoverEgp": 5642478,
-      "bars": 249,
-      "priceDriftPct": 3.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ATLC",
+      "source": "yahoo",
       "yahoo": "ATLC.CA",
       "en": "Al Tawfeek Leasing Company-A.T.LEASE",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "non_compliant",
       "marketCapEgp": 2807999992,
       "avgTurnoverEgp": 16766702,
-      "bars": 249,
-      "priceDriftPct": 0.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ACAMD",
+      "source": "yahoo",
       "yahoo": "ACAMD.CA",
       "en": "Arab Co. for Asset Management & Development",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Managers",
       "shariah": "review",
       "marketCapEgp": 2780566500,
       "avgTurnoverEgp": 92288895,
-      "bars": 249,
-      "priceDriftPct": 5.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ETRS",
+      "source": "yahoo",
       "yahoo": "ETRS.CA",
       "en": "Egyptian Transport And Commercial Services Co. (Egytrans Nosco)",
       "sector": "transport",
-      "tvSector": "Transportation",
       "industry": "Other Transportation",
       "shariah": "review",
       "marketCapEgp": 2566677342,
       "avgTurnoverEgp": 9208430,
-      "bars": 249,
-      "priceDriftPct": 1.7
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "GPIM",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "GPI For Urban Growth",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 2552727196,
+      "avgTurnoverEgp": 42765414,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "EDFM",
+      "source": "yahoo",
       "yahoo": "EDFM.CA",
       "en": "East Delta Flour Mills Co.",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Specialty/Candy",
       "shariah": "compliant",
       "marketCapEgp": 2551979919,
       "avgTurnoverEgp": 11726377,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "NAHO",
+      "source": "yahoo",
+      "yahoo": "NAHO.CA",
+      "en": "Naeem Holding Co.",
+      "sector": "financials",
+      "industry": "Investment Banks/Brokers",
+      "shariah": "non_compliant",
+      "marketCapEgp": 2504987983.51152,
+      "avgTurnoverEgp": 45882,
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "السعر ثابت في 54% من الجلسات — سيولة ضعيفة جدًا"
     },
     {
       "code": "SMFR",
+      "source": "yahoo",
       "yahoo": "SMFR.CA",
       "en": "Samad Misr-EGYFERT",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Wholesale Distributors",
       "shariah": "review",
       "marketCapEgp": 2433024120,
       "avgTurnoverEgp": 11866080,
-      "bars": 249,
-      "priceDriftPct": 2.8
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "NARE",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Naeem Real Estate Holding Group",
+      "sector": "financials",
+      "industry": "Investment Managers",
+      "shariah": "review",
+      "marketCapEgp": 2201047128,
+      "avgTurnoverEgp": 8872484,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "MPCO",
+      "source": "yahoo",
       "yahoo": "MPCO.CA",
       "en": "Mansourah Poultry Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 2180000067,
       "avgTurnoverEgp": 85412493,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MILS",
+      "source": "yahoo",
       "yahoo": "MILS.CA",
       "en": "North Cairo Mills Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 2141818941.9999998,
       "avgTurnoverEgp": 156267628,
-      "bars": 249,
-      "priceDriftPct": 4.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CEFM",
+      "source": "yahoo",
       "yahoo": "CEFM.CA",
       "en": "Middle Egypt Flour Mills",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 2139831279,
       "avgTurnoverEgp": 77450127,
-      "bars": 249,
-      "priceDriftPct": 3.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MAAL",
+      "source": "yahoo",
       "yahoo": "MAAL.CA",
       "en": "Marseilla Al Masreia Al Khalegeya for Holding Investment",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 2125941678.0000002,
       "avgTurnoverEgp": 6418755,
-      "bars": 249,
-      "priceDriftPct": 0.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "IDRE",
+      "source": "yahoo",
       "yahoo": "IDRE.CA",
       "en": "Ismailia Development & Real Estate Co.",
       "sector": "consumer",
-      "tvSector": "Consumer Durables",
       "industry": "Homebuilding",
       "shariah": "review",
       "marketCapEgp": 2004000606,
       "avgTurnoverEgp": 6967405,
-      "bars": 249,
-      "priceDriftPct": 2.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EALR",
+      "source": "yahoo",
       "yahoo": "EALR.CA",
       "en": "El Arabia for Land Reclamation",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 1974335889,
       "avgTurnoverEgp": 28034425,
-      "bars": 249,
-      "priceDriftPct": 3.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AALR",
+      "source": "yahoo",
       "yahoo": "AALR.CA",
       "en": "General Co. for Land Reclamation Development & Reconstruction",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 1963676564,
       "avgTurnoverEgp": 63361882,
-      "bars": 249,
-      "priceDriftPct": 5.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "RACC",
+      "source": "yahoo",
       "yahoo": "RACC.CA",
       "en": "Raya Contact Center",
       "sector": "financials",
-      "tvSector": "Commercial Services",
       "industry": "Miscellaneous Commercial Services",
       "shariah": "review",
       "marketCapEgp": 1956204895,
       "avgTurnoverEgp": 15506668,
-      "bars": 249,
-      "priceDriftPct": 1.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ADPC",
+      "source": "yahoo",
       "yahoo": "ADPC.CA",
       "en": "Arab Dairy Products Co. Arab Dairy - Panda",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Food: Meat/Fish/Dairy",
       "shariah": "compliant",
       "marketCapEgp": 1952723895,
       "avgTurnoverEgp": 16341848,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MOSC",
+      "source": "yahoo",
       "yahoo": "MOSC.CA",
       "en": "Misr Oils & Soap Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 1939439941,
       "avgTurnoverEgp": 4274407,
-      "bars": 249,
-      "priceDriftPct": 0.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EHDR",
+      "source": "yahoo",
       "yahoo": "EHDR.CA",
       "en": "Egyptians Housing Development & Reconstruction",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 1935360077,
       "avgTurnoverEgp": 22781985,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة 395% يوم 2025-10-21 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "WKOL",
+      "source": "yahoo",
       "yahoo": "WKOL.CA",
       "en": "Wadi Kom Ombo Land Reclamation",
       "sector": "industrials",
-      "tvSector": "Industrial Services",
       "industry": "Engineering & Construction",
       "shariah": "review",
       "marketCapEgp": 1906799968,
       "avgTurnoverEgp": 29399881,
-      "bars": 249,
-      "priceDriftPct": 3.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ICID",
+      "source": "yahoo",
       "yahoo": "ICID.CA",
       "en": "International Company for Investment & Development",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Financial Conglomerates",
       "shariah": "non_compliant",
       "marketCapEgp": 1878000069,
       "avgTurnoverEgp": 5469728,
-      "bars": 249,
-      "priceDriftPct": 3.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "GGCC",
+      "source": "yahoo",
       "yahoo": "GGCC.CA",
       "en": "Giza General Contracting & Real Estate Investment",
       "sector": "industrials",
-      "tvSector": "Industrial Services",
       "industry": "Engineering & Construction",
       "shariah": "review",
       "marketCapEgp": 1876248714,
       "avgTurnoverEgp": 19149251,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ECAP",
+      "source": "yahoo",
       "yahoo": "ECAP.CA",
       "en": "El Ezz Ceramics & Porcelain Co. (Gemma)",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Building Products",
-      "shariah": "review",
+      "shariah": "compliant",
       "marketCapEgp": 1793375265,
       "avgTurnoverEgp": 6879263,
-      "bars": 249,
-      "priceDriftPct": 1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "KRDI",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Al Khair River for Development Agriculture Investment and Environmental Services",
+      "sector": "financials",
+      "industry": "Financial Conglomerates",
+      "shariah": "non_compliant",
+      "marketCapEgp": 1751100004,
+      "avgTurnoverEgp": 39432154,
+      "bars": 1126,
+      "origin": "tradingview"
     },
     {
       "code": "SNFC",
+      "source": "yahoo",
       "yahoo": "SNFC.CA",
       "en": "Sharkia National Food",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 1740906038,
       "avgTurnoverEgp": 25592729,
-      "bars": 249,
-      "priceDriftPct": 0.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ODIN",
+      "source": "yahoo",
       "yahoo": "ODIN.CA",
       "en": "ODIN Investments",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Managers",
       "shariah": "review",
       "marketCapEgp": 1733999920,
       "avgTurnoverEgp": 17680630,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "DTPP",
+      "source": "yahoo",
       "yahoo": "DTPP.CA",
       "en": "Delta for Printing & Packaging",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Containers/Packaging",
       "shariah": "review",
       "marketCapEgp": 1702511909,
       "avgTurnoverEgp": 19828325,
-      "bars": 249,
-      "priceDriftPct": 1.1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "MENA",
+      "source": "yahoo",
+      "yahoo": "MENA.CA",
+      "en": "Mena Touristic & Real Estate Investment",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 1691032251,
+      "avgTurnoverEgp": 425254,
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CAED",
+      "source": "yahoo",
       "yahoo": "CAED.CA",
       "en": "Cairo Educational Services",
       "sector": "consumer",
-      "tvSector": "Consumer Services",
       "industry": "Other Consumer Services",
       "shariah": "review",
       "marketCapEgp": 1682880066,
       "avgTurnoverEgp": 9568610,
-      "bars": 249,
-      "priceDriftPct": 0.1
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ASPI",
+      "source": "yahoo",
       "yahoo": "ASPI.CA",
       "en": "Aspire Capital Holding for Financial Investments",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 1677000028,
       "avgTurnoverEgp": 21867181,
-      "bars": 250,
-      "priceDriftPct": 1.8
+      "bars": 490,
+      "origin": "tradingview"
     },
     {
       "code": "SCFM",
+      "source": "yahoo",
       "yahoo": "SCFM.CA",
       "en": "South Cairo & Giza Mills & Bakeries",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "review",
       "marketCapEgp": 1656840088,
       "avgTurnoverEgp": 61706490,
-      "bars": 249,
-      "priceDriftPct": 3.8
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CERA",
+      "source": "yahoo",
       "yahoo": "CERA.CA",
       "en": "Arab Ceramic Co. - Ceramica Remas",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Building Products",
-      "shariah": "review",
+      "shariah": "compliant",
       "marketCapEgp": 1617187500,
       "avgTurnoverEgp": 310715898,
-      "bars": 249,
-      "priceDriftPct": 1.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "PRCL",
+      "source": "yahoo",
       "yahoo": "PRCL.CA",
       "en": "General Co. for Ceramic & Porcelain Products",
       "sector": "consumer",
-      "tvSector": "Retail Trade",
       "industry": "Specialty Stores",
-      "shariah": "review",
+      "shariah": "compliant",
       "marketCapEgp": 1606672131,
       "avgTurnoverEgp": 21040790,
-      "bars": 249,
-      "priceDriftPct": 0.8
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "NCCW",
+      "source": "yahoo",
       "yahoo": "NCCW.CA",
       "en": "Nasr Co. for Civil Works",
       "sector": "industrials",
-      "tvSector": "Industrial Services",
       "industry": "Engineering & Construction",
       "shariah": "review",
       "marketCapEgp": 1534680038,
       "avgTurnoverEgp": 20207781,
-      "bars": 249,
-      "priceDriftPct": 0.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "IEEC",
+      "source": "yahoo",
       "yahoo": "IEEC.CA",
       "en": "Industrial & Engineering Enterprises Co.",
       "sector": "industrials",
-      "tvSector": "Industrial Services",
       "industry": "Engineering & Construction",
       "shariah": "review",
       "marketCapEgp": 1443420000,
       "avgTurnoverEgp": 55362064,
-      "bars": 224,
-      "priceDriftPct": 0.8
+      "bars": 464,
+      "origin": "tradingview",
+      "note": "تداول متقطع — 37 جلسة من ~64 في آخر 3 شهور"
     },
     {
       "code": "NHPS",
+      "source": "yahoo",
       "yahoo": "NHPS.CA",
       "en": "National Housing for Professional Syndicates",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 1388000000,
       "avgTurnoverEgp": 9620206,
-      "bars": 249,
-      "priceDriftPct": 1.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MBEG",
+      "source": "yahoo",
       "yahoo": "MBEG.CA",
       "en": "MB for Engineering & Contracting",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Wholesale Distributors",
       "shariah": "review",
       "marketCapEgp": 1359071724,
       "avgTurnoverEgp": 11851992,
-      "bars": 249,
-      "priceDriftPct": 1.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "OBRI",
+      "source": "yahoo",
       "yahoo": "OBRI.CA",
       "en": "El Obour Real Estate Investment",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 1351999969,
       "avgTurnoverEgp": 13755840,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SIPC",
+      "source": "yahoo",
       "yahoo": "SIPC.CA",
       "en": "Sabaa International Company for Pharmaceutial and Chemical Industry",
       "sector": "healthcare",
-      "tvSector": "Health Technology",
       "industry": "Pharmaceuticals: Major",
       "shariah": "compliant",
       "marketCapEgp": 1312500000,
       "avgTurnoverEgp": 301520601,
-      "bars": 249,
-      "priceDriftPct": 2.1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "AIH",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Arabia Investments Holding SAE",
+      "sector": "financials",
+      "industry": "Financial Conglomerates",
+      "shariah": "non_compliant",
+      "marketCapEgp": 1265200536,
+      "avgTurnoverEgp": 76192004,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "UEGC",
+      "source": "yahoo",
       "yahoo": "UEGC.CA",
       "en": "El-Saeed Contracting & Real Estate Investment Co. SCCD",
       "sector": "industrials",
-      "tvSector": "Industrial Services",
       "industry": "Engineering & Construction",
       "shariah": "review",
       "marketCapEgp": 1233811134,
       "avgTurnoverEgp": 57675208,
-      "bars": 249,
-      "priceDriftPct": 2.8
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "MEPA",
+      "source": "yahoo",
       "yahoo": "MEPA.CA",
       "en": "Medical Packaging Company",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Containers/Packaging",
       "shariah": "review",
       "marketCapEgp": 1231399997,
       "avgTurnoverEgp": 113530490,
-      "bars": 249,
-      "priceDriftPct": 3.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "COSG",
+      "source": "yahoo",
       "yahoo": "COSG.CA",
       "en": "Cairo Oils & Soap",
       "sector": "consumer",
-      "tvSector": "Consumer Non-Durables",
       "industry": "Household/Personal Care",
       "shariah": "compliant",
       "marketCapEgp": 1210560036,
       "avgTurnoverEgp": 31478229,
-      "bars": 249,
-      "priceDriftPct": 0
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "ALUM",
+      "source": "yahoo",
       "yahoo": "ALUM.CA",
       "en": "Arab Aluminum Co. SAE",
       "sector": "industrials",
-      "tvSector": "Non-Energy Minerals",
       "industry": "Aluminum",
       "shariah": "review",
       "marketCapEgp": 1194134775,
       "avgTurnoverEgp": 8357188,
-      "bars": 249,
-      "priceDriftPct": 1.6
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "AMII",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Arabian Metal Industries and Industrial Investments",
+      "sector": "industrials",
+      "industry": "Building Products",
+      "shariah": "review",
+      "marketCapEgp": 1135383081,
+      "avgTurnoverEgp": 46380454,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "EBSC",
+      "source": "yahoo",
       "yahoo": "EBSC.CA",
       "en": "Osool ESB Securities Brokerage",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 1118500104,
       "avgTurnoverEgp": 4812997,
-      "bars": 249,
-      "priceDriftPct": 2.9
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "KWIN",
+      "source": "yahoo",
       "yahoo": "KWIN.CA",
       "en": "El Kahera El Watania Investment",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 1113944962,
       "avgTurnoverEgp": 23914343,
-      "bars": 249,
-      "priceDriftPct": 3.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "RREI",
+      "source": "yahoo",
       "yahoo": "RREI.CA",
       "en": "Arab Real Estate Investment Co.",
       "sector": "consumer",
-      "tvSector": "Consumer Durables",
       "industry": "Homebuilding",
       "shariah": "review",
       "marketCapEgp": 1076767945,
       "avgTurnoverEgp": 35091332,
-      "bars": 249,
-      "priceDriftPct": 0.7
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AFDI",
+      "source": "yahoo",
       "yahoo": "AFDI.CA",
       "en": "Alahly For Development & Investment",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 1007820030,
       "avgTurnoverEgp": 7605738,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "RTVC",
+      "source": "yahoo",
+      "yahoo": "RTVC.CA",
+      "en": "Remco for Touristic Villages Construction",
+      "sector": "industrials",
+      "industry": "Engineering & Construction",
+      "shariah": "review",
+      "marketCapEgp": 997063126,
+      "avgTurnoverEgp": 1800507,
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "PRMH",
+      "source": "yahoo",
       "yahoo": "PRMH.CA",
       "en": "Prime Holding",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 979999983,
       "avgTurnoverEgp": 7996476,
-      "bars": 249,
-      "priceDriftPct": 1.4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "UNIP",
+      "source": "yahoo",
       "yahoo": "UNIP.CA",
       "en": "Universal Co. for Paper & Packaging Materials-Unipack",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Pulp & Paper",
       "shariah": "review",
       "marketCapEgp": 859290894,
       "avgTurnoverEgp": 28557255,
-      "bars": 249,
-      "priceDriftPct": 2.3
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة -67% يوم 2025-09-16 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "MOED",
+      "source": "yahoo",
       "yahoo": "MOED.CA",
       "en": "Egyptian Modern Education Systems",
       "sector": "financials",
-      "tvSector": "Commercial Services",
       "industry": "Miscellaneous Commercial Services",
       "shariah": "review",
       "marketCapEgp": 836160017,
       "avgTurnoverEgp": 73890157,
-      "bars": 249,
-      "priceDriftPct": 3.8
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "FCMD",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Future Care For Medical Industries",
+      "sector": "consumer",
+      "industry": "Medical Distributors",
+      "shariah": "review",
+      "marketCapEgp": 808506025,
+      "avgTurnoverEgp": 34904021,
+      "bars": 1500,
+      "origin": "tradingview"
+    },
+    {
+      "code": "APSW",
+      "source": "yahoo",
+      "yahoo": "APSW.CA",
+      "en": "Arab Polvara Spinning & Weaving Co.",
+      "sector": "materials",
+      "industry": "Textiles",
+      "shariah": "compliant",
+      "marketCapEgp": 796335773,
+      "avgTurnoverEgp": 1565278,
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "TANM",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Tanmiya for Real Estate Investment",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 785700014,
+      "avgTurnoverEgp": 52928408,
+      "bars": 1258,
+      "origin": "tradingview"
+    },
+    {
+      "code": "TYCN",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Tycoon Holding Company For Financial Investments",
+      "sector": "financials",
+      "industry": "Investment Banks/Brokers",
+      "shariah": "non_compliant",
+      "marketCapEgp": 784795024,
+      "avgTurnoverEgp": 4545514,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "RUBX",
+      "source": "yahoo",
       "yahoo": "RUBX.CA",
       "en": "Rubex International for Plastic & Acrylic Manufacturing",
       "sector": "consumer",
-      "tvSector": "Consumer Durables",
       "industry": "Home Furnishings",
       "shariah": "review",
       "marketCapEgp": 780688102,
       "avgTurnoverEgp": 15047208,
-      "bars": 249,
-      "priceDriftPct": 0.6
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "COPR",
+      "source": "yahoo",
       "yahoo": "COPR.CA",
       "en": "Cooper for Commercial Investment & Real Estate Development",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 755211681,
       "avgTurnoverEgp": 54449166,
-      "bars": 249,
-      "priceDriftPct": 2
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "قفزة -49% يوم 2025-12-14 — يحتمل تجزئة أسهم غير معدّلة"
     },
     {
       "code": "ROTO",
+      "source": "yahoo",
       "yahoo": "ROTO.CA",
       "en": "Rowad Tourism (Al Rowad) Co",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 748216017,
       "avgTurnoverEgp": 6349839,
-      "bars": 249,
-      "priceDriftPct": 0.8
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "SPMD",
+      "source": "yahoo",
       "yahoo": "SPMD.CA",
       "en": "Speed Medical SAE",
       "sector": "healthcare",
-      "tvSector": "Health Services",
       "industry": "Medical/Nursing Services",
       "shariah": "review",
       "marketCapEgp": 740353963,
       "avgTurnoverEgp": 16485432,
-      "bars": 249,
-      "priceDriftPct": 2.2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EASB",
+      "source": "yahoo",
       "yahoo": "EASB.CA",
       "en": "Egyptian Arabian Company for Securities Brokerage EAC",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 738999987,
       "avgTurnoverEgp": 2561066,
-      "bars": 249,
-      "priceDriftPct": 0.7
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "RAKT",
+      "source": "yahoo",
+      "yahoo": "RAKT.CA",
+      "en": "Rakta Paper Manufacturing",
+      "sector": "materials",
+      "industry": "Pulp & Paper",
+      "shariah": "review",
+      "marketCapEgp": 666000023,
+      "avgTurnoverEgp": 323816,
+      "bars": 489,
+      "origin": "tradingview",
+      "note": "السعر ثابت في 56% من الجلسات — سيولة ضعيفة جدًا"
+    },
+    {
+      "code": "SEIG",
+      "source": "yahoo",
+      "yahoo": "SEIG.CA",
+      "en": "Saudi Egyptian Investment & Finance Co. SAE",
+      "sector": "financials",
+      "industry": "Investment Managers",
+      "shariah": "non_compliant",
+      "marketCapEgp": 659574966,
+      "avgTurnoverEgp": 1224500,
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "GRCA",
+      "source": "yahoo",
       "yahoo": "GRCA.CA",
       "en": "Grand Investment Capital",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Investment Banks/Brokers",
       "shariah": "non_compliant",
       "marketCapEgp": 631800015,
       "avgTurnoverEgp": 37843547,
-      "bars": 249,
-      "priceDriftPct": 1.5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EEII",
+      "source": "yahoo",
       "yahoo": "EEII.CA",
       "en": "El Arabia Engineering Industries",
       "sector": "tech",
-      "tvSector": "Electronic Technology",
       "industry": "Electronic Components",
       "shariah": "review",
       "marketCapEgp": 629799974,
       "avgTurnoverEgp": 17358331,
-      "bars": 249,
-      "priceDriftPct": 3.3
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "AREH",
+      "source": "yahoo",
       "yahoo": "AREH.CA",
       "en": "Egyptian Real Estate Group",
       "sector": "industrials",
-      "tvSector": "Industrial Services",
       "industry": "Engineering & Construction",
       "shariah": "review",
       "marketCapEgp": 588000011,
       "avgTurnoverEgp": 18988181,
-      "bars": 249,
-      "priceDriftPct": 2
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EGREF",
+      "source": "yahoo",
       "yahoo": "EGREF.CA",
       "en": "Egyptians Real Estate Fund",
       "sector": "holding",
-      "tvSector": "Miscellaneous",
       "industry": "Investment Trusts/Mutual Funds",
       "shariah": "review",
       "marketCapEgp": 559375613,
       "avgTurnoverEgp": 30335238,
-      "bars": 249,
-      "priceDriftPct": 5
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "CCRS",
+      "source": "yahoo",
       "yahoo": "CCRS.CA",
       "en": "Gulf Canadian Real Estate Investment Co.",
       "sector": "financials",
-      "tvSector": "Finance",
       "industry": "Real Estate Development",
       "shariah": "review",
       "marketCapEgp": 545999980,
       "avgTurnoverEgp": 28746410,
-      "bars": 249,
-      "priceDriftPct": 4.4
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "LKGP",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "The Holding Company for Financial Investment - The Lakah Group",
+      "sector": "healthcare",
+      "industry": "Services to the Health Industry",
+      "shariah": "non_compliant",
+      "marketCapEgp": 532457415.99999994,
+      "avgTurnoverEgp": 423045,
+      "bars": 1203,
+      "origin": "tradingview"
     },
     {
       "code": "EPCO",
+      "source": "yahoo",
       "yahoo": "EPCO.CA",
       "en": "Egypt for Poultry Co.",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Agricultural Commodities/Milling",
       "shariah": "compliant",
       "marketCapEgp": 472101303,
       "avgTurnoverEgp": 3439474,
-      "bars": 249,
-      "priceDriftPct": 0.3
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "DCRC",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Delta Construction & Rebuilding Co.",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 425382175,
+      "avgTurnoverEgp": 100,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "GIHD",
+      "source": "yahoo",
       "yahoo": "GIHD.CA",
       "en": "Gharbia Islamic Housing Development",
       "sector": "consumer",
-      "tvSector": "Consumer Durables",
       "industry": "Homebuilding",
       "shariah": "compliant",
       "marketCapEgp": 403481269,
       "avgTurnoverEgp": 17971306,
-      "bars": 249,
-      "priceDriftPct": 2.2
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "UTOP",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Utopia Real Estate Investment & Tourism SAE",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 340139992,
+      "avgTurnoverEgp": 1378256,
+      "bars": 1500,
+      "origin": "tradingview"
+    },
+    {
+      "code": "ELWA",
+      "source": "yahoo",
+      "yahoo": "ELWA.CA",
+      "en": "Elwadi for International Investment & Development",
+      "sector": "consumer",
+      "industry": "Hotels/Resorts/Cruise lines",
+      "shariah": "review",
+      "marketCapEgp": 325779993,
+      "avgTurnoverEgp": 1868840,
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "IBCT",
+      "source": "yahoo",
       "yahoo": "IBCT.CA",
       "en": "International Business Corp. for Trading & Agencies",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Wholesale Distributors",
       "shariah": "review",
       "marketCapEgp": 309848191,
       "avgTurnoverEgp": 8723637,
-      "bars": 249,
-      "priceDriftPct": 1.1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "ELNA",
+      "source": "yahoo",
+      "yahoo": "ELNA.CA",
+      "en": "El Nasr for Manufacturing Agricultural Crops",
+      "sector": "materials",
+      "industry": "Agricultural Commodities/Milling",
+      "shariah": "review",
+      "marketCapEgp": 289447761,
+      "avgTurnoverEgp": 405333,
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "FNAR",
+      "source": "yahoo",
       "yahoo": "FNAR.CA",
       "en": "Al Fanar Contracting Construction Trade Import & Export Co.",
       "sector": "industrials",
-      "tvSector": "Industrial Services",
       "industry": "Engineering & Construction",
       "shariah": "review",
       "marketCapEgp": 222080002,
       "avgTurnoverEgp": 2129882,
-      "bars": 249,
-      "priceDriftPct": 3.1
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "NEDA",
+      "source": "yahoo",
+      "yahoo": "NEDA.CA",
+      "en": "Northern Upper Egypt Development & Agricultural Production",
+      "sector": "materials",
+      "industry": "Chemicals: Agricultural",
+      "shariah": "compliant",
+      "marketCapEgp": 173980552,
+      "avgTurnoverEgp": 195551,
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "VERT",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Vertika for Industry & Trade",
+      "sector": "tech",
+      "industry": "Packaged Software",
+      "shariah": "review",
+      "marketCapEgp": 164446462,
+      "avgTurnoverEgp": 827731,
+      "bars": 1500,
+      "origin": "tradingview"
     },
     {
       "code": "RKAZ",
+      "source": "yahoo",
       "yahoo": "RKAZ.CA",
       "en": "REKAZ Financial Holding",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Chemicals: Agricultural",
       "shariah": "non_compliant",
       "marketCapEgp": 100600004,
       "avgTurnoverEgp": 3275814,
-      "bars": 249,
-      "priceDriftPct": 4
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "EPPK",
+      "source": "yahoo",
       "yahoo": "EPPK.CA",
       "en": "El Ahram Co. for Printing & Packing",
       "sector": "materials",
-      "tvSector": "Process Industries",
       "industry": "Containers/Packaging",
       "shariah": "review",
       "marketCapEgp": 91353593,
       "avgTurnoverEgp": 2042560,
-      "bars": 249,
-      "priceDriftPct": 5.2
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "AMPI",
+      "source": "yahoo",
+      "yahoo": "AMPI.CA",
+      "en": "AL Moasher Pay for Electronic Payment and Collection (S.A.E)",
+      "sector": "tech",
+      "industry": "Packaged Software",
+      "shariah": "review",
+      "marketCapEgp": 86779680,
+      "avgTurnoverEgp": 515085,
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
       "code": "BIGP",
+      "source": "yahoo",
       "yahoo": "BIGP.CA",
       "en": "ElBarbary Investment Group",
       "sector": "consumer",
-      "tvSector": "Distribution Services",
       "industry": "Wholesale Distributors",
       "shariah": "review",
       "marketCapEgp": 77422470,
       "avgTurnoverEgp": 8334147,
-      "bars": 249,
-      "priceDriftPct": 8.8
+      "bars": 489,
+      "origin": "tradingview"
     },
     {
-      "code": "LUTS",
-      "yahoo": "LUTS.CA",
-      "en": "Lotus For Agricultural Investments And Development",
-      "sector": "financials",
-      "tvSector": "Finance",
-      "industry": "Financial Conglomerates",
+      "code": "GMCI",
+      "source": "yahoo",
+      "yahoo": "GMCI.CA",
+      "en": "GMC Group for Industrial Commercial & Financial Investments",
+      "sector": "consumer",
+      "industry": "Wholesale Distributors",
       "shariah": "non_compliant",
-      "marketCapEgp": null,
-      "avgTurnoverEgp": 67193542,
-      "bars": 251,
-      "priceDriftPct": 5.3
+      "marketCapEgp": 77406380,
+      "avgTurnoverEgp": 559084,
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "FIRE",
+      "source": "yahoo",
+      "yahoo": "FIRE.CA",
+      "en": "First Investment & Real Estate Development",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": 70674998,
+      "avgTurnoverEgp": 361948,
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "BIDI",
+      "source": "yahoo",
+      "yahoo": "BIDI.CA",
+      "en": "El Badr Investment and Development - BID",
+      "sector": "materials",
+      "industry": "Containers/Packaging",
+      "shariah": "review",
+      "marketCapEgp": 48653999,
+      "avgTurnoverEgp": 0,
+      "bars": 491,
+      "origin": "tradingview",
+      "note": "السعر ثابت في 86% من الجلسات — سيولة ضعيفة جدًا"
+    },
+    {
+      "code": "APPC",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Advanced Pharmaceutical Packaging Co.",
+      "sector": "materials",
+      "industry": "Containers/Packaging",
+      "shariah": "compliant",
+      "marketCapEgp": 19043202,
+      "avgTurnoverEgp": 66982,
+      "bars": 527,
+      "origin": "tradingview"
     },
     {
       "code": "INEG",
+      "source": "yahoo",
       "yahoo": "INEG.CA",
       "en": "Integrated Engineering Group S.A.E",
       "sector": "industrials",
-      "tvSector": "Producer Manufacturing",
       "industry": "Metal Fabrication",
       "shariah": "review",
       "marketCapEgp": null,
       "avgTurnoverEgp": 25836180,
-      "bars": 249,
-      "priceDriftPct": 0.9
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "FTNS",
+      "source": "yahoo",
+      "yahoo": "FTNS.CA",
+      "en": "Fitness Prime",
+      "sector": "tech",
+      "industry": "Internet Software/Services",
+      "shariah": "review",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 513513,
+      "bars": 489,
+      "origin": "tradingview"
+    },
+    {
+      "code": "LUTS",
+      "source": "yahoo",
+      "yahoo": "LUTS.CA",
+      "en": "Lotus For Agricultural Investments And Development",
+      "sector": "financials",
+      "industry": "Financial Conglomerates",
+      "shariah": "non_compliant",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 67193542,
+      "bars": 491,
+      "origin": "tradingview"
+    },
+    {
+      "code": "FERC",
+      "source": "yahoo",
+      "yahoo": "FERC.CA",
+      "en": "Ferchem Misr",
+      "sector": "materials",
+      "industry": "Petrochemical",
+      "shariah": "compliant",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 0,
+      "bars": 489,
+      "origin": "egx-csv",
+      "note": "قفزة 494% يوم 2025-09-10 — يحتمل تجزئة أسهم غير معدّلة"
+    },
+    {
+      "code": "SNFI",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Souhag National Food Industries",
+      "sector": "consumer",
+      "industry": "Food: Specialty/Candy",
+      "shariah": "compliant",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 312,
+      "bars": 1198,
+      "origin": "tradingview"
+    },
+    {
+      "code": "AIDC",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Arabia for Investment and Development",
+      "sector": "financials",
+      "industry": "Regional Banks",
+      "shariah": "non_compliant",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 31199199,
+      "bars": 262,
+      "origin": "tradingview"
+    },
+    {
+      "code": "TORA",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Tourah Cement Co",
+      "sector": "industrials",
+      "industry": "Construction Materials",
+      "shariah": "compliant",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 406400,
+      "bars": 538,
+      "origin": "tradingview"
+    },
+    {
+      "code": "TWSA",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Tawasoa Factoring",
+      "sector": "financials",
+      "industry": "Finance/Rental/Leasing",
+      "shariah": "non_compliant",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 5212649,
+      "bars": 196,
+      "origin": "tradingview"
+    },
+    {
+      "code": "ADRI",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Arab Development & Real Estate Investment",
+      "sector": "financials",
+      "industry": "Real Estate Development",
+      "shariah": "review",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 11610091,
+      "bars": 1500,
+      "origin": "tradingview"
+    },
+    {
+      "code": "HBCO",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Heibco Npv",
+      "sector": "holding",
+      "industry": null,
+      "shariah": "review",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 10165979,
+      "bars": 407,
+      "origin": "tradingview"
+    },
+    {
+      "code": "GGRN",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Gogreen for Agricultural Investment and Development Company",
+      "sector": "financials",
+      "industry": "Miscellaneous Commercial Services",
+      "shariah": "review",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 24312590,
+      "bars": 370,
+      "origin": "tradingview"
+    },
+    {
+      "code": "UPMS",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Union Pharmacist Company For Medical Services And Investment",
+      "sector": "healthcare",
+      "industry": "Medical/Nursing Services",
+      "shariah": "compliant",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 551689,
+      "bars": 1500,
+      "origin": "tradingview"
+    },
+    {
+      "code": "PHGC",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Premium Healthcare Group",
+      "sector": "healthcare",
+      "industry": "Medical/Nursing Services",
+      "shariah": "review",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 16014548,
+      "bars": 577,
+      "origin": "tradingview"
+    },
+    {
+      "code": "DGTZ",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "Digitize for Investment And Technology",
+      "sector": "tech",
+      "industry": "Information Technology Services",
+      "shariah": "review",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 2298536,
+      "bars": 695,
+      "origin": "tradingview"
     }
   ],
   "rejected": [
     {
-      "code": "QNBE",
-      "name": "Qatar National Bank",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "GPPL",
+      "name": "Golden Pyramids Plaza",
+      "reason": "السعر ثابت في 100% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "ORAS",
-      "name": "Orascom Construction Plc",
-      "reason": "تعارض في السعر: TradingView 848.9 مقابل Yahoo 71.05 (92%)"
+      "code": "EGSA",
+      "name": "Egyptian Satellite Co.",
+      "reason": "وسيط حجم التداول 975 سهم (8,795 ج) — السهم عمليًا مش بيتداول"
     },
     {
-      "code": "VLMRA",
-      "name": "Valmore Holding",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "SPHT",
+      "name": "El Shams Pyramids Co. for Hotels & Touristic Projects SAE",
+      "reason": "السعر ثابت في 97% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "VALU",
-      "name": "U Consumer Finance S.A.E",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "SAIB",
+      "name": "Societe Arabe Internationale de Banque",
+      "reason": "السعر ثابت في 98% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "TAQA",
-      "name": "TAQA Arabia",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "CFGH",
+      "name": "Concrete Fashion Group for Commercial and Industrial Investments S.A.E",
+      "reason": "وسيط حجم التداول 92751 سهم (11,316 ج) — السهم عمليًا مش بيتداول"
     },
     {
-      "code": "UBEE",
-      "name": "United Bank SAE",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "NDRL",
+      "name": "National Drilling Co.",
+      "reason": "السعر ثابت في 100% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "BONY",
-      "name": "Bonyan for Development and Trade",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "DEIN",
+      "name": "Delta Insurance",
+      "reason": "السعر ثابت في 95% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "GOUR",
-      "name": "Gourmet Egypt.Com Foods",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "MEGM",
+      "name": "Middle East Glass Manufacturing SAE",
+      "reason": "السعر ثابت في 100% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "ACAP",
-      "name": "A Capital Holding",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "ICLE",
+      "name": "International Co. for Leasing SAE",
+      "reason": "السعر ثابت في 100% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "CRST",
-      "name": "Creast Mark For Contracting And Real Estate Development",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "TRTO",
+      "name": "TransOceans Tours",
+      "reason": "وسيط حجم التداول 50779 سهم (3,555 ج) — السهم عمليًا مش بيتداول"
     },
     {
-      "code": "ACTF",
-      "name": "Act Financial",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "MMAT",
+      "name": "Marsa Marsa Alam for Tourism Development",
+      "reason": "السعر ثابت في 98% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "GPIM",
-      "name": "GPI For Urban Growth",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "MISR",
+      "name": "MISR Intercontinental for Granite & Marble",
+      "reason": "السعر ثابت في 100% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "NARE",
-      "name": "Naeem Real Estate Holding Group",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "EOSB",
+      "name": "El Orouba Securities Brokerage",
+      "reason": "السعر ثابت في 97% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "KRDI",
-      "name": "Al Khair River for Development Agriculture Investment and Environmental Services",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "ESRS",
+      "name": "Ezz Steel",
+      "reason": "آخر بيانات من 2025-03-13 — متأخرة 387 جلسة، السهم غالبًا موقوف أو مشطوب"
     },
     {
-      "code": "AIH",
-      "name": "Arabia Investments Holding SAE",
-      "reason": "1 جلسة فقط"
+      "code": "MKIT",
+      "name": "Egyptian Kuwaiti for Investment & Trade",
+      "reason": "آخر بيانات من 2026-08-12 — متأخرة 18 جلسة، السهم غالبًا موقوف أو مشطوب"
     },
     {
-      "code": "AMII",
-      "name": "Arabian Metal Industries and Industrial Investments",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "IRAX",
+      "name": "El Ezz Aldekhela Steel-Alexandria",
+      "reason": "السهم اتداول 11 جلسة بس في آخر 3 شهور (المتوقع ~64) — تداول نادر، أي تحليل فني عليه بلا معنى"
     },
     {
-      "code": "FCMD",
-      "name": "Future Care For Medical Industries",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "SUCE",
+      "name": "Suez Cement Co.",
+      "reason": "السهم اتداول 1 جلسة بس في آخر 3 شهور (المتوقع ~64) — تداول نادر، أي تحليل فني عليه بلا معنى"
     },
     {
-      "code": "TANM",
-      "name": "Tanmiya for Real Estate Investment",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "NCGC",
+      "name": "Nile Cotton Ginning",
+      "reason": "وسيط حجم التداول 124 سهم (6,200 ج) — السهم عمليًا مش بيتداول"
     },
     {
-      "code": "TYCN",
-      "name": "Tycoon Holding Company For Financial Investments",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "SMPP",
+      "name": "Modern Shorouk Printing & Packaging",
+      "reason": "وسيط حجم التداول 43 سهم (5,586 ج) — السهم عمليًا مش بيتداول"
     },
     {
-      "code": "DGTZ",
-      "name": "Digitize for Investment And Technology",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "PACH",
+      "name": "Paints & Chemical Industries Co.",
+      "reason": "وسيط حجم التداول 92 سهم (8,174 ج) — السهم عمليًا مش بيتداول"
     },
     {
-      "code": "HBCO",
-      "name": "Heibco Npv",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "SEIGA",
+      "name": "Saudi Egyptian Investment & Finance Co. SAE",
+      "reason": "السعر ثابت في 100% من آخر 60 جلسة — البيانات مجمدة، مش تداول حقيقي"
     },
     {
-      "code": "TWSA",
-      "name": "Tawasoa Factoring",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "SINA",
+      "name": "Sinai Manganese Company",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
     },
     {
-      "code": "GGRN",
-      "name": "Gogreen for Agricultural Investment and Development Company",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "POCO",
+      "name": "Port Said Container And Cargo Handling",
+      "reason": "تاريخ قصير جدًا (3 جلسة) — محتاج 60 على الأقل للتحليل الفني"
     },
     {
-      "code": "PHGC",
-      "name": "Premium Healthcare Group",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "CID",
+      "name": "Chemical Development Industries (CID)",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "RMTV",
+      "name": "Rowad Misr Tourism Investment",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "SIEG",
+      "name": "Egyptian Company for Pipes and Cement Products -Siegwart",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "ACFR",
+      "name": "Alexandria Company For Refractories",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "GROV",
+      "name": "Grova Special Purpose Acquisition Company",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "NMIN",
+      "name": "El Nasr Mining Co Egp10",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "NFCI",
+      "name": "ELNASR Co For Fertilizers And Chemical Industries",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "ELAB",
+      "name": "Egyptian Linear Alkyl Benzene Company",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "MITR",
+      "name": "Misr Travel&Touris Egp6",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "EGWA",
+      "name": "General Warehouses of Egypt",
+      "reason": "تاريخ قصير جدًا (3 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "MMHC",
+      "name": "El Mamoura Company For Construction & Tourism Development",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
     },
     {
       "code": "KORA",
       "name": "KORRA",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "reason": "تاريخ قصير جدًا (59 جلسة) — محتاج 60 على الأقل للتحليل الفني"
     },
     {
-      "code": "AIDC",
-      "name": "Arabia for Investment and Development",
-      "reason": "لا يوجد تاريخ على Yahoo"
+      "code": "YAYT",
+      "name": "Spring & Transportation Needs Manufacturing Co.",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
     },
     {
-      "code": "ADRI",
-      "name": "Arab Development & Real Estate Investment",
-      "reason": "1 جلسة فقط"
+      "code": "GEOS",
+      "name": "Geos for trading and contracting",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "ALXD",
+      "name": "Alexandria For Investment and Urban Development",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "HDST",
+      "name": "HEDGESTONE INVESTMENT",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "WATP",
+      "name": "Modern Co. for Water Proofing",
+      "reason": "وسيط حجم التداول 117 سهم (2,691 ج) — السهم عمليًا مش بيتداول"
+    },
+    {
+      "code": "KNGC",
+      "name": "EL- Nasr Glass And Crystal",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "OCAP",
+      "name": "OG Capital For Investments SPAC",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "ANCC",
+      "name": "ALNAHDA Industrial Co.",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "EFAC",
+      "name": "Egyptian Ferro All Egp10",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "GTEX",
+      "name": "G-TEX for Commercial and Industrial Investments S.A.E",
+      "reason": "وسيط حجم التداول 66858 سهم (2,942 ج) — السهم عمليًا مش بيتداول"
+    },
+    {
+      "code": "DCCC",
+      "name": "Damietta Container and Cargo Handling",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "TOUR",
+      "name": "Tourism Urbanization",
+      "reason": "السهم اتداول 1 جلسة بس في آخر 3 شهور (المتوقع ~64) — تداول نادر، أي تحليل فني عليه بلا معنى"
+    },
+    {
+      "code": "MLIC",
+      "name": "Misr Life Insurance",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "EEP",
+      "name": "Egypt Education Platform - EEP",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "EGOTH",
+      "name": "El Masreyah Touris Egp100",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "ENPI",
+      "name": "Engineering for the Petroleum and Process Industries",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "PMSC",
+      "name": "Petroleum Marine Services Company",
+      "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
+    },
+    {
+      "code": "EITP",
+      "name": "Egyptian International Tourism Projects",
+      "reason": "وسيط حجم التداول 791 سهم (6,557 ج) — السهم عمليًا مش بيتداول"
+    },
+    {
+      "code": "ACRO",
+      "name": "Acrow Misr",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "ARVA",
+      "name": "Arab Valves Company",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "DIFC",
+      "name": "International Dry Ice Co. (DIFCO)",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "NAPR",
+      "name": "National Printing Company",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "SIMO",
+      "name": "Simo Plastic Industries",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "SLAR",
+      "name": "Solar Soul",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "ALRA",
+      "name": "Atlas Food Industries",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "AIVC",
+      "name": "Al Arafa Investment",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "AOTM",
+      "name": "Al Orouba Trading Mining",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "AIHC",
+      "name": "Arabia Investments Holding",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "HAVC",
+      "name": "Hassan Allam Investment & Venture Capital",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "SFWA",
+      "name": "El Safwa Hospital",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "ARPI",
+      "name": "Arab Rocks for Plastic Industries",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "HCFI",
+      "name": "Lekah Group",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "PTCC",
+      "name": "Pharotech (Farotech)",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "BQDC",
+      "name": "Banque du Caire",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "GETO",
+      "name": "Genial Tours",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "GOCO",
+      "name": "Golden Coast El Sokhna for Touristic Investment",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "TRST",
+      "name": "Theqa for Business Management & Development",
+      "reason": "مش موجود على Yahoo ولا TradingView"
+    },
+    {
+      "code": "UASG",
+      "name": "United Arab Shipping & Unloading",
+      "reason": "مش موجود على Yahoo ولا TradingView"
     }
   ]
 }

@@ -1,0 +1,281 @@
+﻿sector,company_name,ticker,yahoo_ticker,instrument_type,source,retrieved_date
+Industrial,Acrow Misr,ACRO,ACRO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Alexandria Spinning & Weaving,SPIN,SPIN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Arab Aluminum,ALUM,ALUM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Arab Cotton Ginning,ACGC,ACGC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Unirab Polvara Spinning,APSW,APSW.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Arab Valves Company,ARVA,ARVA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,ASCOM Mining,ASCM,ASCM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,BID - El Badr for Investment & Development,BIDI,BIDI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,General Ceramics & Porcelain,PRCL,PRCL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Delta Printing & Packaging,DTPP,DTPP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Dice Ready-Made Garments,DSCW,DSCW.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Egypt Aluminum,EGAL,EGAL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Egyptian Iron & Steel,IRON,IRON.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,El Ahram Printing & Packaging,EPPK,EPPK.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Arab Engineering Industries,EEII,EEII.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,El Ezz Aldekhela Steel Alexandria,IRAX,IRAX.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Al Ezz Ceramics & Porcelain,ECAP,ECAP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,El-Nasr Clothing (KABO),KABO,KABO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,El Shorouk Modern for Printing & Packaging,SMPP,SMPP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Electro Cable Egypt,ELEC,ELEC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Elsewedy Electric,SWDY,SWDY.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Industrial Engineering Co.,ENGC,ENGC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Ezz Steel,ESRS,ESRS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Future Care For Medical Industries,FCMD,FCMD.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Gadwa Industrial Development,GDWA,GDWA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Golden Textiles,GTWL,GTWL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,GTEX Commercial & Industrial,GTEX,GTEX.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,International Dry Ice Co. (DIFCO),DIFC,DIFC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Iron & Steel Mines & Quarries,ISMQ,ISMQ.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Lecico Egypt,LCSW,LCSW.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,MB Engineering,MBEG,MBEG.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Middle East Glass,MEGM,MEGM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,National Printing Company,NAPR,NAPR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Orascom Construction,ORAS,ORAS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Oriental Weavers,ORWE,ORWE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Pachin S.A.E.,PACH,PACH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Rakta Paper Manufacturing,RAKT,RAKT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Rekaz Holding,RKAZ,RKAZ.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Rubex International,RUBX,RUBX.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Simo Plastic Industries,SIMO,SIMO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Solar Soul,SLAR,SLAR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Universal Paper & Packaging,UNIP,UNIP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Industrial,Vertica Co.,VERT,VERT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Amer Group Holding,AMER,AMER.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Arab Developers Holding,ARAB,ARAB.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Arab for Real Estate Development & Investment,ADRI,ADRI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Arab Real Estate Investment,RREI,RREI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Atlas for Investment & Food Industries,AIFI,AIFI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,CIRA Education,CIRA,CIRA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Copper Commercial Investment,COPR,COPR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Creast Mark Contracting,CRST,CRST.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Delta for Construction & Rebuilding,DCRC,DCRC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Real Estate Egyptian Consortium,AREH,AREH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Egyptians for Housing,EHDR,EHDR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Al Ahly Development & Investment,AFDI,AFDI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Cairo Housing & Development,ELKA,ELKA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,El-Ebour Real Estate,OBRI,OBRI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Al Shams Housing,ELSH,ELSH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,El Shams Pyramids Hotels,SPHT,SPHT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,El Saeed Contracting,UEGC,UEGC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Emaar Misr,EMFD,EMFD.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,First Investment & Real Estate Development,FIRE,FIRE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Gharbia Islamic Housing,GIHD,GIHD.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Golden Pyramids Plaza,GPPL,GPPL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Gulf Canadian Real Estate,CCRS,CCRS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Heliopolis Housing,HELI,HELI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Ismailia Development,IDRE,IDRE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Madinet Masr,MASR,MASR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Mena Touristic & Real Estate,MENA,MENA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Naeem Real Estate,NARE,NARE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,National Housing Professional Syndicates,NHPS,NHPS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Orascom Development Egypt,ORHD,ORHD.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Palm Hills Development,PHDC,PHDC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Pioneers Properties,PRDC,PRDC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,SODIC,OCDI,OCDI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Talaat Moustafa Group,TMGH,TMGH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Tanmiya Real Estate,TANM,TANM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,United Housing & Development,UNIT,UNIT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Utopia Real Estate Investment & Tourism,UTOP,UTOP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Real Estate,Zahraa El Maadi,ZMID,ZMID.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Ajwa Food Industries,AJWA,AJWA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Alexandria Flour Mills,AFMC,AFMC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Domty,DOMT,DOMT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Atlas Food Industries,ALRA,ALRA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,BIG for Trade & Investment,BIGP,BIGP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Cairo Oil & Soap,COSG,COSG.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Cairo Poultry,POUL,POUL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Delta Sugar,SUGR,SUGR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,East Delta Flour Mills,EDFM,EDFM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Eastern Company,EAST,EAST.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Edita Food Industries,EFID,EFID.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Egypt for Poultry,EPCO,EPCO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,El Nasr Agricultural Crops,ELNA,ELNA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Extracted Oil & Derivatives,ZEOT,ZEOT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Gourmet Egypt,GOUR,GOUR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Hedgestone Investment,HDST,HDST.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,International Business Corp for Trade & Franchise,IBCT,IBCT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Ismailia/Misr Poultry,ISMA,ISMA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Ismailia National Food (Foodico),INFI,INFI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Juhayna Food Industries,JUFO,JUFO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Mansoura Poultry,MPCO,MPCO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Middle & West Delta Flour Mills,WCDF,WCDF.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Middle Egypt Flour Mills,CEFM,CEFM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Egypt Free Shops,MFSC,MFSC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Misr Oils & Soap,MOSC,MOSC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Nile Cotton Ginning,NCGC,NCGC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,North Cairo Flour Mills,MILS,MILS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Obour Land Food,OLFI,OLFI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Sharkia National Food,SNFC,SNFC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,South Cairo Flour Mills,SCFM,SCFM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Arab Dairy Products,ADPC,ADPC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Consumer,Upper Egypt Mills,UEFM,UEFM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Al Arafa Investment,AIVC,AIVC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Al Fanar Contracting,FNAR,FNAR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Al Orouba Trading Mining,AOTM,AOTM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Al Tawfeek Leasing,ATLC,ATLC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Arab Co. for Asset Management,ACAMD,ACAMD.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Arab Moltaqa Investments,AMIA,AMIA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Arabia Investment & Development,AIDC,AIDC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Bonyan Development,BONY,BONY.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Concrete Fashion Group,CFGH,CFGH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Development & Engineering,DAPH,DAPH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Egyptian Financial & Industrial,EFIC,EFIC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Marseille Investment Holding,MAAL,MAAL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,El Wadi Investment,ELWA,ELWA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,General Silos & Storage,GSSC,GSSC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Giza General Contracting,GGCC,GGCC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,GMC Group,GMCI,GMCI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,International Investment & Development,ICID,ICID.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,MM Group,MTIE,MTIE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Nasr Company Civil Works,NCCW,NCCW.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,National Drilling,NDRL,NDRL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,ODIN Investments,ODIN,ODIN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Orascom Investment Holding,OIH,OIH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Qalaa Holdings,CCAP,CCAP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Valmore Holding,VLMR,VLMR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Diversified,Valmore Holding EGP,VLMRA,VLMRA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,A Capital Holding,ACAP,ACAP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Act Financial,ACTF,ACTF.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Arabia Investments Holding,AIHC,AIHC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Aspire Capital Holding,ASPI,ASPI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,B Investments Holding,BINV,BINV.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Beltone Holding,BTFH,BTFH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Catalyst Partners,CPME,CPME.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,CI Capital Holding,CICH,CICH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Contact Financial Holding,CNFN,CNFN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,EFG Holding,HRHO,HRHO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Egyptian Arabian Securities,EASB,EASB.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,El Kahera El Watania Investment,KWIN,KWIN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Al Orouba Securities Brokerage,EOSB,EOSB.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Grand Capital,GRCA,GRCA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Hassan Allam Investment & Venture Capital,HAVC,HAVC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,International Leasing,ICLE,ICLE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Naeem Holding,NAHO,NAHO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Orascom Financial Holding,OFH,OFH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Osool ESB Securities,EBSC,EBSC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Prime Holding,PRMH,PRMH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Saudi Egyptian Investment,SEIG,SEIG.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Tawasol Factoring,TWSA,TWSA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Financial Services,Tycoon Investments Holding,TYCN,TYCN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Advanced Pharma Packaging,APPC,APPC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Alexandria New Medical Center,AMES,AMES.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Alexandria Pharmaceuticals,AXPH,AXPH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Arab Drug Company,ADCI,ADCI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Kahira Pharmaceuticals,CPCI,CPCI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Cleopatra Hospitals Group,CLHO,CLHO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,EIPICO,PHAR,PHAR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,El Safwa Hospital,SFWA,SFWA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,El Nile Pharmaceuticals,NIPH,NIPH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,GlaxoSmithKline Egypt,BIOC,BIOC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Ibnsina Pharma,ISPH,ISPH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Macro Group Pharma,MCRO,MCRO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Medical Packaging,MEPA,MEPA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Memphis Pharmaceuticals,MPCI,MPCI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Minapharm Pharmaceuticals,MIPH,MIPH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Nozha International Hospital,NINH,NINH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,October Pharma,OCPH,OCPH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Premium Healthcare Group,PHGC,PHGC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Sabaa International Pharma,SIPC,SIPC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Speed Medical,SPMD,SPMD.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Rameda Pharma,RMDA,RMDA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Healthcare,Union Pharma,UPMS,UPMS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Alexandria Portland Cement,ALEX,ALEX.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Arab Rocks for Plastic Industries,ARPI,ARPI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Arabian Cement,ARCC,ARCC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Bitumode,WATP,WATP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,EgyStone (Egypt for Granite & Marble),MISR,MISR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Geos for Trade & Contracting,GEOS,GEOS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,GPI for Urban Growth,GPIM,GPIM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Heidelberg Materials Suez Cement,SUCE,SUCE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Hipco,HBCO,HBCO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Industrial & Engineering Enterprises Co.,IEEC,IEEC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Integrated Engineering Group,INEG,INEG.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Lekah Group,HCFI,HCFI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Misr Beni Suef Cement,MBSC,MBSC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Misr Cement Qena,MCQE,MCQE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Pharotech (Farotech),PTCC,PTCC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Qora for Energy & Investment Projects,KORA,KORA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Sinai Cement,SCEM,SCEM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,South Valley Cement,SVCE,SVCE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Arab Ceramic,CERA,CERA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Building Materials,Tora Cement,TORA,TORA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Abu Dhabi Islamic Bank Egypt,ADIB,ADIB.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Al Baraka Bank Egypt,SAUD,SAUD.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Banque du Caire,BQDC,BQDC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Commercial International Bank,COMI,COMI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Credit Agricole Egypt,CIEB,CIEB.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Egyptian Gulf Bank,EGBE,EGBE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Export Development Bank,EXPA,EXPA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Faisal Islamic Bank,FAIT,FAIT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Faisal Islamic Bank USD,FAITA,FAITA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Housing & Development Bank,HDBK,HDBK.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,National Bank of Egypt,NBKE,NBKE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,QNB Alahli,QNBE,QNBE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,SAIB Bank,SAIB,SAIB.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,Suez Canal Bank,CANA,CANA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Banking,The United Bank,UBEE,UBEE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Egyptian Co. for International Touristic Projects,EITP,EITP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Egyptian Resorts,EGTS,EGTS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Fitness Prime Health Clubs,FTNS,FTNS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Genial Tours,GETO,GETO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Golden Coast El Sokhna for Touristic Investment,GOCO,GOCO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Marsa Alam Tourism,MMAT,MMAT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Misr Hotels,MHOT,MHOT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Pyramisa Hotels & Resorts,PHTV,PHTV.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Remco Tourism Villages,RTVC,RTVC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Rowad Misr (Pioneers of Egypt),RMTV,RMTV.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Rowad Tourism,ROTO,ROTO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Sharm Dreams Tourism,SDTI,SDTI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Tourism,Trans Oceans Tours,TRTO,TRTO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,AlKhair River Development,KRDI,KRDI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Egyptian Kuwaiti for Investment & Trade,MKIT,MKIT.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Arab Land Reclamation,EALR,EALR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,General Land Reclamation,AALR,AALR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Go Green Agricultural,GGRN,GGRN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,International Agricultural Crops,IFAP,IFAP.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Lotus Agri Capital,LUTS,LUTS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Northern Upper Egypt Agriculture,NEDA,NEDA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Sohag National for Food Industries,SNFI,SNFI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Theqa for Business Management & Development,TRST,TRST.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Agriculture,Wadi Kom Ombo,WKOL,WKOL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Abu Qir Fertilizers,ABUK,ABUK.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Alexandria Mineral Oils,AMOC,AMOC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Egyptian Chemical Industries,EGCH,EGCH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Ferchem Misr,FERC,FERC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,International Co. for Fertilizers & Chemicals,ICFC,ICFC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Kafr El Zayat Pesticides,KZPC,KZPC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Misr Chemical Industries,MICH,MICH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,MOPCO,MFPC,MFPC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Samad Misr EGYFERT,SMFR,SMFR.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Petrochemical,Sidi Kerir Petrochemicals,SKPC,SKPC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Alexandria Container & Cargo,ALCN,ALCN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Canal Shipping Agencies,CSAG,CSAG.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Damietta Container & Cargo,DCCC,DCCC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Egyptian General Warehouses,EGWA,EGWA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Egyptian Transport Services,ETRS,ETRS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Maridive & Oil Services,MOIL,MOIL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Port Said Containers,POCO,POCO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,Suez Canal Technology Settling,SCTS,SCTS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Transport,United Arab Shipping & Unloading,UASG,UASG.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,Al Moasher Programming,AMPI,AMPI.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,Cairo Educational Services,CAED,CAED.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,iWave Beyond,DGTZ,DGTZ.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,Global Telecom Holding,GTHE,GTHE.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,Raya Customer Experience,RACC,RACC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,Raya Holding,RAYA,RAYA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,Taaleem Management,TALM,TALM.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Technology,Modern Education Systems,MOED,MOED.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+FinTech,e-Finance,EFIH,EFIH.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+FinTech,Fawry,FWRY,FWRY.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+FinTech,ValU Consumer Finance,VALU,VALU.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Energy,Misr National Steel - Ataqa,ATQA,ATQA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Energy,Egypt Gas,EGAS,EGAS.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Energy,TAQA Arabia,TAQA,TAQA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Insurance,Delta Insurance,DEIN,DEIN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Insurance,Mohandes Insurance,MOIN,MOIN.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Media,Egyptian Media Production City,MPRC,MPRC.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Media,Nilesat,EGSA,EGSA.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Telecom,Telecom Egypt,ETEL,ETEL.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07
+Automotive,GB Corp,GBCO,GBCO.CA,Equity,FoudaLens directory; cross-check against EGX official listing,2026-09-07

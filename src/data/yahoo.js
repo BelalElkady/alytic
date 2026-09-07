@@ -102,6 +102,39 @@ export async function fetchDaily(yahooSymbol, { range = '2y' } = {}) {
   };
 }
 
+/**
+ * Daily bars for an EGX ticker, from whichever source can actually serve it.
+ *
+ * Yahoo is tried first — it has the deepest history where it has any (up to 5
+ * years vs TradingView's ~1500 bars) and needs no websocket. But it carries
+ * nothing at all for roughly 62 EGX companies, several of them large (QNBE,
+ * TAQA Arabia, Suez Cement, ENPPI). For those, and for symbols where Yahoo
+ * serves a dead series, TradingView's chart feed is the fallback.
+ *
+ * @param {string} code - plain ticker, e.g. 'QNBE'
+ * @param {object} [opts]
+ * @param {string} [opts.yahooSymbol] - override, e.g. an ISIN-based symbol
+ * @param {number} [opts.minBars=60] - below this, Yahoo is treated as a miss
+ */
+export async function fetchDailyAuto(code, { range = '2y', yahooSymbol = null, minBars = 60, source = null } = {}) {
+  const symbol = yahooSymbol ?? `${String(code).toUpperCase()}.CA`;
+
+  // The universe records which feed actually serves each stock, so a known
+  // TradingView-only name skips the Yahoo round-trip entirely — across a
+  // 234-stock scan that is 39 pointless requests and several seconds saved.
+  if (source !== 'tradingview') {
+    try {
+      const result = await fetchDaily(symbol, { range });
+      if (result.bars.length >= minBars) return { ...result, source: 'yahoo' };
+    } catch {
+      // fall through to the fallback
+    }
+  }
+
+  const { fetchDailyTV } = await import('./tv-history.js');
+  return fetchDailyTV(code);
+}
+
 /** Fetch many symbols with bounded concurrency; failures are reported, never thrown. */
 export async function fetchDailyMany(symbols, { range = '2y', concurrency = 4, onProgress } = {}) {
   const out = new Map();

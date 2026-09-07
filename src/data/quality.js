@@ -77,6 +77,41 @@ export function checkQuality(bars, { code = '?', maxStaleSessions = 5 } = {}) {
     warn(`نصف الجلسات تقريبًا بدون حجم تداول مسجّل`);
   }
 
+  // --- Trading frequency ---
+  // A series can be perfectly well-formed and still describe a stock that
+  // barely trades. Suez Cement passed every check above while its last 60 bars
+  // spanned years — real prints in June, then nothing until September. Counting
+  // bars is meaningless without asking what period they cover.
+  const CAL_WINDOW_DAYS = 90;
+  const cutoff = new Date(Date.now() - CAL_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const recentSessions = bars.filter((b) => b.date >= cutoff).length;
+  const expectedSessions = Math.round((CAL_WINDOW_DAYS * 5) / 7); // EGX trades Sun-Thu
+  const attendance = recentSessions / expectedSessions;
+
+  if (attendance < 0.3) {
+    fail(
+      `السهم اتداول ${recentSessions} جلسة بس في آخر 3 شهور (المتوقع ~${expectedSessions}) — ` +
+        'تداول نادر، أي تحليل فني عليه بلا معنى',
+    );
+  } else if (attendance < 0.6) {
+    warn(`تداول متقطع — ${recentSessions} جلسة من ~${expectedSessions} في آخر 3 شهور`);
+  }
+
+  // --- Meaningful volume ---
+  // Ezz Dekheila prints one to thirty shares a session: non-zero, so the check
+  // above passes, but nobody can build or exit a position against it.
+  const vols = recent.map((b) => b.v).filter((v) => v > 0).sort((a, b) => a - b);
+  if (vols.length) {
+    const medianVol = vols[Math.floor(vols.length / 2)];
+    const medianTurnover = medianVol * bars[bars.length - 1].c;
+    if (medianVol < 100 || medianTurnover < 20_000) {
+      fail(
+        `وسيط حجم التداول ${medianVol} سهم (${Math.round(medianTurnover).toLocaleString('en-US')} ج) — ` +
+          'السهم عمليًا مش بيتداول',
+      );
+    }
+  }
+
   // --- Absurd values ---
   if (bars.some((b) => b.c <= 0 || b.h < b.l)) {
     fail('البيانات فيها أسعار غير منطقية (صفر/سالب أو أعلى أقل من أدنى)');

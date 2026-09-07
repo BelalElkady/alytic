@@ -8,7 +8,7 @@
  * still get every number — the model only adds narrative and judgment.
  */
 
-import { fetchDaily } from './data/yahoo.js';
+import { fetchDailyAuto } from './data/yahoo.js';
 import { getBars } from './data/cache.js';
 import { checkQuality } from './data/quality.js';
 import { fetchFundamentals } from './data/tradingview.js';
@@ -40,7 +40,14 @@ export async function analyzeTicker(code, opts = {}) {
       : opts.withFundamentals === false
         ? null
         : (await fetchFundamentals([code])).get(code.toUpperCase()) ?? null;
-  const data = await getBars(code, toYahoo(code), fetchDaily, { range, force });
+  // The fetcher picks its own source (Yahoo, else TradingView); the cache keys
+  // on the ticker either way, so nothing downstream needs to know which won.
+  const data = await getBars(
+    code,
+    toYahoo(code),
+    (yahooSymbol, o) => fetchDailyAuto(code, { ...o, yahooSymbol, source: meta.source }),
+    { range, force },
+  );
   const bars = data.bars;
 
   // Refuse to analyze data we don't trust. Returning a scored verdict on a
