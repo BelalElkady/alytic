@@ -11,8 +11,7 @@
  * audit trail: whatever the analyst says, it was working from exactly this.
  */
 
-import { getClient, MODEL, callWithRetry } from './client.js';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { MODEL, requestStructured } from './client.js';
 import { PortfolioReviewSchema } from './schemas.js';
 import { analystSystemPrompt } from './prompts/system.js';
 import RULES from '../config/rules.js';
@@ -149,8 +148,6 @@ export function briefFor(a) {
  * @param {object} ctx - { cash, capital, positions: Map<code, {shares, avgCost}> }
  */
 export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL, rules = RULES } = {}) {
-  const client = getClient();
-
   const held = analyses.filter((a) => a.position);
   const watch = analyses.filter((a) => !a.position);
 
@@ -192,32 +189,23 @@ ${watch.map(briefFor).join('\n\n') || 'قائمة المراقبة فاضية.'}
 اديني قرار لكل سهم فوق (المراكز وقائمة المراقبة)، وتوصية للكاش، وأهم إجراء لبكرة.
 افتكر: الأرقام دي نهائية — احكم عليها، ما تحسبهاش من تاني.`;
 
-  const response = await callWithRetry(() =>
-    client.messages.parse({
-      model,
-      max_tokens: 16000,
-      thinking: { type: 'adaptive' },
-      // The system prompt is identical on every run, so caching it makes each
-      // subsequent review meaningfully cheaper.
-      system: [{ type: 'text', text: analystSystemPrompt(rules), cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: userMessage }],
-      output_config: { format: zodOutputFormat(PortfolioReviewSchema) },
-    }),
-  );
-
-  if (response.stop_reason === 'refusal') {
-    throw new Error(`النموذج رفض الطلب: ${response.stop_details?.explanation ?? 'بدون تفاصيل'}`);
-  }
-  if (!response.parsed_output) {
-    throw new Error('النموذج رجّع رد مش مطابق للصيغة المطلوبة');
-  }
+  const { data, raw } = await requestStructured({
+    model,
+    schema: PortfolioReviewSchema,
+    schemaName: 'portfolio_review',
+    maxTokens: 16000,
+    // The system prompt is identical on every run, so caching it makes each
+    // subsequent review meaningfully cheaper.
+    system: [{ type: 'text', text: analystSystemPrompt(rules), cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: userMessage }],
+  });
 
   return {
-    ...response.parsed_output,
+    ...data,
     _meta: {
-      model: response.model,
+      model: raw.model,
       asOf: analyses[0]?.asOf ?? null,
-      usage: response.usage,
+      usage: raw.usage,
       stocksReviewed: analyses.length,
     },
   };
