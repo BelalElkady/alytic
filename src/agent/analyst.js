@@ -14,7 +14,33 @@
 import { MODEL, requestStructured } from './client.js';
 import { PortfolioReviewSchema } from './schemas.js';
 import { analystSystemPrompt } from './prompts/system.js';
+import { crossCheckIndicators } from './crosscheck.js';
 import RULES from '../config/rules.js';
+
+/**
+ * Client-side tool: an independent recomputation of RSI/MACD/Bollinger from a
+ * second data source (yfinance) and a second implementation (pandas), run via
+ * `scripts/cross_check_indicators.py`. It exists to catch "the engine's own
+ * number is stale or wrong" — never to hand the model an alternate number to
+ * prefer. A real discrepancy belongs in `conflictNoted` or `riskFlags`; it
+ * must never change a stop, target or quantity, which stay the engine's alone.
+ */
+const crossCheckTool = {
+  name: 'cross_check_indicators',
+  description:
+    'يجيب RSI(14) وMACD(12,26,9) وبولينجر(20,2) لسهم واحد من مصدر بيانات ومكتبة حسابية مختلفين تمامًا عن محرك التطبيق ' +
+    '(yfinance + pandas بدل بيانات ياهو ومحرك التطبيق الداخلي). استخدمها بس لو في شك حقيقي إن رقم في البريف غريب أو ' +
+    'قديم أو بيتناقض بشكل غير منطقي — مش كتأكيد روتيني لكل سهم. النتيجة معلومة للمقارنة بس؛ الوقف والهدف والكمية ' +
+    'المحسوبين في البريف هما اللي يتحكموا في القرار دايمًا، حتى لو اختلفوا عن رقم الأداة دي.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      code: { type: 'string', description: 'كود السهم في البورصة المصرية، زي COMI' },
+    },
+    required: ['code'],
+  },
+  handler: async ({ code }) => crossCheckIndicators(code),
+};
 
 const n = (x, unit = '') => (x == null ? 'غير متاح' : `${x}${unit}`);
 
@@ -104,8 +130,14 @@ export function briefFor(a) {
     const ps = a.position;
     lines.push(`**المركز المفتوح:** ${ps.shares} سهم بمتوسط ${ps.avgCost} | ` +
       `${ps.unrealizedPct >= 0 ? 'ربح' : 'خسارة'} ${ps.unrealizedPct}% (${ps.unrealizedEgp} ج) | ` +
-      `الوقف الفعلي ${ps.stop}${ps.trailing.active ? ' (متحرك مفعّل)' : ''}`);
+      `الوقف الفعلي (الملزم) ${ps.stop}${ps.trailing.active ? ' (متحرك مفعّل)' : ''}`);
     if (ps.trailing.moved) lines.push(`  ⬆️ الوقف المتحرك اتحرك من ${ps.trailing.from} لـ ${ps.stop} (القمة ${ps.trailing.peak})`);
+    // Informational only — the mechanical triggers below act on ps.stop, never
+    // on this. It exists so a "hold for the long term" verdict can point to a
+    // real invalidation level instead of an open-ended "hold and see".
+    if (ps.longTermStop?.stop) {
+      lines.push(`  الوقف البعيد (استرشادي، للمدى الطويل فقط): ${ps.longTermStop.stop} — ${ps.longTermStop.note}`);
+    }
     const fired = Object.entries(ps.triggers).filter(([, v]) => v).map(([k]) => k);
     lines.push(`  المشغّلات الميكانيكية: ${fired.length ? fired.join(', ') : 'مفيش — المركز داخل نطاقه'}`);
   }
@@ -198,6 +230,13 @@ ${watch.map(briefFor).join('\n\n') || 'قائمة المراقبة فاضية.'}
     // subsequent review meaningfully cheaper.
     system: [{ type: 'text', text: analystSystemPrompt(rules), cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: userMessage }],
+    // Server-side search — runs on Anthropic's infrastructure, no client-side
+    // execution loop needed. The system prompt tells the model this is for
+    // recent news/events that could change a verdict, never for recalculating
+    // a number the brief already computed. Capped well under what a full
+    // portfolio could otherwise burn through if it searched every holding.
+    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: rules.webSearch?.maxUsesPerReview ?? 6 }],
+    clientTools: [crossCheckTool],
   });
 
   return {

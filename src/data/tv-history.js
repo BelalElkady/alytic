@@ -147,3 +147,60 @@ export async function fetchDailyTVMany(codes, { bars = 1500, delayMs = 600, onPr
   }
   return { data, errors };
 }
+
+/** Fetch current last-trade quotes for several EGX symbols in one session. */
+export function fetchLatestQuotes(codes, { timeoutMs = 15000 } = {}) {
+  const wanted = [...new Set(codes.map((code) => String(code).toUpperCase().replace(/^EGX:/, '')))].filter(Boolean);
+  if (!wanted.length) return Promise.resolve(new Map());
+
+  return new Promise((resolve) => {
+    let ws;
+    const quotes = new Map();
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ws?.close(); } catch { /* already closed */ }
+      resolve(quotes);
+    };
+    const timer = setTimeout(finish, timeoutMs);
+
+    try {
+      ws = new WebSocket(WS_URL, { headers: { Origin: ORIGIN } });
+    } catch {
+      finish();
+      return;
+    }
+
+    ws.onopen = () => {
+      const session = sessionId('qs_');
+      ws.send(frame({ m: 'set_auth_token', p: ['unauthorized_user_token'] }));
+      ws.send(frame({ m: 'quote_create_session', p: [session, ''] }));
+      ws.send(frame({ m: 'quote_set_fields', p: [session, 'lp', 'ch', 'chp', 'lp_time', 'short_name', 'description'] }));
+      for (const code of wanted) ws.send(frame({ m: 'quote_add_symbols', p: [session, `EGX:${code}`] }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = typeof event.data === 'string' ? event.data : String(event.data);
+      const beat = data.match(/~m~\d+~m~(~h~\d+)/);
+      if (beat) {
+        ws.send(`~m~${beat[1].length}~m~${beat[1]}`);
+        return;
+      }
+      for (const match of data.matchAll(/~m~\d+~m~(\{.*?\})(?=~m~|$)/g)) {
+        let message;
+        try { message = JSON.parse(match[1]); } catch { continue; }
+        if (message.m !== 'qsd') continue;
+        const value = message.p?.[1]?.v;
+        const code = String(message.p?.[1]?.n ?? '').replace(/^EGX:/, '');
+        if (code && Number.isFinite(value?.lp)) {
+          quotes.set(code, { price: value.lp, change: value.ch ?? null, changePct: value.chp ?? null, time: value.lp_time ?? null });
+        }
+        if (quotes.size >= wanted.length) finish();
+      }
+    };
+    ws.onerror = finish;
+    ws.onclose = () => { if (!settled) finish(); };
+  });
+}

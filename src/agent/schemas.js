@@ -57,6 +57,20 @@ export const StockVerdictSchema = z.object({
   riskFlags: z
     .array(z.string())
     .describe('مخاطر محددة: سيولة، تقلب، تركز قطاعي، قرب من مقاومة. فاضية لو مفيش.'),
+
+  // Populated only when web_search was actually used for this stock. Absence
+  // is the common case — search is for something that changes the decision
+  // (an alert fired, an unexplained move), not a routine check on every name.
+  externalContext: z
+    .array(
+      z.object({
+        headline: z.string(),
+        date: z.string().nullable().describe('تاريخ الخبر لو معروف، وإلا null'),
+        source: z.string().describe('اسم المصدر أو الرابط'),
+        relevance: z.string().describe('جملة قصيرة: ده أثّر إزاي على القرار'),
+      }),
+    )
+    .describe('أخبار أو أحداث خارجية دورت عليها فعلاً وأثرت على القرار ده. فاضية لو ما دورتش أو ما لقيتش حاجة مهمة.'),
 });
 
 /** The whole portfolio review. */

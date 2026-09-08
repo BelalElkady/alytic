@@ -15,7 +15,7 @@ import { fetchFundamentals } from './data/tradingview.js';
 import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
-import { computeStop, computeTrailingStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
+import { computeStop, computeTrailingStop, computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
 import { buildTargets, targetEstimate } from './scoring/targets.js';
 import RULES from './config/rules.js';
 
@@ -138,15 +138,29 @@ export async function analyzeTicker(code, opts = {}) {
     );
     const effectiveStop = trailing.stop ?? position.stop ?? stopPlan.stop;
     const plPct = ((price - position.avgCost) / position.avgCost) * 100;
+    // A second, wider stop for the long-horizon thesis — see computeLongTermStop
+    // for why it shares its invalidation level with the long-term target.
+    const longTermStop = computeLongTermStop(snapshot, effectiveStop, rules);
 
     positionState = {
       shares: position.shares,
+      // True when the share count was never read off the screenshot but
+      // back-solved from `marketValue ÷ a cached close`. That guess is only as
+      // good as the price it divided by, so it must stay visibly marked all
+      // the way to the UI rather than passing as a confirmed holding.
+      sharesEstimated: position.derivedFromScreenshot === true,
       avgCost: r2(position.avgCost),
       marketValue: r2(position.shares * price),
       unrealizedPct: r2(plPct),
       unrealizedEgp: r2(position.shares * (price - position.avgCost)),
       stop: effectiveStop,
       trailing,
+      // Wider stop for the long-term hold — null when there's no long-term
+      // uptrend left to protect (see computeLongTermStop). Distinct from
+      // `stop`: that one is what the mechanical rules actually enforce on a
+      // session close; this one is informational context for the long
+      // horizon, never the trigger the AI or the recommendation rules act on.
+      longTermStop,
       stopBreached: price < effectiveStop,
       distanceToStopPct: r2(((price - effectiveStop) / price) * 100),
       distanceToTargetPct: targets.mid?.price ? r2(((targets.mid.price - price) / price) * 100) : null,

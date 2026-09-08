@@ -1,21 +1,16 @@
 /**
  * Portfolio state: positions, cash, watchlist and the trade log.
  *
- * Persisted as a single JSON file so it is trivially inspectable and editable
- * by hand — this is one investor's book, not a multi-tenant ledger, and a
- * format you can open in an editor beats one you need a tool to read.
+ * Persisted as one JSON file per user so accounts never share positions,
+ * trades, cash, or performance history.
  *
  * Average cost is recomputed from the trade log rather than stored as truth,
  * so a mistyped trade can be corrected by fixing that one entry.
  */
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import RULES from './config/rules.js';
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FILE = path.join(ROOT, 'data', 'portfolio.json');
+import { getPortfolio, putPortfolio } from './db.js';
+import { lookup } from './config/universe.js';
 
 const EMPTY = {
   cash: 0,
@@ -31,19 +26,53 @@ const EMPTY = {
   updatedAt: null,
 };
 
-export async function loadPortfolio() {
-  try {
-    const raw = JSON.parse(await fs.readFile(FILE, 'utf8'));
-    return { ...EMPTY, ...raw };
-  } catch {
-    return { ...EMPTY };
-  }
+export async function loadPortfolio(userId = 'local') {
+  return { ...EMPTY, ...(getPortfolio(userId) ?? {}) };
 }
 
-export async function savePortfolio(p) {
-  await fs.mkdir(path.dirname(FILE), { recursive: true });
-  await fs.writeFile(FILE, JSON.stringify({ ...p, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+export async function savePortfolio(p, userId = 'local') {
+  putPortfolio(userId, p);
   return p;
+}
+
+/**
+ * Per-user write lock. Every mutating endpoint (trade, cash, watchlist,
+ * levels, snapshot, settings, reset, screenshot import...) used to do
+ * `loadPortfolio` → mutate → `savePortfolio` as three separate steps with an
+ * `await` between the read and the write. Two requests landing close together
+ * — a double-click on "تسجيل" with no submit-disable, two tabs open on the
+ * same account, or just ordinary network jitter — could both read the same
+ * starting state; the second write then overwrote the first, silently
+ * discarding whatever it had added. That is exactly what "logging a trade
+ * deletes other entries" looks like from the outside: nothing is actually
+ * deleted, a write is lost and the portfolio reverts to a state one commit old.
+ *
+ * `withPortfolio` closes that window by serialising every read-modify-write
+ * cycle per user: the next caller's `loadPortfolio` cannot run until the
+ * previous caller's `savePortfolio` has fully landed. One in-process queue per
+ * userId, chained on a promise — no external lock needed since this is a
+ * single Node process in front of one SQLite file.
+ */
+const writeQueues = new Map();
+
+export async function withPortfolio(userId, mutator) {
+  const previous = writeQueues.get(userId) ?? Promise.resolve();
+  const run = previous
+    .catch(() => {}) // a prior failure must not jam the queue for later callers
+    .then(async () => {
+      const portfolio = await loadPortfolio(userId);
+      const next = await mutator(portfolio);
+      await savePortfolio(next, userId);
+      return next;
+    });
+  writeQueues.set(userId, run);
+  try {
+    return await run;
+  } finally {
+    // Only clear the slot if nobody queued behind us — otherwise this would
+    // drop the reference to the run a later caller is chained onto.
+    if (writeQueues.get(userId) === run) writeQueues.delete(userId);
+  }
 }
 
 /**
@@ -60,6 +89,15 @@ export async function recordTrade(portfolio, { code, side, shares, price, date =
   const when = date ?? new Date().toISOString().slice(0, 10);
 
   if (!(shares > 0) || !(price > 0)) throw new Error('عدد الأسهم والسعر لازم يكونوا أكبر من صفر');
+
+  // A code outside the analyzable universe used to be accepted silently: cash
+  // moved, a trade row appeared in the log, but the resulting position could
+  // never be priced or analyzed, so it never rendered anywhere — the Positions
+  // tab just said "no open positions" while money had quietly moved. Reject it
+  // here instead, at the one place every entry point (API, CLI) funnels through.
+  if (!lookup(c)) {
+    throw new Error(`الكود "${c}" مش في قائمة الأسهم اللي التطبيق بيقدر يتابعها — اختاره من القائمة بدل الكتابة اليدوية.`);
+  }
 
   const existing = p.positions[c] ?? { shares: 0, avgCost: 0, stop: null, target: null, openedAt: when };
 

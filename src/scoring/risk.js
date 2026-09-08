@@ -99,6 +99,45 @@ export function computeTrailingStop({ avgCost, currentPrice, runningHigh, existi
 }
 
 /**
+ * The long-term investment stop — deliberately wider than the tactical stop
+ * from computeStop()/computeTrailingStop(). Those protect a swing: tight,
+ * structure- or ATR-based, meant to cut a failed setup quickly. This one marks
+ * where the LONG-TERM thesis itself breaks, not where an ordinary pullback
+ * does — so it has to sit on a level a normal correction won't reach.
+ *
+ * It reuses the exact criterion longTermTarget() already applies to decide
+ * whether a long-horizon target exists at all: a close below the 200-day
+ * average. That is deliberate — the stop and the long-term target now share
+ * one invalidation condition instead of two unrelated ones, so "the long-term
+ * story is broken" means the same thing on both sides of the trade.
+ */
+export function computeLongTermStop(snapshot, tacticalStop = null, rules = RULES) {
+  const sma200 = snapshot.movingAverages.sma200;
+  const price = snapshot.price.close;
+
+  if (!sma200) {
+    return { stop: null, basis: null, riskPct: null, note: 'تاريخ الأسعار أقصر من 200 جلسة — مفيش متوسط طويل يتحسب عليه وقف بعيد' };
+  }
+  if (sma200 >= price) {
+    return { stop: null, basis: null, riskPct: null, note: 'السعر تحت متوسط 200 يوم بالفعل — مفيش اتجاه صاعد بعيد يستحق وقف منفصل' };
+  }
+
+  // Never tighter than the tactical stop — a "give it more room" stop that
+  // triggers before the everyday one would defeat its own purpose.
+  const stop = tacticalStop != null ? Math.min(sma200, tacticalStop) : sma200;
+  const usedTactical = tacticalStop != null && stop === tacticalStop && tacticalStop > sma200 - 0.005;
+
+  return {
+    stop: r2(stop),
+    basis: 'sma200',
+    riskPct: r2(((price - stop) / price) * 100),
+    note: usedTactical
+      ? `متوسط 200 يوم (${r2(sma200)}) أضيق من الوقف التكتيكي — اتثبت عند الوقف التكتيكي بدل ما يبقى أضيق منه`
+      : `إغلاق تحت متوسط 200 يوم (${r2(sma200)}) — نفس المستوى اللي بيلغي الهدف البعيد`,
+  };
+}
+
+/**
  * Position size from risk budget, then clipped by concentration and liquidity.
  * Returns whole shares — EGX trades in whole lots.
  */

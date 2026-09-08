@@ -145,7 +145,7 @@ async function cmdAnalyze(code) {
 
 async function cmdReview() {
   if (!aiAvailable()) {
-    console.log(c.red('\nمحتاج ANTHROPIC_API_KEY في ملف .env عشان المراجعة الذكية.'));
+    console.log(c.red('\nمحتاج OPENROUTER_API_KEY في ملف .env عشان المراجعة الذكية.'));
     console.log(c.dim('التحليل الفني شغال من غيره: node src/cli.js scan\n'));
     process.exit(1);
   }
@@ -205,7 +205,7 @@ async function cmdSync() {
 
 async function cmdFundamentals(code) {
   if (!code) throw new Error('اكتب كود السهم');
-  if (!aiAvailable()) throw new Error('محتاج ANTHROPIC_API_KEY');
+  if (!aiAvailable()) throw new Error('محتاج OPENROUTER_API_KEY');
   const { getFundamentals } = await import('./agent/fundamentals.js');
   process.stderr.write(c.dim('بيدوّر على البيانات الأساسية...\n'));
   const f = await getFundamentals(code, { force: args.includes('--force') });

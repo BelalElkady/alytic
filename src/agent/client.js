@@ -81,45 +81,125 @@ export async function callWithRetry(fn, { retries = 2 } = {}) {
 }
 
 /**
- * Ask for a structured response, whichever provider is behind the client.
+ * Runs one model turn to completion, transparently resuming through any
+ * `pause_turn` breaks — the way a long server-tool session (several web
+ * searches in one turn) hits its internal iteration budget and stops mid-way
+ * without actually being done. Resuming just means echoing the paused
+ * assistant content back and asking it to continue.
  *
- * `client.messages.parse()` + `output_config.format` is an Anthropic-API
- * feature. Routed through OpenRouter it is silently ignored: the model answers
- * in prose and the SDK throws `Unexpected token '#'` when it tries to parse a
- * markdown heading as JSON. That took the whole review path down.
- *
- * So on OpenRouter we ask for JSON in the prompt, extract it, and validate it
- * against the same zod schema — the guarantee is weaker than a constrained
- * decode, so a failed parse is fed back once for the model to correct. On the
- * direct Anthropic API the native path is used, because a schema enforced by
- * the decoder cannot drift.
+ * Also drives any *client-side* tools (`toolHandlers`, name -> async(input)):
+ * unlike server tools (web search), the API cannot execute these itself — it
+ * stops with `stop_reason: 'tool_use'` and waits for a `tool_result` we
+ * supply. A `tool_use` block for a name we have no handler for is left alone
+ * and the response returned as-is, so an unrecognized tool call surfaces as
+ * data rather than looping forever.
  */
-export async function requestStructured({
-  model = MODEL, system, messages, schema, schemaName = 'response', maxTokens = 16000, thinking = { type: 'adaptive' },
-}) {
-  const client = getClient();
-
-  if (!USING_OPENROUTER) {
-    const { zodOutputFormat } = await import('@anthropic-ai/sdk/helpers/zod');
-    const response = await callWithRetry(() =>
-      client.messages.parse({
-        model, max_tokens: maxTokens, thinking, system, messages,
-        output_config: { format: zodOutputFormat(schema) },
-      }),
-    );
+async function runToCompletion(client, params, { maxResumes = 8, toolHandlers = {} } = {}) {
+  const convo = [...params.messages];
+  for (let i = 0; i < maxResumes; i++) {
+    const response = await callWithRetry(() => client.messages.create({ ...params, messages: convo }));
     if (response.stop_reason === 'refusal') {
       throw new Error(`النموذج رفض الطلب: ${response.stop_details?.explanation ?? 'بدون تفاصيل'}`);
     }
-    if (!response.parsed_output) throw new Error('النموذج رجّع رد مش مطابق للصيغة المطلوبة');
-    return { data: response.parsed_output, raw: response };
+    if (response.stop_reason === 'pause_turn') {
+      convo.push({ role: 'assistant', content: response.content });
+      continue;
+    }
+    if (response.stop_reason === 'tool_use') {
+      const toolUses = (response.content ?? []).filter((b) => b.type === 'tool_use');
+      const knownUses = toolUses.filter((b) => typeof toolHandlers[b.name] === 'function');
+      if (knownUses.length === 0) return response;
+
+      convo.push({ role: 'assistant', content: response.content });
+      const toolResults = await Promise.all(knownUses.map(async (tu) => {
+        let content;
+        try {
+          content = JSON.stringify(await toolHandlers[tu.name](tu.input));
+        } catch (err) {
+          content = JSON.stringify({ error: String(err?.message ?? err) });
+        }
+        return { type: 'tool_result', tool_use_id: tu.id, content };
+      }));
+      convo.push({ role: 'user', content: toolResults });
+      continue;
+    }
+    return response;
+  }
+  throw new Error('السيشن اتكرر كتير من غير ما يخلص (استدعاءات أدوات متكررة) — قلّل عدد الأدوات المتاحة');
+}
+
+/** Pull the JSON object out of a reply that may carry fences or stray prose. */
+function extractJson(text) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const body = (fenced ? fenced[1] : text).trim();
+  const start = body.indexOf('{');
+  const end = body.lastIndexOf('}');
+  if (start === -1 || end <= start) throw new Error('مفيش JSON في الرد');
+  return body.slice(start, end + 1);
+}
+
+/**
+ * Ask for a structured response, optionally with server-side tools (e.g.
+ * web search) available during the same turn.
+ *
+ * A schema-constrained decode (`output_config.format`) is tried first on
+ * *every* provider — it is strictly stronger than asking nicely in a prompt,
+ * since the decoder cannot emit invalid JSON. This used to be skipped
+ * outright whenever routed through OpenRouter, on the assumption OpenRouter
+ * never honors `output_config.format`. That was true only for
+ * `claude-sonnet-4`, which OpenRouter itself lists without structured-output
+ * support (`tools` only, no `response_format`) — verified against OpenRouter's
+ * own `/models` listing. `claude-sonnet-5`, the current default, IS listed
+ * with `response_format,structured_outputs,tools`, and live-tested: it honors
+ * `output_config.format` through OpenRouter fine, including combined with the
+ * `web_search_20260209` server tool and adaptive thinking in the same call.
+ * So the real gate is "did it actually work for this model", checked by
+ * trying, not guessed by provider — this generalises correctly if the model
+ * is ever pointed at something that genuinely lacks structured-output
+ * support, native or fallback.
+ *
+ * `clientTools` are locally-executed tools (as opposed to `tools`, which are
+ * server-side tools like web search that the API runs itself): each is
+ * `{ name, description, input_schema, handler }`, where `handler` is called
+ * with the model's input and its return value goes back as the tool result.
+ * They're merged into the same `tools` array the API sees; `handler` is
+ * stripped before sending since the wire format has no such field.
+ */
+export async function requestStructured({
+  model = MODEL, system, messages, schema, schemaName = 'response', maxTokens = 16000, thinking = { type: 'adaptive' }, tools = null, clientTools = [],
+}) {
+  const client = getClient();
+
+  const toolHandlers = Object.fromEntries(clientTools.map((t) => [t.name, t.handler]));
+  const allTools = [...(tools ?? []), ...clientTools.map(({ handler, ...def }) => def)];
+  const toolsParam = allTools.length ? allTools : null;
+
+  try {
+    const { zodOutputFormat } = await import('@anthropic-ai/sdk/helpers/zod');
+    const response = await runToCompletion(client, {
+      model, max_tokens: maxTokens, thinking, system, messages,
+      output_config: { format: zodOutputFormat(schema) },
+      ...(toolsParam ? { tools: toolsParam } : {}),
+    }, { toolHandlers });
+    const text = (response.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    if (!text) throw new Error('مفيش رد نصي من النموذج');
+    const data = schema.parse(JSON.parse(text));
+    return { data, raw: response };
+  } catch (nativeErr) {
+    // A bad key or a rate limit will fail identically on the fallback attempt
+    // too — surface it immediately instead of burning a second real call.
+    if (/مفتاح API غير صالح|تجاوزت حد الطلبات/.test(nativeErr.message ?? '')) throw nativeErr;
+    console.warn(`[requestStructured] schema-constrained decode failed (${nativeErr.message}); falling back to prompt-and-parse.`);
   }
 
   // --- Prompt-and-parse fallback -------------------------------------------
-  // Use zod's own v4 converter, NOT the `zod-to-json-schema` package: that
-  // package targets zod v3 and, against a v4 schema, silently returns a 147-byte
-  // stub instead of failing. The model then had no field list to follow and
-  // invented `riskFlagsOverall` in place of `portfolioRisks` — a wrong schema in
-  // the prompt is worse than none, because nothing looks broken.
+  // Only reached when the model/provider combination above didn't actually
+  // honor output_config.format. Use zod's own v4 converter, NOT the
+  // `zod-to-json-schema` package: that package targets zod v3 and, against a
+  // v4 schema, silently returns a 147-byte stub instead of failing. The model
+  // then had no field list to follow and invented `riskFlagsOverall` in place
+  // of `portfolioRisks` — a wrong schema in the prompt is worse than none,
+  // because nothing looks broken.
   const { z } = await import('zod');
   const jsonSchema = z.toJSONSchema(schema, { io: 'output' });
 
@@ -137,13 +217,14 @@ The first character of your reply must be "{" and the last must be "}".`;
     ? [...system, { type: 'text', text: jsonInstruction }]
     : `${system}${jsonInstruction}`;
 
-  const convo = [...messages];
+  let convo = [...messages];
   let lastError = null;
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await callWithRetry(() =>
-      client.messages.create({ model, max_tokens: maxTokens, system: systemWithFormat, messages: convo }),
-    );
+    const response = await runToCompletion(client, {
+      model, max_tokens: maxTokens, system: systemWithFormat, messages: convo,
+      ...(toolsParam ? { tools: toolsParam } : {}),
+    }, { toolHandlers });
 
     const text = (response.content ?? [])
       .filter((b) => b.type === 'text')
@@ -157,25 +238,15 @@ The first character of your reply must be "{" and the last must be "}".`;
     } catch (err) {
       lastError = err;
       // Hand the failure back so the next attempt can correct itself.
-      convo.push({ role: 'assistant', content: text.slice(0, 4000) });
-      convo.push({
-        role: 'user',
-        content: `الرد ده مش JSON صالح حسب الصيغة المطلوبة. الخطأ: ${String(err.message).slice(0, 600)}\n\nرجّع JSON صحيح بس، من غير أي نص تاني.`,
-      });
+      convo = [
+        ...convo,
+        { role: 'assistant', content: text.slice(0, 4000) },
+        { role: 'user', content: `الرد ده مش JSON صالح حسب الصيغة المطلوبة. الخطأ: ${String(err.message).slice(0, 600)}\n\nرجّع JSON صحيح بس، من غير أي نص تاني.` },
+      ];
     }
   }
 
   throw new Error(`النموذج ما رجّعش JSON صالح بعد 3 محاولات: ${String(lastError?.message ?? '').slice(0, 200)}`);
-}
-
-/** Pull the JSON object out of a reply that may carry fences or stray prose. */
-function extractJson(text) {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const body = (fenced ? fenced[1] : text).trim();
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start === -1 || end <= start) throw new Error('مفيش JSON في الرد');
-  return body.slice(start, end + 1);
 }
 
 export { Anthropic, USING_OPENROUTER };

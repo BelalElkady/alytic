@@ -70,6 +70,15 @@ export const RULES = {
   },
 
   commissionPct: 0.20,
+
+  webSearch: {
+    // Server-side searches the portfolio review may make in one call, total —
+    // not per stock. The model is instructed to spend these on names that
+    // actually warrant it (an alert fired, an unexplained move), not to
+    // exhaustively search every holding. ~$0.03-0.05/search at current rates,
+    // so 6 caps a single review's search spend near $0.20-0.30 worst case.
+    maxUsesPerReview: 6,
+  },
 };
 
 export default RULES;
