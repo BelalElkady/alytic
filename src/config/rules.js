@@ -14,9 +14,6 @@ export const RULES = {
     sessionsPerMonth: 21,
     midTermMonths: [1, 4],   // الهدف المتوسط
     longTermMonths: [6, 18], // الهدف البعيد
-    // A level 80% overhead is a long-term target no matter how strong it is.
-    // Anything past this band gets demoted out of the mid-term slot.
-    midMaxUpsidePct: 35,
   },
 
   stop: {

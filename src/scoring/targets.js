@@ -117,22 +117,24 @@ function fibExtension(bars) {
 export function midTermTarget(snapshot, bars, { entry = null, stop = null } = {}, rules = RULES) {
   // Structure is anchored to the MARKET price, never to a planned entry. When
   // the suggested entry is a pullback well below market, anchoring here made the
-  // ceiling slide down with it and selected a "target" underneath the current
+  // target slide down with it and selected a "target" underneath the current
   // price — ZMID at 9.80 was handed a 9.47 target labelled +28% upside. The
   // entry only ever enters the reward arithmetic, never the level selection.
+  //
+  // No ceiling is applied to the result — whatever the nearest qualifying
+  // structure actually prices at is what is shown, even if that is a large
+  // percentage move. Capping it to look "reasonable" would mean displaying a
+  // number the engine did not really compute.
   const price = snapshot.price.close;
   const atr = snapshot.volatility.atr14;
   const closes = bars.map((b) => b.c);
   const er = efficiencyRatio(closes, 50);
 
-  // A mid-term target has to be reachable in a mid-term horizon. Levels beyond
-  // this ceiling are real, but they belong to the long-term projection.
-  const ceiling = price * (1 + rules.horizon.midMaxUpsidePct / 100);
   const candidates = [];
 
-  // 1. Structural resistance far enough away to be worth trading toward.
+  // 1. Structural resistance far enough away to be worth trading toward —
+  //    the nearest one that clears the noise floor, whatever its distance.
   for (const res of snapshot.levels.resistances) {
-    if (res.price > ceiling) break; // sorted ascending — everything past here is too far
     if (res.strength >= 50 && atr && res.price - price >= 1.5 * atr) {
       candidates.push({
         price: res.price,
@@ -146,21 +148,20 @@ export function midTermTarget(snapshot, bars, { entry = null, stop = null } = {}
 
   // 2. Measured move from a recent breakout.
   const mm = measuredMove(snapshot, bars);
-  if (mm && mm.price <= ceiling) candidates.push({ ...mm, priority: 2 });
+  if (mm) candidates.push({ ...mm, priority: 2 });
 
-  // 3. The 52-week high, when it is overhead and reachable.
+  // 3. The 52-week high, when it is overhead.
   const high52 = snapshot.price.high52w;
-  if (high52 > price * 1.02 && high52 <= ceiling) {
+  if (high52 > price * 1.02) {
     candidates.push({ price: high52, method: 'high_52w', basis: 'أعلى سعر في 52 أسبوع', priority: 3 });
   }
 
-  // 4. Volatility projection — last resort when structure is silent or all of it
-  //    sits beyond the mid-term ceiling (a stock in blue sky after a big run).
+  // 4. Volatility projection — last resort when structure is silent.
   if (atr) {
     candidates.push({
-      price: r2(Math.min(price + atr * 6, ceiling)),
+      price: r2(price + atr * 6),
       method: 'atr_projection',
-      basis: 'إسقاط تقلب (6× ATR) — لا توجد مقاومة قريبة داخل الأفق المتوسط',
+      basis: 'إسقاط تقلب (6× ATR) — لا توجد مقاومة قريبة',
       priority: 4,
     });
   }
@@ -224,25 +225,14 @@ export function longTermTarget(snapshot, bars, rules = RULES, midPrice = null) {
     return { price: null, note: 'لا توجد بيانات كافية لهدف بعيد', horizon: describeHorizon(null, rules) };
   }
 
-  // Long-horizon targets should under-promise, so prefer the most conservative
-  // candidate — but a long target below the mid target is nonsense, so first
-  // discard any candidate the mid target already exceeds. If every candidate
-  // falls short, the mid level *is* the ceiling structure gives us, and the
-  // honest answer is a modest extension of it rather than a fabricated number.
-  const floor = midPrice ? midPrice * 1.05 : 0;
-  const viable = candidates.filter((c) => c.price >= floor);
-
-  let chosen;
-  if (viable.length) {
-    chosen = viable.reduce((a, b) => (b.price < a.price ? b : a));
-  } else {
-    const best = candidates.reduce((a, b) => (b.price > a.price ? b : a));
-    chosen = {
-      price: r2(Math.max(best.price, floor)),
-      method: 'extended_from_mid',
-      basis: `امتداد فوق الهدف المتوسط (${r2(midPrice)}) — المقاومات المعروفة كلها تحته`,
-    };
-  }
+  // Long-horizon targets should under-promise, so prefer the more conservative
+  // (lower) of the real candidates. No floor is applied against the mid target:
+  // if every genuine long-horizon candidate prices below the mid target — which
+  // can legitimately happen when a nearby resistance is closer than a decayed
+  // trend extrapolation — that is shown as computed, flagged, rather than
+  // silently pushed up to a number the engine did not actually produce.
+  const chosen = candidates.reduce((a, b) => (b.price < a.price ? b : a));
+  const belowMid = midPrice != null && chosen.price <= midPrice;
 
   const sessions = estimateSessions(chosen.price - price, atr, er, price);
 
@@ -253,7 +243,9 @@ export function longTermTarget(snapshot, bars, rules = RULES, midPrice = null) {
     basis: chosen.basis,
     horizon: describeHorizon(sessions, rules),
     alternatives: candidates.filter((c) => c !== chosen).map((c) => ({ price: c.price, method: c.method })),
-    caveat: 'الهدف البعيد تقدير اتجاهي — أي كسر للوقف يلغيه.',
+    caveat:
+      'الهدف البعيد تقدير اتجاهي — أي كسر للوقف يلغيه.' +
+      (belowMid ? ' ملاحظة: الهدف البعيد المحسوب أقرب من الهدف المتوسط — يحصل لما أقرب مقاومة أبعد من امتداد الاتجاه المتوقع.' : ''),
   };
 }
 
