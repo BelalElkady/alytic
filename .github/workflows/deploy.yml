@@ -13,6 +13,10 @@ env:
   DEPLOY_PATH: /opt/alytic
   BACKEND_PORT: 3000
   FRONTEND_PORT: 8080
+  # Not a secret — a Google OAuth Client ID is meant to ship inside frontend
+  # JS (every visitor's browser sees it). Vite only inlines VITE_* vars at
+  # build time, so this has to be here rather than in backend/.env on the VPS.
+  VITE_GOOGLE_CLIENT_ID: 195473370514-g5cejs7ikunbattrktchlrsfhpl98ka0.apps.googleusercontent.com
 
 jobs:
   build:
