@@ -1,10 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { EmptyState, Notice, Panel, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { post } from "@/lib/api";
-import { int, pct, tone } from "@/lib/format";
+import { arDay, int, pct, signed, tone } from "@/lib/format";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -117,49 +128,165 @@ function ChartsPage() {
   );
 }
 
+const RANGES = [
+  { value: "1M", label: "شهر", sessions: 22 },
+  { value: "3M", label: "3 شهور", sessions: 66 },
+  { value: "ALL", label: "الكل", sessions: Infinity },
+];
+
+/** Compact axis label: 508,055 -> "508K". The tooltip still shows it in full. */
+const compact = (value: number) =>
+  Math.abs(value) >= 1000 ? `${Math.round(value / 1000).toLocaleString("en-US")}K` : String(Math.round(value));
+
+/** DD/MM — enough to place a point in time without crowding the axis. */
+const shortDay = (iso: string) => (iso?.length === 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : iso);
+
+/**
+ * Snap the value axis to human numbers. Left to itself the chart labels
+ * whatever the data happens to span (271K, 291K, 311K…), which is evenly
+ * spaced but reads as noise; this picks a 1/2/2.5/5×10ⁿ step and rounds the
+ * bounds outward onto it, so the labels land on 270K, 290K, 310K instead.
+ */
+function niceScale(lo: number, hi: number, targetTicks = 4) {
+  const span = hi - lo || Math.abs(hi) || 1;
+  const magnitude = 10 ** Math.floor(Math.log10(span / targetTicks));
+  const step =
+    [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((candidate) => candidate >= span / targetTicks) ??
+    10 * magnitude;
+  const min = Math.floor(lo / step) * step;
+  const max = Math.ceil(hi / step) * step;
+  const ticks: number[] = [];
+  for (let value = min; value <= max + step / 2; value += step) ticks.push(Math.round(value));
+  return { min, max, ticks };
+}
+
 function EquityCurve({ series }: { series: { day: string; value: number }[] }) {
-  const width = 640;
-  const height = 180;
-  const pad = 26;
-  const values = series.map((point) => point.value);
+  const [range, setRange] = useState("ALL");
+
+  const shown = useMemo(() => {
+    const sessions = RANGES.find((r) => r.value === range)?.sessions ?? Infinity;
+    return Number.isFinite(sessions) ? series.slice(-sessions) : series;
+  }, [series, range]);
+
+  const first = shown[0]?.value ?? 0;
+  const last = shown.at(-1)?.value ?? 0;
+  const change = last - first;
+  const changePct = first ? (change / first) * 100 : 0;
+  const rising = change >= 0;
+  const color = rising ? "var(--up)" : "var(--down)";
+
+  // Breathing room so the line never rides the top or bottom edge, then round
+  // the bounds onto human tick values.
+  const values = shown.map((point) => point.value);
   const lo = Math.min(...values);
   const hi = Math.max(...values);
-  const span = hi - lo || 1;
-  const x = (index: number) => pad + (index * (width - pad * 2)) / (series.length - 1);
-  const y = (value: number) => height - pad - ((value - lo) / span) * (height - pad * 2);
-  const points = series.map((point, index) => `${x(index).toFixed(1)},${y(point.value).toFixed(1)}`);
-  const rising = (series.at(-1)?.value ?? 0) >= (series[0]?.value ?? 0);
-  const stroke = rising ? "var(--up)" : "var(--down)";
+  const padding = (hi - lo || Math.abs(hi) || 1) * 0.12;
+  const scale = niceScale(lo - padding, hi + padding);
 
   return (
-    <div>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        className="h-44 w-full"
-        style={{ direction: "ltr" }}
-        role="img"
-        aria-label="قيمة المحفظة يوم بيوم"
-      >
-        <polygon
-          points={`${x(0).toFixed(1)},${height - pad} ${points.join(" ")} ${x(series.length - 1).toFixed(1)},${height - pad}`}
-          fill={stroke}
-          opacity="0.1"
-        />
-        <polyline points={points.join(" ")} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
-        {series.map((point, index) => (
-          <circle key={point.day} cx={x(index)} cy={y(point.value)} r="2.5" fill={stroke} />
-        ))}
-        <text x={width - 4} y="12" textAnchor="end" fontSize="10" fill="var(--muted-foreground)">
-          {int(hi)}
-        </text>
-        <text x={width - 4} y={height - 4} textAnchor="end" fontSize="10" fill="var(--muted-foreground)">
-          {int(lo)}
-        </text>
-      </svg>
-      <p className="num mt-1 text-[11.5px] text-muted-foreground">
-        من {series[0]?.day} إلى {series.at(-1)?.day} · {series.length} يوم محفوظ
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="num text-[22px] font-semibold leading-none tracking-tight">{int(last)} ج</div>
+          {/* Each number is isolated: without <bdi> the bidi algorithm reorders
+              the signed figures and the "ج ·" separators into a jumble. */}
+          <div className={cn("num mt-1.5 text-[13px] font-medium", tone(change))}>
+            <bdi>{signed(change)} ج</bdi>
+            <span className="mx-1 text-muted-foreground">·</span>
+            <bdi>{pct(changePct, 1)}</bdi>
+            <span className="mr-1.5 font-normal text-muted-foreground">
+              {range === "ALL" ? `خلال ${shown.length} يوم محفوظ` : `خلال ${RANGES.find((r) => r.value === range)?.label}`}
+            </span>
+          </div>
+        </div>
+        {series.length > RANGES[0]!.sessions && (
+          <ToggleGroup
+            type="single"
+            value={range}
+            onValueChange={(value) => value && setRange(value)}
+            className="justify-start"
+          >
+            {RANGES.map((option) => (
+              <ToggleGroupItem key={option.value} value={option.value} size="sm" className="text-[12px]">
+                {option.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        )}
+      </div>
+
+      <div dir="ltr" className="h-56 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={shown} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
+            <defs>
+              <linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+                <stop offset="100%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.7} />
+            <XAxis
+              dataKey="day"
+              tickFormatter={shortDay}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={44}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+            />
+            <YAxis
+              orientation="right"
+              domain={[scale.min, scale.max]}
+              ticks={scale.ticks}
+              tickFormatter={compact}
+              tickLine={false}
+              axisLine={false}
+              width={46}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+            />
+            {/* Where the shown period started — instantly answers "am I above it?". */}
+            <ReferenceLine y={first} stroke="var(--muted-foreground)" strokeDasharray="4 4" strokeOpacity={0.5} />
+            <Tooltip cursor={{ stroke: "var(--border)" }} content={<EquityTooltip start={first} />} />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke={color}
+              strokeWidth={2}
+              fill="url(#equityFill)"
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 0 }}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <p className="text-[11.5px] text-muted-foreground">
+        من {arDay(shown[0]?.day)} إلى {arDay(shown.at(-1)?.day)} · {shown.length} يوم محفوظ · الخط المتقطع = قيمة
+        بداية الفترة
       </p>
+    </div>
+  );
+}
+
+function EquityTooltip({
+  active,
+  payload,
+  start,
+}: {
+  active?: boolean;
+  payload?: { payload: { day: string; value: number } }[];
+  start: number;
+}) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+  const diff = point.value - start;
+  return (
+    <div dir="rtl" className="rounded-lg border bg-card px-3 py-2 shadow-md">
+      <div className="text-[11.5px] text-muted-foreground">{arDay(point.day)}</div>
+      <div className="num mt-0.5 text-[14px] font-semibold">{int(point.value)} ج</div>
+      <div className={cn("num text-[11.5px]", tone(diff))}>
+        {signed(diff)} ج من بداية الفترة
+      </div>
     </div>
   );
 }

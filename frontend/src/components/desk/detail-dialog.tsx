@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { api } from "@/lib/api";
 import { fmt, pct, tone } from "@/lib/format";
 import { useDesk } from "@/lib/store";
+import { mergedTarget } from "@/lib/targets";
 
 /** Per-stock analysis, same /api/analyze/:code payload as before. */
 export function DetailDialog() {
@@ -29,6 +30,7 @@ export function DetailDialog() {
   const snapshot = data?.snapshot;
   const plan = data?.plan;
   const technical = data?.technical;
+  const oneTarget = mergedTarget(plan?.targets?.mid, plan?.targets?.long);
 
   return (
     <Dialog open={Boolean(detailCode)} onOpenChange={(open) => !open && openDetail(null)}>
@@ -84,31 +86,54 @@ export function DetailDialog() {
                     </span>
                   }
                 />
-                {plan.targets.mid && (
+                {oneTarget ? (
                   <Line
-                    label="الهدف المتوسط"
+                    label="الهدف"
                     value={
                       <span className="num text-up">
-                        {fmt(plan.targets.mid.price)} ج · {pct(plan.targets.mid.upsidePct)}
+                        {fmt(oneTarget.price)} ج · {pct(oneTarget.upsidePct)}
                       </span>
                     }
-                    hint={`${plan.targets.mid.basis} · ${plan.targets.mid.horizon.ar} · ع/م ${plan.targets.mid.riskReward}`}
-                  />
-                )}
-                {plan.targets.long?.price ? (
-                  <Line
-                    label="الهدف البعيد"
-                    value={
-                      <span className="num text-up">
-                        {fmt(plan.targets.long.price)} ج · {pct(plan.targets.long.upsidePct)}
-                      </span>
-                    }
-                    hint={[plan.targets.long.basis, plan.targets.long.horizon.ar, plan.targets.long.caveat]
+                    hint={[
+                      oneTarget.basis,
+                      oneTarget.horizon?.ar,
+                      oneTarget.riskReward ? `ع/م ${oneTarget.riskReward}` : null,
+                      (plan.targets.long?.price ?? 0) <= (plan.targets.mid?.price ?? 0)
+                        ? "الهدف البعيد أقرب من المتوسط، فاعتُمد كهدف واحد"
+                        : "الهدف المتوسط والبعيد على نفس المستوى تقريبًا",
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   />
                 ) : (
-                  <Line label="الهدف البعيد" value={plan.targets.long?.note ?? "—"} />
+                  <>
+                    {plan.targets.mid && (
+                      <Line
+                        label="الهدف المتوسط"
+                        value={
+                          <span className="num text-up">
+                            {fmt(plan.targets.mid.price)} ج · {pct(plan.targets.mid.upsidePct)}
+                          </span>
+                        }
+                        hint={`${plan.targets.mid.basis} · ${plan.targets.mid.horizon.ar} · ع/م ${plan.targets.mid.riskReward}`}
+                      />
+                    )}
+                    {plan.targets.long?.price ? (
+                      <Line
+                        label="الهدف البعيد"
+                        value={
+                          <span className="num text-up">
+                            {fmt(plan.targets.long.price)} ج · {pct(plan.targets.long.upsidePct)}
+                          </span>
+                        }
+                        hint={[plan.targets.long.basis, plan.targets.long.horizon.ar, plan.targets.long.caveat]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      />
+                    ) : (
+                      <Line label="الهدف البعيد" value={plan.targets.long?.note ?? "—"} />
+                    )}
+                  </>
                 )}
               </dl>
             </div>

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { post } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
 import { styleRecommendation, useInvestStyle } from "@/lib/invest-style";
@@ -124,7 +125,8 @@ function PositionsPage() {
 }
 
 function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
-  const { reload } = useDesk();
+  const { reload, indices } = useDesk();
+  const memberOf = indices[row.code] ?? [];
   const p = row.position;
   const style = useInvestStyle();
   const rec = styleRecommendation(row, p, style);
@@ -170,10 +172,29 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
               {rec.label}
             </Badge>
             {p.sharesEstimated && (
-              <Badge variant="outline" className="border-warn/40 bg-warn-soft text-[10.5px]">
-                ⚠️ عدد تقديري
-              </Badge>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className="cursor-help border-warn/40 bg-warn-soft text-[10.5px]"
+                    >
+                      ⚠️ عدد تقديري
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64 text-center leading-relaxed">
+                    عدد الأسهم ده اتحسب تقديريًا من القيمة السوقية مش من الصورة مباشرة، فممكن يكون
+                    غير دقيق. لتصحيحه: افتح «إدخال يدوي» واكتب عدد الأسهم الفعلي، أو ارفع صورة توضّح
+                    رقم الكمية بشكل واضح.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
+            {memberOf.map((name) => (
+              <Badge key={name} variant="outline" className="border-border bg-surface-2 text-[10.5px] text-muted-foreground">
+                {name}
+              </Badge>
+            ))}
           </div>
           <p className="mt-1 truncate text-[12px] text-muted-foreground">
             {row.name} · <span className="num">{int(p.shares)}</span> سهم @{" "}
@@ -209,8 +230,9 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
         longTarget={row.longTarget?.price}
       />
 
-      <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border bg-surface p-3 sm:grid-cols-4">
-        <Stat label="القيمة" value={int(p.marketValue)} />
+      <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border bg-surface p-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat label="قيمة الشراء" value={int(p.purchaseValue)} />
+        <Stat label="القيمة السوقية" value={int(p.marketValue)} />
         <Stat
           label="الربح"
           value={signed(p.unrealizedEgp)}

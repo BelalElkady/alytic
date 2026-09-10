@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { fmt, pct, tone } from "@/lib/format";
 import { useDesk } from "@/lib/store";
+import { mergedTarget } from "@/lib/targets";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/targets")({
@@ -138,20 +139,36 @@ function TargetsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.code} className="cursor-pointer" onClick={() => openDetail(row.code)}>
-                    <TableCell className="font-medium">{row.code}</TableCell>
-                    <TableCell className="num text-right text-down">{fmt(row.position.stop)}</TableCell>
-                    <TableCell className="num text-right">{fmt(row.price)}</TableCell>
-                    <TableCell className="num text-right text-up">
-                      {row.midTarget ? fmt(row.midTarget.price) : "—"}
-                    </TableCell>
-                    <TableCell className="num text-right text-up">
-                      {row.longTarget?.price ? fmt(row.longTarget.price) : "—"}
-                    </TableCell>
-                    <TableCell className="num text-right">{row.position.riskRewardFromHere ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
+                {rows.map((row) => {
+                  const one = mergedTarget(row.midTarget, row.longTarget);
+                  return (
+                    <TableRow key={row.code} className="cursor-pointer" onClick={() => openDetail(row.code)}>
+                      <TableCell className="font-medium">{row.code}</TableCell>
+                      <TableCell className="num text-right text-down">{fmt(row.position.stop)}</TableCell>
+                      <TableCell className="num text-right">{fmt(row.price)}</TableCell>
+                      {one ? (
+                        // One level for both horizons — spans both columns rather
+                        // than printing the same number twice.
+                        <TableCell colSpan={2} className="text-center text-up">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="num">{fmt(one.price)}</span>
+                            <span className="text-[11px] text-muted-foreground">الهدف</span>
+                          </span>
+                        </TableCell>
+                      ) : (
+                        <>
+                          <TableCell className="num text-right text-up">
+                            {row.midTarget ? fmt(row.midTarget.price) : "—"}
+                          </TableCell>
+                          <TableCell className="num text-right text-up">
+                            {row.longTarget?.price ? fmt(row.longTarget.price) : "—"}
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell className="num text-right">{row.position.riskRewardFromHere ?? "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

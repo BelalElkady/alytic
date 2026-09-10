@@ -29,7 +29,7 @@ export type Row = {
 export type Portfolio = any;
 export type LogEntry = any;
 export type Stock = { code: string; ar?: string; en?: string };
-export type User = { name?: string; email: string; [key: string]: any };
+export type User = { name?: string; email: string; emailVerified?: boolean; [key: string]: any };
 
 export const PRICE_REFRESH_MS = 20 * 1000;
 
@@ -47,11 +47,15 @@ type DeskValue = {
   user: User | null;
   authChecked: boolean;
   signIn: (mode: "login" | "register", body: Record<string, unknown>) => Promise<void>;
+  signInWithGoogle: (credential: string) => Promise<void>;
   signOut: () => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
+  markEmailVerified: () => void;
   pf: Portfolio;
   rows: Row[];
   log: Record<string, LogEntry>;
   universe: Stock[];
+  indices: Record<string, string[]>;
   aiAvailable: boolean;
   loading: boolean;
   error: string | null;
@@ -85,6 +89,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [log, setLog] = useState<Record<string, LogEntry>>({});
   const [universe, setUniverse] = useState<Stock[]>([]);
+  const [indices, setIndices] = useState<Record<string, string[]>>({});
   const [aiAvailable, setAiAvailable] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +138,19 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       setAiAvailable(Boolean(ai));
     } catch {
       setUniverse([]);
+    }
+  }, []);
+
+  const loadIndices = useCallback(async () => {
+    try {
+      const { indices: byIndex } = await api("/api/indices");
+      const byCode: Record<string, string[]> = {};
+      for (const [name, codes] of Object.entries(byIndex ?? {}) as [string, string[]][]) {
+        for (const code of codes) (byCode[code] ??= []).push(name);
+      }
+      setIndices(byCode);
+    } catch {
+      setIndices({});
     }
   }, []);
 
@@ -201,8 +219,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
     void loadUniverse();
+    void loadIndices();
     void reload();
-  }, [user, loadUniverse, reload]);
+  }, [user, loadUniverse, loadIndices, reload]);
 
   useEffect(() => {
     if (!user) return;
@@ -222,9 +241,22 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  const signInWithGoogle = useCallback(async (credential: string) => {
+    const result = await post("/api/auth/google", { credential });
+    setUser(result.user);
+  }, []);
+
   const signOut = useCallback(async () => {
     await post("/api/auth/logout");
     if (typeof window !== "undefined") window.location.reload();
+  }, []);
+
+  const resendVerification = useCallback(async (email: string) => {
+    await post("/api/auth/resend-verification", { email });
+  }, []);
+
+  const markEmailVerified = useCallback(() => {
+    setUser((previous) => (previous ? { ...previous, emailVerified: true } : previous));
   }, []);
 
   const totals = useMemo<Totals>(() => {
@@ -250,11 +282,15 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     user,
     authChecked,
     signIn,
+    signInWithGoogle,
     signOut,
+    resendVerification,
+    markEmailVerified,
     pf,
     rows,
     log,
     universe,
+    indices,
     aiAvailable,
     loading,
     error,

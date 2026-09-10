@@ -5,6 +5,7 @@ import {
   Crosshair,
   LineChart,
   LogOut,
+  Mail,
   Moon,
   PencilLine,
   Radar,
@@ -32,6 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, post } from "@/lib/api";
@@ -90,12 +92,49 @@ export function DeskShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-surface pb-20 md:pb-0">
       <DeskHeader />
+      <VerifyEmailBanner />
       <HeroBar />
       <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">{children}</main>
       <MobileNav />
       <DetailDialog />
       <MarketDialog />
       <ManualEntryDialog />
+    </div>
+  );
+}
+
+function VerifyEmailBanner() {
+  const { user, resendVerification } = useDesk();
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  if (!user || user.emailVerified) return null;
+
+  const resend = async () => {
+    setSending(true);
+    try {
+      await resendVerification(user.email);
+      setSent(true);
+      toast.success("اتبعت رابط تفعيل جديد على بريدك");
+    } catch (caught: any) {
+      toast.error(caught?.message ?? "تعذر إرسال رابط التفعيل");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-6xl px-3 pt-3 sm:px-5">
+      <Alert className="flex flex-col gap-2 border-amber-500/40 bg-amber-500/10 sm:flex-row sm:items-center sm:justify-between">
+        <AlertDescription className="flex items-center gap-2 text-[13px]">
+          <Mail className="size-4 shrink-0" />
+          لسه ما فعّلتش بريدك الإلكتروني ({user.email}). راجع صندوق الوارد وافتح رابط التفعيل.
+        </AlertDescription>
+        <Button size="sm" variant="outline" onClick={() => void resend()} disabled={sending || sent}>
+          {sending && <Spinner />}
+          {sent ? "اتبعت" : "إعادة إرسال الرابط"}
+        </Button>
+      </Alert>
     </div>
   );
 }
@@ -172,7 +211,7 @@ function DeskHeader() {
             <LogoMark className="size-9 shrink-0" />
             <div className="min-w-0">
               <h1 className="truncate text-[15px] font-semibold tracking-tight">
-                <span dir="ltr">EGXpert</span> · مكتب المحفظة
+                <span dir="ltr">EGXpert</span>
               </h1>
               <p className="truncate text-[11.5px] text-muted-foreground">
                 {today} ·{" "}

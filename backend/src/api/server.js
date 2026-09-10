@@ -16,12 +16,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { ALL_CODES, UNIVERSE, lookup } from '../config/universe.js';
+import { EGX_INDICES, INDICES_AS_OF, codesForIndex } from '../config/indices.js';
+import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
-import { aiAvailable, getClient, callWithRetry, MODEL } from '../agent/client.js';
+import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/clientOpenRouter.js';
+
+// Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
+// change for the text-analysis path can never silently redirect vision too —
+// this is the one deliberate holdout on Claude (Qwen's vision accuracy is
+// untested and this feature has a history of real accuracy bugs). A stale
+// model override once sent this route to a text-only "thinking" model with
+// zero vision-capable endpoints, producing an opaque 404 — verified live.
+const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'anthropic/claude-sonnet-5';
 import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
-import { login, register, userFromRequest, sessionCookie, clearSessionCookie } from '../auth.js';
+import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification } from '../auth.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
@@ -54,6 +64,22 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   res.json({ user: result.user });
 }));
 
+app.post('/api/auth/google', wrap(async (req, res) => {
+  const result = await googleSignIn(req.body ?? {});
+  res.setHeader('Set-Cookie', sessionCookie(result.token));
+  res.json({ user: result.user });
+}));
+
+app.post('/api/auth/verify', wrap(async (req, res) => {
+  const result = await verifyEmail(req.body ?? {});
+  res.json(result);
+}));
+
+app.post('/api/auth/resend-verification', wrap(async (req, res) => {
+  await resendVerification(req.body ?? {});
+  res.json({ ok: true });
+}));
+
 app.post('/api/auth/logout', (_req, res) => {
   res.setHeader('Set-Cookie', clearSessionCookie());
   res.json({ ok: true });
@@ -65,7 +91,7 @@ app.get('/api/auth/me', wrap(async (req, res) => {
 }));
 
 app.use('/api', async (req, res, next) => {
-  if (req.path.startsWith('/auth/') || req.path === '/health' || req.path === '/universe') return next();
+  if (req.path.startsWith('/auth/') || req.path === '/health' || req.path === '/universe' || req.path === '/indices') return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
   req.user = user;
@@ -79,6 +105,13 @@ const capitalOf = (p) =>
 
 app.get('/api/universe', (_req, res) => {
   res.json({ stocks: UNIVERSE, rules: RULES, aiAvailable: aiAvailable() });
+});
+
+// Membership lists for EGX's four headline indices, so the market scan can be
+// filtered to one instead of always scanning the whole tracked universe. See
+// src/config/indices.js for sourcing and its accuracy caveats.
+app.get('/api/indices', (_req, res) => {
+  res.json({ indices: EGX_INDICES, asOf: INDICES_AS_OF });
 });
 
 // ---- Analysis --------------------------------------------------------------
@@ -116,17 +149,28 @@ app.get('/api/quotes', wrap(async (req, res) => {
 
 app.get('/api/scan', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(req.user.id);
-  const codes = req.query.codes ? String(req.query.codes).split(',').map((s) => s.trim().toUpperCase()) : ALL_CODES;
+  const indexCodes = req.query.index ? codesForIndex(req.query.index) : null;
+  if (req.query.index && !indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${req.query.index}` });
+  const codes = req.query.codes
+    ? String(req.query.codes).split(',').map((s) => s.trim().toUpperCase())
+    : indexCodes ?? ALL_CODES;
+  const style = req.query.style;
+  if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
+  // A style changes which rule numbers the engine sizes and gates setups
+  // with — same deterministic engine, different risk/reward and sizing
+  // inputs, exactly like every other `rules` param it already accepts.
+  const rules = style ? rulesForStyle(RULES, style) : RULES;
   const { results, errors } = await analyzeMany(codes, {
     capital: capitalOf(portfolio) || 1_000_000,
     positions: portfolio.positions,
     concurrency: 5,
     force: req.query.force === '1',
+    rules,
   });
   const latestQuotes = await fetchLatestQuotes(results.map((result) => result.code));
 
   const actionable = results.filter((r) => r.plan.actionable && r.plan.buyingNow.worthIt && r.technical.score >= 58);
-  const cashReserve = Math.max(0, portfolio.cash * (RULES.sizing.minCashBufferPct / 100));
+  const cashReserve = Math.max(0, portfolio.cash * (rules.sizing.minCashBufferPct / 100));
   const investableCash = Math.max(0, portfolio.cash - cashReserve);
   const maxRecommendations = 3;
   const candidates = results
@@ -179,7 +223,7 @@ app.get('/api/scan', wrap(async (req, res) => {
         cashLimitShares: cashShares,
         reason: recommendedShares === 0
           ? (portfolio.cash <= 0 ? 'لا يوجد كاش متاح' : r.plan.sizing?.reason ?? 'لا يوجد حجم مناسب حسب قواعد المخاطرة')
-          : `شراء ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع متساوٍ تقريبًا بين أفضل ${selected.length} أسهم مع احتياطي كاش ${RULES.sizing.minCashBufferPct}%`,
+          : `شراء ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع متساوٍ تقريبًا بين أفضل ${selected.length} أسهم مع احتياطي كاش ${rules.sizing.minCashBufferPct}%`,
       } : null;
       const position = r.position && live
         ? { ...r.position, marketValue: +(r.position.shares * livePrice).toFixed(2), unrealizedEgp: +(r.position.shares * (livePrice - r.position.avgCost)).toFixed(2) }
@@ -213,6 +257,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     }),
     actionableCodes: actionable.map((r) => r.code),
     focus: req.query.focus ?? 'market',
+    style: style ?? 'medium',
     cashPlan: {
       selectedCodes: [...selectedCodes],
       investableCash: +investableCash.toFixed(2),
@@ -503,23 +548,25 @@ app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة لمحفظتك أولاً' });
 
   const mediaType = req.headers['content-type'];
-  const response = await callWithRetry(() => getClient().messages.create({
-    model: MODEL,
+  const response = await callWithRetry(() => getOpenRouterClient().chat.completions.create({
+    model: SCREENSHOT_VISION_MODEL,
     max_tokens: 4000,
-    system: `You extract stock portfolio data from an image. Never guess a number that is not visible. Return JSON only, without markdown, using this shape: {"cash":number|null,"positions":[{"code":"EGX ticker or null","name":"company name as shown","shares":number|null,"marketValue":number|null,"profit":number|null,"returnPct":number|null,"avgCost":number|null,"lastPrice":number|null,"stop":number|null,"target":number|null}]}. If the ticker is not visible, write the company name as shown.
+    messages: [
+      { role: 'system', content: `You extract stock portfolio data from an image. Never guess a number that is not visible. Return JSON only, without markdown, using this shape: {"cash":number|null,"positions":[{"code":"EGX ticker or null","name":"company name as shown","shares":number|null,"marketValue":number|null,"profit":number|null,"returnPct":number|null,"avgCost":number|null,"lastPrice":number|null,"stop":number|null,"target":number|null}]}. If the ticker is not visible, write the company name as shown.
 
 The single most valuable field is "shares" — the number of shares held (الكمية / عدد الأسهم / كمية). Look for it carefully, including in small print, a secondary line under the company name, or a detail row. A whole number sitting beside a company with no currency symbol is usually the quantity, not a price. Only use null for it if you genuinely cannot see it.
 
 Nearly as valuable is a per-share price: "avgCost" (متوسط التكلفة / متوسط الشراء) and "lastPrice" (السعر الحالي / آخر سعر). These let the share count be recovered exactly from the same screen when quantity is missing, so extract them whenever visible.
 
-Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL value of the whole position, while avgCost/lastPrice are PER SHARE. Do not confuse the two. Use only these verified Alytic ticker/name references when identifying a stock: ${screenshotUniverseReference}. Use null when a number is not visible. Ignore numbers unrelated to holdings or cash.`,
-    messages: [{ role: 'user', content: [
-      { type: 'image', source: { type: 'base64', media_type: mediaType, data: req.body.toString('base64') } },
-      { type: 'text', text: 'استخرج الأسهم الحالية وعدد الأسهم ومتوسط التكلفة والكاش من هذه الصورة.' },
-    ] }],
+Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL value of the whole position, while avgCost/lastPrice are PER SHARE. Do not confuse the two. Use only these verified Alytic ticker/name references when identifying a stock: ${screenshotUniverseReference}. Use null when a number is not visible. Ignore numbers unrelated to holdings or cash.` },
+      { role: 'user', content: [
+        { type: 'image_url', image_url: { url: `data:${mediaType};base64,${req.body.toString('base64')}` } },
+        { type: 'text', text: 'Extract the current holdings, share counts, average cost and cash from this image.' },
+      ] },
+    ],
   }));
 
-  const text = response.content.filter((block) => block.type === 'text').map((block) => block.text).join('').trim();
+  const text = (response.choices?.[0]?.message?.content ?? '').trim();
   let extracted;
   try {
     const cleaned = text.replace(/^```json\s*|\s*```$/g, '').trim();
@@ -630,27 +677,61 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
 
 // ---- AI endpoints ----------------------------------------------------------
 
-app.post('/api/review', wrap(async (_req, res) => {
+app.post('/api/review', wrap(async (req, res) => {
   if (!aiAvailable()) {
     return res.status(503).json({
       error: 'مفيش مفتاح API. حط OPENROUTER_API_KEY في .env — التحليل الفني شغال من غيره.',
       aiAvailable: false,
     });
   }
-  const { reviewPortfolio } = await import('../agent/analyst.js');
-  const portfolio = await loadPortfolio(req.user.id);
-  const codes = trackedCodes(portfolio);
-  if (!codes.length) return res.status(400).json({ error: 'المحفظة وقائمة المراقبة فاضيين' });
+  const style = req.body?.style ?? req.query.style;
+  if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
+  // The style sets both halves: the rule numbers the engine sizes with and
+  // the horizon the analyst reasons in. Both must come from the same choice,
+  // or the prose will argue against the numbers underneath it.
+  const rules = style ? rulesForStyle(RULES, style) : RULES;
+  const effectiveStyle = style ?? 'medium';
 
+  const portfolio = await loadPortfolio(req.user.id);
   const capital = capitalOf(portfolio);
+
+  // An empty book has no personal fit to judge — the honest answer to "what
+  // do I do with my cash" is identical for every such user on a given day.
+  // Serve today's cached, shared market report instead of paying for a
+  // personalized AI call that would just re-derive the same market view.
+  if (!Object.keys(portfolio.positions).length) {
+    const { getOrGenerateMarketAnalysis, reviewFromMarketReport } = await import('../agent/marketAnalysis.js');
+    const report = await getOrGenerateMarketAnalysis({ rules, style: effectiveStyle });
+    const review = reviewFromMarketReport(report, { cash: portfolio.cash }, trackedCodes(portfolio));
+    return res.json({ review, analyses: [], errors: [], style: effectiveStyle, source: 'daily_market_report', marketAnalysisAsOf: report.asOf });
+  }
+
+  const { reviewPortfolio } = await import('../agent/analyst.js');
+  const codes = trackedCodes(portfolio);
   const { results, errors } = await analyzeMany(codes, {
     capital,
     positions: portfolio.positions,
     concurrency: 5,
+    rules,
   });
 
-  const review = await reviewPortfolio(results, { cash: portfolio.cash, capital });
-  res.json({ review, analyses: results, errors });
+  const review = await reviewPortfolio(results, { cash: portfolio.cash, capital }, { rules, style: effectiveStyle });
+  res.json({ review, analyses: results, errors, style: effectiveStyle, source: 'ai' });
+}));
+
+app.get('/api/market-analysis', wrap(async (req, res) => {
+  if (!aiAvailable()) {
+    return res.status(503).json({
+      error: 'مفيش مفتاح API. حط OPENROUTER_API_KEY في .env — التحليل الفني شغال من غيره.',
+      aiAvailable: false,
+    });
+  }
+  const style = req.query.style;
+  if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
+  const rules = style ? rulesForStyle(RULES, style) : RULES;
+  const { getOrGenerateMarketAnalysis } = await import('../agent/marketAnalysis.js');
+  const report = await getOrGenerateMarketAnalysis({ rules, style: style ?? 'medium' });
+  res.json({ report });
 }));
 
 app.get('/api/fundamentals/:code', wrap(async (req, res) => {

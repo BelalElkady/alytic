@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
 import { Route as AppCashRouteImport } from './routes/_app.cash'
 import { Route as AppChartsRouteImport } from './routes/_app.charts'
@@ -39,6 +40,11 @@ const LoginRoute = LoginRouteImport.update({
 const PricingRoute = PricingRouteImport.update({
   id: '/pricing',
   path: '/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppCalendarRoute = AppCalendarRouteImport.update({
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/calendar': typeof AppCalendarRoute
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/calendar': typeof AppCalendarRoute
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/_app/calendar': typeof AppCalendarRoute
   '/_app/cash': typeof AppCashRoute
   '/_app/charts': typeof AppChartsRoute
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/pricing'
+    | '/verify-email'
     | '/calendar'
     | '/cash'
     | '/charts'
@@ -142,6 +152,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/pricing'
+    | '/verify-email'
     | '/calendar'
     | '/cash'
     | '/charts'
@@ -156,6 +167,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/pricing'
+    | '/verify-email'
     | '/_app/calendar'
     | '/_app/cash'
     | '/_app/charts'
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   ApiPublicSplatRoute: typeof ApiPublicSplatRoute
 }
 
@@ -202,6 +215,13 @@ declare module '@tanstack/react-router' {
       path: '/pricing'
       fullPath: '/pricing'
       preLoaderRoute: typeof PricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/calendar': {
@@ -290,6 +310,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   ApiPublicSplatRoute: ApiPublicSplatRoute,
 }
 export const routeTree = rootRouteImport

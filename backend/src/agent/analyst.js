@@ -11,11 +11,13 @@
  * audit trail: whatever the analyst says, it was working from exactly this.
  */
 
-import { MODEL, requestStructured } from './client.js';
+import { MODEL, requestStructuredOR } from './clientOpenRouter.js';
 import { PortfolioReviewSchema } from './schemas.js';
 import { analystSystemPrompt } from './prompts/system.js';
 import { crossCheckIndicators } from './crosscheck.js';
 import RULES from '../config/rules.js';
+import { portfolioStructure } from '../scoring/portfolio.js';
+import { DEFAULT_STYLE } from '../config/styles.js';
 
 /**
  * Client-side tool: an independent recomputation of RSI/MACD/Bollinger from a
@@ -25,149 +27,226 @@ import RULES from '../config/rules.js';
  * prefer. A real discrepancy belongs in `conflictNoted` or `riskFlags`; it
  * must never change a stop, target or quantity, which stay the engine's alone.
  */
-const crossCheckTool = {
+export const crossCheckTool = {
   name: 'cross_check_indicators',
   description:
-    'يجيب RSI(14) وMACD(12,26,9) وبولينجر(20,2) لسهم واحد من مصدر بيانات ومكتبة حسابية مختلفين تمامًا عن محرك التطبيق ' +
-    '(yfinance + pandas بدل بيانات ياهو ومحرك التطبيق الداخلي). استخدمها بس لو في شك حقيقي إن رقم في البريف غريب أو ' +
-    'قديم أو بيتناقض بشكل غير منطقي — مش كتأكيد روتيني لكل سهم. النتيجة معلومة للمقارنة بس؛ الوقف والهدف والكمية ' +
-    'المحسوبين في البريف هما اللي يتحكموا في القرار دايمًا، حتى لو اختلفوا عن رقم الأداة دي.',
+    'Returns RSI(14), MACD(12,26,9) and Bollinger(20,2) for one ticker from a data source and calculation library completely ' +
+    "separate from the app's engine (yfinance + pandas instead of the app's Yahoo data and internal engine). Use it only when " +
+    'you genuinely doubt a number in the brief is right or stale, or it looks internally inconsistent — not as a routine check ' +
+    'on every stock. The result is comparison information only; the stop, target and quantity computed in the brief always ' +
+    'govern the decision, even if they differ from this tool.',
   input_schema: {
     type: 'object',
     properties: {
-      code: { type: 'string', description: 'كود السهم في البورصة المصرية، زي COMI' },
+      code: { type: 'string', description: 'EGX ticker code, e.g. COMI' },
     },
     required: ['code'],
   },
   handler: async ({ code }) => crossCheckIndicators(code),
 };
 
-const n = (x, unit = '') => (x == null ? 'غير متاح' : `${x}${unit}`);
+const n = (x, unit = '') => (x == null ? 'n/a' : `${x}${unit}`);
 
-/** Render one analysis as a compact, decision-focused brief. */
+/** A holding within this much of its stop is close enough to warrant a look. */
+const NEAR_STOP_PCT = 5;
+
+/**
+ * Does this holding actually have a decision in it today?
+ *
+ * True when a mechanical trigger has fired, the stop is close, the trailing
+ * stop just moved, or the share count is a screenshot estimate the user still
+ * needs to confirm. Everything else is a position sitting inside its range,
+ * where the honest verdict is "no change" — and paying a model to reach that
+ * conclusion, with research attached, is the bulk of what a review costs on a
+ * large book.
+ */
+function needsDecision(analysis) {
+  const p = analysis.position;
+  if (!p) return false;
+  // Only triggers that demand an action count. `canAverageDown` is deliberately
+  // excluded: it is a standing permission ("the rules would allow adding"),
+  // true on every quiet day a position sits at a small loss inside an uptrend,
+  // so treating it as news sends most of the book to the model for nothing.
+  if (p.triggers?.exitOnStop || p.triggers?.takePartial || p.triggers?.atTarget) return true;
+  if (p.stopBreached) return true;
+  if ((p.distanceToStopPct ?? 99) <= NEAR_STOP_PCT) return true;
+  if (p.trailing?.moved) return true;
+  if (p.sharesEstimated) return true;
+  return false;
+}
+
+/**
+ * The verdict a quiet holding gets without involving the model. Deliberately
+ * plain: it states the position is inside its range and names the stop that
+ * would change that, using only numbers the engine already computed.
+ */
+function quietVerdict(analysis, weight = null) {
+  const p = analysis.position;
+  const plPct = p.unrealizedPct;
+  return {
+    code: analysis.code,
+    action: 'hold',
+    conviction: 'متوسطة',
+    headline: 'مفيش جديد — المركز داخل نطاقه',
+    reasoning:
+      `${plPct >= 0 ? 'مربح' : 'خاسر'} ${Math.abs(plPct)}% ومحصلش أي مشغّل ميكانيكي: ` +
+      `لا الوقف ${p.stop} اتكسر، ولا الهدف اتحقق، ولا السعر قرب من الوقف. ` +
+      'المراجعة التفصيلية اتوفرت للأسهم اللي فيها قرار فعلي النهاردة.',
+    // Same shape as a researched verdict so consumers never branch on depth.
+    stockView: `التقييم الفني الآلي ${analysis.technical?.score ?? '—'}/100 (${analysis.technical?.signal?.ar ?? '—'}) — من غير مراجعة تفصيلية النهاردة.`,
+    portfolioView: weight
+      ? `وزنه ${weight.pctOfCapital}% من رأس المال في قطاع ${weight.sector}؛ ما اتغيرش وما استدعاش إعادة نظر.`
+      : 'وزنه في المحفظة ما اتغيرش النهاردة.',
+    positionSizing: {
+      currentPct: weight?.pctOfCapital ?? null,
+      recommendedPct: 'زي ما هو',
+      rationale: 'مفيش مشغّل يستدعي تغيير الحجم.',
+    },
+    betterAlternative: null,
+    conflictNoted: null,
+    orderInstruction: null,
+    invalidation: `إغلاق تحت ${p.stop} يبقى خروج كامل.`,
+    timingNote: 'مفيش إجراء مطلوب دلوقتي.',
+    riskFlags: [],
+    externalContext: [],
+    reviewDepth: 'quiet',
+  };
+}
+
+/**
+ * Render one analysis as a compact, decision-focused brief.
+ *
+ * The scaffolding — labels, connectors, fallback words — is English. Values
+ * that come straight from the deterministic engine (trend label, signal text,
+ * target basis/horizon, entry/stop notes, sector name) stay in whatever
+ * language the engine produced them in, currently Arabic, because those exact
+ * strings are also what the UI renders — translating them here would be a UI
+ * change, not a prompt change. The result reads as English scaffolding around
+ * Arabic engine phrases; that split is deliberate.
+ */
 export function briefFor(a) {
   const s = a.snapshot;
   const t = a.technical;
   const p = a.plan;
   const lines = [];
 
-  lines.push(`### ${a.code} — ${a.name} (${a.sectorAr ?? '؟'})`);
+  lines.push(`### ${a.code} — ${a.name} (${a.sectorAr ?? '?'})`);
   lines.push(
-    `السعر ${s.price.close} ج (${s.price.changePct >= 0 ? '+' : ''}${s.price.changePct}% اليوم) | ` +
-      `من قمة 52 أسبوع ${s.price.pctFrom52wHigh}% | عائد 3 شهور ${n(s.returns.m3, '%')} · سنة ${n(s.returns.y1, '%')}`,
+    `Price ${s.price.close} EGP (${s.price.changePct >= 0 ? '+' : ''}${s.price.changePct}% today) | ` +
+      `from 52w high ${s.price.pctFrom52wHigh}% | return 3m ${n(s.returns.m3, '%')} · 1y ${n(s.returns.y1, '%')}`,
   );
   lines.push(
-    `الاتجاه: ${s.trend.label} (${s.trend.score}/100) | ${s.strength.trendQuality} (ADX ${n(s.strength.adx)}) | ` +
-      `المتوسطات: 20=${n(s.movingAverages.sma20)} 50=${n(s.movingAverages.sma50)} 200=${n(s.movingAverages.sma200)}`,
+    `Trend: ${s.trend.label} (${s.trend.score}/100) | ${s.strength.trendQuality} (ADX ${n(s.strength.adx)}) | ` +
+      `MAs: 20=${n(s.movingAverages.sma20)} 50=${n(s.movingAverages.sma50)} 200=${n(s.movingAverages.sma200)}`,
   );
   lines.push(
-    `الزخم: RSI ${n(s.momentum.rsi14)} (${s.momentum.rsiState}) | MACD ${s.momentum.macdCross ?? 'غير متاح'} | ` +
-      `دايفرجنس: ${s.momentum.divergence.type === 'none' ? 'مفيش' : s.momentum.divergence.detail}`,
+    `Momentum: RSI ${n(s.momentum.rsi14)} (${s.momentum.rsiState}) | MACD ${s.momentum.macdCross ?? 'n/a'} | ` +
+      `Divergence: ${s.momentum.divergence.type === 'none' ? 'none' : s.momentum.divergence.detail}`,
   );
   lines.push(
-    `الحجم: ${s.volume.relativeVolume}× المتوسط | OBV ${s.volume.obvTrend} | ` +
-      `متوسط التداول ${Math.round((s.volume.avgTurnoverEgp ?? 0) / 1e6)} مليون ج/يوم` +
+    `Volume: ${s.volume.relativeVolume}× average | OBV ${s.volume.obvTrend} | ` +
+      `avg turnover ${Math.round((s.volume.avgTurnoverEgp ?? 0) / 1e6)}M EGP/day` +
       (a.liquidity.ok ? '' : ` ⚠️ ${a.liquidity.note}`),
   );
   lines.push(
-    `التقلب: ATR ${s.volatility.atr14} (${s.volatility.atrPct}% يوميًا)` +
-      (s.volatility.squeeze ? ' | انضغاط بولينجر — حركة قوية قادمة' : ''),
+    `Volatility: ATR ${s.volatility.atr14} (${s.volatility.atrPct}% daily)` +
+      (s.volatility.squeeze ? ' | Bollinger squeeze — a strong move is likely coming' : ''),
   );
 
-  const sup = s.levels.supports.slice(0, 3).map((l) => `${l.price} (قوة ${l.strength}، ${l.distancePct}%)`).join(' · ');
-  const res = s.levels.resistances.slice(0, 3).map((l) => `${l.price} (قوة ${l.strength}، +${l.distancePct}%)`).join(' · ');
-  lines.push(`الدعوم: ${sup || 'مفيش واضح'}`);
-  lines.push(`المقاومات: ${res || 'مفيش فوق السعر — مساحة مفتوحة'}`);
+  const sup = s.levels.supports.slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, ${l.distancePct}%)`).join(' · ');
+  const res = s.levels.resistances.slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, +${l.distancePct}%)`).join(' · ');
+  lines.push(`Support: ${sup || 'none clear'}`);
+  lines.push(`Resistance: ${res || 'none above price — open space'}`);
 
   if (s.breakout) {
     const when =
-      s.breakout.barsAgo === 0 ? 'النهاردة'
-      : s.breakout.barsAgo === 1 ? 'إمبارح'
-      : `من ${s.breakout.barsAgo} جلسات`;
+      s.breakout.barsAgo === 0 ? 'today'
+      : s.breakout.barsAgo === 1 ? 'yesterday'
+      : `${s.breakout.barsAgo} sessions ago`;
     lines.push(
-      `اختراق ${s.breakout.direction === 'up' ? 'صاعد' : 'هابط'} لمستوى ${s.breakout.level} ${when}، ` +
-        `${s.breakout.volumeConfirmed ? 'بحجم مؤكد' : 'من غير حجم مؤكد'}`,
+      `${s.breakout.direction === 'up' ? 'Upward' : 'Downward'} breakout of level ${s.breakout.level} ${when}, ` +
+        `${s.breakout.volumeConfirmed ? 'volume-confirmed' : 'without volume confirmation'}`,
     );
   }
 
-  lines.push(`**التقييم الفني الآلي: ${t.score}/100 → ${t.signal.ar}**`);
-  if (t.reasons.bullish.length) lines.push(`  مؤيد: ${t.reasons.bullish.join(' · ')}`);
-  if (t.reasons.bearish.length) lines.push(`  معارض: ${t.reasons.bearish.join(' · ')}`);
-  if (t.reasons.neutral.length) lines.push(`  ملاحظات: ${t.reasons.neutral.join(' · ')}`);
+  lines.push(`**Engine technical score: ${t.score}/100 → ${t.signal.ar}**`);
+  if (t.reasons.bullish.length) lines.push(`  Bullish: ${t.reasons.bullish.join(' · ')}`);
+  if (t.reasons.bearish.length) lines.push(`  Bearish: ${t.reasons.bearish.join(' · ')}`);
+  if (t.reasons.neutral.length) lines.push(`  Notes: ${t.reasons.neutral.join(' · ')}`);
 
   // Entry / risk plan
-  lines.push(`**الخطة المحسوبة:**`);
-  lines.push(`  الدخول: ${p.entryNote}`);
-  lines.push(`  الوقف: ${p.stop.stop} ج (مخاطرة ${p.stop.riskPct}%) — ${p.stop.note}`);
+  lines.push(`**Computed plan:**`);
+  lines.push(`  Entry: ${p.entryNote}`);
+  lines.push(`  Stop: ${p.stop.stop} EGP (risk ${p.stop.riskPct}%) — ${p.stop.note}`);
   if (p.targets.mid) {
     lines.push(
-      `  الهدف المتوسط: ${p.targets.mid.price} ج (+${p.targets.mid.upsidePct}%) — ${p.targets.mid.basis} | ` +
-        `التوقيت: ${p.targets.mid.horizon.ar} | عائد/مخاطرة ${p.targets.mid.riskReward}` +
-        `${p.targets.mid.meetsMinRR === false ? ' ⚠️ أقل من الحد الأدنى' : ''}`,
+      `  Mid-term target: ${p.targets.mid.price} EGP (+${p.targets.mid.upsidePct}%) — ${p.targets.mid.basis} | ` +
+        `Timing: ${p.targets.mid.horizon.ar} | reward/risk ${p.targets.mid.riskReward}` +
+        `${p.targets.mid.meetsMinRR === false ? ' ⚠️ below minimum' : ''}`,
     );
   } else {
-    lines.push('  الهدف المتوسط: مفيش هدف واضح داخل الأفق المتوسط');
+    lines.push('  Mid-term target: no clear target within the mid-term horizon');
   }
   if (p.targets.long?.price) {
     lines.push(
-      `  الهدف البعيد: ${p.targets.long.price} ج (+${p.targets.long.upsidePct}%) — ${p.targets.long.basis} | التوقيت: ${p.targets.long.horizon.ar}`,
+      `  Long-term target: ${p.targets.long.price} EGP (+${p.targets.long.upsidePct}%) — ${p.targets.long.basis} | Timing: ${p.targets.long.horizon.ar}`,
     );
   } else {
-    lines.push(`  الهدف البعيد: ${p.targets.long?.note ?? 'غير متاح'}`);
+    lines.push(`  Long-term target: ${p.targets.long?.note ?? 'n/a'}`);
   }
   lines.push(
-    `  لو اشتريت بسعر السوق النهاردة: وقف ${p.buyingNow.stop}، عائد/مخاطرة ${n(p.buyingNow.riskReward)} ` +
-      `→ ${p.buyingNow.worthIt ? 'مقبول' : 'مش مقبول'}`,
+    `  If bought at market today: stop ${p.buyingNow.stop}, reward/risk ${n(p.buyingNow.riskReward)} ` +
+      `→ ${p.buyingNow.worthIt ? 'acceptable' : 'not acceptable'}`,
   );
   if (p.sizing) {
     lines.push(
-      `  الحجم المسموح: ${p.sizing.shares} سهم (${p.sizing.positionPctOfCapital}% من رأس المال، مخاطرة ${p.sizing.riskPctOfCapital}%) — محدود بـ: ${p.sizing.bindingConstraint}`,
+      `  Allowed size: ${p.sizing.shares} shares (${p.sizing.positionPctOfCapital}% of capital, risk ${p.sizing.riskPctOfCapital}%) — bound by: ${p.sizing.bindingConstraint}`,
     );
   }
 
   // Open position state, when there is one
   if (a.position) {
     const ps = a.position;
-    lines.push(`**المركز المفتوح:** ${ps.shares} سهم بمتوسط ${ps.avgCost} | ` +
-      `${ps.unrealizedPct >= 0 ? 'ربح' : 'خسارة'} ${ps.unrealizedPct}% (${ps.unrealizedEgp} ج) | ` +
-      `الوقف الفعلي (الملزم) ${ps.stop}${ps.trailing.active ? ' (متحرك مفعّل)' : ''}`);
-    if (ps.trailing.moved) lines.push(`  ⬆️ الوقف المتحرك اتحرك من ${ps.trailing.from} لـ ${ps.stop} (القمة ${ps.trailing.peak})`);
+    lines.push(`**Open position:** ${ps.shares} shares at avg ${ps.avgCost} | ` +
+      `${ps.unrealizedPct >= 0 ? 'profit' : 'loss'} ${ps.unrealizedPct}% (${ps.unrealizedEgp} EGP) | ` +
+      `effective (binding) stop ${ps.stop}${ps.trailing.active ? ' (trailing active)' : ''}`);
+    if (ps.trailing.moved) lines.push(`  ⬆️ Trailing stop moved from ${ps.trailing.from} to ${ps.stop} (peak ${ps.trailing.peak})`);
     // Informational only — the mechanical triggers below act on ps.stop, never
     // on this. It exists so a "hold for the long term" verdict can point to a
     // real invalidation level instead of an open-ended "hold and see".
     if (ps.longTermStop?.stop) {
-      lines.push(`  الوقف البعيد (استرشادي، للمدى الطويل فقط): ${ps.longTermStop.stop} — ${ps.longTermStop.note}`);
+      lines.push(`  Long-term stop (advisory, long horizon only): ${ps.longTermStop.stop} — ${ps.longTermStop.note}`);
     }
     const fired = Object.entries(ps.triggers).filter(([, v]) => v).map(([k]) => k);
-    lines.push(`  المشغّلات الميكانيكية: ${fired.length ? fired.join(', ') : 'مفيش — المركز داخل نطاقه'}`);
+    lines.push(`  Mechanical triggers: ${fired.length ? fired.join(', ') : 'none — position within its range'}`);
   }
 
   if (a.fundamentals) {
     const f = a.fundamentals;
     const facts = [
-      f.peRatio != null && `مكرر ربحية ${f.peRatio}`,
-      f.epsEgp != null && `ربحية السهم ${f.epsEgp} ج`,
-      f.priceToBook != null && `السعر/القيمة الدفترية ${f.priceToBook}`,
-      f.dividendYieldPct != null && `توزيعات ${f.dividendYieldPct}%`,
-      f.returnOnEquityPct != null && `عائد على حقوق الملكية ${f.returnOnEquityPct}%`,
-      f.debtToEquity != null && `مديونية/ملكية ${f.debtToEquity}`,
-      f.marketCapEgp != null && `قيمة سوقية ${Math.round(f.marketCapEgp / 1e9)} مليار ج`,
+      f.peRatio != null && `P/E ${f.peRatio}`,
+      f.epsEgp != null && `EPS ${f.epsEgp} EGP`,
+      f.priceToBook != null && `P/B ${f.priceToBook}`,
+      f.dividendYieldPct != null && `dividend yield ${f.dividendYieldPct}%`,
+      f.returnOnEquityPct != null && `ROE ${f.returnOnEquityPct}%`,
+      f.debtToEquity != null && `debt/equity ${f.debtToEquity}`,
+      f.marketCapEgp != null && `market cap ${Math.round(f.marketCapEgp / 1e9)}B EGP`,
     ].filter(Boolean);
 
     if (facts.length) {
-      lines.push(`**الأساسيات** (${f.industry ?? '—'}، ${f.asOf}): ${facts.join(' | ')}`);
+      lines.push(`**Fundamentals** (${f.industry ?? '—'}, ${f.asOf}): ${facts.join(' | ')}`);
       if (f.valuation) lines.push(`  ${f.valuation}`);
     }
     // Coverage is partial on EGX small caps. Say so, so the model reads a gap
     // as a gap rather than as a weak balance sheet.
     const missing = ['peRatio', 'epsEgp', 'returnOnEquityPct'].filter((k) => f[k] == null);
-    if (missing.length) lines.push('  ملاحظة: بعض البيانات الأساسية مش متاحة للسهم ده — الغياب مش إشارة سلبية.');
+    if (missing.length) lines.push('  Note: some fundamentals are unavailable for this stock — absence is not a negative signal.');
   } else {
-    lines.push('**الأساسيات:** مش متاحة لهذا السهم — احكم على الفني بس.');
+    lines.push('**Fundamentals:** unavailable for this stock — judge on technicals only.');
   }
 
   if (a.shariah && a.shariah !== 'compliant') {
-    lines.push(`  ملاحظة: التوافق مع الشريعة — ${a.shariah === 'non_compliant' ? 'غير متوافق' : 'محتاج مراجعة'}`);
+    lines.push(`  Note: Shariah compliance — ${a.shariah === 'non_compliant' ? 'non-compliant' : 'needs review'}`);
   }
 
   return lines.join('\n');
@@ -178,74 +257,152 @@ export function briefFor(a) {
  *
  * @param {object[]} analyses - results from analyzeTicker (positions + watchlist)
  * @param {object} ctx - { cash, capital, positions: Map<code, {shares, avgCost}> }
+ * @param {object} [opts]
+ * @param {string} [opts.style] - investor style (trader | medium | long); sets
+ *   both the horizon the analyst reasons in and the rule numbers it quotes.
+ *   Pass `rules` already adjusted for it — see config/styles.js.
  */
-export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL, rules = RULES } = {}) {
+export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL, rules = RULES, style = DEFAULT_STYLE } = {}) {
   const held = analyses.filter((a) => a.position);
   const watch = analyses.filter((a) => !a.position);
+
+  // Triage before spending anything. A holding sitting quietly inside its range
+  // has no decision in it — briefing, researching and writing a verdict for it
+  // costs the same as one that needs action and produces "احتفاظ" either way.
+  // Those are answered locally (see quietVerdict) and never reach the model;
+  // they still appear in the portfolio context below so sector concentration
+  // and cash advice stay aware of the whole book.
+  const heldNeedingDecision = held.filter(needsDecision);
+  const quietHeld = held.filter((a) => !needsDecision(a));
+  // A watchlist name is only worth a verdict if it is actually buyable now, or
+  // the engine flags it as worth waiting for at a specific level.
+  const watchWorthReviewing = watch.filter((a) => a.plan?.actionable || a.plan?.buyingNow?.worthIt);
+  const quietWatch = watch.filter((a) => !watchWorthReviewing.includes(a));
+  const reviewed = [...heldNeedingDecision, ...watchWorthReviewing];
 
   const totalPositionValue = held.reduce((sum, a) => sum + (a.position?.marketValue ?? 0), 0);
   const cash = ctx.cash ?? 0;
   const capital = ctx.capital ?? totalPositionValue + cash;
 
-  // Sector concentration is a portfolio-level fact the per-stock briefs cannot
-  // show, so it is computed here and stated explicitly.
-  const bySector = {};
-  for (const a of held) {
-    const key = a.sectorAr ?? 'غير مصنف';
-    bySector[key] = (bySector[key] ?? 0) + (a.position?.marketValue ?? 0);
-  }
-  const sectorLines = Object.entries(bySector)
-    .sort((a, b) => b[1] - a[1])
-    .map(([sec, val]) => `  ${sec}: ${Math.round(val).toLocaleString('en-US')} ج (${((val / capital) * 100).toFixed(1)}%)`)
+  // Concentration, weights and the health score are portfolio-level facts no
+  // per-stock brief can show — and the analyst must judge them, not derive
+  // them, so they are computed here and handed over ready-made.
+  const structure = portfolioStructure(analyses, { cash, capital }, rules);
+  const sectorLines = structure.sectors
+    .map((s) => `  ${s.sector}: ${Math.round(s.value).toLocaleString('en-US')} EGP (${s.pctOfCapital}%)`)
+    .join('\n');
+  const weightLines = structure.weights
+    .map((w) => `  ${w.code}: ${w.pctOfCapital}% of capital (${Math.round(w.value).toLocaleString('en-US')} EGP) · ${w.sector}`)
     .join('\n');
 
-  const userMessage = `# مراجعة المحفظة — إغلاق ${analyses[0]?.asOf ?? 'اليوم'}
+  const userMessage = `# Portfolio review — close of ${analyses[0]?.asOf ?? 'today'}
 
-## الوضع المالي
-- قيمة الأسهم: ${Math.round(totalPositionValue).toLocaleString('en-US')} ج
-- الكاش المتاح: ${Math.round(cash).toLocaleString('en-US')} ج (${((cash / capital) * 100).toFixed(1)}% من رأس المال)
-- إجمالي رأس المال: ${Math.round(capital).toLocaleString('en-US')} ج
-- عمولة الوساطة: ${rules.commissionPct}% على كل صفقة
+## Financial position
+- Positions value: ${Math.round(totalPositionValue).toLocaleString('en-US')} EGP
+- Cash available: ${Math.round(cash).toLocaleString('en-US')} EGP (${((cash / capital) * 100).toFixed(1)}% of capital)
+- Total capital: ${Math.round(capital).toLocaleString('en-US')} EGP
+- Brokerage commission: ${rules.commissionPct}% per trade
 
-## التوزيع القطاعي الحالي
-${sectorLines || '  لا توجد مراكز مفتوحة'}
-(الحد الأقصى المسموح للقطاع الواحد: ${rules.sizing.maxSectorPct}%)
+## Portfolio structure (computed — judge it, do not recompute it)
+- Portfolio health score: ${structure.health.score}/100${structure.health.reasons.length ? ` — deductions: ${structure.health.reasons.join('; ')}` : ' — no structural violations'}
+- Holdings: ${structure.holdings} | largest position: ${structure.largestPct}% | top 3: ${structure.top3Pct}% | top 5: ${structure.top5Pct}%
+- Limits: max single position ${rules.sizing.maxPositionPct}% · max sector ${rules.sizing.maxSectorPct}% · min cash reserve ${rules.sizing.minCashBufferPct}%
 
-## المراكز المفتوحة (${held.length})
-${held.map(briefFor).join('\n\n') || 'لا توجد مراكز مفتوحة.'}
+### Weight of each position
+${weightLines || '  No open positions'}
 
-## قائمة المراقبة (${watch.length})
-${watch.map(briefFor).join('\n\n') || 'قائمة المراقبة فاضية.'}
+### Sector distribution
+${sectorLines || '  No open positions'}
+
+## Positions needing a decision today (${heldNeedingDecision.length} of ${held.length})
+${heldNeedingDecision.map(briefFor).join('\n\n') || 'No position has a trigger or is near its stop today.'}
+
+## Watchlist — actionable opportunities (${watchWorthReviewing.length} of ${watch.length})
+${watchWorthReviewing.map(briefFor).join('\n\n') || 'No actionable setup on the watchlist.'}
+
+## Rest of the portfolio — context only, no verdict required
+These are quiet positions: no mechanical trigger fired, and price is not near the stop. No full brief was built for them, to save cost, and they already have an automatic "hold" verdict. Use them only for sector concentration and cash reasoning — do not return a verdict for any of these codes.
+${
+  quietHeld.length
+    ? quietHeld
+        .map(
+          (a) =>
+            `- ${a.code} (${a.sectorAr ?? '?'}): ${a.position.shares} shares · ` +
+            `${Math.round(a.position.marketValue ?? 0).toLocaleString('en-US')} EGP · ` +
+            `${a.position.unrealizedPct >= 0 ? '+' : ''}${a.position.unrealizedPct}% · stop ${a.position.stop}`,
+        )
+        .join('\n')
+    : '- none'
+}
+${quietWatch.length ? `\nAlso excluded from the watchlist for now (not actionable): ${quietWatch.map((a) => a.code).join(', ')}` : ''}
 
 ---
-اديني قرار لكل سهم فوق (المراكز وقائمة المراقبة)، وتوصية للكاش، وأهم إجراء لبكرة.
-افتكر: الأرقام دي نهائية — احكم عليها، ما تحسبهاش من تاني.`;
+Give me a decision for every stock in the first two sections only, a cash recommendation, and the top priority for tomorrow.
+Remember: these numbers are final — judge them, do not recompute them.`;
 
-  const { data, raw } = await requestStructured({
+  // The prompt requires research before any money-moving verdict, so the search
+  // allowance scales with how many names are under review rather than being a
+  // flat number that a large book would exhaust on its first few stocks.
+  // Counted against the names actually being reviewed, not the whole book —
+  // the quiet ones are never researched, so budgeting for them would just
+  // hand the model an allowance to spend on stocks it was told to skip.
+  const perStock = rules.webSearch?.perStock ?? 2;
+  const searchBudget = Math.min(
+    rules.webSearch?.maxUsesPerReview ?? 30,
+    Math.max(perStock, reviewed.length * perStock),
+  );
+
+  const { data, raw } = await requestStructuredOR({
     model,
     schema: PortfolioReviewSchema,
     schemaName: 'portfolio_review',
-    maxTokens: 16000,
-    // The system prompt is identical on every run, so caching it makes each
-    // subsequent review meaningfully cheaper.
-    system: [{ type: 'text', text: analystSystemPrompt(rules), cache_control: { type: 'ephemeral' } }],
+    // Two real requests happen per review now (research/tool phase, then a
+    // tool-free formatting phase) — see clientOpenRouter.js. 4000 is enough
+    // headroom for either phase's own output; it is not a shared budget the
+    // way Claude's single-call maxTokens was.
+    maxTokens: 4000,
+    system: analystSystemPrompt(rules, style),
     messages: [{ role: 'user', content: userMessage }],
-    // Server-side search — runs on Anthropic's infrastructure, no client-side
-    // execution loop needed. The system prompt tells the model this is for
-    // recent news/events that could change a verdict, never for recalculating
-    // a number the brief already computed. Capped well under what a full
-    // portfolio could otherwise burn through if it searched every holding.
-    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: rules.webSearch?.maxUsesPerReview ?? 6 }],
+    // Model-decided, not always-on: the system prompt governs when a search
+    // is warranted, same as before. Resolves server-side within one turn.
+    webSearch: { engine: 'auto', max_results: 4, max_uses: searchBudget },
     clientTools: [crossCheckTool],
   });
 
+  // Consumers still get one verdict per held stock — the quiet ones were just
+  // answered without the model. Tagged with reviewDepth so a caller (or a UI)
+  // can tell a researched judgment from an automatic "no change".
+  const aiVerdicts = (data.verdicts ?? []).map((v) => ({ ...v, reviewDepth: v.reviewDepth ?? 'full' }));
+  const aiCodes = new Set(aiVerdicts.map((v) => v.code));
+  const weightOf = new Map(structure.weights.map((w) => [w.code, w]));
+  const localVerdicts = quietHeld
+    .filter((a) => !aiCodes.has(a.code))
+    .map((a) => quietVerdict(a, weightOf.get(a.code) ?? null));
+
   return {
     ...data,
+    verdicts: [...aiVerdicts, ...localVerdicts],
+    // Engine-computed, not model-authored: the concentration figures and the
+    // health score the analyst was asked to interpret rather than invent.
+    portfolioHealth: structure.health,
+    portfolioStructure: {
+      holdings: structure.holdings,
+      largestPct: structure.largestPct,
+      top3Pct: structure.top3Pct,
+      top5Pct: structure.top5Pct,
+      cashPct: structure.cashPct,
+      sectors: structure.sectors,
+      weights: structure.weights,
+    },
     _meta: {
       model: raw.model,
       asOf: analyses[0]?.asOf ?? null,
       usage: raw.usage,
       stocksReviewed: analyses.length,
+      // What the spend actually covered, versus what was answered for free.
+      stocksSentToModel: reviewed.length,
+      stocksAnsweredLocally: localVerdicts.length,
+      searchBudget,
     },
   };
 }

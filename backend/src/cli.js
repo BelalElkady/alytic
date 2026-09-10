@@ -19,7 +19,9 @@ import 'dotenv/config';
 import { analyzeTicker, analyzeMany } from './analyze.js';
 import { ALL_CODES, lookup } from './config/universe.js';
 import { loadPortfolio, savePortfolio, recordTrade, trackedCodes } from './portfolio.js';
-import { aiAvailable } from './agent/client.js';
+import { aiAvailable } from './agent/clientOpenRouter.js';
+import RULES from './config/rules.js';
+import { DEFAULT_STYLE, STYLE_KEYS, rulesForStyle, styleProfile } from './config/styles.js';
 
 const [, , command, ...args] = process.argv;
 
@@ -143,7 +145,9 @@ async function cmdAnalyze(code) {
   console.log();
 }
 
-async function cmdReview() {
+async function cmdReview(styleArg) {
+  const style = STYLE_KEYS.includes(styleArg) ? styleArg : DEFAULT_STYLE;
+  const rules = rulesForStyle(RULES, style);
   if (!aiAvailable()) {
     console.log(c.red('\nمحتاج OPENROUTER_API_KEY في ملف .env عشان المراجعة الذكية.'));
     console.log(c.dim('التحليل الفني شغال من غيره: node src/cli.js scan\n'));
@@ -166,10 +170,11 @@ async function cmdReview() {
     capital,
     positions: portfolio.positions,
     concurrency: 5,
+    rules,
   });
 
-  process.stderr.write(c.dim('بيراجع مع المحلل...\n'));
-  const review = await reviewPortfolio(results, { cash: portfolio.cash, capital });
+  process.stderr.write(c.dim(`بيراجع مع المحلل (أسلوب: ${styleProfile(style).label})...\n`));
+  const review = await reviewPortfolio(results, { cash: portfolio.cash, capital }, { rules, style });
 
   console.log(`\n${c.bold('قراءة السوق')}\n${review.marketRead}\n`);
   console.log(c.bold('القرارات'));
@@ -251,7 +256,7 @@ async function cmdCash(amount) {
 const COMMANDS = {
   scan: cmdScan,
   analyze: () => cmdAnalyze(args[0]),
-  review: cmdReview,
+  review: () => cmdReview(args[0]),
   sync: cmdSync,
   fundamentals: () => cmdFundamentals(args[0]),
   buy: () => cmdTrade('buy', args),
@@ -266,7 +271,7 @@ ${c.bold('Alytic')} — محلل البورصة المصرية
 
   ${c.cyan('scan')} [--actionable]     مسح السوق كله مرتب بالتقييم
   ${c.cyan('analyze')} <كود>           تحليل كامل لسهم
-  ${c.cyan('review')}                  مراجعة المحفظة بالذكاء الاصطناعي
+  ${c.cyan('review')} [أسلوب]          مراجعة المحفظة بالذكاء الاصطناعي (trader|medium|long)
   ${c.cyan('sync')}                    تحديث كاش الأسعار
   ${c.cyan('fundamentals')} <كود>      بيانات الشركة الأساسية من الإنترنت
   ${c.cyan('buy')} <كود> <عدد> <سعر>   تسجيل شراء

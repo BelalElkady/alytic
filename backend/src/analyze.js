@@ -150,6 +150,7 @@ export async function analyzeTicker(code, opts = {}) {
       // the way to the UI rather than passing as a confirmed holding.
       sharesEstimated: position.derivedFromScreenshot === true,
       avgCost: r2(position.avgCost),
+      purchaseValue: r2(position.shares * position.avgCost),
       marketValue: r2(position.shares * price),
       unrealizedPct: r2(plPct),
       unrealizedEgp: r2(position.shares * (price - position.avgCost)),

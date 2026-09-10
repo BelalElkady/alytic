@@ -1,0 +1,110 @@
+name: Build and Deploy Alytic
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 20
+  DEPLOY_PATH: /opt/alytic
+
+jobs:
+  build:
+    name: Build and validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Validate backend JavaScript
+        shell: bash
+        run: find backend/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: Report frontend lint issues
+        working-directory: frontend
+        run: bun run lint
+        continue-on-error: true
+
+      - name: Build frontend
+        working-directory: frontend
+        run: bun run build
+
+      - name: Upload deployment bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: alytic-deployment
+          path: |
+            backend/package.json
+            backend/package-lock.json
+            backend/src
+            backend/data/reference
+            frontend/.output
+          retention-days: 7
+
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Download deployment bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: alytic-deployment
+          path: deploy
+
+      - name: Copy bundle to server
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: deploy/*
+          target: ${{ env.DEPLOY_PATH }}
+          overwrite: true
+          strip_components: 1
+
+      - name: Install runtime dependencies and restart services
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: DEPLOY_PATH
+          script_stop: true
+          script: |
+            set -eu
+            cd "$DEPLOY_PATH"
+            npm ci --omit=dev --prefix backend
+            pm2 describe alytic-backend >/dev/null 2>&1 \
+              && pm2 restart alytic-backend --update-env \
+              || pm2 start backend/src/api/server.js --name alytic-backend --cwd "$DEPLOY_PATH/backend"
+            pm2 describe alytic-frontend >/dev/null 2>&1 \
+              && pm2 restart alytic-frontend --update-env \
+              || pm2 start frontend/.output/server/index.mjs --name alytic-frontend --cwd "$DEPLOY_PATH/frontend"
+            pm2 save
+            curl --fail --silent --show-error http://127.0.0.1:3000/api/health >/dev/null

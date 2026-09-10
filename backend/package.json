@@ -17,10 +17,11 @@
     "build:universe": "node scripts/build-universe.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "google-auth-library": "^11.0.2",
+    "openai": "^7.13.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

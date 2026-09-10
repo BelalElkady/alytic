@@ -13,8 +13,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { getClient, MODEL, callWithRetry } from './client.js';
+import { MODEL, requestStructuredOR } from './clientOpenRouter.js';
 import { FundamentalsSchema } from './schemas.js';
 import { fundamentalsSystemPrompt } from './prompts/system.js';
 import { lookup } from '../config/universe.js';
@@ -22,7 +21,6 @@ import { lookup } from '../config/universe.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIR = path.join(ROOT, 'data', 'fundamentals');
 const MAX_AGE_DAYS = 45;
-const OUTPUT_FORMAT = zodOutputFormat(FundamentalsSchema);
 
 async function readCached(code) {
   try {
@@ -55,65 +53,35 @@ export async function getFundamentals(code, { force = false, model = MODEL } = {
   }
 
   const meta = lookup(upper);
-  const client = getClient();
 
-  const prompt = `ابحث عن البيانات الأساسية لشركة "${meta?.en ?? upper}" (${meta?.ar ?? ''}) المقيدة في البورصة المصرية تحت كود ${upper}.
+  const prompt = `Research the fundamentals of "${meta?.en ?? upper}" (${meta?.ar ?? ''}), listed on the Egyptian Stock Exchange under ticker ${upper}.
 
-دوّر على:
-- آخر نتائج مالية معلنة (إيرادات، صافي ربح، ربحية السهم)
-- مكرر الربحية الحالي والقيمة الدفترية
-- التوزيعات النقدية وعائدها
-- نمو الإيرادات والأرباح مقارنة بالفترة المماثلة
-- نسبة الديون لحقوق الملكية
-- أي أخبار مهمة آخر 3 شهور (صفقات، توسعات، تغييرات إدارة، أرباح مفاجئة)
+Look for:
+- Latest disclosed financial results (revenue, net profit, earnings per share)
+- Current P/E ratio and book value
+- Cash dividends and their yield
+- Revenue and profit growth versus the same period last year
+- Debt-to-equity ratio
+- Any material news in the last 3 months (deals, expansions, management changes, earnings surprises)
 
-مصادر كويسة: الموقع الرسمي للبورصة المصرية (egx.com.eg)، مباشر (mubasher.info)، أرقام (argaam.com)، الموقع الرسمي للشركة، وتقارير الوسطاء.
+Good sources: the official EGX website (egx.com.eg), Mubasher (mubasher.info), Argaam (argaam.com), the company's official website, and broker reports.
 
-رجّع النتيجة بالصيغة المطلوبة. لو ما لقيتش رقم موثوق، رجّع null بدل ما تخمّن.`;
-
-  const tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 }];
-  const messages = [{ role: 'user', content: prompt }];
-
-  let final = null;
-  // Server-side search can exhaust its per-turn iteration budget and return
-  // `pause_turn`; the turn is resumed by echoing the assistant content back.
-  for (let turn = 0; turn < 6; turn++) {
-    const res = await callWithRetry(() =>
-      client.messages.create({
-        model,
-        max_tokens: 16000,
-        thinking: { type: 'adaptive' },
-        system: [{ type: 'text', text: fundamentalsSystemPrompt(), cache_control: { type: 'ephemeral' } }],
-        tools,
-        messages,
-        output_config: { format: OUTPUT_FORMAT },
-      }),
-    );
-
-    if (res.stop_reason === 'refusal') {
-      throw new Error(`النموذج رفض البحث: ${res.stop_details?.explanation ?? ''}`);
-    }
-    if (res.stop_reason === 'pause_turn') {
-      messages.push({ role: 'assistant', content: res.content });
-      continue;
-    }
-    final = res;
-    break;
-  }
-
-  if (!final) return null;
-
-  const text = final.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('')
-    .trim();
+Return the result in the required format. If you cannot find a reliable number, return null rather than guessing.`;
 
   let parsed;
   try {
-    parsed = FundamentalsSchema.parse(JSON.parse(text));
-  } catch (err) {
-    // A malformed answer is not worth caching or trusting.
+    const { data } = await requestStructuredOR({
+      model,
+      schema: FundamentalsSchema,
+      schemaName: 'fundamentals',
+      maxTokens: 4000,
+      system: fundamentalsSystemPrompt(),
+      messages: [{ role: 'user', content: prompt }],
+      webSearch: { engine: 'auto', max_results: 4, max_uses: 8 },
+    });
+    parsed = data;
+  } catch {
+    // A malformed or unfindable answer is not worth caching or trusting.
     return null;
   }
 

@@ -72,12 +72,18 @@ export const RULES = {
   commissionPct: 0.20,
 
   webSearch: {
-    // Server-side searches the portfolio review may make in one call, total —
-    // not per stock. The model is instructed to spend these on names that
-    // actually warrant it (an alert fired, an unexplained move), not to
-    // exhaustively search every holding. ~$0.03-0.05/search at current rates,
-    // so 6 caps a single review's search spend near $0.20-0.30 worst case.
-    maxUsesPerReview: 6,
+    // The analyst researches every stock it is about to move money on, so the
+    // budget scales with the book instead of being a flat allowance: roughly
+    // this many searches per stock under review, capped so one large portfolio
+    // can't run away with it.
+    //
+    // Cost is real and worth knowing before raising these: ~$0.03-0.05 per
+    // search plus the tokens each result adds to the context. At the numbers
+    // below a 10-stock review runs ~20 searches (~$0.60-1.00 of search, more
+    // once the extra context tokens are counted), against ~$0.20-0.30 for the
+    // old search-only-on-anomaly policy. Lower `perStock` to 1 to halve it.
+    perStock: 2,
+    maxUsesPerReview: 30,
   },
 };
 
