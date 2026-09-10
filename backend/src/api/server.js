@@ -13,7 +13,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { ALL_CODES, UNIVERSE, lookup } from '../config/universe.js';
 import { EGX_INDICES, INDICES_AS_OF, codesForIndex } from '../config/indices.js';
@@ -769,10 +769,19 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, aiAvailable: aiAvailable(), universeSize: ALL_CODES.length });
 });
 
-const PORT = process.env.PORT ?? 3000;
-app.listen(PORT, () => {
-  console.log(`Alytic على http://localhost:${PORT}`);
-  console.log(aiAvailable() ? '  الذكاء الاصطناعي: مفعّل' : '  الذكاء الاصطناعي: متوقف (مفيش OPENROUTER_API_KEY)');
-});
+// Only bind a port when executed directly (`npm run serve`, systemd, CLI).
+// When imported — by the test suites, which listen on an ephemeral port and
+// point the SQLite/bar-cache paths at throwaway directories — the module must
+// not grab port 3000.
+const isDirectRun = Boolean(process.argv[1])
+  && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (isDirectRun) {
+  const PORT = process.env.PORT ?? 3000;
+  app.listen(PORT, () => {
+    console.log(`Alytic على http://localhost:${PORT}`);
+    console.log(aiAvailable() ? '  الذكاء الاصطناعي: مفعّل' : '  الذكاء الاصطناعي: متوقف (مفيش OPENROUTER_API_KEY)');
+  });
+}
 
 export default app;

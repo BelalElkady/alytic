@@ -12,7 +12,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const BARS_DIR = path.join(ROOT, 'data', 'bars');
+// ALYTIC_BARS_DIR redirects the whole bar cache — used by the test suites to
+// run every endpoint against synthetic fixtures instead of live market data.
+const BARS_DIR = process.env.ALYTIC_BARS_DIR ?? path.join(ROOT, 'data', 'bars');
 
 /** Current date in Cairo, as YYYY-MM-DD. */
 export function cairoToday() {

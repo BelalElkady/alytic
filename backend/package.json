@@ -14,7 +14,11 @@
     "scan": "node src/cli.js scan",
     "review": "node src/cli.js review",
     "verify:universe": "node scripts/verify-universe.js",
-    "build:universe": "node scripts/build-universe.js"
+    "build:universe": "node scripts/build-universe.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:watch": "node --test --watch \"test/**/*.test.js\"",
+    "test:unit": "node --test \"test/unit/*.test.js\"",
+    "test:api": "node --test \"test/api/*.test.js\""
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

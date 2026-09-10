@@ -1,0 +1,17 @@
+{
+  "name": "alytic",
+  "private": true,
+  "type": "module",
+  "description": "Alytic/EGXpert — EGX portfolio analyzer. Backend (Express), frontend (TanStack Start) and E2E (Playwright) tests live in their own layers; see TESTING.md.",
+  "scripts": {
+    "test": "node scripts/run-all-tests.mjs",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "bun run --cwd frontend test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}
