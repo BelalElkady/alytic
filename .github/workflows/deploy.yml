@@ -150,17 +150,23 @@ jobs:
             echo "Deployed commit: $(cat "$DEPLOY_PATH/COMMIT")"
             cd "$DEPLOY_PATH"
             npm ci --omit=dev --prefix backend
-            if ! command -v pm2 >/dev/null 2>&1; then
-              npm install --global pm2
+
+            # This box supervises Alytic with systemd (alytic-backend.service /
+            # alytic-frontend.service — both `enabled`, Restart=on-failure, with
+            # their own PORT/ALYTIC_API_URL already set). That predates this
+            # pipeline. An earlier version of this workflow additionally started
+            # PM2-managed processes of the same name on the same ports; since
+            # systemd already holds :$BACKEND_PORT/:$FRONTEND_PORT, those never
+            # won the bind and just crash-looped (alytic-backend under PM2 hit
+            # 111 restarts). Remove that leftover duplicate and defer entirely
+            # to systemd, which is the real supervisor here.
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 delete alytic-backend alytic-frontend >/dev/null 2>&1 || true
+              pm2 save --force >/dev/null 2>&1 || true
             fi
-            pm2 delete alytic-backend >/dev/null 2>&1 || true
-            PORT="$BACKEND_PORT" pm2 start src/api/server.js --name alytic-backend --cwd "$DEPLOY_PATH/backend" --update-env
-            pm2 delete alytic-frontend >/dev/null 2>&1 || true
-            # Nitro's node-server output defaults to the same PORT/3000 as the
-            # backend when unset — both processes would then fight over the
-            # same port, the second one loses the bind and PM2 crash-loops it.
-            PORT="$FRONTEND_PORT" ALYTIC_API_URL="http://127.0.0.1:$BACKEND_PORT" pm2 start .output/server/index.mjs --name alytic-frontend --cwd "$DEPLOY_PATH/frontend" --update-env
-            pm2 save
+
+            systemctl restart alytic-backend.service
+            systemctl restart alytic-frontend.service
             sleep 2
             curl --fail --silent --show-error "http://127.0.0.1:$BACKEND_PORT/api/health" >/dev/null
             curl --fail --silent --show-error "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null
