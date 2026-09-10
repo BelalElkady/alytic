@@ -69,7 +69,7 @@ export const uniqueEmail = () => `t-${crypto.randomUUID()}@test.local`;
 /** Register a fresh user over HTTP; returns { user, cookie, raw }. */
 export async function registerUser(baseUrl, email = uniqueEmail()) {
   const raw = await request(baseUrl, 'POST', '/api/auth/register', {
-    body: { email, password: 'Passw0rd!123', name: 'Test User' },
+    body: { email, password: 'Passw0rd!123', name: 'Test User', phone: '01012345678' },
   });
   assert.equal(raw.status, 201, `register failed: ${raw.text}`);
   return { user: raw.body.user, cookie: sessionFrom(raw.setCookies), email, raw };

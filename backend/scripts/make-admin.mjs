@@ -8,6 +8,7 @@
  *   node scripts/make-admin.mjs someone@example.com --revoke revoke
  */
 
+import 'dotenv/config';
 import { getUserByEmail, setUserAdmin } from '../src/db.js';
 
 const email = process.argv[2];
@@ -18,11 +19,11 @@ if (!email) {
   process.exit(1);
 }
 
-const user = getUserByEmail(email);
+const user = await getUserByEmail(email);
 if (!user) {
   console.error(`No account found for ${email}`);
   process.exit(1);
 }
 
-setUserAdmin(user.id, !revoke);
+await setUserAdmin(user.id, !revoke);
 console.log(`${revoke ? 'Revoked' : 'Granted'} admin for ${user.email} (${user.id})`);

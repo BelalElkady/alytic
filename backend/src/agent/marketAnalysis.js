@@ -166,7 +166,7 @@ export async function getOrGenerateMarketAnalysis({ model = MODEL, rules = RULES
   const asOf = results[0]?.asOf ?? new Date().toISOString().slice(0, 10);
 
   if (!force) {
-    const cached = getMarketReport(asOf, style);
+    const cached = await getMarketReport(asOf, style);
     if (cached) return cached;
   }
 
@@ -175,10 +175,10 @@ export async function getOrGenerateMarketAnalysis({ model = MODEL, rules = RULES
 
   const task = (async () => {
     const { report, raw } = await generateMarketAnalysis({ model, rules, style });
-    putMarketReport(report.asOf, style, report, raw.model, raw.usage);
+    await putMarketReport(report.asOf, style, report, raw.model, raw.usage);
     // Re-read so every caller — including this one, if a concurrent request
     // won the insert first — sees exactly what ended up stored.
-    return getMarketReport(report.asOf, style) ?? { ...report, _meta: { model: raw.model, generatedAt: new Date().toISOString(), usage: raw.usage } };
+    return (await getMarketReport(report.asOf, style)) ?? { ...report, _meta: { model: raw.model, generatedAt: new Date().toISOString(), usage: raw.usage } };
   })();
   inFlight.set(key, task);
   try {

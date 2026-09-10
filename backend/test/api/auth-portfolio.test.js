@@ -1,8 +1,10 @@
 /**
  * End-to-end HTTP tests over the real Express app.
  *
- * Fully hermetic: the harness (helpers/server.js) runs the app in-process on an
- * OS-assigned port, with a throwaway SQLite database and no AI key.
+ * The harness (helpers/server.js) runs the app in-process on an OS-assigned
+ * port, with no AI key. The database is the real Supabase project (see
+ * helpers/env.js) — isolation comes from every test using its own randomly
+ * generated user, not from a throwaway database.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +12,7 @@ import assert from 'node:assert/strict';
 import '../helpers/env.js';
 
 import { startServer, request, sessionFrom, registerUser, uniqueEmail } from '../helpers/server.js';
-import { db } from '../../src/db.js';
+import { supabase } from '../../src/supabaseClient.js';
 import { writeBars, synthBars } from '../helpers/bars.js';
 
 // Fixture bars so POST /api/snapshot never needs to fetch real market data.
@@ -60,7 +62,7 @@ test('every protected endpoint answers 401 in Arabic without a session', async (
 
 test('register issues a session cookie and a public user object', async () => {
   const res = await request(baseUrl, 'POST', '/api/auth/register', {
-    body: { email: uniqueEmail(), password: 'Passw0rd!123', name: 'حساب' },
+    body: { email: uniqueEmail(), password: 'Passw0rd!123', name: 'حساب', phone: '01012345678' },
   });
   assert.equal(res.status, 201);
   assert.equal(res.body.user.emailVerified, false);
@@ -80,10 +82,18 @@ test('register rejects a bad email with the engine\'s Arabic message', async () 
 
 test('registering the same email twice reports the known conflict', async () => {
   const email = uniqueEmail();
-  await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123' } });
-  const again = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123' } });
+  await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: '01012345678' } });
+  const again = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: '01012345678' } });
   assert.equal(again.status, 500);
   assert.equal(again.body.error, 'البريد الإلكتروني مسجل بالفعل');
+});
+
+test('register rejects a missing phone number with its own Arabic message', async () => {
+  const res = await request(baseUrl, 'POST', '/api/auth/register', {
+    body: { email: uniqueEmail(), password: 'Passw0rd!123' },
+  });
+  assert.equal(res.status, 500);
+  assert.ok(res.body.error.includes('موبايل'));
 });
 
 test('login sets the cookie; a wrong password fails with the Arabic message', async () => {
@@ -273,9 +283,10 @@ test('AI-only endpoints degrade to a plain 503 when no key is configured', async
 test('email verification completes over HTTP', async () => {
   const email = uniqueEmail();
   const reg = await request(baseUrl, 'POST', '/api/auth/register', {
-    body: { email, password: 'Passw0rd!123', name: 'ف' },
+    body: { email, password: 'Passw0rd!123', name: 'ف', phone: '01012345678' },
   });
-  const token = db.prepare('SELECT verification_token FROM users WHERE id = ?').get(reg.body.user.id).verification_token;
+  const { data: row } = await supabase.from('users').select('verification_token').eq('id', reg.body.user.id).single();
+  const token = row.verification_token;
   const res = await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } });
   assert.equal(res.status, 200);
   assert.equal(res.body.user.emailVerified, true);

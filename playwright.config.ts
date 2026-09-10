@@ -2,10 +2,10 @@
  * Playwright end-to-end tests.
  *
  * Boots the REAL stack exactly as production runs it: the Express backend on
- * :3111 (against a throwaway SQLite DB and fixture bars, so no market data is
- * fetched for held positions) and the TanStack Start dev server on :8181 with
- * its /api/public proxy pointed at that backend. Tests drive the browser the
- * way a user would — through the Arabic UI.
+ * :3111 (against the real Supabase project and fixture bars, so no market
+ * data is fetched for held positions) and the TanStack Start dev server on
+ * :8181 with its /api/public proxy pointed at that backend. Tests drive the
+ * browser the way a user would — through the Arabic UI.
  */
 import { defineConfig } from "@playwright/test";
 

@@ -49,9 +49,13 @@ The suite is split the way the codebase is split:
 
 Every test file runs in its own process and gets:
 
-- a **throwaway SQLite database** — `ALYTIC_DB_PATH` is pointed at a temp dir
-  *before* `src/db.js` is first imported (that's why `helpers/env.js` must be
-  the first import in every test file);
+- the **real Supabase project** — `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
+  are loaded from `backend/.env` by `helpers/env.js` (must be the first import
+  in every test file, same as before). Unlike the old SQLite setup this is
+  *not* a throwaway database — it's a shared cloud Postgres — so isolation
+  instead comes from every test registering its own randomly generated user
+  (`uniqueEmail()` in `helpers/server.js`) rather than from a fresh database
+  per run;
 - a **fixture bar cache** — `ALYTIC_BARS_DIR` redirects `src/data/cache.js`,
   and `helpers/bars.js` writes deterministic seeded OHLCV series (plus the
   corrupt variants the quality gate rejects: frozen, stale, thin, dead
@@ -99,8 +103,9 @@ npx playwright show-report tests/e2e/report
 
 `playwright.config.ts` boots the **real stack**:
 
-- backend on `:3111` via `tests/e2e/backend-server.mjs` — fresh SQLite DB per
-  run, fixture bars pre-seeded for `ABUK`/`SWDY`, no AI key;
+- backend on `:3111` via `tests/e2e/backend-server.mjs` — the real Supabase
+  project (from `backend/.env`), fixture bars pre-seeded for `ABUK`/`SWDY`,
+  no AI key;
 - frontend on `:8181` (`bun run dev`) with `ALYTIC_API_URL` pointing at that
   backend, so the `/api/public` proxy is exercised exactly as in production.
 

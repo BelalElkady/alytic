@@ -22,6 +22,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
   const [register, setRegister] = useState(initialMode === "register");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,7 +35,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
     try {
       await signIn(
         register ? "register" : "login",
-        register ? { name, email, password } : { email, password },
+        register ? { name, email, phone, password } : { email, password },
       );
       await navigate({ to: "/portfolio" });
     } catch (caught: any) {
@@ -148,6 +149,21 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
                   autoComplete="email"
                 />
               </div>
+              {register && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="auth-phone">رقم الموبايل</Label>
+                  <Input
+                    id="auth-phone"
+                    type="tel"
+                    dir="ltr"
+                    placeholder="01xxxxxxxxx"
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value)}
+                    required
+                    autoComplete="tel"
+                  />
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="auth-password">كلمة السر</Label>
                 <Input

@@ -111,9 +111,9 @@ app.get('/api/universe', (_req, res) => {
 // Membership lists for EGX's four headline indices, so the market scan can be
 // filtered to one instead of always scanning the whole tracked universe. See
 // src/config/indices.js for sourcing and its accuracy caveats.
-app.get('/api/indices', (_req, res) => {
-  res.json({ indices: effectiveIndices(), asOf: INDICES_AS_OF });
-});
+app.get('/api/indices', wrap(async (_req, res) => {
+  res.json({ indices: await effectiveIndices(), asOf: INDICES_AS_OF });
+}));
 
 // ---- Admin ------------------------------------------------------------------
 
@@ -134,10 +134,10 @@ function parseTickerCsv(text) {
 }
 
 app.get('/api/admin/indices', wrap(async (req, res) => {
-  const overrides = getAllIndexOverrides();
-  const indices = UPLOADABLE_INDICES.map((name) => {
+  const overrides = await getAllIndexOverrides();
+  const indices = await Promise.all(UPLOADABLE_INDICES.map(async (name) => {
     const override = overrides[name];
-    const tickers = codesForIndex(name);
+    const tickers = await codesForIndex(name);
     return {
       name,
       tickers,
@@ -146,7 +146,7 @@ app.get('/api/admin/indices', wrap(async (req, res) => {
       updatedAt: override?.updatedAt ?? null,
       updatedBy: override?.updatedBy ?? null,
     };
-  });
+  }));
   res.json({ indices });
 }));
 
@@ -163,15 +163,15 @@ app.post('/api/admin/indices/:name', express.raw({ type: '*/*', limit: '256kb' }
   const unmatched = tickers.filter((t) => !known.has(t));
   if (!matched.length) return res.status(400).json({ error: 'ولا كود في الملف موجود في قاعدة الأسهم المتابَعة', unmatched });
 
-  setIndexOverride(name, matched, req.user.id);
+  await setIndexOverride(name, matched, req.user.id);
   res.json({ ok: true, name, saved: matched.length, unmatched });
 }));
 
 app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
   const name = String(req.params.name).toUpperCase();
   if (!UPLOADABLE_INDICES.includes(name)) return res.status(400).json({ error: `مؤشر غير قابل للرفع: ${name}` });
-  clearIndexOverride(name);
-  res.json({ ok: true, name, tickers: codesForIndex(name) });
+  await clearIndexOverride(name);
+  res.json({ ok: true, name, tickers: await codesForIndex(name) });
 }));
 
 // ---- Analysis --------------------------------------------------------------
@@ -209,7 +209,7 @@ app.get('/api/quotes', wrap(async (req, res) => {
 
 app.get('/api/scan', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(req.user.id);
-  const indexCodes = req.query.index ? codesForIndex(req.query.index) : null;
+  const indexCodes = req.query.index ? await codesForIndex(req.query.index) : null;
   if (req.query.index && !indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${req.query.index}` });
   const codes = req.query.codes
     ? String(req.query.codes).split(',').map((s) => s.trim().toUpperCase())

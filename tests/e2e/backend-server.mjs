@@ -1,10 +1,13 @@
 /**
  * Standalone backend for the E2E suite.
  *
- * Boots the real Express app, but pointed at a throwaway SQLite database and a
- * bar-cache directory pre-seeded with deterministic fixtures — so desk flows
- * that analyze held positions run entirely offline. Every E2E run starts from
- * a clean database.
+ * Boots the real Express app against the real Supabase project (see
+ * backend/.env — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) with a bar-cache
+ * directory pre-seeded with deterministic fixtures, so desk flows that
+ * analyze held positions run entirely offline. Unlike the old SQLite setup,
+ * the database itself is NOT reset per run — Supabase is a shared cloud
+ * Postgres, not a throwaway file — so fixtures below use random per-run
+ * emails/ids to stay isolated from earlier runs.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -13,17 +16,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PORT = Number(process.env.PORT ?? 3111);
 const TMP = path.join(ROOT, "tests", "e2e", ".tmp");
-const DB_PATH = path.join(TMP, "alytic.db");
 const BARS_DIR = path.join(TMP, "bars");
 
-fs.rmSync(DB_PATH, { force: true });
-fs.rmSync(`${DB_PATH}-wal`, { force: true });
-fs.rmSync(`${DB_PATH}-shm`, { force: true });
 fs.mkdirSync(BARS_DIR, { recursive: true });
 
-// Must be set BEFORE importing anything from the backend: db.js and cache.js
-// resolve their paths from the environment at module load.
-process.env.ALYTIC_DB_PATH = DB_PATH;
+// This script lives outside backend/, so it can't resolve backend's `dotenv`
+// package — a minimal inline parser reads just the Supabase credentials
+// (never overriding an already-set env var, same as dotenv's own default).
+// Must run BEFORE importing anything from the backend: supabaseClient.js
+// resolves its config from the environment at module load.
+try {
+  const envText = fs.readFileSync(path.join(ROOT, "backend", ".env"), "utf8");
+  for (const line of envText.split(/\r?\n/)) {
+    const match = /^\s*(SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY)\s*=\s*(.*)\s*$/.exec(line);
+    if (match) process.env[match[1]] ??= match[2].replace(/^["']|["']$/g, "");
+  }
+} catch {
+  /* no backend/.env — the SUPABASE_* env vars must already be set another way */
+}
 process.env.ALYTIC_BARS_DIR = BARS_DIR;
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
 process.env.SESSION_SECRET = process.env.SESSION_SECRET ?? "alytic-e2e-session-secret";

@@ -82,14 +82,20 @@ export const UPLOADABLE_INDICES = ['EGX30', 'EGX70', 'EGX33'];
  * each side's *effective* list, since it has no independent source of its
  * own to override.
  */
-export function codesForIndex(name) {
+export async function codesForIndex(name) {
   const key = String(name ?? '').toUpperCase().replace(/\s+/g, '');
-  if (key === 'EGX100') return [...new Set([...(codesForIndex('EGX30') ?? []), ...(codesForIndex('EGX70') ?? [])])];
+  if (key === 'EGX100') {
+    const [egx30, egx70] = await Promise.all([codesForIndex('EGX30'), codesForIndex('EGX70')]);
+    return [...new Set([...(egx30 ?? []), ...(egx70 ?? [])])];
+  }
   if (!(key in EGX_INDICES)) return null;
-  return getIndexOverride(key)?.tickers ?? EGX_INDICES[key];
+  const override = await getIndexOverride(key);
+  return override?.tickers ?? EGX_INDICES[key];
 }
 
 /** All four indices with any admin overrides applied — what GET /api/indices serves. */
-export function effectiveIndices() {
-  return Object.fromEntries(Object.keys(EGX_INDICES).map((key) => [key, codesForIndex(key)]));
+export async function effectiveIndices() {
+  const keys = Object.keys(EGX_INDICES);
+  const values = await Promise.all(keys.map((key) => codesForIndex(key)));
+  return Object.fromEntries(keys.map((key, i) => [key, values[i]]));
 }

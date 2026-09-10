@@ -22,6 +22,22 @@ const APP_URL = process.env.APP_URL ?? process.env.FRONTEND_URL ?? 'http://local
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? null;
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
+// Emails that get is_admin=true the moment their account is first created
+// (register or Google sign-in) — comma-separated in .env. There is no UI for
+// granting admin beyond this and scripts/make-admin.mjs on purpose.
+const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+/** Egyptian mobile numbers: 01[0125] + 8 digits, with or without a +20/0020 prefix or separators. */
+function normalizePhone(phone) {
+  const digits = String(phone ?? '').replace(/[\s-]/g, '').replace(/^(\+20|0020)/, '0');
+  return /^01[0125]\d{8}$/.test(digits) ? digits : null;
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   return new Promise((resolve, reject) => {
     crypto.scrypt(password, salt, 64, (err, derived) => {
@@ -43,6 +59,7 @@ function publicUser(user) {
     id: user.id,
     email: user.email,
     name: user.name,
+    phone: user.phone ?? null,
     createdAt: user.created_at ?? user.createdAt,
     emailVerified: Boolean(user.email_verified ?? user.emailVerified),
     isAdmin: Boolean(user.is_admin ?? user.isAdmin),
@@ -85,33 +102,37 @@ function sendVerificationEmail(user, token) {
   console.log(`[auth] رابط تفعيل البريد لـ ${user.email}: ${link}`);
 }
 
-export async function register({ email, password, name }) {
+export async function register({ email, password, name, phone }) {
   const normalized = String(email).trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normalized)) throw new Error('اكتب بريد إلكتروني صحيح');
   if (String(password).length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف على الأقل');
-  if (getUserByEmail(normalized)) throw new Error('البريد الإلكتروني مسجل بالفعل');
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) throw new Error('اكتب رقم موبايل مصري صحيح (01xxxxxxxxx)');
+  if (await getUserByEmail(normalized)) throw new Error('البريد الإلكتروني مسجل بالفعل');
   const { salt, hash } = await hashPassword(password);
   const token = makeVerificationToken();
   const user = {
     id: crypto.randomUUID(),
     email: normalized,
     name: String(name ?? '').trim().slice(0, 80),
+    phone: normalizedPhone,
     passwordSalt: salt,
     passwordHash: hash,
+    isAdmin: ADMIN_EMAILS.has(normalized),
     verificationToken: token,
     verificationTokenExpires: new Date(Date.now() + VERIFICATION_TTL).toISOString(),
     createdAt: new Date().toISOString(),
   };
-  createUser(user);
+  await createUser(user);
   sendVerificationEmail(user, token);
   return { user: publicUser(user), token: encodeSession(user.id) };
 }
 
 export async function login({ email, password }) {
   const normalized = String(email).trim().toLowerCase();
-  const user = getUserByEmail(normalized);
+  const user = await getUserByEmail(normalized);
   if (!user || !(await passwordMatches(password, user))) throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
-  touchUserLogin(user.id, new Date().toISOString());
+  await touchUserLogin(user.id, new Date().toISOString());
   return { user: publicUser(user), token: encodeSession(user.id) };
 }
 
@@ -130,15 +151,15 @@ export async function googleSignIn({ credential }) {
   if (!payload?.email || !payload.sub) throw new Error('تعذر التحقق من حساب جوجل');
 
   const normalized = payload.email.toLowerCase();
-  let user = getUserByGoogleId(payload.sub);
+  let user = await getUserByGoogleId(payload.sub);
   if (!user) {
-    const existing = getUserByEmail(normalized);
+    const existing = await getUserByEmail(normalized);
     if (existing) {
       // Same email already has a password account — attach this Google
       // identity to it instead of creating a duplicate. Google has already
       // confirmed the address, so this also settles verification.
-      linkGoogleAccount(existing.id, payload.sub);
-      user = getUserById(existing.id);
+      await linkGoogleAccount(existing.id, payload.sub);
+      user = await getUserById(existing.id);
     } else {
       // Google accounts never use the password path, but the column is
       // NOT NULL — fill it with a random value nobody is ever given.
@@ -150,43 +171,44 @@ export async function googleSignIn({ credential }) {
         passwordSalt: salt,
         passwordHash: hash,
         googleId: payload.sub,
-        emailVerified: payload.email_verified ? 1 : 0,
+        emailVerified: Boolean(payload.email_verified),
+        isAdmin: ADMIN_EMAILS.has(normalized),
         createdAt: new Date().toISOString(),
       };
-      createUser(created);
-      user = getUserById(created.id);
+      await createUser(created);
+      user = await getUserById(created.id);
     }
   }
 
-  touchUserLogin(user.id, new Date().toISOString());
+  await touchUserLogin(user.id, new Date().toISOString());
   return { user: publicUser(user), token: encodeSession(user.id) };
 }
 
 export async function verifyEmail({ token }) {
-  const user = token ? getUserByVerificationToken(String(token)) : null;
+  const user = token ? await getUserByVerificationToken(String(token)) : null;
   if (!user) throw new Error('رابط التفعيل غير صالح أو مستخدم من قبل');
   if (user.verification_token_expires && new Date(user.verification_token_expires).getTime() < Date.now()) {
     throw new Error('رابط التفعيل منتهي الصلاحية، اطلب رابط جديد');
   }
-  markEmailVerified(user.id);
-  return { user: publicUser({ ...user, email_verified: 1 }) };
+  await markEmailVerified(user.id);
+  return { user: publicUser({ ...user, email_verified: true }) };
 }
 
 /** Always resolves quietly (no error, no indication whether the email exists) to avoid leaking registered addresses. */
 export async function resendVerification({ email }) {
   const normalized = String(email ?? '').trim().toLowerCase();
-  const user = getUserByEmail(normalized);
+  const user = await getUserByEmail(normalized);
   if (!user || user.email_verified) return;
   const token = makeVerificationToken();
   const expiresAt = new Date(Date.now() + VERIFICATION_TTL).toISOString();
-  setVerificationToken(user.id, token, expiresAt);
+  await setVerificationToken(user.id, token, expiresAt);
   sendVerificationEmail(user, token);
 }
 
 export async function userFromRequest(req) {
   const session = decodeSession(parseCookies(req.headers.cookie ?? '')[SESSION_COOKIE]);
   if (!session) return null;
-  const user = getUserById(session.sub);
+  const user = await getUserById(session.sub);
   return user ? publicUser(user) : null;
 }
 

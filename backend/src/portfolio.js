@@ -27,11 +27,11 @@ const EMPTY = {
 };
 
 export async function loadPortfolio(userId = 'local') {
-  return { ...EMPTY, ...(getPortfolio(userId) ?? {}) };
+  return { ...EMPTY, ...((await getPortfolio(userId)) ?? {}) };
 }
 
 export async function savePortfolio(p, userId = 'local') {
-  putPortfolio(userId, p);
+  await putPortfolio(userId, p);
   return p;
 }
 

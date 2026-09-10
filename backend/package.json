@@ -21,7 +21,7 @@
     "test:api": "node --test \"test/api/*.test.js\""
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "google-auth-library": "^11.0.2",

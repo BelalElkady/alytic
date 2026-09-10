@@ -74,7 +74,7 @@ test('overselling, unknown codes, bad sides and non-positive amounts all refuse'
 
 test('withPortfolio serialises concurrent writes — the lost-update regression', async () => {
   // portfolios.user_id has a real FK to users, so the queue test needs a user row.
-  const { user } = await register({ email: uniqueEmail(), password: 'Passw0rd!123' });
+  const { user } = await register({ email: uniqueEmail(), password: 'Passw0rd!123', phone: '01012345678' });
   const userId = user.id;
   await withPortfolio(userId, (p) => ({ ...p, cash: 100_000 })); // seed the book
   const jobs = Array.from({ length: 15 }, (_, i) =>
