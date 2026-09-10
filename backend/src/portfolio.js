@@ -193,14 +193,26 @@ export function recordSnapshot(portfolio, analyses, date = null) {
   const prior = Object.keys(portfolio.log ?? {}).sort().filter((d) => d < day).pop();
   const priorTotal = prior ? portfolio.log[prior].total : null;
 
+  // No saved entry to diff against yet (first-ever snapshot, or a gap before
+  // it) — fall back to today's real exchange move instead of reporting a
+  // flat 0%, using each holding's own close-to-close change from the synced
+  // daily bars.
+  const dayChange = priorTotal != null
+    ? total - priorTotal
+    : held.reduce((sum, a) => {
+        const changePct = a.snapshot.price.changePct;
+        return changePct == null ? sum : sum + a.position.marketValue * (changePct / 100);
+      }, 0);
+  const priorEffective = priorTotal ?? total - dayChange;
+
   const entry = {
     date: day,
     total: +total.toFixed(2),
     positionsValue: +positionsValue.toFixed(2),
     cash: portfolio.cash,
     pl: +pl.toFixed(2),
-    dayChange: priorTotal == null ? 0 : +(total - priorTotal).toFixed(2),
-    dayChangePct: priorTotal ? +(((total - priorTotal) / priorTotal) * 100).toFixed(2) : 0,
+    dayChange: +dayChange.toFixed(2),
+    dayChangePct: priorEffective ? +((dayChange / priorEffective) * 100).toFixed(2) : 0,
     prices,
     stops,
     recs,
