@@ -131,17 +131,33 @@ app.use('/api/admin', (req, res, next) => {
   next();
 });
 
+const TICKER_HEADERS = ['TICKER', 'CODE', 'SYMBOL', 'REUTERS CODE', 'RIC'];
+
 /**
- * One line per ticker; a leading "ticker/code/symbol" header row is skipped,
- * as is anything else in the line past the first comma. Also strips the
- * ".CA" Reuters Instrument Code suffix EGX tickers are commonly exported
- * with (e.g. "COMI.CA" -> "COMI").
+ * Extracts ticker codes from an admin-uploaded CSV. If the header row names
+ * a ticker column (Ticker/Code/Symbol/"Reuters Code"/RIC), only that column
+ * is read — some exports (e.g. EGX's own Reuters-code lists) put an ISIN
+ * first and the actual ticker in a later column. With no recognizable
+ * header, falls back to the first column (plain one-ticker-per-line files).
+ * Either way, strips the ".CA" Reuters Instrument Code suffix EGX tickers
+ * are commonly exported with (e.g. "COMI.CA" -> "COMI").
  */
 function parseTickerCsv(text) {
+  const rows = String(text ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.split(',').map((cell) => cell.trim().replace(/^["']|["']$/g, '')))
+    .filter((cells) => cells.some((cell) => cell));
+  if (!rows.length) return [];
+
+  const headerRow = rows[0].map((cell) => cell.toUpperCase());
+  const columnIndex = headerRow.findIndex((cell) => TICKER_HEADERS.includes(cell));
+  const dataRows = columnIndex >= 0 ? rows.slice(1) : rows;
+  const index = columnIndex >= 0 ? columnIndex : 0;
+
   const seen = new Set();
-  for (const rawLine of String(text ?? '').split(/\r?\n/)) {
-    const token = rawLine.split(',')[0]?.trim().replace(/^["']|["']$/g, '').toUpperCase().replace(/\.CA$/, '');
-    if (!token || ['TICKER', 'CODE', 'SYMBOL'].includes(token)) continue;
+  for (const cells of dataRows) {
+    const token = cells[index]?.toUpperCase().replace(/\.CA$/, '');
+    if (!token || TICKER_HEADERS.includes(token)) continue;
     seen.add(token);
   }
   return [...seen];
