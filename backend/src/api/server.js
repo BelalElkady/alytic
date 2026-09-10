@@ -131,11 +131,16 @@ app.use('/api/admin', (req, res, next) => {
   next();
 });
 
-/** One line per ticker; a leading "ticker/code/symbol" header row is skipped, as is anything else in the line past the first comma. */
+/**
+ * One line per ticker; a leading "ticker/code/symbol" header row is skipped,
+ * as is anything else in the line past the first comma. Also strips the
+ * ".CA" Reuters Instrument Code suffix EGX tickers are commonly exported
+ * with (e.g. "COMI.CA" -> "COMI").
+ */
 function parseTickerCsv(text) {
   const seen = new Set();
   for (const rawLine of String(text ?? '').split(/\r?\n/)) {
-    const token = rawLine.split(',')[0]?.trim().replace(/^["']|["']$/g, '').toUpperCase();
+    const token = rawLine.split(',')[0]?.trim().replace(/^["']|["']$/g, '').toUpperCase().replace(/\.CA$/, '');
     if (!token || ['TICKER', 'CODE', 'SYMBOL'].includes(token)) continue;
     seen.add(token);
   }
