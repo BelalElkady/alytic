@@ -374,7 +374,30 @@ app.post('/api/snapshot', wrap(async (req, res) => {
   const updated = await withPortfolio(req.user.id, async (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     const { results } = await analyzeMany(codes, { capital: capitalOf(portfolio), positions: portfolio.positions, concurrency: 5 });
-    return recordSnapshot(portfolio, results, req.body?.date ?? null);
+    // analyzeMany's price comes from the last data *sync*, not from now — a
+    // click mid-session (before that day's sync has run) would otherwise save
+    // yesterday's cached close mislabeled as today's, disagreeing with the
+    // live price the desk is showing at that exact moment. Patch in live
+    // quotes the same way /api/scan and /api/analyze already do.
+    const live = await fetchLatestQuotes(codes).catch(() => new Map());
+    const withLivePrices = results.map((r) => {
+      const quote = live.get(r.code);
+      if (!quote?.price || !r.position) return r;
+      const price = quote.price;
+      return {
+        ...r,
+        snapshot: {
+          ...r.snapshot,
+          price: { ...r.snapshot.price, close: price, changePct: quote.changePct ?? r.snapshot.price.changePct },
+        },
+        position: {
+          ...r.position,
+          marketValue: +(r.position.shares * price).toFixed(2),
+          unrealizedEgp: +(r.position.shares * (price - r.position.avgCost)).toFixed(2),
+        },
+      };
+    });
+    return recordSnapshot(portfolio, withLivePrices, req.body?.date ?? null);
   });
   const day = Object.keys(updated.log).sort().pop();
   res.json({ saved: day, entry: updated.log[day], days: Object.keys(updated.log).length });
