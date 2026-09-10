@@ -122,15 +122,22 @@ jobs:
           envs: DEPLOY_PATH
           script: |
             set -eu
+            RELEASE_ARCHIVE="$(find /tmp -type f -name 'alytic-release.tar.gz' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {sub(/^[^ ]+ /, ""); print}')"
+            if [ -z "$RELEASE_ARCHIVE" ]; then
+              echo "Release archive was not found under /tmp"
+              exit 1
+            fi
+            rm -rf /tmp/alytic-release
+            mkdir -p /tmp/alytic-release
+            tar -xzf "$RELEASE_ARCHIVE" -C /tmp/alytic-release
             mkdir -p "$DEPLOY_PATH"
             mkdir -p "$DEPLOY_PATH/backend" "$DEPLOY_PATH/frontend"
             rm -rf "$DEPLOY_PATH/backend/src" "$DEPLOY_PATH/frontend/.output"
-            tar -xzf /tmp/alytic-release.tar.gz -C /tmp
-            cp /tmp/deploy/COMMIT "$DEPLOY_PATH/COMMIT"
-            cp -a /tmp/backend/src "$DEPLOY_PATH/backend/"
-            cp -a /tmp/backend/data/reference "$DEPLOY_PATH/backend/data/"
-            cp /tmp/backend/package.json /tmp/backend/package-lock.json "$DEPLOY_PATH/backend/"
-            cp -a /tmp/frontend/.output "$DEPLOY_PATH/frontend/"
+            cp "$(find /tmp/alytic-release -name COMMIT -type f -print -quit)" "$DEPLOY_PATH/COMMIT"
+            cp -a /tmp/alytic-release/backend/src "$DEPLOY_PATH/backend/"
+            cp -a /tmp/alytic-release/backend/data/reference "$DEPLOY_PATH/backend/data/"
+            cp /tmp/alytic-release/backend/package.json /tmp/alytic-release/backend/package-lock.json "$DEPLOY_PATH/backend/"
+            cp -a /tmp/alytic-release/frontend/.output "$DEPLOY_PATH/frontend/"
             echo "Deployed commit: $(cat "$DEPLOY_PATH/COMMIT")"
             cd "$DEPLOY_PATH"
             npm ci --omit=dev --prefix backend
