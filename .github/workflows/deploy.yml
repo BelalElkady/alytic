@@ -73,6 +73,23 @@ jobs:
           name: alytic-deployment
           path: deploy
 
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -eu
+          missing=0
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::GitHub secret $name is empty or unavailable in the production environment"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
       - name: Copy bundle to server
         uses: appleboy/scp-action@v1.0.0
         with:
