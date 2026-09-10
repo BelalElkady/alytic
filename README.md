@@ -9,11 +9,11 @@
 
 كل رقم في النظام ده **محسوب حسابيًا**، مش متسأل عنه لنموذج لغوي:
 
-- المؤشرات (RSI, MACD, ATR, ADX, بولينجر) — `src/ta/indicators.js`
-- الدعوم والمقاومات — `src/ta/levels.js`
-- الوقف وحجم المركز — `src/scoring/risk.js`
-- الأهداف والتقدير الزمني — `src/scoring/targets.js`
-- التقييم من 100 — `src/scoring/technical.js`
+- المؤشرات (RSI, MACD, ATR, ADX, بولينجر) — `backend/src/ta/indicators.js`
+- الدعوم والمقاومات — `backend/src/ta/levels.js`
+- الوقف وحجم المركز — `backend/src/scoring/risk.js`
+- الأهداف والتقدير الزمني — `backend/src/scoring/targets.js`
+- التقييم من 100 — `backend/src/scoring/technical.js`
 
 النموذج بياخد الأرقام دي **جاهزة** وشغله إنه:
 1. يحل التناقضات (اتجاه صاعد بس ADX ضعيف؟ RSI عالي مع حجم ضعيف؟)
@@ -28,28 +28,43 @@
 ## التشغيل
 
 ```bash
+cd backend
 npm install
 cp .env.example .env      # وحط OPENROUTER_API_KEY لو عايز التوصيات الذكية
-npm run serve             # http://localhost:3000
+npm run serve             # http://localhost:3000 — API فقط، بيحوّل / لواجهة EGXpert
 ```
+
+### الواجهة (EGXpert)
+
+الواجهة الوحيدة الآن React/TanStack Start موجودة في `frontend/`، بتتكلم مع الـ Express API فوق عن طريق `frontend/src/routes/api/public/$.ts` (بروكسي بيحوّل كل حاجة تحت `/api/public/*` لـ `/api/*` على `localhost:3000`، مع نفس الكوكي والسيشن). محتاجة [Bun](https://bun.sh):
+
+```bash
+cd frontend
+bun install
+bun run dev                # http://localhost:8080 — شغّل Express فوق في تيرمنال تاني الأول
+```
+
+`http://localhost:3000/` بيحوّلك مباشرة لـ `FRONTEND_URL` (افتراضيًا `http://localhost:8080`).
 
 ### الحسابات والمحفظة الشخصية
 
-الواجهة الآن فيها تسجيل حساب ودخول، وكل مستخدم له سجل مستقل في قاعدة SQLite المحلية `data/alytic.db` يشمل المراكز، الصفقات، الكاش، وقائمة المراقبة وسجل الأداء. قاعدة البيانات لا تدخل في Git.
+الواجهة الآن فيها تسجيل حساب ودخول، وكل مستخدم له سجل مستقل في قاعدة SQLite المحلية `backend/data/alytic.db` يشمل المراكز، الصفقات، الكاش، وقائمة المراقبة وسجل الأداء. قاعدة البيانات لا تدخل في Git.
 
 للاستخدام خارج جهازك، عيّن `SESSION_SECRET` طويلًا وعشوائيًا في `.env`. كل استدعاءات الذكاء الاصطناعي تمر عبر OpenRouter باستخدام `OPENROUTER_API_KEY`، ويمكن تغيير النموذج من `ALYTIC_MODEL`. استيراد صورة محفظة يحتاج المفتاح؛ من زر **رفع صورة المحفظة** تُقرأ الأسهم والكميات والكاش من الصورة، ويُستبدل المراكز الحالية مع الاحتفاظ بسجل الحساب السابق.
 
 ### أداة التحقق المستقل من المؤشرات (اختيارية)
 
-المحلل الذكي عنده أداة `cross_check_indicators` بيقدر يستدعيها بنفسه لما يشك في رقم — بتشغّل `scripts/cross_check_indicators.py` وتجيب RSI/MACD/بولينجر من مصدر ومكتبة مختلفين تمامًا (yfinance + pandas)، كمقارنة بس، مش كمصدر بديل للأرقام. محتاجة Python 3 مع:
+المحلل الذكي عنده أداة `cross_check_indicators` بيقدر يستدعيها بنفسه لما يشك في رقم — بتشغّل `backend/scripts/cross_check_indicators.py` وتجيب RSI/MACD/بولينجر من مصدر ومكتبة مختلفين تمامًا (yfinance + pandas)، كمقارنة بس، مش كمصدر بديل للأرقام. محتاجة Python 3 مع:
 
 ```bash
-pip install -r scripts/requirements.txt
+pip install -r backend/scripts/requirements.txt
 ```
 
 لو مش متاحة، الأداة بترجع رسالة خطأ للنموذج بدل ما توقف المراجعة — باقي التحليل بيشتغل عادي من غيرها.
 
 ### من سطر الأوامر
+
+كل الأوامر دي من جوه `backend/`:
 
 ```bash
 node src/cli.js scan                    # مسح السوق كله مرتب بالتقييم
@@ -70,7 +85,7 @@ node src/cli.js fundamentals ABUK       # بيانات الشركة الأساس
 
 | المصدر | بيدي إيه | التغطية |
 |---|---|---|
-| `data/reference/egx-listing.csv` | قائمة الشركات المقيدة | 280 سهم |
+| `backend/data/reference/egx-listing.csv` | قائمة الشركات المقيدة | 280 سهم |
 | TradingView screener | الهوية + السعر اللحظي + الأساسيات | 284 سهم |
 | Yahoo chart | تاريخ الأسعار اليومي (OHLCV) | 195 سهم |
 | TradingView chart (websocket) | تاريخ الأسعار للباقي | +39 سهم |
@@ -113,7 +128,7 @@ RSI ولا وقف خسارة — والرقم اللي هيطلع هيبان م�
 
 ### بوابة جودة البيانات
 
-`src/data/quality.js` بترفض أي سهم بياناته مش سليمة قبل ما توصل لأي مؤشر. ده اتبنى بعد ما
+`backend/src/data/quality.js` بترفض أي سهم بياناته مش سليمة قبل ما توصل لأي مؤشر. ده اتبنى بعد ما
 ياهو رجّع **ORAS بـ 489 شمعة متطابقة عند 71.05** (السهم موقوف والخدمة بتكرّر آخر سعر) —
 والمحرك وقتها حسبله تقييم 44/100 ووقف وحجم مركز لسهم ما اتداولش أصلًا.
 
@@ -130,7 +145,7 @@ TradingView و71.05 على Yahoo** — فرق 92%. الرمز على ياهو م
 
 ## قواعد التداول
 
-كل القواعد في `src/config/rules.js` — غيّر رقم هناك وهيتغيّر في المحرك وفي تعليمات المحلل مع بعض.
+كل القواعد في `backend/src/config/rules.js` — غيّر رقم هناك وهيتغيّر في المحرك وفي تعليمات المحلل مع بعض.
 
 | القاعدة | القيمة |
 |---|---|
@@ -156,34 +171,33 @@ TradingView و71.05 على Yahoo** — فرق 92%. الرمز على ياهو م
 ## البنية
 
 ```
-src/
-  config/universe.js     القائمة (مولّدة، مش مكتوبة بالإيد)
-  config/universe.generated.json  ناتج build:universe
-  config/rules.js        قواعد التداول كلها
-  data/yahoo.js          تاريخ الأسعار (المصدر الأساسي)
-  data/tv-history.js     تاريخ الأسعار من TradingView (للـ39 اللي ياهو ماعندهوش)
-  data/tradingview.js    قائمة الأسهم + البيانات الأساسية
-  data/cache.js          كاش يومي (البورصة بتقفل مرة واحدة في اليوم)
-  data/quality.js        بوابة رفض البيانات الفاسدة
-  ta/indicators.js       المؤشرات الفنية
-  ta/levels.js           الدعوم والمقاومات
-  ta/snapshot.js         اللقطة الفنية الكاملة
-  scoring/               الوقف، الأهداف، التقييم
-  agent/                 طبقة المحلل الذكي
-  analyze.js             تجميع كل ده في تحليل واحد
-  api/server.js          REST API
-public/index.html        الواجهة
+backend/                  الـ API — Express + المحرك الحتمي + طبقة المحلل الذكي
+  src/
+    config/universe.js     القائمة (مولّدة، مش مكتوبة بالإيد)
+    config/universe.generated.json  ناتج build:universe
+    config/rules.js        قواعد التداول كلها
+    data/yahoo.js          تاريخ الأسعار (المصدر الأساسي)
+    data/tv-history.js     تاريخ الأسعار من TradingView (للـ39 اللي ياهو ماعندهوش)
+    data/tradingview.js    قائمة الأسهم + البيانات الأساسية
+    data/cache.js          كاش يومي (البورصة بتقفل مرة واحدة في اليوم)
+    data/quality.js        بوابة رفض البيانات الفاسدة
+    ta/indicators.js       المؤشرات الفنية
+    ta/levels.js           الدعوم والمقاومات
+    ta/snapshot.js         اللقطة الفنية الكاملة
+    scoring/                الوقف، الأهداف، التقييم
+    agent/                  طبقة المحلل الذكي
+    analyze.js              تجميع كل ده في تحليل واحد
+    api/server.js           REST API — API فقط، الجذر / بيحوّل لواجهة EGXpert
+    auth.js  db.js  cli.js  portfolio.js
+  scripts/                 build/verify للـ universe، وأداة التحقق المستقل بايثون
+  data/                    قاعدة البيانات والكاش المحلي (مش داخل في Git)
+  package.json
+frontend/                  واجهة EGXpert (React + TanStack Start)
 ```
 
 ---
 
 ## ملاحظات
-
-- `egx-desk.html` هو الملف القديم. بيستدعي `api.anthropic.com` من المتصفح من غير مفتاح ومن
-  غير `anthropic-version` header — يعني ما كانش بيشتغل أصلًا (CORS)، ولو كان اشتغل كان
-  هيسرّب المفتاح لكل زائر. كل استدعاءات النموذج دلوقتي بتحصل في الخادم.
-- الملف ده متبني (minified) من غير سورس، عشان كده الواجهة الجديدة اتكتبت من الأول في
-  `public/index.html` — HTML و CSS و JS مقروءين، من غير خطوة build.
 
 ### التوافق مع الشريعة
 

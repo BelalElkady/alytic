@@ -26,6 +26,14 @@ import { login, register, userFromRequest, sessionCookie, clearSessionCookie } f
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
 app.use(express.json());
+
+// The vanilla-JS UI (formerly public/index.html) is retired in favor of the
+// EGXpert frontend in frontend/ (TanStack Start, its own dev/build process).
+// This process stays API-only for the browser: send a human landing on it
+// straight to the real app instead of serving stale markup.
+const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:8080';
+app.get('/', (_req, res) => res.redirect(FRONTEND_URL));
+
 app.use(express.static(path.join(ROOT, 'public')));
 
 /** Wrap an async handler so a rejection becomes a 500 instead of an unhandled rejection. */

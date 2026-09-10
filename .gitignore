@@ -1,10 +1,18 @@
 node_modules/
 .env
-data/bars/
-data/fundamentals/
-data/portfolio.json
-data/users.json
-data/users/
-data/alytic.db
-data/alytic.db-*
 *.log
+
+# backend (Express API in backend/)
+backend/data/bars/
+backend/data/fundamentals/
+backend/data/portfolio.json
+backend/data/users.json
+backend/data/users/
+backend/data/alytic.db
+backend/data/alytic.db-*
+
+# frontend (TanStack Start app in frontend/)
+frontend/dist/
+frontend/.output/
+frontend/.vinxi/
+frontend/tsconfig.tsbuildinfo
