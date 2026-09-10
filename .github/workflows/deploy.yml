@@ -119,11 +119,9 @@ jobs:
             if ! command -v pm2 >/dev/null 2>&1; then
               npm install --global pm2
             fi
-            pm2 describe alytic-backend >/dev/null 2>&1 \
-              && pm2 restart alytic-backend --update-env \
-              || pm2 start backend/src/api/server.js --name alytic-backend --cwd "$DEPLOY_PATH/backend"
-            pm2 describe alytic-frontend >/dev/null 2>&1 \
-              && pm2 restart alytic-frontend --update-env \
-              || pm2 start frontend/.output/server/index.mjs --name alytic-frontend --cwd "$DEPLOY_PATH/frontend"
+            pm2 delete alytic-backend >/dev/null 2>&1 || true
+            pm2 start src/api/server.js --name alytic-backend --cwd "$DEPLOY_PATH/backend" --update-env
+            pm2 delete alytic-frontend >/dev/null 2>&1 || true
+            pm2 start .output/server/index.mjs --name alytic-frontend --cwd "$DEPLOY_PATH/frontend" --update-env
             pm2 save
             curl --fail --silent --show-error http://127.0.0.1:3000/api/health >/dev/null
