@@ -158,6 +158,46 @@ export function lookup(code) {
 }
 
 /**
+ * Merges admin-added stocks — tickers an index CSV upload named that weren't
+ * already in the generated universe above (see db.js's custom_stocks table
+ * and the /api/admin/indices/:name upload route) — into the live universe.
+ *
+ * UNIVERSE/ALL_CODES/BY_CODE stay `const` and are mutated in place rather
+ * than reassigned, so every existing `import { UNIVERSE } from ...` already
+ * holds a live reference to these same objects: every caller sees a stock
+ * added this way immediately, with no re-import needed. Called once at
+ * server startup and again right after a CSV upload adds new ones.
+ *
+ * Unlike a generated entry, there is no verified price-feed provenance here
+ * (see this file's header) — sector and shariah screening are unknown, and
+ * the Yahoo symbol is the same best-guess "<CODE>.CA" fallback toYahoo()
+ * already uses for any code it doesn't recognize.
+ */
+export function registerCustomStocks(stocks) {
+  for (const { code, name } of stocks) {
+    const upperCode = String(code).toUpperCase().trim();
+    if (BY_CODE.has(upperCode)) continue; // never shadow a real, verified entry
+    const entry = {
+      code: upperCode,
+      yahoo: `${upperCode}.CA`,
+      source: 'yahoo',
+      ar: name,
+      en: name,
+      sector: null,
+      industry: null,
+      shariah: 'review',
+      marketCapEgp: null,
+      avgTurnoverEgp: null,
+      arVerified: false,
+      custom: true,
+    };
+    UNIVERSE.push(entry);
+    ALL_CODES.push(upperCode);
+    BY_CODE.set(upperCode, entry);
+  }
+}
+
+/**
  * Yahoo symbol for a ticker. Null for stocks served by TradingView instead, so
  * the fetcher skips Yahoo for them; falls back to `<CODE>.CA` for unknown codes.
  */

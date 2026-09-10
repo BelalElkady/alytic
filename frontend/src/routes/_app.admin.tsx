@@ -72,16 +72,16 @@ function AdminPage() {
 function IndexPanel({ row, onChanged }: { row: IndexRow; onChanged: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [unmatched, setUnmatched] = useState<string[]>([]);
+  const [added, setAdded] = useState<string[]>([]);
 
   const upload = async (file: File) => {
     setBusy(true);
-    setUnmatched([]);
+    setAdded([]);
     try {
       const text = await file.text();
       const result = await postRaw(`/api/admin/indices/${row.name}`, text, "text/csv");
       toast.success(`تم حفظ ${result.saved} كود لمؤشر ${LABELS[row.name] ?? row.name}`);
-      if (result.unmatched?.length) setUnmatched(result.unmatched);
+      if (result.added?.length) setAdded(result.added);
       onChanged();
     } catch (caught: any) {
       toast.error(caught?.message ?? "تعذر رفع الملف");
@@ -96,7 +96,7 @@ function IndexPanel({ row, onChanged }: { row: IndexRow; onChanged: () => void }
     try {
       await post(`/api/admin/indices/${row.name}/reset`);
       toast.success(`تم استرجاع القائمة الافتراضية لمؤشر ${LABELS[row.name] ?? row.name}`);
-      setUnmatched([]);
+      setAdded([]);
       onChanged();
     } catch (caught: any) {
       toast.error(caught?.message ?? "تعذر الاسترجاع");
@@ -145,9 +145,10 @@ function IndexPanel({ row, onChanged }: { row: IndexRow; onChanged: () => void }
           </span>
         ))}
       </div>
-      {unmatched.length > 0 && (
+      {added.length > 0 && (
         <Notice tone="warn" className="mt-3">
-          الأكواد دي مش موجودة في قاعدة الأسهم المتابَعة، اتجاهلت: {unmatched.join("، ")}
+          الأكواد دي كانت جديدة على قاعدة الأسهم المتابَعة واتضافت بدون تصنيف قطاع أو فحص شرعي
+          مُتحقَّق منه: {added.join("، ")}
         </Notice>
       )}
     </Panel>

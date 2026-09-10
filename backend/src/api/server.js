@@ -15,9 +15,9 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
-import { ALL_CODES, UNIVERSE, lookup } from '../config/universe.js';
+import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks } from '../db.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -132,15 +132,18 @@ app.use('/api/admin', (req, res, next) => {
 });
 
 const TICKER_HEADERS = ['TICKER', 'CODE', 'SYMBOL', 'REUTERS CODE', 'RIC'];
+const NAME_HEADERS = ['COMPANY NAME', 'NAME', 'COMPANY'];
 
 /**
- * Extracts ticker codes from an admin-uploaded CSV. If the header row names
- * a ticker column (Ticker/Code/Symbol/"Reuters Code"/RIC), only that column
- * is read — some exports (e.g. EGX's own Reuters-code lists) put an ISIN
- * first and the actual ticker in a later column. With no recognizable
- * header, falls back to the first column (plain one-ticker-per-line files).
- * Either way, strips the ".CA" Reuters Instrument Code suffix EGX tickers
- * are commonly exported with (e.g. "COMI.CA" -> "COMI").
+ * Extracts {code, name} pairs from an admin-uploaded CSV. If the header row
+ * names a ticker column (Ticker/Code/Symbol/"Reuters Code"/RIC), only that
+ * column is read as the code — some exports (e.g. EGX's own Reuters-code
+ * lists) put an ISIN first and the actual ticker in a later column. With no
+ * recognizable header, falls back to the first column (plain
+ * one-ticker-per-line files), and the code doubles as the name. Strips the
+ * ".CA" Reuters Instrument Code suffix EGX tickers are commonly exported
+ * with (e.g. "COMI.CA" -> "COMI"), and drops anything that doesn't look
+ * like a plausible ticker.
  */
 function parseTickerCsv(text) {
   const rows = String(text ?? '')
@@ -150,17 +153,18 @@ function parseTickerCsv(text) {
   if (!rows.length) return [];
 
   const headerRow = rows[0].map((cell) => cell.toUpperCase());
-  const columnIndex = headerRow.findIndex((cell) => TICKER_HEADERS.includes(cell));
-  const dataRows = columnIndex >= 0 ? rows.slice(1) : rows;
-  const index = columnIndex >= 0 ? columnIndex : 0;
+  const codeColumn = headerRow.findIndex((cell) => TICKER_HEADERS.includes(cell));
+  const nameColumn = headerRow.findIndex((cell) => NAME_HEADERS.includes(cell));
+  const dataRows = codeColumn >= 0 ? rows.slice(1) : rows;
+  const index = codeColumn >= 0 ? codeColumn : 0;
 
-  const seen = new Set();
+  const seen = new Map(); // code -> name
   for (const cells of dataRows) {
     const token = cells[index]?.toUpperCase().replace(/\.CA$/, '');
-    if (!token || TICKER_HEADERS.includes(token)) continue;
-    seen.add(token);
+    if (!token || TICKER_HEADERS.includes(token) || !/^[A-Z0-9]{2,10}$/.test(token)) continue;
+    if (!seen.has(token)) seen.set(token, (nameColumn >= 0 ? cells[nameColumn] : null) || token);
   }
-  return [...seen];
+  return [...seen.entries()].map(([code, name]) => ({ code, name }));
 }
 
 app.get('/api/admin/indices', wrap(async (req, res) => {
@@ -185,16 +189,25 @@ app.post('/api/admin/indices/:name', express.raw({ type: '*/*', limit: '256kb' }
   if (!UPLOADABLE_INDICES.includes(name)) return res.status(400).json({ error: `مؤشر غير قابل للرفع: ${name}` });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع ملف CSV أولاً' });
 
-  const tickers = parseTickerCsv(req.body.toString('utf8'));
-  if (!tickers.length) return res.status(400).json({ error: 'الملف فاضي أو مفيهوش أكواد صحيحة' });
+  const entries = parseTickerCsv(req.body.toString('utf8'));
+  if (!entries.length) return res.status(400).json({ error: 'الملف فاضي أو مفيهوش أكواد صحيحة' });
 
+  // A ticker the CSV names that isn't already tracked becomes a real,
+  // analyzable stock rather than being dropped — the uploaded file is the
+  // source of truth for this index, not a subset of what config/universe.js
+  // happened to ship with. See registerCustomStocks() for what such a stock
+  // is missing relative to a generated one (sector, shariah screening, a
+  // verified price feed).
   const known = new Set(ALL_CODES);
-  const matched = tickers.filter((t) => known.has(t));
-  const unmatched = tickers.filter((t) => !known.has(t));
-  if (!matched.length) return res.status(400).json({ error: 'ولا كود في الملف موجود في قاعدة الأسهم المتابَعة', unmatched });
+  const newEntries = entries.filter((e) => !known.has(e.code));
+  if (newEntries.length) {
+    await addCustomStocks(newEntries, req.user.id);
+    registerCustomStocks(newEntries);
+  }
 
-  await setIndexOverride(name, matched, req.user.id);
-  res.json({ ok: true, name, saved: matched.length, unmatched });
+  const tickers = entries.map((e) => e.code);
+  await setIndexOverride(name, tickers, req.user.id);
+  res.json({ ok: true, name, saved: tickers.length, added: newEntries.map((e) => e.code) });
 }));
 
 app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
@@ -859,10 +872,19 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, aiAvailable: aiAvailable(), universeSize: ALL_CODES.length });
 });
 
+// Admin-added stocks (see registerCustomStocks) live only in memory once
+// merged in — reload them from Supabase before anything can serve a request,
+// or a restart would silently forget every one until the next CSV upload.
+try {
+  registerCustomStocks(await getAllCustomStocks());
+} catch (err) {
+  console.error('[universe] فشل تحميل الأسهم المضافة يدويًا:', err.message);
+}
+
 // Only bind a port when executed directly (`npm run serve`, systemd, CLI).
 // When imported — by the test suites, which listen on an ephemeral port and
-// point the SQLite/bar-cache paths at throwaway directories — the module must
-// not grab port 3000.
+// point the bar-cache path at a throwaway directory — the module must not
+// grab port 3000.
 const isDirectRun = Boolean(process.argv[1])
   && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 

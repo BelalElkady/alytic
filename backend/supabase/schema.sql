@@ -63,6 +63,20 @@ create table if not exists index_overrides (
   updated_by text
 );
 
+-- Stocks an admin's index CSV upload named that weren't already in the
+-- generated config/universe.js. See config/universe.js's registerCustomStocks
+-- — these get merged into the live UNIVERSE/ALL_CODES/lookup() in memory at
+-- server startup and immediately on upload, so they're analyzable and
+-- tradeable like any built-in stock. No verified price-feed provenance the
+-- way generated entries have (see that file's header) — sector/shariah are
+-- unknown and the Yahoo symbol is a best-guess "<CODE>.CA".
+create table if not exists custom_stocks (
+  code text primary key,
+  name text not null,
+  added_at timestamptz not null default now(),
+  added_by text
+);
+
 -- The CLI/local dev account. INSERT ... ON CONFLICT DO NOTHING equivalent —
 -- safe to run every time this file is applied.
 insert into users (id, email, name, password_salt, password_hash, email_verified, created_at)

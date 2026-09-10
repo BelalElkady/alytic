@@ -175,4 +175,23 @@ export async function getAllIndexOverrides() {
   );
 }
 
+/** @returns {{code:string,name:string}[]} every admin-added stock not in the generated universe — see config/universe.js's registerCustomStocks. */
+export async function getAllCustomStocks() {
+  const { data, error } = await supabase.from('custom_stocks').select('code, name');
+  if (error) throw new Error(`getAllCustomStocks: ${error.message}`);
+  return data;
+}
+
+/** Upserts (never overwrites a name with a blank one) a batch of admin-uploaded stocks that weren't already known. */
+export async function addCustomStocks(stocks, addedBy) {
+  if (!stocks.length) return;
+  must(
+    await supabase.from('custom_stocks').upsert(
+      stocks.map(({ code, name }) => ({ code, name, added_at: new Date().toISOString(), added_by: addedBy ?? null })),
+      { onConflict: 'code' },
+    ),
+    'addCustomStocks',
+  );
+}
+
 export { supabase };

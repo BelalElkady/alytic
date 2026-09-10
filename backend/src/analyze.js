@@ -42,12 +42,31 @@ export async function analyzeTicker(code, opts = {}) {
         : (await fetchFundamentals([code])).get(code.toUpperCase()) ?? null;
   // The fetcher picks its own source (Yahoo, else TradingView); the cache keys
   // on the ticker either way, so nothing downstream needs to know which won.
-  const data = await getBars(
-    code,
-    toYahoo(code),
-    (yahooSymbol, o) => fetchDailyAuto(code, { ...o, yahooSymbol, source: meta.source }),
-    { range, force },
-  );
+  //
+  // Every hardcoded stock in config/universe.js was pre-verified (see its
+  // header) to have a real, fetchable price series, so this call throwing was
+  // previously unreachable in practice. Admin-added custom stocks (see
+  // registerCustomStocks) carry no such guarantee — a made-up or delisted
+  // ticker can fail on both Yahoo and TradingView. Treat that the same way as
+  // a quality-gate rejection below rather than letting it become an uncaught
+  // 500: no data is just a stronger version of bad data.
+  let data;
+  try {
+    data = await getBars(
+      code,
+      toYahoo(code),
+      (yahooSymbol, o) => fetchDailyAuto(code, { ...o, yahooSymbol, source: meta.source }),
+      { range, force },
+    );
+  } catch (err) {
+    return {
+      code: meta.code ?? code,
+      name: meta.ar ?? code,
+      asOf: null,
+      usable: false,
+      error: `تعذر جلب بيانات السعر لهذا السهم: ${err.message}`,
+    };
+  }
   const bars = data.bars;
 
   // Refuse to analyze data we don't trust. Returning a scored verdict on a
