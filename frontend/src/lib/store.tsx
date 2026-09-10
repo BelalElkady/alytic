@@ -29,7 +29,14 @@ export type Row = {
 export type Portfolio = any;
 export type LogEntry = any;
 export type Stock = { code: string; ar?: string; en?: string };
-export type User = { name?: string; email: string; emailVerified?: boolean; isAdmin?: boolean; [key: string]: any };
+export type User = {
+  name?: string;
+  email: string;
+  phone?: string | null;
+  emailVerified?: boolean;
+  isAdmin?: boolean;
+  [key: string]: any;
+};
 
 export const PRICE_REFRESH_MS = 20 * 1000;
 
@@ -51,6 +58,7 @@ type DeskValue = {
   signOut: () => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   markEmailVerified: () => void;
+  updatePhone: (phone: string) => Promise<void>;
   pf: Portfolio;
   rows: Row[];
   log: Record<string, LogEntry>;
@@ -259,6 +267,11 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setUser((previous) => (previous ? { ...previous, emailVerified: true } : previous));
   }, []);
 
+  const updatePhone = useCallback(async (phone: string) => {
+    const result = await post("/api/account/phone", { phone });
+    setUser(result.user);
+  }, []);
+
   const totals = useMemo<Totals>(() => {
     const cost = rows.reduce((sum, r) => sum + r.position.shares * r.position.avgCost, 0);
     const value = rows.reduce((sum, r) => sum + (r.position.marketValue ?? 0), 0);
@@ -286,6 +299,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     signOut,
     resendVerification,
     markEmailVerified,
+    updatePhone,
     pf,
     rows,
     log,

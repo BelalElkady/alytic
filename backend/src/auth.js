@@ -8,6 +8,7 @@ import {
   getUserByVerificationToken,
   linkGoogleAccount,
   markEmailVerified,
+  setUserPhone,
   setVerificationToken,
   touchUserLogin,
 } from './db.js';
@@ -192,6 +193,15 @@ export async function verifyEmail({ token }) {
   }
   await markEmailVerified(user.id);
   return { user: publicUser({ ...user, email_verified: true }) };
+}
+
+/** Fills in the phone number for an already-signed-in user — the path a Google account (which never collects one) has to take to satisfy the same requirement as a normal registration. */
+export async function updatePhone({ userId, phone }) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) throw new Error('اكتب رقم موبايل مصري صحيح (01xxxxxxxxx)');
+  await setUserPhone(userId, normalized);
+  const user = await getUserById(userId);
+  return { user: publicUser(user) };
 }
 
 /** Always resolves quietly (no error, no indication whether the email exists) to avoid leaking registered addresses. */

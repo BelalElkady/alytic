@@ -75,6 +75,11 @@ export async function linkGoogleAccount(id, googleId) {
   );
 }
 
+/** Google sign-in never collects a phone number, so an account created that way needs this filled in afterward. */
+export async function setUserPhone(id, phone) {
+  must(await supabase.from('users').update({ phone }).eq('id', id), 'setUserPhone');
+}
+
 export async function getPortfolio(userId) {
   const { data, error } = await supabase.from('portfolios').select('state_json').eq('user_id', userId).maybeSingle();
   if (error) throw new Error(`getPortfolio: ${error.message}`);

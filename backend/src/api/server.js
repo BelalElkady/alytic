@@ -32,7 +32,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'anthropic/claude-sonnet-5';
 import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
-import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification } from '../auth.js';
+import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone } from '../auth.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
@@ -98,6 +98,15 @@ app.use('/api', async (req, res, next) => {
   req.user = user;
   next();
 });
+
+// Google sign-in never collects a phone number, but registration requires
+// one — this is how a Google account fills that in afterward. Placed after
+// the auth middleware above (path doesn't start with /auth/) so it's already
+// gated behind a session.
+app.post('/api/account/phone', wrap(async (req, res) => {
+  const result = await updatePhone({ userId: req.user.id, phone: req.body?.phone });
+  res.json({ user: result.user });
+}));
 
 const capitalOf = (p) =>
   Object.values(p.positions).reduce((a, pos) => a + pos.shares * pos.avgCost, 0) + p.cash;

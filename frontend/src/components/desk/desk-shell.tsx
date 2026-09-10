@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, post } from "@/lib/api";
 import { int, signed, tone } from "@/lib/format";
@@ -94,6 +96,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-surface pb-20 md:pb-0">
       <DeskHeader />
+      <RequirePhoneDialog />
       <VerifyEmailBanner />
       <HeroBar />
       <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">{children}</main>
@@ -138,6 +141,76 @@ function VerifyEmailBanner() {
         </Button>
       </Alert>
     </div>
+  );
+}
+
+/**
+ * Registration requires a phone number, but Google sign-in never collects
+ * one — so a Google-created account can land here without one. Blocks the
+ * desk (no cancel, no outside-click/Escape dismiss — Radix AlertDialog's
+ * default) until it's filled in, the same way it would have been required
+ * at registration.
+ */
+function RequirePhoneDialog() {
+  const { user, updatePhone } = useDesk();
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!user || user.phone) return null;
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await updatePhone(phone);
+    } catch (caught: any) {
+      setError(caught?.message ?? "تعذر حفظ رقم الموبايل");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AlertDialog open onOpenChange={() => {}}>
+      <AlertDialogContent>
+        <AlertDialogHeader className="text-start">
+          <AlertDialogTitle>محتاجين رقم موبايلك</AlertDialogTitle>
+          <AlertDialogDescription className="leading-relaxed">
+            حسابك اتعمل بجوجل، ورقم الموبايل مطلوب لإكمال إنشاء الحساب. اكتبه عشان تقدر تكمل لمكتب
+            محفظتك.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <form onSubmit={(event) => void submit(event)} className="space-y-3">
+          <div className="space-y-1.5 text-start">
+            <Label htmlFor="require-phone">رقم الموبايل</Label>
+            <Input
+              id="require-phone"
+              type="tel"
+              dir="ltr"
+              placeholder="01xxxxxxxxx"
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              required
+              autoComplete="tel"
+              autoFocus
+            />
+          </div>
+          {error && (
+            <p role="alert" className="rounded-md bg-down-soft px-3 py-2 text-[13px] text-down">
+              {error}
+            </p>
+          )}
+          <AlertDialogFooter className="sm:justify-start">
+            <Button type="submit" disabled={busy}>
+              {busy && <Spinner />}
+              حفظ ومتابعة
+            </Button>
+          </AlertDialogFooter>
+        </form>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
