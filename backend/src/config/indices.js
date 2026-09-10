@@ -17,6 +17,13 @@
  * list will drift. Re-run `scripts/match-index-names.mjs` against fresh
  * constituent names periodically and update this file; there is no live feed
  * for this the way there is for prices.
+ *
+ * Checked 2026-09-10 against EGX's official semi-annual review effective
+ * 2026-09-01 (corroborated by EnterpriseAM and a Zawya/Mondovisione
+ * republish of the EGX release): EGX30 and EGX70 already matched the review
+ * except Kima (EGCH), which had been sitting in EXCLUDED_UNMATCHED and is
+ * now a real EGX70 constituent — added. EGX33 was stale: removed OLFI and
+ * CIRA, added GOUR and CLHO per the same review.
  */
 
 export const INDICES_AS_OF = '2026-09';
@@ -24,8 +31,8 @@ export const INDICES_AS_OF = '2026-09';
 /** Names investing.com listed that had no confident match in UNIVERSE — not
  * a bug, just outside what this app can currently track (delisted, too
  * illiquid to have made the analyzable universe, or a name too generic to
- * resolve safely: "GB Auto", "Kima", "EDBE", "Atlas Land Reclamation"). */
-export const EXCLUDED_UNMATCHED = ['GB Auto', 'Kima', 'EDBE', 'Atlas Land Reclamation'];
+ * resolve safely: "GB Auto", "EDBE", "Atlas Land Reclamation"). */
+export const EXCLUDED_UNMATCHED = ['GB Auto', 'EDBE', 'Atlas Land Reclamation'];
 
 export const EGX30 = [
   'CCAP', 'COMI', 'ETEL', 'HRHO', 'PHDC', 'SKPC', 'TMGH', 'HELI', 'RAYA', 'ABUK',
@@ -40,14 +47,14 @@ export const EGX70 = [
   'MBSC', 'CIEB', 'NIPH', 'PHAR', 'SCEM', 'AIH', 'AMER', 'AMIA', 'ATQA', 'DSCW',
   'GPIM', 'IDRE', 'MEPA', 'MPCI', 'OBRI', 'OIH', 'SDTI', 'ARCC', 'IEEC', 'ARAB',
   'SIPC', 'MTIE', 'ICFC', 'MOED', 'ATLC', 'CNFN', 'ISMQ', 'GDWA', 'PRDC', 'MCRO',
-  'TAQA', 'ACTF', 'VALU', 'BONY', 'AIDC', 'GOUR',
+  'TAQA', 'ACTF', 'VALU', 'BONY', 'AIDC', 'GOUR', 'EGCH',
 ];
 
 export const EGX33 = [
   'ACGC', 'ETEL', 'OCDI', 'PHDC', 'SKPC', 'TMGH', 'ETRS', 'IFAP', 'LCSW', 'MASR',
-  'MPCO', 'ORWE', 'SAUD', 'MCQE', 'AMOC', 'EGAS', 'FAIT', 'ATQA', 'CIRA', 'EGAL',
-  'FAITA', 'JUFO', 'ORHD', 'ADIB', 'ARCC', 'ORAS', 'EFID', 'OLFI', 'MTIE', 'RACC',
-  'ICFC', 'ISPH', 'RMDA', 'EFIH',
+  'MPCO', 'ORWE', 'SAUD', 'MCQE', 'AMOC', 'EGAS', 'FAIT', 'ATQA', 'EGAL',
+  'FAITA', 'JUFO', 'ORHD', 'ADIB', 'ARCC', 'ORAS', 'EFID', 'MTIE', 'RACC',
+  'ICFC', 'ISPH', 'RMDA', 'EFIH', 'GOUR', 'CLHO',
 ];
 
 /** EGX100 is EGX30 + EGX70 by definition — no separate source to match. */
