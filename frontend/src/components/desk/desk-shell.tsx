@@ -175,7 +175,7 @@ function DeskHeader() {
         ? "استُبدلت المحفظة بالكامل."
         : "اتضاف/اتحدّث الأسهم دي بس — باقي المحفظة زي ما هو.";
       if (derived) {
-        toast.warning(`تم تحديث ${imported} سهم من ${files.length} صورة`, {
+        toast.success(`تم تحديث ${imported} سهم من ${files.length} صورة`, {
           description: `${scope} ⚠️ ${derived} منهم عدد الأسهم اتحسب تقديريًا — راجعه من «إدخال يدوي».`,
           duration: 12000,
         });
