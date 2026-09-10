@@ -29,7 +29,7 @@ export type Row = {
 export type Portfolio = any;
 export type LogEntry = any;
 export type Stock = { code: string; ar?: string; en?: string };
-export type User = { name?: string; email: string; emailVerified?: boolean; [key: string]: any };
+export type User = { name?: string; email: string; emailVerified?: boolean; isAdmin?: boolean; [key: string]: any };
 
 export const PRICE_REFRESH_MS = 20 * 1000;
 

@@ -11,6 +11,7 @@ import {
   Radar,
   RefreshCw,
   Settings,
+  ShieldCheck,
   Sun,
   Upload,
   Wallet,
@@ -42,13 +43,14 @@ import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { to: "/portfolio", label: "الأسهم", icon: Wallet },
-  { to: "/targets", label: "الأهداف", icon: Crosshair },
-  { to: "/calendar", label: "التقويم", icon: CalendarDays },
-  { to: "/charts", label: "الرسوم", icon: BarChart3 },
-  { to: "/cash", label: "الكاش", icon: LineChart },
-  { to: "/trades", label: "الصفقات", icon: RefreshCw },
-  { to: "/settings", label: "الإعدادات", icon: Settings },
+  { to: "/portfolio", label: "الأسهم", icon: Wallet, adminOnly: false },
+  { to: "/targets", label: "الأهداف", icon: Crosshair, adminOnly: false },
+  { to: "/calendar", label: "التقويم", icon: CalendarDays, adminOnly: false },
+  { to: "/charts", label: "الرسوم", icon: BarChart3, adminOnly: false },
+  { to: "/cash", label: "الكاش", icon: LineChart, adminOnly: false },
+  { to: "/trades", label: "الصفقات", icon: RefreshCw, adminOnly: false },
+  { to: "/settings", label: "الإعدادات", icon: Settings, adminOnly: false },
+  { to: "/admin", label: "الإدارة", icon: ShieldCheck, adminOnly: true },
 ] as const;
 
 function useTheme() {
@@ -316,9 +318,10 @@ function DeskHeader() {
 }
 
 function DesktopNav() {
+  const { user } = useDesk();
   return (
     <nav className="scrollbar-slim -mx-1 hidden gap-1 overflow-x-auto px-1 md:flex" aria-label="التبويبات">
-      {NAV.map(({ to, label, icon: Icon }) => (
+      {NAV.filter((item) => !item.adminOnly || user?.isAdmin).map(({ to, label, icon: Icon }) => (
         <Link
           key={to}
           to={to}
@@ -335,13 +338,14 @@ function DesktopNav() {
 
 function MobileNav() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const { user } = useDesk();
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden"
       aria-label="التبويبات"
     >
       <div className="scrollbar-slim flex justify-between gap-0.5 overflow-x-auto px-1 py-1.5">
-        {NAV.map(({ to, label, icon: Icon }) => {
+        {NAV.filter((item) => !item.adminOnly || user?.isAdmin).map(({ to, label, icon: Icon }) => {
           const active = pathname.startsWith(to);
           return (
             <Link

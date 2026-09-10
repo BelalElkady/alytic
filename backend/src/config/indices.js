@@ -24,7 +24,16 @@
  * except Kima (EGCH), which had been sitting in EXCLUDED_UNMATCHED and is
  * now a real EGX70 constituent — added. EGX33 was stale: removed OLFI and
  * CIRA, added GOUR and CLHO per the same review.
+ *
+ * An admin can now also replace any of these lists at runtime by uploading a
+ * CSV (see the /api/admin/indices routes in api/server.js) — that upload is
+ * stored in the `index_overrides` DB table and takes priority over the
+ * arrays below. `codesForIndex` and `effectiveIndices` below are what the
+ * rest of the app should call; the raw EGX30/EGX70/EGX33 exports remain only
+ * as the built-in fallback and the target of "reset to default".
  */
+
+import { getIndexOverride } from '../db.js';
 
 export const INDICES_AS_OF = '2026-09';
 
@@ -60,10 +69,27 @@ export const EGX33 = [
 /** EGX100 is EGX30 + EGX70 by definition — no separate source to match. */
 export const EGX100 = [...new Set([...EGX30, ...EGX70])];
 
+/** Built-in defaults, keyed by index name — what codesForIndex falls back to. */
 export const EGX_INDICES = { EGX30, EGX70, EGX33, EGX100 };
 
-/** @returns {string[]|null} codes for a known index name, or null if unknown. */
+/** Index names an admin can directly upload a CSV for. EGX100 is excluded — it is always derived, never uploaded. */
+export const UPLOADABLE_INDICES = ['EGX30', 'EGX70', 'EGX33'];
+
+/**
+ * @returns {string[]|null} codes for a known index name — an admin CSV
+ * upload if one exists (see `index_overrides` in db.js), otherwise the
+ * built-in default above. EGX100 always recomputes as EGX30 ∪ EGX70 from
+ * each side's *effective* list, since it has no independent source of its
+ * own to override.
+ */
 export function codesForIndex(name) {
   const key = String(name ?? '').toUpperCase().replace(/\s+/g, '');
-  return EGX_INDICES[key] ?? null;
+  if (key === 'EGX100') return [...new Set([...(codesForIndex('EGX30') ?? []), ...(codesForIndex('EGX70') ?? [])])];
+  if (!(key in EGX_INDICES)) return null;
+  return getIndexOverride(key)?.tickers ?? EGX_INDICES[key];
+}
+
+/** All four indices with any admin overrides applied — what GET /api/indices serves. */
+export function effectiveIndices() {
+  return Object.fromEntries(Object.keys(EGX_INDICES).map((key) => [key, codesForIndex(key)]));
 }

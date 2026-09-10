@@ -16,7 +16,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { ALL_CODES, UNIVERSE, lookup } from '../config/universe.js';
-import { EGX_INDICES, INDICES_AS_OF, codesForIndex } from '../config/indices.js';
+import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride } from '../db.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -111,8 +112,67 @@ app.get('/api/universe', (_req, res) => {
 // filtered to one instead of always scanning the whole tracked universe. See
 // src/config/indices.js for sourcing and its accuracy caveats.
 app.get('/api/indices', (_req, res) => {
-  res.json({ indices: EGX_INDICES, asOf: INDICES_AS_OF });
+  res.json({ indices: effectiveIndices(), asOf: INDICES_AS_OF });
 });
+
+// ---- Admin ------------------------------------------------------------------
+
+app.use('/api/admin', (req, res, next) => {
+  if (!req.user?.isAdmin) return res.status(403).json({ error: 'للمشرفين فقط' });
+  next();
+});
+
+/** One line per ticker; a leading "ticker/code/symbol" header row is skipped, as is anything else in the line past the first comma. */
+function parseTickerCsv(text) {
+  const seen = new Set();
+  for (const rawLine of String(text ?? '').split(/\r?\n/)) {
+    const token = rawLine.split(',')[0]?.trim().replace(/^["']|["']$/g, '').toUpperCase();
+    if (!token || ['TICKER', 'CODE', 'SYMBOL'].includes(token)) continue;
+    seen.add(token);
+  }
+  return [...seen];
+}
+
+app.get('/api/admin/indices', wrap(async (req, res) => {
+  const overrides = getAllIndexOverrides();
+  const indices = UPLOADABLE_INDICES.map((name) => {
+    const override = overrides[name];
+    const tickers = codesForIndex(name);
+    return {
+      name,
+      tickers,
+      count: tickers.length,
+      source: override ? 'upload' : 'default',
+      updatedAt: override?.updatedAt ?? null,
+      updatedBy: override?.updatedBy ?? null,
+    };
+  });
+  res.json({ indices });
+}));
+
+app.post('/api/admin/indices/:name', express.raw({ type: '*/*', limit: '256kb' }), wrap(async (req, res) => {
+  const name = String(req.params.name).toUpperCase();
+  if (!UPLOADABLE_INDICES.includes(name)) return res.status(400).json({ error: `مؤشر غير قابل للرفع: ${name}` });
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع ملف CSV أولاً' });
+
+  const tickers = parseTickerCsv(req.body.toString('utf8'));
+  if (!tickers.length) return res.status(400).json({ error: 'الملف فاضي أو مفيهوش أكواد صحيحة' });
+
+  const known = new Set(ALL_CODES);
+  const matched = tickers.filter((t) => known.has(t));
+  const unmatched = tickers.filter((t) => !known.has(t));
+  if (!matched.length) return res.status(400).json({ error: 'ولا كود في الملف موجود في قاعدة الأسهم المتابَعة', unmatched });
+
+  setIndexOverride(name, matched, req.user.id);
+  res.json({ ok: true, name, saved: matched.length, unmatched });
+}));
+
+app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
+  const name = String(req.params.name).toUpperCase();
+  if (!UPLOADABLE_INDICES.includes(name)) return res.status(400).json({ error: `مؤشر غير قابل للرفع: ${name}` });
+  clearIndexOverride(name);
+  res.json({ ok: true, name, tickers: codesForIndex(name) });
+}));
 
 // ---- Analysis --------------------------------------------------------------
 

@@ -48,6 +48,16 @@ db.exec(`
     generated_at TEXT NOT NULL,
     PRIMARY KEY (report_date, style)
   );
+
+  -- Admin-uploaded replacements for the built-in index membership lists in
+  -- src/config/indices.js. Absence of a row means "use the built-in default"
+  -- — see codesForIndex() there, which checks here first.
+  CREATE TABLE IF NOT EXISTS index_overrides (
+    index_name TEXT PRIMARY KEY,
+    tickers_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+  );
 `);
 
 // Existing databases predate google_id/email_verified/verification_token* —
@@ -58,6 +68,7 @@ for (const [column, definition] of [
   ['email_verified', "INTEGER NOT NULL DEFAULT 0"],
   ['verification_token', 'TEXT'],
   ['verification_token_expires', 'TEXT'],
+  ['is_admin', 'INTEGER NOT NULL DEFAULT 0'],
 ]) {
   if (!existingUserColumns.has(column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
 }
@@ -153,6 +164,44 @@ export function putMarketReport(reportDate, style, report, model, usage) {
     generatedAt: new Date().toISOString(),
   });
   return info.changes > 0;
+}
+
+export function setUserAdmin(id, isAdmin) {
+  db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(isAdmin ? 1 : 0, id);
+}
+
+const findIndexOverride = db.prepare('SELECT * FROM index_overrides WHERE index_name = ?');
+const upsertIndexOverride = db.prepare(`
+  INSERT INTO index_overrides (index_name, tickers_json, updated_at, updated_by)
+  VALUES (@indexName, @tickersJson, @updatedAt, @updatedBy)
+  ON CONFLICT(index_name) DO UPDATE SET tickers_json = excluded.tickers_json, updated_at = excluded.updated_at, updated_by = excluded.updated_by
+`);
+const deleteIndexOverride = db.prepare('DELETE FROM index_overrides WHERE index_name = ?');
+const listIndexOverrides = db.prepare('SELECT * FROM index_overrides');
+
+/** @returns {{tickers:string[],updatedAt:string,updatedBy:string|null}|null} an admin-uploaded ticker list for this index, or null if none was ever uploaded. */
+export function getIndexOverride(indexName) {
+  const row = findIndexOverride.get(indexName);
+  if (!row) return null;
+  try {
+    return { tickers: JSON.parse(row.tickers_json), updatedAt: row.updated_at, updatedBy: row.updated_by };
+  } catch {
+    return null;
+  }
+}
+
+export function setIndexOverride(indexName, tickers, updatedBy) {
+  upsertIndexOverride.run({ indexName, tickersJson: JSON.stringify(tickers), updatedAt: new Date().toISOString(), updatedBy: updatedBy ?? null });
+}
+
+export function clearIndexOverride(indexName) {
+  deleteIndexOverride.run(indexName);
+}
+
+export function getAllIndexOverrides() {
+  return Object.fromEntries(
+    listIndexOverrides.all().map((row) => [row.index_name, { tickers: JSON.parse(row.tickers_json), updatedAt: row.updated_at, updatedBy: row.updated_by }]),
+  );
 }
 
 export { db, DB_FILE };

@@ -45,6 +45,7 @@ function publicUser(user) {
     name: user.name,
     createdAt: user.created_at ?? user.createdAt,
     emailVerified: Boolean(user.email_verified ?? user.emailVerified),
+    isAdmin: Boolean(user.is_admin ?? user.isAdmin),
   };
 }
 

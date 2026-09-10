@@ -14,6 +14,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
+import { Route as AppAdminRouteImport } from './routes/_app.admin'
 import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
 import { Route as AppCashRouteImport } from './routes/_app.cash'
 import { Route as AppChartsRouteImport } from './routes/_app.charts'
@@ -21,6 +22,7 @@ import { Route as AppPortfolioRouteImport } from './routes/_app.portfolio'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppTargetsRouteImport } from './routes/_app.targets'
 import { Route as AppTradesRouteImport } from './routes/_app.trades'
+import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as ApiPublicSplatRouteImport } from './routes/api/public/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -46,6 +48,11 @@ const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
   path: '/verify-email',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppAdminRoute = AppAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppCalendarRoute = AppCalendarRouteImport.update({
   id: '/calendar',
@@ -82,6 +89,11 @@ const AppTradesRoute = AppTradesRouteImport.update({
   path: '/trades',
   getParentRoute: () => AppRoute,
 } as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin/login',
+  path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicSplatRoute = ApiPublicSplatRouteImport.update({
   id: '/api/public/$',
   path: '/api/public/$',
@@ -93,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/admin': typeof AppAdminRoute
   '/calendar': typeof AppCalendarRoute
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
@@ -100,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
   '/trades': typeof AppTradesRoute
+  '/admin/login': typeof AdminLoginRoute
   '/api/public/$': typeof ApiPublicSplatRoute
 }
 export interface FileRoutesByTo {
@@ -107,6 +121,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/admin': typeof AppAdminRoute
   '/calendar': typeof AppCalendarRoute
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
@@ -114,6 +129,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
   '/trades': typeof AppTradesRoute
+  '/admin/login': typeof AdminLoginRoute
   '/api/public/$': typeof ApiPublicSplatRoute
 }
 export interface FileRoutesById {
@@ -123,6 +139,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/_app/admin': typeof AppAdminRoute
   '/_app/calendar': typeof AppCalendarRoute
   '/_app/cash': typeof AppCashRoute
   '/_app/charts': typeof AppChartsRoute
@@ -130,6 +147,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/targets': typeof AppTargetsRoute
   '/_app/trades': typeof AppTradesRoute
+  '/admin/login': typeof AdminLoginRoute
   '/api/public/$': typeof ApiPublicSplatRoute
 }
 export interface FileRouteTypes {
@@ -139,6 +157,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/verify-email'
+    | '/admin'
     | '/calendar'
     | '/cash'
     | '/charts'
@@ -146,6 +165,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/targets'
     | '/trades'
+    | '/admin/login'
     | '/api/public/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -153,6 +173,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/verify-email'
+    | '/admin'
     | '/calendar'
     | '/cash'
     | '/charts'
@@ -160,6 +181,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/targets'
     | '/trades'
+    | '/admin/login'
     | '/api/public/$'
   id:
     | '__root__'
@@ -168,6 +190,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/verify-email'
+    | '/_app/admin'
     | '/_app/calendar'
     | '/_app/cash'
     | '/_app/charts'
@@ -175,6 +198,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/targets'
     | '/_app/trades'
+    | '/admin/login'
     | '/api/public/$'
   fileRoutesById: FileRoutesById
 }
@@ -184,6 +208,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
+  AdminLoginRoute: typeof AdminLoginRoute
   ApiPublicSplatRoute: typeof ApiPublicSplatRoute
 }
 
@@ -223,6 +248,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/verify-email'
       preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/admin': {
+      id: '/_app/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AppAdminRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/calendar': {
       id: '/_app/calendar'
@@ -273,6 +305,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTradesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/admin/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/$': {
       id: '/api/public/$'
       path: '/api/public/$'
@@ -284,6 +323,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAdminRoute: typeof AppAdminRoute
   AppCalendarRoute: typeof AppCalendarRoute
   AppCashRoute: typeof AppCashRoute
   AppChartsRoute: typeof AppChartsRoute
@@ -294,6 +334,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAdminRoute: AppAdminRoute,
   AppCalendarRoute: AppCalendarRoute,
   AppCashRoute: AppCashRoute,
   AppChartsRoute: AppChartsRoute,
@@ -311,6 +352,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
   VerifyEmailRoute: VerifyEmailRoute,
+  AdminLoginRoute: AdminLoginRoute,
   ApiPublicSplatRoute: ApiPublicSplatRoute,
 }
 export const routeTree = rootRouteImport
