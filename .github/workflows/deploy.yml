@@ -11,6 +11,8 @@ permissions:
 env:
   NODE_VERSION: 20
   DEPLOY_PATH: /opt/alytic
+  BACKEND_PORT: 3000
+  FRONTEND_PORT: 8080
 
 jobs:
   build:
@@ -114,12 +116,14 @@ jobs:
         uses: appleboy/ssh-action@v1.2.2
         env:
           DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          BACKEND_PORT: ${{ env.BACKEND_PORT }}
+          FRONTEND_PORT: ${{ env.FRONTEND_PORT }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: DEPLOY_PATH
+          envs: DEPLOY_PATH,BACKEND_PORT,FRONTEND_PORT
           script: |
             set -eu
             RELEASE_ARCHIVE="$(find /tmp -type f -name 'alytic-release.tar.gz' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {sub(/^[^ ]+ /, ""); print}')"
@@ -135,6 +139,11 @@ jobs:
             rm -rf "$DEPLOY_PATH/backend/src" "$DEPLOY_PATH/frontend/.output"
             cp "$(find /tmp/alytic-release -name COMMIT -type f -print -quit)" "$DEPLOY_PATH/COMMIT"
             cp -a /tmp/alytic-release/backend/src "$DEPLOY_PATH/backend/"
+            # Must pre-exist: on a first deploy, `backend/data/` hasn't been
+            # created by the running server yet, and `cp -a ... data/` into a
+            # missing directory renames `reference` itself into `data` instead
+            # of nesting it underneath.
+            mkdir -p "$DEPLOY_PATH/backend/data"
             cp -a /tmp/alytic-release/backend/data/reference "$DEPLOY_PATH/backend/data/"
             cp /tmp/alytic-release/backend/package.json /tmp/alytic-release/backend/package-lock.json "$DEPLOY_PATH/backend/"
             cp -a /tmp/alytic-release/frontend/.output "$DEPLOY_PATH/frontend/"
@@ -145,8 +154,13 @@ jobs:
               npm install --global pm2
             fi
             pm2 delete alytic-backend >/dev/null 2>&1 || true
-            pm2 start src/api/server.js --name alytic-backend --cwd "$DEPLOY_PATH/backend" --update-env
+            PORT="$BACKEND_PORT" pm2 start src/api/server.js --name alytic-backend --cwd "$DEPLOY_PATH/backend" --update-env
             pm2 delete alytic-frontend >/dev/null 2>&1 || true
-            pm2 start .output/server/index.mjs --name alytic-frontend --cwd "$DEPLOY_PATH/frontend" --update-env
+            # Nitro's node-server output defaults to the same PORT/3000 as the
+            # backend when unset — both processes would then fight over the
+            # same port, the second one loses the bind and PM2 crash-loops it.
+            PORT="$FRONTEND_PORT" ALYTIC_API_URL="http://127.0.0.1:$BACKEND_PORT" pm2 start .output/server/index.mjs --name alytic-frontend --cwd "$DEPLOY_PATH/frontend" --update-env
             pm2 save
-            curl --fail --silent --show-error http://127.0.0.1:3000/api/health >/dev/null
+            sleep 2
+            curl --fail --silent --show-error "http://127.0.0.1:$BACKEND_PORT/api/health" >/dev/null
+            curl --fail --silent --show-error "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null
