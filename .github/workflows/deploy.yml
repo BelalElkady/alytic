@@ -49,16 +49,25 @@ jobs:
         working-directory: frontend
         run: bun run build
 
+      - name: Package release
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p deploy
+          printf '%s\n' "$GITHUB_SHA" > deploy/COMMIT
+          tar -czf deploy/alytic-release.tar.gz \
+            deploy/COMMIT \
+            backend/package.json \
+            backend/package-lock.json \
+            backend/src \
+            backend/data/reference \
+            frontend/.output
+
       - name: Upload deployment bundle
         uses: actions/upload-artifact@v4
         with:
           name: alytic-deployment
-          path: |
-            backend/package.json
-            backend/package-lock.json
-            backend/src
-            backend/data/reference
-            frontend/.output
+          path: deploy/alytic-release.tar.gz
           retention-days: 7
 
   deploy:
@@ -97,10 +106,9 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          source: deploy/*
-          target: ${{ env.DEPLOY_PATH }}
+          source: deploy/alytic-release.tar.gz
+          target: /tmp
           overwrite: true
-          strip_components: 1
 
       - name: Install runtime dependencies and restart services
         uses: appleboy/ssh-action@v1.2.2
@@ -114,6 +122,16 @@ jobs:
           envs: DEPLOY_PATH
           script: |
             set -eu
+            mkdir -p "$DEPLOY_PATH"
+            mkdir -p "$DEPLOY_PATH/backend" "$DEPLOY_PATH/frontend"
+            rm -rf "$DEPLOY_PATH/backend/src" "$DEPLOY_PATH/frontend/.output"
+            tar -xzf /tmp/alytic-release.tar.gz -C /tmp
+            cp /tmp/deploy/COMMIT "$DEPLOY_PATH/COMMIT"
+            cp -a /tmp/backend/src "$DEPLOY_PATH/backend/"
+            cp -a /tmp/backend/data/reference "$DEPLOY_PATH/backend/data/"
+            cp /tmp/backend/package.json /tmp/backend/package-lock.json "$DEPLOY_PATH/backend/"
+            cp -a /tmp/frontend/.output "$DEPLOY_PATH/frontend/"
+            echo "Deployed commit: $(cat "$DEPLOY_PATH/COMMIT")"
             cd "$DEPLOY_PATH"
             npm ci --omit=dev --prefix backend
             if ! command -v pm2 >/dev/null 2>&1; then
