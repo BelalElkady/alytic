@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="EGXpert">
+  <defs>
+    <linearGradient id="egx-mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#28528e" />
+      <stop offset="100%" stop-color="#3d64c7" />
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="38" height="38" rx="11" fill="url(#egx-mark)" />
+  <g stroke="#fcfcfc" stroke-width="2.2" stroke-linecap="round">
+    <path d="M11 27.5V21" />
+    <path d="M20 27.5V16" />
+    <path d="M29 27.5V11.5" />
+  </g>
+  <path
+    d="M9.5 15.5 16 19l5-6 6.5 3"
+    fill="none"
+    stroke="#fcfcfc"
+    stroke-opacity="0.55"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
