@@ -109,6 +109,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap",
       },
     ],
+    scripts: [
+      {
+        src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8353018708854851",
+        async: true,
+        crossOrigin: "anonymous",
+      },
+      {
+        src: "https://www.googletagmanager.com/gtag/js?id=G-789W810GMB",
+        async: true,
+      },
+      {
+        children: `window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-789W810GMB');`,
+      },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
