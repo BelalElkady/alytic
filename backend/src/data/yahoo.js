@@ -109,7 +109,9 @@ export async function fetchDaily(yahooSymbol, { range = '2y' } = {}) {
  * years vs TradingView's ~1500 bars) and needs no websocket. But it carries
  * nothing at all for roughly 62 EGX companies, several of them large (QNBE,
  * TAQA Arabia, Suez Cement, ENPPI). For those, and for symbols where Yahoo
- * serves a dead series, TradingView's chart feed is the fallback.
+ * serves a dead series, TradingView's chart feed is the fallback. A handful of
+ * real EGX listings (e.g. AIHC) sit outside TradingView's EGX coverage too —
+ * Mubasher's scraped stock-page CSV is the last resort for those.
  *
  * @param {string} code - plain ticker, e.g. 'QNBE'
  * @param {object} [opts]
@@ -132,7 +134,16 @@ export async function fetchDailyAuto(code, { range = '2y', yahooSymbol = null, m
   }
 
   const { fetchDailyTV } = await import('./tv-history.js');
-  return fetchDailyTV(code);
+  try {
+    return await fetchDailyTV(code);
+  } catch (tvErr) {
+    const { fetchDailyMubasher } = await import('./mubasher.js');
+    try {
+      return await fetchDailyMubasher(code);
+    } catch (mbErr) {
+      throw new Error(`${tvErr.message}; mubasher: ${mbErr.message}`);
+    }
+  }
 }
 
 /** Fetch many symbols with bounded concurrency; failures are reported, never thrown. */

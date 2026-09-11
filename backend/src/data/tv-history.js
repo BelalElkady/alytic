@@ -148,8 +148,15 @@ export async function fetchDailyTVMany(codes, { bars = 1500, delayMs = 600, onPr
   return { data, errors };
 }
 
-/** Fetch current last-trade quotes for several EGX symbols in one session. */
-export function fetchLatestQuotes(codes, { timeoutMs = 15000 } = {}) {
+/**
+ * Fetch current last-trade quotes for several EGX symbols in one session.
+ * Some requested codes may never get a quote back (delisted, illiquid, or
+ * simply not covered by TradingView's EGX feed even though EGX itself lists
+ * them) — that would otherwise pin every call to the full `timeoutMs`
+ * waiting for a symbol that's never coming, so we also finish early once
+ * `idleMs` passes with no new quote arriving.
+ */
+export function fetchLatestQuotes(codes, { timeoutMs = 15000, idleMs = 2000 } = {}) {
   const wanted = [...new Set(codes.map((code) => String(code).toUpperCase().replace(/^EGX:/, '')))].filter(Boolean);
   if (!wanted.length) return Promise.resolve(new Map());
 
@@ -157,14 +164,20 @@ export function fetchLatestQuotes(codes, { timeoutMs = 15000 } = {}) {
     let ws;
     const quotes = new Map();
     let settled = false;
+    let idleTimer;
     const finish = () => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(idleTimer);
       try { ws?.close(); } catch { /* already closed */ }
       resolve(quotes);
     };
     const timer = setTimeout(finish, timeoutMs);
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(finish, idleMs);
+    };
 
     try {
       ws = new WebSocket(WS_URL, { headers: { Origin: ORIGIN } });
@@ -196,6 +209,7 @@ export function fetchLatestQuotes(codes, { timeoutMs = 15000 } = {}) {
         const code = String(message.p?.[1]?.n ?? '').replace(/^EGX:/, '');
         if (code && Number.isFinite(value?.lp)) {
           quotes.set(code, { price: value.lp, change: value.ch ?? null, changePct: value.chp ?? null, time: value.lp_time ?? null });
+          resetIdleTimer();
         }
         if (quotes.size >= wanted.length) finish();
       }
