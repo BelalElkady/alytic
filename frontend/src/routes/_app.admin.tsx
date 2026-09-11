@@ -355,7 +355,17 @@ function UserRow({ row }: { row: AdminUserRow }) {
       </TableCell>
       <TableCell className="num text-right">{row.phone || "—"}</TableCell>
       <TableCell className="num text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
-      <TableCell className="num text-right">{row.lastLoginAt ? arDay(row.lastLoginAt.slice(0, 10)) : "—"}</TableCell>
+      <TableCell className="num text-right">
+        {row.lastLoginAt
+          ? new Date(row.lastLoginAt).toLocaleString("ar-EG", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "—"}
+      </TableCell>
       <TableCell className="num text-right">{capital != null ? `${int(capital)} ج` : "—"}</TableCell>
       <TableCell className={cn("num text-right", pf ? tone(pf.realizedPnl) : "text-muted-foreground")}>
         {pf ? signed(pf.realizedPnl) : "—"}
