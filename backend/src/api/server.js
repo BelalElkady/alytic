@@ -10,7 +10,7 @@
  * /api/fundamentals need one, and they say so plainly when it is missing.
  */
 
-import 'dotenv/config';
+import '../loadEnv.js';
 import express from 'express';
 import * as XLSX from 'xlsx';
 import path from 'node:path';

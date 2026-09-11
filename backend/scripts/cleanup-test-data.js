@@ -11,7 +11,7 @@
  *
  *   node scripts/cleanup-test-data.js
  */
-import 'dotenv/config';
+import '../src/loadEnv.js';
 import { supabase } from '../src/supabaseClient.js';
 
 const { data, error } = await supabase.from('users').delete().ilike('email', '%@test.local').select('id');

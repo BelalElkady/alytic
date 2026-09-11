@@ -8,7 +8,7 @@
  *   node scripts/make-admin.mjs someone@example.com --revoke revoke
  */
 
-import 'dotenv/config';
+import '../src/loadEnv.js';
 import { getUserByEmail, setUserAdmin } from '../src/db.js';
 
 const email = process.argv[2];

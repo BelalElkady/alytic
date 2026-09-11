@@ -15,7 +15,7 @@
  * need one — everything else is arithmetic.
  */
 
-import 'dotenv/config';
+import './loadEnv.js';
 import { analyzeTicker, analyzeMany } from './analyze.js';
 import { ALL_CODES, lookup } from './config/universe.js';
 import { loadPortfolio, savePortfolio, recordTrade, trackedCodes } from './portfolio.js';

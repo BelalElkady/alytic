@@ -49,7 +49,7 @@
  */
 
 import OpenAI from 'openai';
-import 'dotenv/config';
+import '../loadEnv.js';
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 
