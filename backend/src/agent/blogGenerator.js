@@ -18,7 +18,10 @@ import { getBlogPostBySlot, insertBlogPostDraft } from '../db.js';
 // Pinned independently of ALYTIC_MODEL: the blog generator always wants a
 // model with real web-search tool support, regardless of what the
 // portfolio-analysis features are configured to use.
-const BLOG_MODEL = process.env.BLOG_MODEL ?? 'qwen/qwen3-235b-a22b:free';
+// qwen/qwen3-235b-a22b:free was pulled by OpenRouter (verified live, 2026-09-11
+// — 404 telling callers to use the paid slug instead); nvidia/nemotron-3-ultra
+// confirmed still free via `GET /models` against the real API key in prod.
+const BLOG_MODEL = process.env.BLOG_MODEL ?? 'nvidia/nemotron-3-ultra-550b-a55b:free';
 // Second, independent model that reviews each draft before it reaches the
 // admin approval queue — see reviewBlogPost.
 const BLOG_REVIEW_MODEL = process.env.BLOG_REVIEW_MODEL ?? 'google/gemma-4-31b-it:free';
