@@ -15,10 +15,11 @@
     "review": "node src/cli.js review",
     "verify:universe": "node scripts/verify-universe.js",
     "build:universe": "node scripts/build-universe.js",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node scripts/run-tests.mjs \"test/**/*.test.js\"",
     "test:watch": "node --test --watch \"test/**/*.test.js\"",
     "test:unit": "node --test \"test/unit/*.test.js\"",
-    "test:api": "node --test \"test/api/*.test.js\""
+    "test:api": "node scripts/run-tests.mjs \"test/api/*.test.js\"",
+    "cleanup:test-data": "node scripts/cleanup-test-data.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

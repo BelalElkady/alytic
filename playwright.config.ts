@@ -14,6 +14,7 @@ const FRONTEND_PORT = process.env.E2E_FRONTEND_PORT ?? 8181;
 
 export default defineConfig({
   testDir: "tests/e2e",
+  globalTeardown: "./tests/e2e/global-teardown.mjs",
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,

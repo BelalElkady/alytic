@@ -71,6 +71,12 @@ unchanged): `ALYTIC_BARS_DIR` in `src/data/cache.js`, and `src/api/server.js`
 only binding port 3000 when executed directly (imported modules can listen on
 their own ephemeral port).
 
+Because those seeded users are real rows in the shared project, `npm test`
+and `npm run test:api` run through `scripts/run-tests.mjs`, which always
+deletes every `@test.local` user afterwards via `scripts/cleanup-test-data.js`
+(`portfolios` cascades on delete) — pass or fail, and regardless of the test
+run's own exit code. Run it by hand with `npm run cleanup:test-data`.
+
 ## Frontend — Vitest
 
 ```
@@ -122,6 +128,10 @@ Two things worth knowing:
    fall through to native GETs.
 2. **Ports** — `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` override the defaults
    (3111/8181) if those are taken.
+3. **Cleanup** — like the backend suite, specs register real `@test.local`
+   users in the shared Supabase project. `playwright.config.ts`'s
+   `globalTeardown` (`tests/e2e/global-teardown.mjs`) deletes them after every
+   run by shelling out to the backend's `cleanup-test-data.js`.
 
 ## CI
 
