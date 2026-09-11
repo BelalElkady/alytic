@@ -20,6 +20,19 @@ import { verificationEmailHtml, resetPasswordEmailHtml, registrationConfirmedEma
 
 const SESSION_COOKIE = 'alytic_session';
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 30;
+
+// Every session cookie is an HMAC over this secret (see encodeSession/
+// decodeSession below) — anyone who knows it can forge a valid session for
+// any user id without ever knowing a password. The fallback below is
+// world-readable in this repo's own source, so it must never actually be
+// used outside local dev: refuse to boot in production rather than silently
+// signing tokens with a secret an attacker can read on GitHub.
+if (!process.env.SESSION_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET غير مضبوط — لازم قيمة عشوائية طويلة في .env قبل تشغيل الإنتاج (مثلاً: openssl rand -hex 32)');
+  }
+  console.warn('[auth] SESSION_SECRET غير مضبوط — بيستخدم قيمة افتراضية غير آمنة (مقبول في التطوير المحلي بس، أبدًا في الإنتاج)');
+}
 const SESSION_SECRET = process.env.SESSION_SECRET ?? 'change-this-session-secret-in-env';
 
 const VERIFICATION_TTL = 1000 * 60 * 60 * 24; // 24h
@@ -73,8 +86,21 @@ function publicUser(user) {
   };
 }
 
-function encodeSession(userId) {
-  const payload = Buffer.from(JSON.stringify({ sub: userId, exp: Date.now() + SESSION_TTL })).toString('base64url');
+const passwordHashOf = (user) => user.password_hash ?? user.passwordHash;
+
+// A short fingerprint of the current password hash, embedded in every
+// session token and re-checked on every request (see userFromRequest). This
+// is what makes a password reset actually invalidate sessions issued before
+// it — otherwise the HMAC signature alone stays valid for the full 30-day
+// TTL no matter how many times the password changes. Truncated: this only
+// needs to detect "the password changed", never to verify or reveal it.
+const passwordFingerprint = (passwordHash) =>
+  crypto.createHash('sha256').update(String(passwordHash)).digest('hex').slice(0, 16);
+
+function encodeSession(userId, passwordHash) {
+  const payload = Buffer.from(
+    JSON.stringify({ sub: userId, exp: Date.now() + SESSION_TTL, pv: passwordFingerprint(passwordHash) }),
+  ).toString('base64url');
   const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
   return `${payload}.${signature}`;
 }
@@ -143,7 +169,7 @@ export async function register({ email, password, name, phone }) {
   };
   await createUser(user);
   await sendVerificationEmail(user, token);
-  return { user: publicUser(user), token: encodeSession(user.id) };
+  return { user: publicUser(user), token: encodeSession(user.id, passwordHashOf(user)) };
 }
 
 export async function login({ email, password }) {
@@ -151,7 +177,7 @@ export async function login({ email, password }) {
   const user = await getUserByEmail(normalized);
   if (!user || !(await passwordMatches(password, user))) throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
   await touchUserLogin(user.id, new Date().toISOString());
-  return { user: publicUser(user), token: encodeSession(user.id) };
+  return { user: publicUser(user), token: encodeSession(user.id, passwordHashOf(user)) };
 }
 
 /** Verifies a Google ID token and signs the matching Alytic user in, creating or linking an account as needed. */
@@ -199,7 +225,7 @@ export async function googleSignIn({ credential }) {
   }
 
   await touchUserLogin(user.id, new Date().toISOString());
-  return { user: publicUser(user), token: encodeSession(user.id) };
+  return { user: publicUser(user), token: encodeSession(user.id, passwordHashOf(user)) };
 }
 
 export async function verifyEmail({ token }) {
@@ -259,13 +285,24 @@ export async function userFromRequest(req) {
   const session = decodeSession(parseCookies(req.headers.cookie ?? '')[SESSION_COOKIE]);
   if (!session) return null;
   const user = await getUserById(session.sub);
-  return user ? publicUser(user) : null;
+  if (!user) return null;
+  // A token issued before the most recent password change carries the old
+  // fingerprint and is rejected here — this is what makes reset-password
+  // actually sign out every other session instead of leaving old cookies
+  // valid for their full 30-day life.
+  if (session.pv !== passwordFingerprint(passwordHashOf(user))) return null;
+  return publicUser(user);
 }
 
+// Secure is conditional on NODE_ENV rather than always-on because local dev
+// serves the frontend over plain http://localhost — a Secure cookie set
+// there would never be sent back, breaking login outside production.
+const COOKIE_SECURE = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+
 export function sessionCookie(token) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL / 1000}`;
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${COOKIE_SECURE}; Max-Age=${SESSION_TTL / 1000}`;
 }
 
 export function clearSessionCookie() {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${COOKIE_SECURE}; Max-Age=0`;
 }

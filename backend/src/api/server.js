@@ -12,6 +12,7 @@
 
 import '../loadEnv.js';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import * as XLSX from 'xlsx';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -45,7 +46,27 @@ const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'belal.elkady4@gmail.com';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
+// Behind nginx (see the systemd deploy), the real client IP arrives in
+// X-Forwarded-For — without this, every request looks like it came from
+// nginx itself (127.0.0.1), which would make the rate limiters below share
+// one bucket across every visitor instead of limiting per-IP.
+app.set('trust proxy', 1);
 app.use(express.json());
+
+// Brute-force / abuse guards on the endpoints an attacker would actually
+// want to hammer: password guessing, mass account creation, and using the
+// app's own outgoing email as a spam relay. Keyed by IP (see 'trust proxy'
+// above); a shared 429 body avoids leaking which limiter tripped.
+const rateLimited = (max, windowMinutes) => rateLimit({
+  windowMs: windowMinutes * 60 * 1000,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'محاولات كتير في وقت قصير — استنى شوية وجرّب تاني' },
+});
+const loginLimiter = rateLimited(10, 15);
+const registerLimiter = rateLimited(8, 60);
+const emailActionLimiter = rateLimited(6, 60); // forgot-password, resend-verification, contact
 
 // The vanilla-JS UI (formerly public/index.html) is retired in favor of the
 // EGXpert frontend in frontend/ (TanStack Start, its own dev/build process).
@@ -62,19 +83,19 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(500).json({ error: err.message });
 });
 
-app.post('/api/auth/register', wrap(async (req, res) => {
+app.post('/api/auth/register', registerLimiter, wrap(async (req, res) => {
   const result = await register(req.body ?? {});
   res.setHeader('Set-Cookie', sessionCookie(result.token));
   res.status(201).json({ user: result.user });
 }));
 
-app.post('/api/auth/login', wrap(async (req, res) => {
+app.post('/api/auth/login', loginLimiter, wrap(async (req, res) => {
   const result = await login(req.body ?? {});
   res.setHeader('Set-Cookie', sessionCookie(result.token));
   res.json({ user: result.user });
 }));
 
-app.post('/api/auth/google', wrap(async (req, res) => {
+app.post('/api/auth/google', loginLimiter, wrap(async (req, res) => {
   const result = await googleSignIn(req.body ?? {});
   res.setHeader('Set-Cookie', sessionCookie(result.token));
   res.json({ user: result.user });
@@ -85,17 +106,17 @@ app.post('/api/auth/verify', wrap(async (req, res) => {
   res.json(result);
 }));
 
-app.post('/api/auth/resend-verification', wrap(async (req, res) => {
+app.post('/api/auth/resend-verification', emailActionLimiter, wrap(async (req, res) => {
   await resendVerification(req.body ?? {});
   res.json({ ok: true });
 }));
 
-app.post('/api/auth/forgot-password', wrap(async (req, res) => {
+app.post('/api/auth/forgot-password', emailActionLimiter, wrap(async (req, res) => {
   await forgotPassword(req.body ?? {});
   res.json({ ok: true });
 }));
 
-app.post('/api/auth/reset-password', wrap(async (req, res) => {
+app.post('/api/auth/reset-password', loginLimiter, wrap(async (req, res) => {
   await resetPassword(req.body ?? {});
   res.json({ ok: true });
 }));
@@ -114,7 +135,7 @@ app.get('/api/auth/me', wrap(async (req, res) => {
 // missing OPENROUTER_API_KEY the way the AI endpoints are; it only needs
 // RESEND_API_KEY, and sendEmail() degrades to a console log without one
 // rather than failing the request.
-app.post('/api/contact', wrap(async (req, res) => {
+app.post('/api/contact', emailActionLimiter, wrap(async (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   const email = String(req.body?.email ?? '').trim().toLowerCase();
   const message = String(req.body?.message ?? '').trim();
