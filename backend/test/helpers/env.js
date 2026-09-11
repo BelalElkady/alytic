@@ -52,6 +52,7 @@ process.env.FRONTEND_URL ??= 'http://localhost:8080';
 // backend/.env at this point (see above), so this is the only source.
 process.env.OPENROUTER_API_KEY ??= '';
 process.env.ANTHROPIC_API_KEY ??= '';
+process.env.RESEND_API_KEY ??= '';
 
 try {
   fs.mkdirSync(process.env.ALYTIC_BARS_DIR, { recursive: true });

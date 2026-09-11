@@ -58,6 +58,29 @@ export async function setVerificationToken(id, token, expiresAt) {
   );
 }
 
+export async function getUserByResetToken(token) {
+  const { data, error } = await supabase.from('users').select('*').eq('reset_token', token).maybeSingle();
+  if (error) throw new Error(`getUserByResetToken: ${error.message}`);
+  return data;
+}
+
+export async function setResetToken(id, token, expiresAt) {
+  must(
+    await supabase.from('users').update({ reset_token: token, reset_token_expires: expiresAt }).eq('id', id),
+    'setResetToken',
+  );
+}
+
+/** Also clears the reset token so a used (or abandoned) link can't be replayed. */
+export async function setUserPassword(id, { salt, hash }) {
+  must(
+    await supabase.from('users')
+      .update({ password_salt: salt, password_hash: hash, reset_token: null, reset_token_expires: null })
+      .eq('id', id),
+    'setUserPassword',
+  );
+}
+
 export async function markEmailVerified(id) {
   must(
     await supabase.from('users')

@@ -165,7 +165,17 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label htmlFor="auth-password">كلمة السر</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="auth-password">كلمة السر</Label>
+                  {!register && (
+                    <Link
+                      to="/forgot-password"
+                      className="text-[12.5px] text-primary underline-offset-4 hover:underline"
+                    >
+                      نسيت كلمة السر؟
+                    </Link>
+                  )}
+                </div>
                 <Input
                   id="auth-password"
                   type="password"

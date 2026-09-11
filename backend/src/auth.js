@@ -5,19 +5,25 @@ import {
   getUserByEmail,
   getUserById,
   getUserByGoogleId,
+  getUserByResetToken,
   getUserByVerificationToken,
   linkGoogleAccount,
   markEmailVerified,
+  setResetToken,
+  setUserPassword,
   setUserPhone,
   setVerificationToken,
   touchUserLogin,
 } from './db.js';
+import { sendEmail } from './email.js';
+import { verificationEmailHtml, resetPasswordEmailHtml, registrationConfirmedEmailHtml } from './emailTemplates.js';
 
 const SESSION_COOKIE = 'alytic_session';
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 30;
 const SESSION_SECRET = process.env.SESSION_SECRET ?? 'change-this-session-secret-in-env';
 
 const VERIFICATION_TTL = 1000 * 60 * 60 * 24; // 24h
+const RESET_TTL = 1000 * 60 * 60; // 1h
 const APP_URL = process.env.APP_URL ?? process.env.FRONTEND_URL ?? 'http://localhost:8080';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? null;
@@ -93,14 +99,25 @@ function makeVerificationToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-/**
- * Stands in for real email delivery. No SMTP/provider is wired up yet, so the
- * verification link is only logged server-side — swap this for an actual send
- * once one is configured, without touching any of the calling code below.
- */
-function sendVerificationEmail(user, token) {
+/** Delivered over Resend's SMTP relay — see email.js. Never throws: a broken provider must not fail registration. */
+async function sendVerificationEmail(user, token) {
   const link = `${APP_URL}/verify-email?token=${token}`;
-  console.log(`[auth] رابط تفعيل البريد لـ ${user.email}: ${link}`);
+  await sendEmail({ to: user.email, subject: 'فعّل بريدك الإلكتروني في EGXpert', html: verificationEmailHtml(link) });
+}
+
+function makeResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/** See sendVerificationEmail above. */
+async function sendResetEmail(user, token) {
+  const link = `${APP_URL}/reset-password?token=${token}`;
+  await sendEmail({ to: user.email, subject: 'إعادة تعيين كلمة السر في EGXpert', html: resetPasswordEmailHtml(link) });
+}
+
+/** Sent once, right after a user's email is confirmed — see verifyEmail below. */
+async function sendRegistrationConfirmedEmail(user) {
+  await sendEmail({ to: user.email, subject: 'حسابك في EGXpert جاهز', html: registrationConfirmedEmailHtml(user.name, APP_URL) });
 }
 
 export async function register({ email, password, name, phone }) {
@@ -125,7 +142,7 @@ export async function register({ email, password, name, phone }) {
     createdAt: new Date().toISOString(),
   };
   await createUser(user);
-  sendVerificationEmail(user, token);
+  await sendVerificationEmail(user, token);
   return { user: publicUser(user), token: encodeSession(user.id) };
 }
 
@@ -192,6 +209,7 @@ export async function verifyEmail({ token }) {
     throw new Error('رابط التفعيل منتهي الصلاحية، اطلب رابط جديد');
   }
   await markEmailVerified(user.id);
+  await sendRegistrationConfirmedEmail(user);
   return { user: publicUser({ ...user, email_verified: true }) };
 }
 
@@ -212,7 +230,29 @@ export async function resendVerification({ email }) {
   const token = makeVerificationToken();
   const expiresAt = new Date(Date.now() + VERIFICATION_TTL).toISOString();
   await setVerificationToken(user.id, token, expiresAt);
-  sendVerificationEmail(user, token);
+  await sendVerificationEmail(user, token);
+}
+
+/** Always resolves quietly (no error, no indication whether the email exists) to avoid leaking registered addresses. */
+export async function forgotPassword({ email }) {
+  const normalized = String(email ?? '').trim().toLowerCase();
+  const user = await getUserByEmail(normalized);
+  if (!user) return;
+  const token = makeResetToken();
+  const expiresAt = new Date(Date.now() + RESET_TTL).toISOString();
+  await setResetToken(user.id, token, expiresAt);
+  await sendResetEmail(user, token);
+}
+
+export async function resetPassword({ token, password }) {
+  const user = token ? await getUserByResetToken(String(token)) : null;
+  if (!user) throw new Error('رابط إعادة التعيين غير صالح أو مستخدم من قبل');
+  if (user.reset_token_expires && new Date(user.reset_token_expires).getTime() < Date.now()) {
+    throw new Error('رابط إعادة التعيين منتهي الصلاحية، اطلب رابط جديد');
+  }
+  if (String(password).length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف على الأقل');
+  const { salt, hash } = await hashPassword(password);
+  await setUserPassword(user.id, { salt, hash });
 }
 
 export async function userFromRequest(req) {

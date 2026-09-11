@@ -36,6 +36,7 @@ try {
 }
 process.env.ALYTIC_BARS_DIR = BARS_DIR;
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
+process.env.RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
 process.env.SESSION_SECRET = process.env.SESSION_SECRET ?? "alytic-e2e-session-secret";
 process.env.FRONTEND_URL = `http://127.0.0.1:${process.env.E2E_FRONTEND_PORT ?? 8181}`;
 process.env.PORT = String(PORT);

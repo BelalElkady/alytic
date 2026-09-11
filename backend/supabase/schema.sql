@@ -28,9 +28,12 @@ create table if not exists users (
 -- Safe to re-run against an already-applied schema (e.g. this column was
 -- added after the tables first went live).
 alter table users add column if not exists phone text;
+alter table users add column if not exists reset_token text;
+alter table users add column if not exists reset_token_expires timestamptz;
 
 create unique index if not exists idx_users_google_id on users(google_id) where google_id is not null;
 create index if not exists idx_users_verification_token on users(verification_token) where verification_token is not null;
+create index if not exists idx_users_reset_token on users(reset_token) where reset_token is not null;
 
 create table if not exists portfolios (
   user_id text primary key references users(id) on delete cascade,
