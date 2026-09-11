@@ -14,12 +14,24 @@ export class ApiError extends Error {
   }
 }
 
+// The Lovable editor loads the app inside a cross-site iframe, so the API
+// proxy needs to know when to reissue cookies as SameSite=None for it (see
+// api/public/$.ts). lovable.js — present only inside that editor preview —
+// sets this before the app's own scripts run, so it's a reliable signal.
+function isLovablePreview() {
+  return typeof window !== "undefined" && Boolean(window.__lovableEvents);
+}
+
 async function request<T = any>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       credentials: "include",
       ...init,
+      headers: {
+        ...(isLovablePreview() ? { "x-lovable-preview": "1" } : {}),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new ApiError("تعذر الوصول إلى الخادم. تأكد أن الخدمة شغّالة.", 0);

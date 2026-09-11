@@ -20,6 +20,8 @@ async function forward(request: Request): Promise<Response> {
   const upstreamPath = url.pathname.replace(/^\/api\/public/, "");
   const upstream = `${target}${upstreamPath}${url.search}`;
 
+  const isLovablePreview = request.headers.get("x-lovable-preview") === "1";
+
   const headers = new Headers();
   request.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
@@ -49,10 +51,13 @@ async function forward(request: Request): Promise<Response> {
   const out = new Headers();
   res.headers.forEach((value, key) => {
     if (HOP_BY_HOP.has(key.toLowerCase())) return;
-    // The preview runs inside an iframe, which is a cross-site context: a
-    // SameSite=Lax cookie would never be sent back. Re-issue the session
-    // cookie so the browser keeps it (backend behaviour untouched).
-    if (key.toLowerCase() === "set-cookie") {
+    // The Lovable editor preview runs inside an iframe, which is a cross-site
+    // context: a SameSite=Lax cookie would never be sent back there. Re-issue
+    // the session cookie so that preview keeps it (backend behaviour
+    // untouched). Everywhere else (real top-level browsing, local dev) the
+    // backend's own SameSite=Lax cookie is left alone — forcing Secure there
+    // unconditionally silently drops the cookie on any non-HTTPS origin.
+    if (key.toLowerCase() === "set-cookie" && isLovablePreview) {
       let cookie = value.replace(/;\s*SameSite=[^;]*/gi, "");
       if (!/;\s*Secure/i.test(cookie)) cookie += "; Secure";
       cookie += "; SameSite=None; Partitioned";
