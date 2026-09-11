@@ -236,6 +236,18 @@
   }
 }
 
+/* Header news ticker (see components/marketing/blog-ticker.tsx). The track
+ * renders the title list twice back-to-back and scrolls exactly one copy's
+ * width, so the loop has no visible seam. */
+@keyframes marquee {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 @utility scrollbar-slim {
   &::-webkit-scrollbar {
     height: 8px;

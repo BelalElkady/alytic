@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus } from '../db.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -157,8 +157,57 @@ app.post('/api/contact', emailActionLimiter, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Published blog posts — public, no login required. See src/agent/blogGenerator.js
+// for how drafts are written and src/db.js for the storage helpers.
+app.get('/api/blog', wrap(async (req, res) => {
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+  const posts = await listPublishedBlogPosts({ limit });
+  res.json({
+    posts: posts.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek, tags: p.tags, publishedAt: p.published_at })),
+  });
+}));
+
+app.get('/api/blog/:slug', wrap(async (req, res) => {
+  const post = await getPublishedBlogPostBySlug(req.params.slug);
+  if (!post) return res.status(404).json({ error: 'المقالة غير موجودة' });
+  res.json({
+    post: {
+      slug: post.slug,
+      title: post.title,
+      dek: post.dek,
+      content: post.content_json,
+      tags: post.tags,
+      publishedAt: post.published_at,
+    },
+  });
+}));
+
+// Triggered by .github/workflows/blog-cron.yml over the VPS's loopback
+// interface (never exposed publicly) — see that workflow for why a shared
+// secret rather than a session cookie gates this instead of /api/admin.
+const BLOG_CRON_SECRET = process.env.BLOG_CRON_SECRET;
+app.post('/api/cron/blog-generate', wrap(async (req, res) => {
+  if (!BLOG_CRON_SECRET || req.get('X-Cron-Secret') !== BLOG_CRON_SECRET) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
+  const slot = req.body?.slot === 'evening' ? 'evening' : 'morning';
+  const { getOrGenerateBlogPost } = await import('../agent/blogGenerator.js');
+  const post = await getOrGenerateBlogPost({ slot });
+  res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
+}));
+
 app.use('/api', async (req, res, next) => {
-  if (req.path.startsWith('/auth/') || req.path === '/health' || req.path === '/universe' || req.path === '/indices' || req.path === '/contact') return next();
+  if (
+    req.path.startsWith('/auth/') ||
+    req.path === '/health' ||
+    req.path === '/universe' ||
+    req.path === '/indices' ||
+    req.path === '/contact' ||
+    req.path === '/blog' ||
+    req.path.startsWith('/blog/') ||
+    req.path === '/cron/blog-generate'
+  ) return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
   req.user = user;
@@ -427,6 +476,45 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     };
   });
   res.json({ users: rows });
+}));
+
+// Drafts (and everything else generated) waiting on human review before they
+// can reach /api/blog — see src/agent/blogGenerator.js for how they're
+// written and reviewBlogPost's notes for what the review model flagged.
+app.get('/api/admin/blog-drafts', wrap(async (req, res) => {
+  const status = ['draft', 'approved', 'rejected', 'published'].includes(req.query.status) ? req.query.status : 'draft';
+  const posts = await listBlogPosts({ status, limit: 50 });
+  res.json({
+    posts: posts.map((p) => ({
+      id: p.id,
+      slot: p.slot,
+      postDate: p.post_date,
+      slug: p.slug,
+      title: p.title,
+      dek: p.dek,
+      content: p.content_json,
+      tags: p.tags,
+      sources: p.sources_json,
+      status: p.status,
+      generationModel: p.generation_model,
+      reviewModel: p.review_model,
+      review: p.review_json,
+      generatedAt: p.generated_at,
+      publishedAt: p.published_at,
+    })),
+  });
+}));
+
+app.post('/api/admin/blog-drafts/:id/approve', wrap(async (req, res) => {
+  const post = await setBlogPostStatus(req.params.id, 'published', req.user.id);
+  if (!post) return res.status(404).json({ error: 'المسودة غير موجودة' });
+  res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
+}));
+
+app.post('/api/admin/blog-drafts/:id/reject', wrap(async (req, res) => {
+  const post = await setBlogPostStatus(req.params.id, 'rejected');
+  if (!post) return res.status(404).json({ error: 'المسودة غير موجودة' });
+  res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
 }));
 
 // ---- Analysis --------------------------------------------------------------

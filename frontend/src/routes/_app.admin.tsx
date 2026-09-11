@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, post, postRaw } from "@/lib/api";
+import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, inferInvestStyle, type StyleKey, type Trade } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
@@ -57,12 +58,16 @@ function AdminPage() {
       <TabsList>
         <TabsTrigger value="indices">المؤشرات</TabsTrigger>
         <TabsTrigger value="users">المستخدمين</TabsTrigger>
+        <TabsTrigger value="blog">المدونة</TabsTrigger>
       </TabsList>
       <TabsContent value="indices">
         <IndicesTab />
       </TabsContent>
       <TabsContent value="users">
         <UsersTab />
+      </TabsContent>
+      <TabsContent value="blog">
+        <BlogDraftsTab />
       </TabsContent>
     </Tabs>
   );

@@ -280,4 +280,82 @@ export async function addCustomStocks(stocks, addedBy) {
   );
 }
 
+/** @returns {object|null} the stored draft/post for that (day, slot), or null if never generated — used by getOrGenerateBlogPost to avoid regenerating. */
+export async function getBlogPostBySlot(postDate, slot) {
+  const { data, error } = await supabase.from('blog_posts').select('*').eq('post_date', postDate).eq('slot', slot).maybeSingle();
+  if (error) throw new Error(`getBlogPostBySlot: ${error.message}`);
+  return data;
+}
+
+/**
+ * Inserts a freshly generated draft. Insert-if-absent (like putMarketReport)
+ * so two concurrent cron calls for the same (day, slot) can't both land a row —
+ * whichever writes first wins, and the loser's caller should re-read instead.
+ * @returns {object|null} the inserted row, or null if a row for this (day, slot) already existed.
+ */
+export async function insertBlogPostDraft(row) {
+  const { data, error } = await supabase
+    .from('blog_posts')
+    .upsert(
+      {
+        post_date: row.postDate,
+        slot: row.slot,
+        slug: row.slug,
+        title: row.title,
+        dek: row.dek ?? null,
+        content_json: row.content,
+        tags: row.tags ?? [],
+        sources_json: row.sources ?? null,
+        status: 'draft',
+        generation_model: row.generationModel ?? null,
+        generation_usage_json: row.generationUsage ?? null,
+        review_model: row.reviewModel ?? null,
+        review_json: row.review ?? null,
+        generated_at: new Date().toISOString(),
+      },
+      { onConflict: 'post_date,slot', ignoreDuplicates: true },
+    )
+    .select('*');
+  if (error) throw new Error(`insertBlogPostDraft: ${error.message}`);
+  return data[0] ?? null;
+}
+
+export async function listBlogPosts({ status, limit = 50 } = {}) {
+  let query = supabase.from('blog_posts').select('*').order('generated_at', { ascending: false }).limit(limit);
+  if (status) query = query.eq('status', status);
+  const { data, error } = await query;
+  if (error) throw new Error(`listBlogPosts: ${error.message}`);
+  return data;
+}
+
+/** Newest published posts first — for the public /blog list and the header ticker. */
+export async function listPublishedBlogPosts({ limit = 20 } = {}) {
+  const { data, error } = await supabase
+    .from('blog_posts')
+    .select('slug, title, dek, tags, published_at')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listPublishedBlogPosts: ${error.message}`);
+  return data;
+}
+
+export async function getPublishedBlogPostBySlug(slug) {
+  const { data, error } = await supabase.from('blog_posts').select('*').eq('slug', slug).eq('status', 'published').maybeSingle();
+  if (error) throw new Error(`getPublishedBlogPostBySlug: ${error.message}`);
+  return data;
+}
+
+export async function setBlogPostStatus(id, status, approvedBy) {
+  const patch = { status };
+  if (status === 'published') {
+    patch.published_at = new Date().toISOString();
+    patch.approved_at = new Date().toISOString();
+    patch.approved_by = approvedBy ?? null;
+  }
+  const { data, error } = await supabase.from('blog_posts').update(patch).eq('id', id).select('*').maybeSingle();
+  if (error) throw new Error(`setBlogPostStatus: ${error.message}`);
+  return data;
+}
+
 export { supabase };

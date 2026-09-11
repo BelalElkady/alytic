@@ -3,9 +3,11 @@ import type { ReactNode } from "react";
 
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
+import { BlogTicker } from "@/components/marketing/blog-ticker";
 
 const LINKS = [
   { to: "/", label: "الرئيسية" },
+  { to: "/blog", label: "تابع اخبار البورصة" },
   { to: "/pricing", label: "الأسعار" },
   { to: "/contact", label: "تواصل معنا" },
 ] as const;
@@ -44,6 +46,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+
+      <BlogTicker />
 
       <main className="flex-1">{children}</main>
 

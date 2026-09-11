@@ -100,6 +100,36 @@ create table if not exists custom_stocks (
   added_by text
 );
 
+-- Auto-generated blog posts (Egyptian market news + technical analysis),
+-- written twice a day by src/agent/blogGenerator.js and held as a draft
+-- until an admin approves them — see /api/admin/blog-drafts in server.js.
+-- (post_date, slot) mirrors market_reports' (report_date, style) key: one
+-- generation attempt per slot per day, so a retried cron run doesn't spend
+-- twice.
+create table if not exists blog_posts (
+  id uuid primary key default gen_random_uuid(),
+  post_date text not null,
+  slot text not null check (slot in ('morning', 'evening')),
+  slug text not null unique,
+  title text not null,
+  dek text,
+  content_json jsonb not null,
+  tags text[] not null default '{}',
+  sources_json jsonb,
+  status text not null default 'draft'
+    check (status in ('draft', 'approved', 'rejected', 'published')),
+  generation_model text,
+  generation_usage_json jsonb,
+  review_model text,
+  review_json jsonb,
+  approved_by text references users(id),
+  approved_at timestamptz,
+  published_at timestamptz,
+  generated_at timestamptz not null default now(),
+  unique (post_date, slot)
+);
+create index if not exists idx_blog_posts_status on blog_posts (status, published_at desc);
+
 -- The CLI/local dev account. INSERT ... ON CONFLICT DO NOTHING equivalent —
 -- safe to run every time this file is applied.
 insert into users (id, email, name, password_salt, password_hash, email_verified, created_at)
