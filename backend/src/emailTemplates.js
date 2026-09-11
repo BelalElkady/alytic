@@ -55,6 +55,16 @@ export function registrationConfirmedEmailHtml(name, appUrl) {
   `);
 }
 
+/** Sent to the real account owner when someone tries to register with an email that's already taken — see auth.js's register(). */
+export function alreadyRegisteredEmailHtml(name, appUrl) {
+  return layout(`
+    <p>حد حاول يعمل حساب جديد في EGXpert بإيميلك ده${name ? ` يا ${name}` : ''}.</p>
+    <p>لو انت اللي عملت المحاولة دي، يبقى عندك حساب بالفعل — سجّل دخولك عادي، أو لو نسيت كلمة السر استخدم "نسيت كلمة السر" من صفحة الدخول.</p>
+    <div style="text-align:center;">${button(`${appUrl}/login`, 'تسجيل الدخول')}</div>
+    <p style="font-size:13px;color:#94a3b8;">لو مش انت اللي حاول، تجاهل الإيميل ده — حسابك بأمان ومفيش حاجة اتغيرت.</p>
+  `);
+}
+
 /** Sent to the site's contact address from the public "تواصل معنا" form. */
 export function contactEmailHtml({ name, email, message }) {
   return layout(`

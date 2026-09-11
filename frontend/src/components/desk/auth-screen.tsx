@@ -1,12 +1,14 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, MailCheck } from "lucide-react";
 import { useState } from "react";
 
 import { Logo } from "@/components/brand/logo";
 import { GoogleSignInButton } from "@/components/desk/google-sign-in-button";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Separator } from "@/components/ui/separator";
 import { useDesk } from "@/lib/store";
 
@@ -24,20 +26,24 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [registered, setRegistered] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await signIn(
-        register ? "register" : "login",
-        register ? { name, email, phone, password } : { email, password },
-      );
-      await navigate({ to: "/portfolio" });
+      if (register) {
+        await signIn("register", { name, email, phone, password });
+        setRegistered(true);
+      } else {
+        await signIn("login", { email, password, remember });
+        await navigate({ to: "/portfolio" });
+      }
     } catch (caught: any) {
       setError(caught?.message ?? "تعذر إكمال العملية");
     } finally {
@@ -94,125 +100,167 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
             </Link>
           </div>
 
-          <div className="mb-5 text-start">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {register ? "إنشاء حساب جديد" : "تسجيل الدخول"}
-            </h1>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-              {register
-                ? "ابدأ تجربة مجانية ٧ أيام — بدون بطاقة."
-                : "أهلًا بيك تاني. ادخل بياناتك للمتابعة."}
-            </p>
-          </div>
-
-          <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
-            <div className="relative">
-              {googleBusy && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-card/70">
-                  <Loader2 className="size-4 animate-spin" />
-                </div>
-              )}
-              <GoogleSignInButton
-                onCredential={(credential) => void handleGoogleCredential(credential)}
-                onError={(message) => setError(message)}
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Separator className="flex-1" />
-              <span className="text-[12px] text-muted-foreground">أو</span>
-              <Separator className="flex-1" />
-            </div>
-
-            <form onSubmit={submit} className="space-y-4">
-              {register && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="auth-name">الاسم</Label>
-                  <Input
-                    id="auth-name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    required
-                    autoComplete="name"
-                  />
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <Label htmlFor="auth-email">البريد الإلكتروني</Label>
-                <Input
-                  id="auth-email"
-                  type="email"
-                  dir="ltr"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                  autoComplete="email"
-                />
-              </div>
-              {register && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="auth-phone">رقم الموبايل</Label>
-                  <Input
-                    id="auth-phone"
-                    type="tel"
-                    dir="ltr"
-                    placeholder="01xxxxxxxxx"
-                    value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
-                    required
-                    autoComplete="tel"
-                  />
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="auth-password">كلمة السر</Label>
-                  {!register && (
-                    <Link
-                      to="/forgot-password"
-                      className="text-[12.5px] text-primary underline-offset-4 hover:underline"
-                    >
-                      نسيت كلمة السر؟
-                    </Link>
-                  )}
-                </div>
-                <Input
-                  id="auth-password"
-                  type="password"
-                  dir="ltr"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  autoComplete={register ? "new-password" : "current-password"}
-                />
-              </div>
-
-              {error && (
-                <p role="alert" className="rounded-md bg-down-soft px-3 py-2 text-[13px] text-down">
-                  {error}
+          {registered ? (
+            <div className="space-y-4 rounded-xl border bg-card p-6 text-center shadow-sm">
+              <div className="flex flex-col items-center gap-3">
+                <MailCheck className="size-8 text-up" />
+                <p className="text-[15px] font-semibold">تحقق من بريدك الإلكتروني</p>
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  لو الإيميل ده مش مسجل قبل كده، بعتنالك رابط تفعيل عليه — افتحه عشان تفعّل حسابك،
+                  وبعدين سجّل دخولك عادي.
                 </p>
-              )}
-
-              <Button type="submit" className="w-full" disabled={busy}>
-                {busy && <Loader2 className="size-4 animate-spin" />}
-                {register ? "إنشاء الحساب" : "دخول"}
-              </Button>
-
-              <p className="text-center text-[13px] text-muted-foreground">
-                {register ? "عندك حساب؟" : "لسه جديد؟"}{" "}
                 <button
                   type="button"
-                  className="font-medium text-primary underline-offset-4 hover:underline"
+                  className="mt-2 text-[13px] font-medium text-primary underline-offset-4 hover:underline"
                   onClick={() => {
-                    setRegister((previous) => !previous);
-                    setError(null);
+                    setRegistered(false);
+                    setRegister(false);
                   }}
                 >
-                  {register ? "تسجيل الدخول" : "إنشاء حساب"}
+                  العودة لتسجيل الدخول
                 </button>
-              </p>
-            </form>
-          </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mb-5 text-start">
+                <h1 className="text-xl font-semibold tracking-tight">
+                  {register ? "إنشاء حساب جديد" : "تسجيل الدخول"}
+                </h1>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+                  {register
+                    ? "ابدأ تجربة مجانية ٧ أيام — بدون بطاقة."
+                    : "أهلًا بيك تاني. ادخل بياناتك للمتابعة."}
+                </p>
+              </div>
+
+              <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+                <div className="relative">
+                  {googleBusy && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-card/70">
+                      <Loader2 className="size-4 animate-spin" />
+                    </div>
+                  )}
+                  <GoogleSignInButton
+                    onCredential={(credential) => void handleGoogleCredential(credential)}
+                    onError={(message) => setError(message)}
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Separator className="flex-1" />
+                  <span className="text-[12px] text-muted-foreground">أو</span>
+                  <Separator className="flex-1" />
+                </div>
+
+                <form onSubmit={submit} className="space-y-4">
+                  {register && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="auth-name">الاسم</Label>
+                      <Input
+                        id="auth-name"
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        required
+                        autoComplete="name"
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="auth-email">البريد الإلكتروني</Label>
+                    <Input
+                      id="auth-email"
+                      type="email"
+                      dir="ltr"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                      autoComplete="email"
+                    />
+                  </div>
+                  {register && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="auth-phone">رقم الموبايل</Label>
+                      <Input
+                        id="auth-phone"
+                        type="tel"
+                        dir="ltr"
+                        placeholder="01xxxxxxxxx"
+                        value={phone}
+                        onChange={(event) => setPhone(event.target.value)}
+                        required
+                        autoComplete="tel"
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="auth-password">كلمة السر</Label>
+                      {!register && (
+                        <Link
+                          to="/forgot-password"
+                          className="text-[12.5px] text-primary underline-offset-4 hover:underline"
+                        >
+                          نسيت كلمة السر؟
+                        </Link>
+                      )}
+                    </div>
+                    <PasswordInput
+                      id="auth-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      autoComplete={register ? "new-password" : "current-password"}
+                    />
+                  </div>
+
+                  {!register && (
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="auth-remember"
+                        checked={remember}
+                        onCheckedChange={(checked) => setRemember(checked === true)}
+                      />
+                      <Label
+                        htmlFor="auth-remember"
+                        className="cursor-pointer text-[13px] font-normal"
+                      >
+                        فضّلني مسجّل دخول
+                      </Label>
+                    </div>
+                  )}
+
+                  {error && (
+                    <p
+                      role="alert"
+                      className="rounded-md bg-down-soft px-3 py-2 text-[13px] text-down"
+                    >
+                      {error}
+                    </p>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={busy}>
+                    {busy && <Loader2 className="size-4 animate-spin" />}
+                    {register ? "إنشاء الحساب" : "دخول"}
+                  </Button>
+
+                  <p className="text-center text-[13px] text-muted-foreground">
+                    {register ? "عندك حساب؟" : "لسه جديد؟"}{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={() => {
+                        setRegister((previous) => !previous);
+                        setError(null);
+                      }}
+                    >
+                      {register ? "تسجيل الدخول" : "إنشاء حساب"}
+                    </button>
+                  </p>
+                </form>
+              </div>
+            </>
+          )}
 
           <p className="mt-4 text-center text-[12.5px] text-muted-foreground">
             <Link to="/pricing" className="underline-offset-4 hover:underline">

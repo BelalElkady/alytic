@@ -16,7 +16,7 @@ import {
   touchUserLogin,
 } from './db.js';
 import { sendEmail } from './email.js';
-import { verificationEmailHtml, resetPasswordEmailHtml, registrationConfirmedEmailHtml } from './emailTemplates.js';
+import { verificationEmailHtml, resetPasswordEmailHtml, registrationConfirmedEmailHtml, alreadyRegisteredEmailHtml } from './emailTemplates.js';
 
 const SESSION_COOKIE = 'alytic_session';
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 30;
@@ -146,13 +146,41 @@ async function sendRegistrationConfirmedEmail(user) {
   await sendEmail({ to: user.email, subject: 'حسابك في EGXpert جاهز', html: registrationConfirmedEmailHtml(user.name, APP_URL) });
 }
 
+/**
+ * Sent to the real owner instead of telling the requester the email is
+ * taken — see register() below. Never throws, same as every other
+ * transactional send.
+ */
+async function sendAlreadyRegisteredEmail(user) {
+  await sendEmail({
+    to: user.email,
+    subject: 'محاولة تسجيل حساب جديد بإيميلك في EGXpert',
+    html: alreadyRegisteredEmailHtml(user.name, APP_URL),
+  });
+}
+
+/**
+ * Registration never reveals whether an email is already taken — the same
+ * discipline resendVerification/forgotPassword already apply. A brand-new
+ * account gets the usual verification email; an existing one gets a notice
+ * instead, and either way the caller sees an identical `{ }` result with no
+ * session. This also means registration no longer logs the caller straight
+ * in (it used to hand back a session token here) — the frontend now shows a
+ * "check your email" screen and the user logs in afterward like anyone else.
+ */
 export async function register({ email, password, name, phone }) {
   const normalized = String(email).trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normalized)) throw new Error('اكتب بريد إلكتروني صحيح');
   if (String(password).length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف على الأقل');
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone) throw new Error('اكتب رقم موبايل مصري صحيح (01xxxxxxxxx)');
-  if (await getUserByEmail(normalized)) throw new Error('البريد الإلكتروني مسجل بالفعل');
+
+  const existing = await getUserByEmail(normalized);
+  if (existing) {
+    await sendAlreadyRegisteredEmail(existing);
+    return;
+  }
+
   const { salt, hash } = await hashPassword(password);
   const token = makeVerificationToken();
   const user = {
@@ -169,7 +197,6 @@ export async function register({ email, password, name, phone }) {
   };
   await createUser(user);
   await sendVerificationEmail(user, token);
-  return { user: publicUser(user), token: encodeSession(user.id, passwordHashOf(user)) };
 }
 
 export async function login({ email, password }) {
@@ -299,8 +326,13 @@ export async function userFromRequest(req) {
 // there would never be sent back, breaking login outside production.
 const COOKIE_SECURE = process.env.NODE_ENV === 'production' ? '; Secure' : '';
 
-export function sessionCookie(token) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${COOKIE_SECURE}; Max-Age=${SESSION_TTL / 1000}`;
+// remember=false omits Max-Age entirely, making it a browser session cookie
+// — gone once the browser actually closes, rather than persisting the full
+// 30 days. The token's own `exp` (see encodeSession) still caps it at 30
+// days either way; this only controls how long the *cookie* sticks around.
+export function sessionCookie(token, remember = true) {
+  const maxAge = remember ? `; Max-Age=${SESSION_TTL / 1000}` : '';
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${COOKIE_SECURE}${maxAge}`;
 }
 
 export function clearSessionCookie() {

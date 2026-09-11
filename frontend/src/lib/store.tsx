@@ -188,7 +188,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
                 ...row.position,
                 marketValue: +(row.position.shares * quote.price).toFixed(2),
                 unrealizedEgp: +(
-                  row.position.shares * (quote.price - row.position.avgCost)
+                  row.position.shares *
+                  (quote.price - row.position.avgCost)
                 ).toFixed(2),
                 unrealizedPct: +(
                   ((quote.price - row.position.avgCost) / row.position.avgCost) *
@@ -253,9 +254,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     };
   }, [user, refreshPrices]);
 
+  // Registration no longer logs the caller in directly (the backend never
+  // reveals whether the email was already taken, so it can't hand back a
+  // session for either case) — only "login" actually establishes one here.
   const signIn = useCallback(async (mode: "login" | "register", body: Record<string, unknown>) => {
     const result = await post(`/api/auth/${mode}`, body);
-    setUser(result.user);
+    if (mode === "login") setUser(result.user);
   }, []);
 
   const signInWithGoogle = useCallback(async (credential: string) => {

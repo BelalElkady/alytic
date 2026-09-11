@@ -83,15 +83,21 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(500).json({ error: err.message });
 });
 
+// Never logs the caller in directly (unlike login/google) and always
+// answers the same way regardless of whether the email was already taken
+// — see auth.js's register() for why: revealing that here would be exactly
+// the email-enumeration hole rate limiting alone can't close.
 app.post('/api/auth/register', registerLimiter, wrap(async (req, res) => {
-  const result = await register(req.body ?? {});
-  res.setHeader('Set-Cookie', sessionCookie(result.token));
-  res.status(201).json({ user: result.user });
+  await register(req.body ?? {});
+  res.status(201).json({ ok: true });
 }));
 
 app.post('/api/auth/login', loginLimiter, wrap(async (req, res) => {
   const result = await login(req.body ?? {});
-  res.setHeader('Set-Cookie', sessionCookie(result.token));
+  // "فضّلني مسجّل دخول" — defaults to remembered (today's behavior) unless
+  // the checkbox was explicitly unchecked.
+  const remember = req.body?.remember !== false;
+  res.setHeader('Set-Cookie', sessionCookie(result.token, remember));
   res.json({ user: result.user });
 }));
 
