@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ErrorState, LoadingBlock, Panel } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { fmt, pct, tone } from "@/lib/format";
+import { fmt, pct, signed, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/indices")({
@@ -22,6 +22,7 @@ type IndexStock = { code: string; name: string; price: number; changePct: number
 type IndexRow = {
   name: string;
   changePct: number | null;
+  changePoints: number | null;
   avgChangePct: number | null;
   spotValue: number | null;
   constituentCount: number;
@@ -83,7 +84,7 @@ function IndicesPage() {
 
 function IndexCard({ row }: { row: IndexRow }) {
   const hasChange = row.changePct !== null;
-  const showsAvg = row.name !== "EGX30" && row.avgChangePct !== null;
+  const hasPoints = row.changePoints !== null;
 
   return (
     <Panel
@@ -101,9 +102,9 @@ function IndexCard({ row }: { row: IndexRow }) {
       }
     >
       <div className="space-y-3">
-        {showsAvg && (
+        {hasPoints && (
           <p className="text-[12px] text-muted-foreground">
-            متوسط تغيّر أسهم المؤشر اليوم: <span className={tone(row.avgChangePct)}>{pct(row.avgChangePct)}</span>
+            التغيّر اليوم: <span className={cn("num", tone(row.changePoints))}>{signed(row.changePoints, 1)} نقطة</span>
           </p>
         )}
         {row.quotedCount === 0 ? (

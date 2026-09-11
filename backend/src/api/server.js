@@ -35,7 +35,6 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
 import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
-import { fetchEgx30Spot } from '../data/yahoo.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml } from '../emailTemplates.js';
@@ -239,23 +238,24 @@ app.get('/api/indices', wrap(async (_req, res) => {
   res.json({ indices: await effectiveIndices(), asOf: INDICES_AS_OF });
 }));
 
+// TradingView carries a real live feed for each headline index itself (not
+// just its constituents) under these EGX symbols — found via their symbol
+// search, confirmed to return live price/change/changePct the same way a
+// stock quote does. Using these instead of averaging constituents' changePct
+// gives the actual official index level and point change rather than an
+// approximation, and covers EGX70/EGX33/EGX100 (previously index-level data
+// only existed for EGX30, via Yahoo's ^CASE30).
+const INDEX_SYMBOLS = { EGX30: 'EGX30', EGX70: 'EGX70EWI', EGX33: 'SHARIAH', EGX100: 'EGX100EWI' };
+
 /**
  * Today's behavior for each of EGX's four headline indices, plus the best
- * and worst constituent of the day — for the desk's "Indices" tab. There is
- * no native spot/history feed for EGX70/EGX33/EGX100 (see config/indices.js),
- * so each index's daily change is the simple average of its constituents'
- * live changePct; EGX30 additionally carries Yahoo's real ^CASE30 spot
- * change where reachable, reported separately from the computed average
- * rather than replacing it.
+ * and worst constituent of the day — for the desk's "Indices" tab.
  */
 app.get('/api/indices/performance', wrap(async (_req, res) => {
   const membership = await effectiveIndices();
   const names = Object.keys(membership);
   const allCodes = [...new Set(names.flatMap((name) => membership[name] ?? []))];
-  const [quotes, egx30Spot] = await Promise.all([
-    fetchLatestQuotes(allCodes),
-    fetchEgx30Spot().catch(() => null),
-  ]);
+  const quotes = await fetchLatestQuotes([...allCodes, ...Object.values(INDEX_SYMBOLS)]);
 
   const indices = names.map((name) => {
     const rows = (membership[name] ?? [])
@@ -270,12 +270,13 @@ app.get('/api/indices/performance', wrap(async (_req, res) => {
       : null;
     const best = rows.length ? rows.reduce((a, b) => (b.changePct > a.changePct ? b : a)) : null;
     const worst = rows.length ? rows.reduce((a, b) => (b.changePct < a.changePct ? b : a)) : null;
-    const spot = name === 'EGX30' ? egx30Spot : null;
+    const index = quotes.get(INDEX_SYMBOLS[name]);
     return {
       name,
-      changePct: spot?.changePct ?? avgChangePct,
+      changePct: index?.changePct ?? avgChangePct,
+      changePoints: index?.change ?? null,
       avgChangePct,
-      spotValue: spot?.value ?? null,
+      spotValue: index?.price ?? null,
       constituentCount: (membership[name] ?? []).length,
       quotedCount: rows.length,
       best,
