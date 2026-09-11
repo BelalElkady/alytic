@@ -72,25 +72,27 @@ export const EGX100 = [...new Set([...EGX30, ...EGX70])];
 /** Built-in defaults, keyed by index name — what codesForIndex falls back to. */
 export const EGX_INDICES = { EGX30, EGX70, EGX33, EGX100 };
 
-/** Index names an admin can directly upload a CSV for. EGX100 is excluded — it is always derived, never uploaded. */
-export const UPLOADABLE_INDICES = ['EGX30', 'EGX70', 'EGX33'];
+/** Index names an admin can directly upload a CSV for. */
+export const UPLOADABLE_INDICES = ['EGX30', 'EGX70', 'EGX33', 'EGX100'];
 
 /**
  * @returns {string[]|null} codes for a known index name — an admin CSV
  * upload if one exists (see `index_overrides` in db.js), otherwise the
- * built-in default above. EGX100 always recomputes as EGX30 ∪ EGX70 from
- * each side's *effective* list, since it has no independent source of its
- * own to override.
+ * built-in default above. An EGX100 override wins outright, same as the
+ * other three; with none, it recomputes as EGX30 ∪ EGX70 from each side's
+ * *effective* (possibly also overridden) list, since by EGX's own
+ * methodology that union is what EGX100 actually is.
  */
 export async function codesForIndex(name) {
   const key = String(name ?? '').toUpperCase().replace(/\s+/g, '');
+  if (!(key in EGX_INDICES)) return null;
+  const override = await getIndexOverride(key);
+  if (override?.tickers) return override.tickers;
   if (key === 'EGX100') {
     const [egx30, egx70] = await Promise.all([codesForIndex('EGX30'), codesForIndex('EGX70')]);
     return [...new Set([...(egx30 ?? []), ...(egx70 ?? [])])];
   }
-  if (!(key in EGX_INDICES)) return null;
-  const override = await getIndexOverride(key);
-  return override?.tickers ?? EGX_INDICES[key];
+  return EGX_INDICES[key];
 }
 
 /** All four indices with any admin overrides applied — what GET /api/indices serves. */

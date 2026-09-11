@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_app/admin")({
   head: () => ({
     meta: [
       { title: "الإدارة — EGXpert" },
-      { name: "description", content: "رفع قوائم أسهم المؤشرات (EGX30 / EGX70 / EGX33) كملف CSV." },
+      { name: "description", content: "رفع قوائم أسهم المؤشرات (EGX30 / EGX70 / EGX33 / EGX100) كملف CSV." },
     ],
   }),
   component: AdminPage,
@@ -30,6 +30,7 @@ const LABELS: Record<string, string> = {
   EGX30: "EGX30",
   EGX70: "EGX70 EWI",
   EGX33: "EGX33 (شريعة)",
+  EGX100: "EGX100",
 };
 
 function AdminPage() {
@@ -59,8 +60,10 @@ function AdminPage() {
   return (
     <div className="space-y-4">
       <Notice tone="info">
-        الملف: سطر لكل كود سهم (زي COMI)، أو CSV بعمود أول هو الكود — أي عمود تاني بيتجاهل. رفع
-        ملف جديد بيستبدل القائمة بالكامل.
+        الملف: سطر لكل كود سهم (زي COMI)، أو CSV بعمود عنوانه Ticker/Code/Symbol/Reuters Code/RIC
+        (بيتجاهل عمود ISIN لو موجود). كود مش موجود أصلًا في قاعدة الأسهم بيتضاف تلقائيًا كسهم جديد
+        — لو الملف فيه عمود Company Name/Name بيتاخد منه الاسم. رفع ملف جديد بيستبدل القائمة بالكامل
+        (EGX100 بيتحسب تلقائيًا من EGX30 + EGX70 إلا لو رُفع ملف مستقل ليه).
       </Notice>
       {rows.map((row) => (
         <IndexPanel key={row.name} row={row} onChanged={load} />
