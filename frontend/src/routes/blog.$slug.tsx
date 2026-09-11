@@ -1,7 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-import { SiteShell } from "@/components/marketing/site-shell";
 import { ErrorState, LoadingBlock } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
@@ -71,36 +70,34 @@ function BlogPostPage() {
   }, [slug]);
 
   return (
-    <SiteShell>
-      <article className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
-        <Link to="/blog" className="text-[13px] text-muted-foreground hover:text-foreground">
-          ← كل المقالات
-        </Link>
+    <article className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
+      <Link to="/blog" className="text-[13px] text-muted-foreground hover:text-foreground">
+        ← كل المقالات
+      </Link>
 
-        {error && <ErrorState message={error} />}
-        {!error && !post && <LoadingBlock rows={5} />}
-        {!error && post && (
-          <>
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {post.tags?.map((tag) => (
-                <Badge key={tag} variant="outline">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-            <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{post.title}</h1>
-            {post.dek && (
-              <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{post.dek}</p>
-            )}
-            <p className="num mt-2 text-[11.5px] text-muted-foreground">
-              {new Date(post.publishedAt).toLocaleDateString("ar-EG")}
-            </p>
-            <div className="mt-8">
-              <BlogContent blocks={post.content} />
-            </div>
-          </>
-        )}
-      </article>
-    </SiteShell>
+      {error && <ErrorState message={error} />}
+      {!error && !post && <LoadingBlock rows={5} />}
+      {!error && post && (
+        <>
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {post.tags?.map((tag) => (
+              <Badge key={tag} variant="outline">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{post.title}</h1>
+          {post.dek && (
+            <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{post.dek}</p>
+          )}
+          <p className="num mt-2 text-[11.5px] text-muted-foreground">
+            {new Date(post.publishedAt).toLocaleDateString("ar-EG")}
+          </p>
+          <div className="mt-8">
+            <BlogContent blocks={post.content} />
+          </div>
+        </>
+      )}
+    </article>
   );
 }
