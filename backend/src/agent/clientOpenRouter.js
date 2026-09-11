@@ -99,6 +99,15 @@ export async function callWithRetry(fn, { retries = 2 } = {}) {
         await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
+      // 5xx from OpenRouter itself or from a server-side tool it invokes
+      // (verified empirically: the web_search plugin returns a bare 502
+      // "Server tool request failed" on a transient upstream hiccup, not
+      // wrapped in RateLimitError/APIConnectionError) — worth one retry
+      // rather than failing the whole generation outright.
+      if (typeof err?.status === 'number' && err.status >= 500 && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt));
+        continue;
+      }
       break;
     }
   }
