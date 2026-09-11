@@ -10,9 +10,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { fmt, pct, tone } from "@/lib/format";
 import { useDesk } from "@/lib/store";
-import { mergedTarget } from "@/lib/targets";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/targets")({
@@ -75,6 +75,22 @@ function TargetsPage() {
                     <TableHead className="text-start">المسافة</TableHead>
                     <TableHead className="text-start">اليوم</TableHead>
                     <TableHead className="text-start">التقدير الزمني</TableHead>
+                    <TableHead className="text-start">
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-help underline decoration-dotted underline-offset-4">
+                              ع/م من هنا
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-64 text-center leading-relaxed">
+                            عائد/مخاطرة لو اشتريت بالسعر الحالي: المسافة للهدف المتوسط ÷ المسافة
+                            للوقف، بوحدة R. كل ما زاد الرقم كل ما الفرصة أفضل بالنسبة للمخاطرة
+                            المأخوذة.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -86,7 +102,9 @@ function TargetsPage() {
                     >
                       <TableCell>
                         <div className="font-medium">{row.code}</div>
-                        <div className="truncate text-[11px] text-muted-foreground">{row.sector}</div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {row.sector}
+                        </div>
                       </TableCell>
                       <TableCell className="num text-right">{fmt(row.price)}</TableCell>
                       <TableCell className="num text-right text-up">
@@ -103,8 +121,13 @@ function TargetsPage() {
                           {estimate.label}
                         </Badge>
                         {estimate.note && (
-                          <span className="ms-2 text-[10.5px] text-muted-foreground">{estimate.note}</span>
+                          <span className="ms-2 text-[10.5px] text-muted-foreground">
+                            {estimate.note}
+                          </span>
                         )}
+                      </TableCell>
+                      <TableCell className="num text-right">
+                        {row.position.riskRewardFromHere ?? "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -113,67 +136,13 @@ function TargetsPage() {
             </div>
             <div className="p-4">
               <Notice tone="warn">
-                التقديرات الزمنية تقريبية بناءً على سرعة السهم وزخمه — مش ضمان. أي كسر للوقف يلغي الهدف.
+                التقديرات الزمنية تقريبية بناءً على سرعة السهم وزخمه — مش ضمان. أي كسر للوقف يلغي
+                الهدف.
               </Notice>
             </div>
           </>
         )}
       </Panel>
-
-      {rows.length > 0 && (
-        <Panel
-          title="المستويات لكل سهم"
-          description="الوقف والهدف المتوسط والبعيد كما يحسبهم المحرك."
-          bodyClassName="px-0 py-0 sm:px-0"
-        >
-          <div className="scrollbar-slim overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-start">السهم</TableHead>
-                  <TableHead className="text-start">الوقف</TableHead>
-                  <TableHead className="text-start">الحالي</TableHead>
-                  <TableHead className="text-start">هدف متوسط</TableHead>
-                  <TableHead className="text-start">هدف بعيد</TableHead>
-                  <TableHead className="text-start">ع/م من هنا</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => {
-                  const one = mergedTarget(row.midTarget, row.longTarget);
-                  return (
-                    <TableRow key={row.code} className="cursor-pointer" onClick={() => openDetail(row.code)}>
-                      <TableCell className="font-medium">{row.code}</TableCell>
-                      <TableCell className="num text-right text-down">{fmt(row.position.stop)}</TableCell>
-                      <TableCell className="num text-right">{fmt(row.price)}</TableCell>
-                      {one ? (
-                        // One level for both horizons — spans both columns rather
-                        // than printing the same number twice.
-                        <TableCell colSpan={2} className="text-center text-up">
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="num">{fmt(one.price)}</span>
-                            <span className="text-[11px] text-muted-foreground">الهدف</span>
-                          </span>
-                        </TableCell>
-                      ) : (
-                        <>
-                          <TableCell className="num text-right text-up">
-                            {row.midTarget ? fmt(row.midTarget.price) : "—"}
-                          </TableCell>
-                          <TableCell className="num text-right text-up">
-                            {row.longTarget?.price ? fmt(row.longTarget.price) : "—"}
-                          </TableCell>
-                        </>
-                      )}
-                      <TableCell className="num text-right">{row.position.riskRewardFromHere ?? "—"}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </Panel>
-      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { api, post } from "./api";
+import { useActiveInvestStyle } from "./invest-style";
 
 /* Types kept intentionally loose: they mirror the existing API responses
  * and must not constrain fields the engine may add. */
@@ -111,6 +112,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   rowsRef.current = rows;
   const lastRefreshAt = useRef(0);
 
+  // Which rule set the engine sizes and gates recommendations with — the
+  // same style the settings/portfolio pages already show, kept in the
+  // dependency array below so a style change (manual or newly inferred)
+  // re-fetches positions with the matching stop/target/recommendation.
+  const { style } = useActiveInvestStyle(pf?.trades);
+
   /** Same sequence as before: portfolio → scan of held codes → daily log. */
   const reload = useCallback(async () => {
     setLoading(true);
@@ -119,7 +126,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       setPf(portfolio);
       const codes = Object.keys(portfolio?.positions ?? {});
       const scanned = codes.length
-        ? (await api(`/api/scan?codes=${codes.join(",")}`)).results.filter((r: Row) => r.position)
+        ? (await api(`/api/scan?codes=${codes.join(",")}&style=${style}`)).results.filter(
+            (r: Row) => r.position,
+          )
         : [];
       setRows(scanned);
       setLog((await api("/api/log")).log ?? {});
@@ -129,7 +138,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [style]);
 
   const reloadPortfolio = useCallback(async () => {
     setPf(await api("/api/portfolio"));
