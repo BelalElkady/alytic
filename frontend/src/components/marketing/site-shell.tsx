@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 const LINKS = [
   { to: "/", label: "الرئيسية" },
   { to: "/pricing", label: "الأسعار" },
+  { to: "/contact", label: "تواصل معنا" },
 ] as const;
 
 export function SiteShell({ children }: { children: ReactNode }) {
@@ -52,6 +53,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <p className="text-[12px] leading-relaxed text-muted-foreground">
             EGXpert أداة تحليل ومساعدة في القرار — وليست توصية مالية مرخّصة. القرار الأخير مسؤوليتك.
           </p>
+          <Link
+            to="/contact"
+            className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            تواصل معنا
+          </Link>
         </div>
       </footer>
     </div>

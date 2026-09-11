@@ -23,6 +23,11 @@ function button(href, label) {
   return `<a href="${href}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">${label}</a>`;
 }
 
+/** User-submitted text (contact form) must never inject markup into the sent email. */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
 export function verificationEmailHtml(link) {
   return layout(`
     <p>أهلاً بيك في EGXpert 👋</p>
@@ -47,5 +52,18 @@ export function registrationConfirmedEmailHtml(name, appUrl) {
     <p>مبروك${name ? ` يا ${name}` : ''} 🎉</p>
     <p>حسابك في EGXpert اتفعّل بنجاح وتسجيلك خلص. جاهز تبدأ تتابع محفظتك وتحلل أسهم البورصة المصرية.</p>
     <div style="text-align:center;">${button(appUrl, 'روح للمنصة')}</div>
+  `);
+}
+
+/** Sent to the site's contact address from the public "تواصل معنا" form. */
+export function contactEmailHtml({ name, email, message }) {
+  return layout(`
+    <p>رسالة جديدة من نموذج "تواصل معنا" في EGXpert:</p>
+    <table role="presentation" width="100%" style="margin:16px 0;border-collapse:collapse;">
+      <tr><td style="padding:4px 0;color:#94a3b8;width:80px;">الاسم</td><td>${escapeHtml(name)}</td></tr>
+      <tr><td style="padding:4px 0;color:#94a3b8;">البريد</td><td dir="ltr" style="text-align:right;">${escapeHtml(email)}</td></tr>
+    </table>
+    <p style="white-space:pre-wrap;background:#0b1220;padding:16px;border-radius:8px;">${escapeHtml(message)}</p>
+    <p style="font-size:13px;color:#94a3b8;">رد عليها مباشرة على ${escapeHtml(email)}.</p>
   `);
 }

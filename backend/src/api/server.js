@@ -35,6 +35,12 @@ const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5
 import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
+import { sendEmail } from '../email.js';
+import { contactEmailHtml } from '../emailTemplates.js';
+
+// Where the public contact form's messages land. Same default as
+// ADMIN_EMAILS in auth.js, kept separate so either can change independently.
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'belal.elkady4@gmail.com';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
@@ -103,8 +109,28 @@ app.get('/api/auth/me', wrap(async (req, res) => {
   res.json({ user });
 }));
 
+// Public "تواصل معنا" form — no login required, and never blocked by a
+// missing OPENROUTER_API_KEY the way the AI endpoints are; it only needs
+// RESEND_API_KEY, and sendEmail() degrades to a console log without one
+// rather than failing the request.
+app.post('/api/contact', wrap(async (req, res) => {
+  const name = String(req.body?.name ?? '').trim();
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const message = String(req.body?.message ?? '').trim();
+  if (!name || name.length > 100) return res.status(400).json({ error: 'اكتب اسمك' });
+  if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'اكتب بريد إلكتروني صحيح' });
+  if (!message || message.length > 4000) return res.status(400).json({ error: 'اكتب رسالتك (حد أقصى 4000 حرف)' });
+
+  await sendEmail({
+    to: CONTACT_EMAIL,
+    subject: `رسالة تواصل من ${name}`,
+    html: contactEmailHtml({ name, email, message }),
+  });
+  res.json({ ok: true });
+}));
+
 app.use('/api', async (req, res, next) => {
-  if (req.path.startsWith('/auth/') || req.path === '/health' || req.path === '/universe' || req.path === '/indices') return next();
+  if (req.path.startsWith('/auth/') || req.path === '/health' || req.path === '/universe' || req.path === '/indices' || req.path === '/contact') return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
   req.user = user;
