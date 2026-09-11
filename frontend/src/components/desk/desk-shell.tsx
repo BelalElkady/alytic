@@ -25,6 +25,7 @@ import { DetailDialog } from "@/components/desk/detail-dialog";
 import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
 import { MarketDialog } from "@/components/desk/market-dialog";
 import { Spinner, Stat } from "@/components/desk/state-blocks";
+import { BlogTicker } from "@/components/marketing/blog-ticker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -100,6 +101,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-surface pb-20 md:pb-0">
       <DeskHeader />
+      <BlogTicker />
       <RequirePhoneDialog />
       <VerifyEmailBanner />
       <HeroBar />
