@@ -124,7 +124,22 @@ export async function getOrGenerateBlogPost({ slot, postDate = new Date().toISOS
 
   const task = (async () => {
     const { post, raw: genRaw } = await generateBlogPost({ slot, postDate });
-    const { review, raw: reviewRaw } = await reviewBlogPost(post);
+
+    // The review is a second opinion, not a gate a human bypasses anyway —
+    // every draft still needs manual approval before it's public. So a
+    // review-model hiccup (rate limits on a free model are common) should
+    // never throw away an already-paid-for generation; it just means this
+    // one draft reaches the admin queue without that extra signal.
+    let review = null;
+    let reviewModel = null;
+    try {
+      const reviewResult = await reviewBlogPost(post);
+      review = reviewResult.review;
+      reviewModel = reviewResult.raw.model;
+    } catch (err) {
+      console.error('reviewBlogPost failed — storing draft without an automated review:', err);
+      review = { verdict: 'flag', notes: `المراجعة الآلية فشلت (${err.message}) — راجع المحتوى يدويًا بعناية أكبر.` };
+    }
 
     const slug = `${post.slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'egx-update'}-${postDate}-${slot === 'morning' ? 'm' : 'e'}`;
 
@@ -139,7 +154,7 @@ export async function getOrGenerateBlogPost({ slot, postDate = new Date().toISOS
       sources: post.sources,
       generationModel: genRaw.model,
       generationUsage: genRaw.usage,
-      reviewModel: reviewRaw.model,
+      reviewModel,
       review,
     });
     // Someone else's insert may have won the race — re-read either way so
