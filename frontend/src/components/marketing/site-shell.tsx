@@ -41,7 +41,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-2">
             {user ? (
               <Button asChild size="sm">
-                <Link to="/portfolio">لوحتك</Link>
+                <Link to="/portfolio">صفحتك</Link>
               </Button>
             ) : (
               <>
