@@ -58,10 +58,13 @@ export async function getFundamentals(code, { force = false, model = MODEL } = {
 
 Look for:
 - Latest disclosed financial results (revenue, net profit, earnings per share)
-- Current P/E ratio and book value
+- Current P/E ratio, P/B ratio, and book value
 - Cash dividends and their yield
+- Dividend history: the most recent cash or stock/bonus distributions, each with its ex-dividend date, payment date (if disclosed), and amount per share — go back up to 3 years if available. Return an empty list if this company has never distributed a dividend; do not guess a date or amount you didn't actually find.
 - Revenue and profit growth versus the same period last year
-- Debt-to-equity ratio
+- Debt-to-equity ratio, current ratio, and net debt/EBITDA
+- Return on equity (ROE) and return on assets (ROA)
+- EV/EBITDA and free cash flow yield, if derivable from disclosed figures
 - Any material news in the last 3 months (deals, expansions, management changes, earnings surprises)
 
 Good sources: the official EGX website (egx.com.eg), Mubasher (mubasher.info), Argaam (argaam.com), the company's official website, and broker reports.

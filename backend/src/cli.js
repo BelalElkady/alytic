@@ -219,11 +219,25 @@ async function cmdFundamentals(code) {
   console.log(c.dim('─'.repeat(60)));
   console.log(`مكرر الربحية   ${f.peRatio ?? '—'}`);
   console.log(`ربحية السهم    ${f.epsEgp ?? '—'} ج`);
+  console.log(`السعر/الدفترية ${f.priceToBook ?? '—'}`);
   console.log(`عائد التوزيعات ${f.dividendYieldPct ?? '—'}%`);
   console.log(`نمو الأرباح    ${f.profitGrowthPct ?? '—'}%`);
+  console.log(`العائد على حقوق الملكية ${f.returnOnEquityPct ?? '—'}%`);
+  console.log(`العائد على الأصول      ${f.returnOnAssetsPct ?? '—'}%`);
   console.log(`الديون/الملكية ${f.debtToEquity ?? '—'}`);
+  console.log(`النسبة المتداولة       ${f.currentRatio ?? '—'}`);
+  console.log(`صافي الدين/EBITDA      ${f.netDebtToEbitda ?? '—'}`);
+  console.log(`EV/EBITDA              ${f.evToEbitda ?? '—'}`);
+  console.log(`عائد التدفق النقدي الحر ${f.freeCashFlowYieldPct ?? '—'}%`);
   console.log(`التقييم        ${c.bold(f.fundamentalStrength)}`);
   console.log(`\n${f.businessSummary}`);
+  if (f.dividendHistory?.length) {
+    console.log(c.bold('\nتاريخ التوزيعات:'));
+    f.dividendHistory.forEach((d) => {
+      const amount = d.type === 'نقدي' ? `${d.amountEgp ?? '—'} ج/سهم` : 'أسهم منحة';
+      console.log(`  ${d.exDate ?? '—'} [${d.type}] ${amount}${d.paymentDate ? ` — سداد ${d.paymentDate}` : ''}`);
+    });
+  }
   if (f.keyPositives?.length) { console.log(c.green('\nنقاط قوة:')); f.keyPositives.forEach((x) => console.log(`  + ${x}`)); }
   if (f.keyRisks?.length) { console.log(c.red('\nمخاطر:')); f.keyRisks.forEach((x) => console.log(`  − ${x}`)); }
   if (f.recentNews?.length) { console.log(c.bold('\nأخبار:')); f.recentNews.forEach((x) => console.log(`  ${x.date} [${x.impact}] ${x.headline}`)); }

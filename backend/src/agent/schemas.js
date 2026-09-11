@@ -253,11 +253,28 @@ export const FundamentalsSchema = z.object({
   peRatio: z.number().nullable().describe('P/E ratio, null if unavailable'),
   epsEgp: z.number().nullable().describe('Earnings per share in EGP'),
   bookValueEgp: z.number().nullable(),
+  priceToBook: z.number().nullable().describe('P/B ratio'),
   dividendYieldPct: z.number().nullable(),
   marketCapEgp: z.number().nullable(),
   revenueGrowthPct: z.number().nullable().describe('Year-over-year revenue growth %'),
   profitGrowthPct: z.number().nullable().describe('Year-over-year net profit growth %'),
   debtToEquity: z.number().nullable(),
+  returnOnEquityPct: z.number().nullable().describe('ROE %'),
+  returnOnAssetsPct: z.number().nullable().describe('ROA %'),
+  currentRatio: z.number().nullable().describe('Current assets / current liabilities'),
+  evToEbitda: z.number().nullable().describe('Enterprise value / EBITDA'),
+  netDebtToEbitda: z.number().nullable(),
+  freeCashFlowYieldPct: z.number().nullable().describe('Free cash flow / market cap, %'),
+  dividendHistory: z
+    .array(
+      z.object({
+        exDate: z.string().nullable().describe('Ex-dividend date, YYYY-MM-DD, null if unknown'),
+        paymentDate: z.string().nullable().describe('YYYY-MM-DD, null if unknown'),
+        amountEgp: z.number().nullable().describe('Cash amount per share in EGP, null for a stock/bonus dividend'),
+        type: z.enum(['نقدي', 'أسهم منحة']),
+      }),
+    )
+    .describe('Most recent distributions first. Empty array for a stock with no dividend history.'),
 
   businessSummary: z.string().describe('In Egyptian Arabic — two sentences on what the company does and where its profit comes from'),
   fundamentalStrength: z.enum(['قوية', 'متوسطة', 'ضعيفة']),
