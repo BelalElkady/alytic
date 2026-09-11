@@ -153,7 +153,32 @@ function looksLikeSpreadsheet(buffer) {
   return zip || ole;
 }
 
-/** Splits an admin-uploaded file into rows of cell strings — CSV by comma, .xls/.xlsx via SheetJS. */
+/**
+ * True if a ".xls" is actually an HTML table wearing an Excel extension — a
+ * common trick for server-rendered exports (EGX's own "current index
+ * constituents" download is exactly this: an ASP.NET GridView dumped to
+ * <table> markup). SheetJS mis-sniffs these as old-style Excel XML and
+ * throws, so they need their own path.
+ */
+function looksLikeHtmlTable(buffer) {
+  return /<html|<table/i.test(buffer.subarray(0, 1024).toString('utf8'));
+}
+
+const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", apos: "'", nbsp: ' ' };
+const decodeEntities = (s) => s.replace(/&(#39|amp|lt|gt|quot|apos|nbsp);/g, (_, name) => HTML_ENTITIES[name]);
+const stripTags = (s) => decodeEntities(s.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+
+/** Pulls every <tr> in the document into an array of cell strings, from its <th>/<td> children. */
+function htmlTableToRows(html) {
+  const rows = [];
+  for (const rowMatch of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((m) => stripTags(m[1]));
+    if (cells.length) rows.push(cells);
+  }
+  return rows;
+}
+
+/** Splits an admin-uploaded file into rows of cell strings — CSV by comma, .xls/.xlsx via SheetJS, HTML-table exports via a plain regex scan. */
 function fileToRows(buffer) {
   if (looksLikeSpreadsheet(buffer)) {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -161,15 +186,17 @@ function fileToRows(buffer) {
     return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' })
       .map((cells) => cells.map((cell) => String(cell ?? '').trim()));
   }
+  if (looksLikeHtmlTable(buffer)) return htmlTableToRows(buffer.toString('utf8'));
   return buffer.toString('utf8')
     .split(/\r?\n/)
     .map((line) => line.split(',').map((cell) => cell.trim().replace(/^["']|["']$/g, '')));
 }
 
 /**
- * Extracts {code, name} pairs from an admin-uploaded ticker list — CSV or
- * Excel (.xls/.xlsx), sniffed from the file's own bytes rather than trusted
- * headers. If the header row names a ticker column (Ticker/Code/Symbol/
+ * Extracts {code, name} pairs from an admin-uploaded ticker list — CSV,
+ * Excel (.xls/.xlsx), or an HTML-table export saved with a ".xls" extension,
+ * sniffed from the file's own bytes rather than trusted headers. If the
+ * header row names a ticker column (Ticker/Code/Symbol/
  * "Reuters Code"/RIC), only that column is read as the code — some exports
  * (e.g. EGX's own Reuters-code lists) put an ISIN first and the actual
  * ticker in a later column. With no recognizable header, falls back to the
