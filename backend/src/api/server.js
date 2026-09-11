@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
+import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks } from '../db.js';
@@ -337,14 +338,40 @@ app.get('/api/scan', wrap(async (req, res) => {
   // with — same deterministic engine, different risk/reward and sizing
   // inputs, exactly like every other `rules` param it already accepts.
   const rules = style ? rulesForStyle(RULES, style) : RULES;
+  const capital = capitalOf(portfolio) || 1_000_000;
   const { results, errors } = await analyzeMany(codes, {
-    capital: capitalOf(portfolio) || 1_000_000,
+    capital,
     positions: portfolio.positions,
     concurrency: 5,
     force: req.query.force === '1',
     rules,
   });
   const latestQuotes = await fetchLatestQuotes(results.map((result) => result.code));
+
+  // analyzeTicker sizes each stock in isolation — it has no visibility into
+  // sibling results, so it always sizes as if the sector were untouched. Once
+  // the whole book is known, correct sizing for every candidate against the
+  // sector exposure the held positions actually carry, so a sector already at
+  // or near its limit stops producing cash-plan recommendations (sizing to
+  // zero, which the existing worthIt/shares>0 filters below already exclude).
+  const sectorExposureEgp = {};
+  for (const r of results) {
+    if (!r.position || !r.sectorAr) continue;
+    sectorExposureEgp[r.sectorAr] = (sectorExposureEgp[r.sectorAr] ?? 0) + (r.position.marketValue ?? 0);
+  }
+  for (const r of results) {
+    if (r.position || !r.plan.stop.stop || !r.plan.suggestedEntry) continue;
+    r.plan.sizing = positionSize(
+      {
+        capital,
+        entry: r.plan.suggestedEntry,
+        stop: r.plan.stop.stop,
+        avgTurnoverEgp: r.snapshot.volume.avgTurnoverEgp,
+        sectorExposureEgp: sectorExposureEgp[r.sectorAr] ?? 0,
+      },
+      rules,
+    );
+  }
 
   const actionable = results.filter((r) => r.plan.actionable && r.plan.buyingNow.worthIt && r.technical.score >= 58);
   const cashReserve = Math.max(0, portfolio.cash * (rules.sizing.minCashBufferPct / 100));
