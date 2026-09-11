@@ -20,7 +20,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { LogoMark } from "@/components/brand/logo";
+import { Logo, LogoMark } from "@/components/brand/logo";
 import { DetailDialog } from "@/components/desk/detail-dialog";
 import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
 import { MarketDialog } from "@/components/desk/market-dialog";
@@ -104,6 +104,20 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <VerifyEmailBanner />
       <HeroBar />
       <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">{children}</main>
+      <footer className="border-t bg-surface">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-4 px-3 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <Logo />
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            EGXpert أداة تحليل ومساعدة في القرار — وليست توصية مالية مرخّصة. القرار الأخير مسؤوليتك.
+          </p>
+          <Link
+            to="/contact"
+            className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            تواصل معنا
+          </Link>
+        </div>
+      </footer>
       <MobileNav />
       <DetailDialog />
       <MarketDialog />
