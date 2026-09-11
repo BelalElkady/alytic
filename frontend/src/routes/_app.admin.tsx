@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
+import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, inferInvestStyle, type StyleKey, type Trade } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
@@ -67,7 +68,18 @@ function AdminPage() {
         <UsersTab />
       </TabsContent>
       <TabsContent value="blog">
-        <BlogDraftsTab />
+        <Tabs defaultValue="pending" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="pending">قيد المراجعة</TabsTrigger>
+            <TabsTrigger value="published">المنشور</TabsTrigger>
+          </TabsList>
+          <TabsContent value="pending">
+            <BlogDraftsTab />
+          </TabsContent>
+          <TabsContent value="published">
+            <PublishedPostsTab />
+          </TabsContent>
+        </Tabs>
       </TabsContent>
     </Tabs>
   );

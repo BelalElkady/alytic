@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost } from '../db.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -516,6 +516,30 @@ app.post('/api/admin/blog-drafts/:id/reject', wrap(async (req, res) => {
   const post = await setBlogPostStatus(req.params.id, 'rejected');
   if (!post) return res.status(404).json({ error: 'المسودة غير موجودة' });
   res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
+}));
+
+// Pulls a published post back off /api/blog without deleting it — it re-enters the review queue as a draft.
+app.post('/api/admin/blog-drafts/:id/unpublish', wrap(async (req, res) => {
+  const post = await setBlogPostStatus(req.params.id, 'draft');
+  if (!post) return res.status(404).json({ error: 'المقالة غير موجودة' });
+  res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
+}));
+
+app.patch('/api/admin/blog-drafts/:id', wrap(async (req, res) => {
+  const { title, dek, content, tags } = req.body ?? {};
+  if (title !== undefined && typeof title !== 'string') return res.status(400).json({ error: 'العنوان لازم يكون نص' });
+  if (dek !== undefined && dek !== null && typeof dek !== 'string') return res.status(400).json({ error: 'المقدمة لازم تكون نص' });
+  if (content !== undefined && !Array.isArray(content)) return res.status(400).json({ error: 'المحتوى لازم يكون قائمة فقرات' });
+  if (tags !== undefined && !Array.isArray(tags)) return res.status(400).json({ error: 'الوسوم لازم تكون قائمة' });
+  const post = await updateBlogPost(req.params.id, { title, dek, content, tags });
+  if (!post) return res.status(404).json({ error: 'المقالة غير موجودة' });
+  res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
+}));
+
+app.delete('/api/admin/blog-drafts/:id', wrap(async (req, res) => {
+  const deleted = await deleteBlogPost(req.params.id);
+  if (!deleted) return res.status(404).json({ error: 'المقالة غير موجودة' });
+  res.json({ ok: true });
 }));
 
 // ---- Analysis --------------------------------------------------------------

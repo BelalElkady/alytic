@@ -51,3 +51,12 @@ export const postForm = <T = any,>(path: string, form: FormData) =>
 
 export const postRaw = <T = any,>(path: string, body: BodyInit, contentType: string) =>
   request<T>(path, { method: "POST", headers: { "Content-Type": contentType }, body });
+
+export const patch = <T = any,>(path: string, body?: unknown) =>
+  request<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+
+export const del = <T = any,>(path: string) => request<T>(path, { method: "DELETE" });

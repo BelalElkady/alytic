@@ -358,4 +358,22 @@ export async function setBlogPostStatus(id, status, approvedBy) {
   return data;
 }
 
+/** Edits editorial fields on an existing post (draft or already published) — used by the admin blog tab's edit form. */
+export async function updateBlogPost(id, { title, dek, content, tags } = {}) {
+  const patch = {};
+  if (title !== undefined) patch.title = title;
+  if (dek !== undefined) patch.dek = dek;
+  if (content !== undefined) patch.content_json = content;
+  if (tags !== undefined) patch.tags = tags;
+  const { data, error } = await supabase.from('blog_posts').update(patch).eq('id', id).select('*').maybeSingle();
+  if (error) throw new Error(`updateBlogPost: ${error.message}`);
+  return data;
+}
+
+export async function deleteBlogPost(id) {
+  const { data, error } = await supabase.from('blog_posts').delete().eq('id', id).select('id').maybeSingle();
+  if (error) throw new Error(`deleteBlogPost: ${error.message}`);
+  return data;
+}
+
 export { supabase };
