@@ -56,6 +56,26 @@ create table if not exists market_reports (
   primary key (report_date, style)
 );
 
+-- One AI-generated personalized review per (user, trading day, investor
+-- style), keyed additionally by a hash of the inputs that actually change its
+-- content (positions, watchlist, cash). Unlike market_reports this can't be
+-- shared across users, but repeated requests from the same user on the same
+-- day with an unchanged portfolio are still served from here instead of
+-- paying for another model call. A changed portfolio_hash — a trade, a
+-- watchlist edit, a cash change — naturally busts the cache on lookup. See
+-- src/api/server.js's /api/review.
+create table if not exists portfolio_reviews (
+  user_id text not null references users(id) on delete cascade,
+  report_date text not null,
+  style text not null,
+  portfolio_hash text not null,
+  review_json jsonb not null,
+  model text,
+  usage_json jsonb,
+  generated_at timestamptz not null default now(),
+  primary key (user_id, report_date, style)
+);
+
 -- Admin-uploaded replacements for the built-in index membership lists in
 -- src/config/indices.js. Absence of a row means "use the built-in default" —
 -- see codesForIndex() there, which checks here first.

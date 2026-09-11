@@ -164,6 +164,52 @@ export async function putMarketReport(reportDate, style, report, model, usage) {
   return data.length > 0;
 }
 
+/**
+ * @returns {object|null} the stored review for that user/day/style, or null
+ *   if none is stored, or if one is stored but for a different portfolio
+ *   (the caller must compare portfolioHash itself — this just returns
+ *   whatever row exists so the caller can decide).
+ */
+export async function getPortfolioReview(userId, reportDate, style) {
+  const { data, error } = await supabase
+    .from('portfolio_reviews')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('report_date', reportDate)
+    .eq('style', style)
+    .maybeSingle();
+  if (error) throw new Error(`getPortfolioReview: ${error.message}`);
+  if (!data) return null;
+  return {
+    ...data.review_json,
+    portfolioHash: data.portfolio_hash,
+    _meta: { ...data.review_json._meta, model: data.model, generatedAt: data.generated_at, usage: data.usage_json ?? null },
+  };
+}
+
+/**
+ * Stores today's review for this user/style, replacing whatever was there —
+ * unlike putMarketReport this is a per-user row, so there is no cross-request
+ * race to protect against with insert-if-absent; the latest generation for a
+ * changed portfolio should simply win.
+ */
+export async function putPortfolioReview(userId, reportDate, style, portfolioHash, review, model, usage) {
+  const { error } = await supabase.from('portfolio_reviews').upsert(
+    {
+      user_id: userId,
+      report_date: reportDate,
+      style,
+      portfolio_hash: portfolioHash,
+      review_json: review,
+      model: model ?? null,
+      usage_json: usage ?? null,
+      generated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,report_date,style' },
+  );
+  if (error) throw new Error(`putPortfolioReview: ${error.message}`);
+}
+
 export async function setUserAdmin(id, isAdmin) {
   must(await supabase.from('users').update({ is_admin: Boolean(isAdmin) }).eq('id', id), 'setUserAdmin');
 }

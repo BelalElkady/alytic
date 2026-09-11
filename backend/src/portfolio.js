@@ -8,6 +8,7 @@
  * so a mistyped trade can be corrected by fixing that one entry.
  */
 
+import { createHash } from 'node:crypto';
 import RULES from './config/rules.js';
 import { getPortfolio, putPortfolio } from './db.js';
 import { lookup } from './config/universe.js';
@@ -156,6 +157,20 @@ export function setLevels(portfolio, code, { stop, target }) {
 /** Codes to analyze: everything held plus everything watched. */
 export function trackedCodes(portfolio) {
   return [...new Set([...Object.keys(portfolio.positions), ...Object.keys(portfolio.watchlist)])];
+}
+
+/**
+ * Fingerprints exactly the inputs that change a personalized AI review's
+ * substance — holdings, watchlist and cash — so a cached review is reused
+ * only while the portfolio it was written for hasn't actually moved. See
+ * analyst.js's getOrGenerateReview.
+ */
+export function portfolioHash(portfolio) {
+  const positions = Object.entries(portfolio.positions)
+    .map(([code, pos]) => [code, pos.shares, pos.avgCost, pos.stop ?? null])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const watchlist = Object.keys(portfolio.watchlist ?? {}).sort();
+  return createHash('sha256').update(JSON.stringify({ positions, watchlist, cash: portfolio.cash })).digest('hex');
 }
 
 /**

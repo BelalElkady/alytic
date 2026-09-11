@@ -153,7 +153,7 @@ async function cmdReview(styleArg) {
     console.log(c.dim('التحليل الفني شغال من غيره: node src/cli.js scan\n'));
     process.exit(1);
   }
-  const { reviewPortfolio } = await import('./agent/analyst.js');
+  const { getOrGenerateReview } = await import('./agent/analyst.js');
 
   const portfolio = await loadPortfolio();
   const codes = trackedCodes(portfolio);
@@ -174,7 +174,13 @@ async function cmdReview(styleArg) {
   });
 
   process.stderr.write(c.dim(`بيراجع مع المحلل (أسلوب: ${styleProfile(style).label})...\n`));
-  const review = await reviewPortfolio(results, { cash: portfolio.cash, capital }, { rules, style });
+  const { review, source } = await getOrGenerateReview(
+    portfolio,
+    results,
+    { cash: portfolio.cash, capital },
+    { rules, style, force: args.includes('--force') },
+  );
+  if (source === 'cached') process.stderr.write(c.dim('(من مراجعة سابقة النهاردة — نفس المحفظة بالظبط. استخدم --force لمراجعة جديدة)\n'));
 
   console.log(`\n${c.bold('قراءة السوق')}\n${review.marketRead}\n`);
   console.log(c.bold('القرارات'));

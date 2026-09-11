@@ -18,6 +18,8 @@ import { crossCheckIndicators } from './crosscheck.js';
 import RULES from '../config/rules.js';
 import { portfolioStructure } from '../scoring/portfolio.js';
 import { DEFAULT_STYLE } from '../config/styles.js';
+import { portfolioHash } from '../portfolio.js';
+import { getPortfolioReview, putPortfolioReview } from '../db.js';
 
 /**
  * Client-side tool: an independent recomputation of RSI/MACD/Bollinger from a
@@ -405,4 +407,41 @@ Remember: these numbers are final — judge them, do not recompute them.`;
       searchBudget,
     },
   };
+}
+
+/**
+ * The entry point every caller should use instead of reviewPortfolio()
+ * directly — both the HTTP endpoint and the CLI's `review` command go
+ * through here. Unlike the daily market report this can't be shared across
+ * users (it reflects one person's actual positions and cost basis), but a
+ * repeated request from the *same* user, same day, same style, against an
+ * *unchanged* portfolio — someone reloading a page, or testing — is served
+ * from storage instead of paying for another model call. A real trade, a
+ * watchlist edit, or a cash change naturally busts the cache on the next
+ * request, since portfolioHash() changes with them.
+ *
+ * @param {object} portfolio - the loaded portfolio (for its hash + userId)
+ * @param {object[]} analyses - same as reviewPortfolio's first argument
+ * @param {object} ctx - same as reviewPortfolio's second argument
+ * @param {object} [opts] - same as reviewPortfolio's third argument, plus:
+ * @param {string} [opts.userId='local']
+ * @param {boolean} [opts.force] - regenerate even if a matching review is stored
+ * @returns {Promise<{review: object, source: 'cached'|'ai'}>}
+ */
+export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = {}) {
+  const { userId = 'local', force = false, model = MODEL, rules = RULES, style = DEFAULT_STYLE } = opts;
+  const asOf = analyses[0]?.asOf ?? new Date().toISOString().slice(0, 10);
+  const hash = portfolioHash(portfolio);
+
+  if (!force) {
+    const cached = await getPortfolioReview(userId, asOf, style);
+    if (cached && cached.portfolioHash === hash) {
+      const { portfolioHash: _hash, ...review } = cached;
+      return { review, source: 'cached' };
+    }
+  }
+
+  const review = await reviewPortfolio(analyses, ctx, { model, rules, style });
+  await putPortfolioReview(userId, asOf, style, hash, review, review._meta.model, review._meta.usage);
+  return { review, source: 'ai' };
 }

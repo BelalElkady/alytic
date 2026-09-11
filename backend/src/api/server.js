@@ -934,7 +934,6 @@ app.post('/api/review', wrap(async (req, res) => {
     return res.json({ review, analyses: [], errors: [], style: effectiveStyle, source: 'daily_market_report', marketAnalysisAsOf: report.asOf });
   }
 
-  const { reviewPortfolio } = await import('../agent/analyst.js');
   const codes = trackedCodes(portfolio);
   const { results, errors } = await analyzeMany(codes, {
     capital,
@@ -943,8 +942,15 @@ app.post('/api/review', wrap(async (req, res) => {
     rules,
   });
 
-  const review = await reviewPortfolio(results, { cash: portfolio.cash, capital }, { rules, style: effectiveStyle });
-  res.json({ review, analyses: results, errors, style: effectiveStyle, source: 'ai' });
+  const force = req.body?.force === true || req.query.force === '1';
+  const { getOrGenerateReview } = await import('../agent/analyst.js');
+  const { review, source } = await getOrGenerateReview(
+    portfolio,
+    results,
+    { cash: portfolio.cash, capital },
+    { userId: req.user.id, rules, style: effectiveStyle, force },
+  );
+  res.json({ review, analyses: results, errors, style: effectiveStyle, source });
 }));
 
 app.get('/api/market-analysis', wrap(async (req, res) => {
