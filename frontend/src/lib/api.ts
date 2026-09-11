@@ -49,5 +49,5 @@ export const post = <T = any,>(path: string, body?: unknown) =>
 export const postForm = <T = any,>(path: string, form: FormData) =>
   request<T>(path, { method: "POST", body: form });
 
-export const postRaw = <T = any,>(path: string, body: string, contentType: string) =>
+export const postRaw = <T = any,>(path: string, body: BodyInit, contentType: string) =>
   request<T>(path, { method: "POST", headers: { "Content-Type": contentType }, body });

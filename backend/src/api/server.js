@@ -12,6 +12,7 @@
 
 import 'dotenv/config';
 import express from 'express';
+import * as XLSX from 'xlsx';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
@@ -32,7 +33,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'anthropic/claude-sonnet-5';
 import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
-import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone } from '../auth.js';
+import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
@@ -78,6 +79,16 @@ app.post('/api/auth/verify', wrap(async (req, res) => {
 
 app.post('/api/auth/resend-verification', wrap(async (req, res) => {
   await resendVerification(req.body ?? {});
+  res.json({ ok: true });
+}));
+
+app.post('/api/auth/forgot-password', wrap(async (req, res) => {
+  await forgotPassword(req.body ?? {});
+  res.json({ ok: true });
+}));
+
+app.post('/api/auth/reset-password', wrap(async (req, res) => {
+  await resetPassword(req.body ?? {});
   res.json({ ok: true });
 }));
 
@@ -134,22 +145,41 @@ app.use('/api/admin', (req, res, next) => {
 const TICKER_HEADERS = ['TICKER', 'CODE', 'SYMBOL', 'REUTERS CODE', 'RIC'];
 const NAME_HEADERS = ['COMPANY NAME', 'NAME', 'COMPANY'];
 
-/**
- * Extracts {code, name} pairs from an admin-uploaded CSV. If the header row
- * names a ticker column (Ticker/Code/Symbol/"Reuters Code"/RIC), only that
- * column is read as the code — some exports (e.g. EGX's own Reuters-code
- * lists) put an ISIN first and the actual ticker in a later column. With no
- * recognizable header, falls back to the first column (plain
- * one-ticker-per-line files), and the code doubles as the name. Strips the
- * ".CA" Reuters Instrument Code suffix EGX tickers are commonly exported
- * with (e.g. "COMI.CA" -> "COMI"), and drops anything that doesn't look
- * like a plausible ticker.
- */
-function parseTickerCsv(text) {
-  const rows = String(text ?? '')
+/** True if `buffer` starts with an Excel file's magic bytes — ZIP (.xlsx/.xlsm) or OLE compound (.xls). */
+function looksLikeSpreadsheet(buffer) {
+  if (buffer.length < 4) return false;
+  const zip = buffer[0] === 0x50 && buffer[1] === 0x4b; // "PK"
+  const ole = buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0;
+  return zip || ole;
+}
+
+/** Splits an admin-uploaded file into rows of cell strings — CSV by comma, .xls/.xlsx via SheetJS. */
+function fileToRows(buffer) {
+  if (looksLikeSpreadsheet(buffer)) {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' })
+      .map((cells) => cells.map((cell) => String(cell ?? '').trim()));
+  }
+  return buffer.toString('utf8')
     .split(/\r?\n/)
-    .map((line) => line.split(',').map((cell) => cell.trim().replace(/^["']|["']$/g, '')))
-    .filter((cells) => cells.some((cell) => cell));
+    .map((line) => line.split(',').map((cell) => cell.trim().replace(/^["']|["']$/g, '')));
+}
+
+/**
+ * Extracts {code, name} pairs from an admin-uploaded ticker list — CSV or
+ * Excel (.xls/.xlsx), sniffed from the file's own bytes rather than trusted
+ * headers. If the header row names a ticker column (Ticker/Code/Symbol/
+ * "Reuters Code"/RIC), only that column is read as the code — some exports
+ * (e.g. EGX's own Reuters-code lists) put an ISIN first and the actual
+ * ticker in a later column. With no recognizable header, falls back to the
+ * first column (plain one-ticker-per-line files), and the code doubles as
+ * the name. Strips the ".CA" Reuters Instrument Code suffix EGX tickers are
+ * commonly exported with (e.g. "COMI.CA" -> "COMI"), and drops anything
+ * that doesn't look like a plausible ticker.
+ */
+function parseTickerFile(buffer) {
+  const rows = fileToRows(buffer).filter((cells) => cells.some((cell) => cell));
   if (!rows.length) return [];
 
   const headerRow = rows[0].map((cell) => cell.toUpperCase());
@@ -187,9 +217,14 @@ app.get('/api/admin/indices', wrap(async (req, res) => {
 app.post('/api/admin/indices/:name', express.raw({ type: '*/*', limit: '256kb' }), wrap(async (req, res) => {
   const name = String(req.params.name).toUpperCase();
   if (!UPLOADABLE_INDICES.includes(name)) return res.status(400).json({ error: `مؤشر غير قابل للرفع: ${name}` });
-  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع ملف CSV أولاً' });
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع ملف CSV أو Excel أولاً' });
 
-  const entries = parseTickerCsv(req.body.toString('utf8'));
+  let entries;
+  try {
+    entries = parseTickerFile(req.body);
+  } catch {
+    return res.status(400).json({ error: 'تعذرت قراءة الملف — تأكد إنه CSV أو Excel صالح' });
+  }
   if (!entries.length) return res.status(400).json({ error: 'الملف فاضي أو مفيهوش أكواد صحيحة' });
 
   // A ticker the CSV names that isn't already tracked becomes a real,

@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_app/admin")({
   head: () => ({
     meta: [
       { title: "الإدارة — EGXpert" },
-      { name: "description", content: "رفع قوائم أسهم المؤشرات (EGX30 / EGX70 / EGX33 / EGX100) كملف CSV." },
+      { name: "description", content: "رفع قوائم أسهم المؤشرات (EGX30 / EGX70 / EGX33 / EGX100) كملف CSV أو Excel." },
     ],
   }),
   component: AdminPage,
@@ -60,7 +60,7 @@ function AdminPage() {
   return (
     <div className="space-y-4">
       <Notice tone="info">
-        الملف: سطر لكل كود سهم (زي COMI)، أو CSV بعمود عنوانه Ticker/Code/Symbol/Reuters Code/RIC
+        الملف: CSV أو Excel (xls/xlsx) — سطر/صف لكل كود سهم (زي COMI)، أو عمود عنوانه Ticker/Code/Symbol/Reuters Code/RIC
         (بيتجاهل عمود ISIN لو موجود). كود مش موجود أصلًا في قاعدة الأسهم بيتضاف تلقائيًا كسهم جديد
         — لو الملف فيه عمود Company Name/Name بيتاخد منه الاسم. رفع ملف جديد بيستبدل القائمة بالكامل
         (EGX100 بيتحسب تلقائيًا من EGX30 + EGX70 إلا لو رُفع ملف مستقل ليه).
@@ -81,8 +81,8 @@ function IndexPanel({ row, onChanged }: { row: IndexRow; onChanged: () => void }
     setBusy(true);
     setAdded([]);
     try {
-      const text = await file.text();
-      const result = await postRaw(`/api/admin/indices/${row.name}`, text, "text/csv");
+      const bytes = await file.arrayBuffer();
+      const result = await postRaw(`/api/admin/indices/${row.name}`, bytes, file.type || "application/octet-stream");
       toast.success(`تم حفظ ${result.saved} كود لمؤشر ${LABELS[row.name] ?? row.name}`);
       if (result.added?.length) setAdded(result.added);
       onChanged();
@@ -126,12 +126,12 @@ function IndexPanel({ row, onChanged }: { row: IndexRow; onChanged: () => void }
           )}
           <Button size="sm" onClick={() => fileRef.current?.click()} disabled={busy}>
             {busy && <Spinner />}
-            رفع CSV
+            رفع CSV / Excel
           </Button>
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,text/csv,text/plain"
+            accept=".csv,.xls,.xlsx,text/csv,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];
