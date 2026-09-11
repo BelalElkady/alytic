@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { EmptyState, ErrorState, LoadingBlock, Notice, Panel } from "@/components/desk/state-blocks";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingBlock,
+  Notice,
+  Panel,
+} from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, post } from "@/lib/api";
@@ -40,7 +46,9 @@ export function BlogDraftsTab() {
         setRows(result.posts);
         setError(null);
       })
-      .catch((caught: any) => setError(caught?.message ?? "تعذر تحميل مسودات المدونة"));
+      .catch((caught) =>
+        setError(caught instanceof Error ? caught.message : "تعذر تحميل مسودات المدونة"),
+      );
   };
 
   useEffect(() => {
@@ -53,14 +61,24 @@ export function BlogDraftsTab() {
       await post(`/api/admin/blog-drafts/${id}/${action}`);
       toast.success(action === "approve" ? "اتنشرت المقالة" : "اترفضت المسودة");
       setRows((prev) => prev?.filter((r) => r.id !== id) ?? null);
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر تنفيذ الإجراء");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تنفيذ الإجراء");
     } finally {
       setBusyId(null);
     }
   };
 
-  if (error) return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
+  if (error)
+    return (
+      <ErrorState
+        message={error}
+        action={
+          <Button variant="outline" size="sm" onClick={load}>
+            حاول تاني
+          </Button>
+        }
+      />
+    );
   if (!rows) return <LoadingBlock rows={3} />;
 
   return (
@@ -71,7 +89,10 @@ export function BlogDraftsTab() {
       </Notice>
 
       {rows.length === 0 ? (
-        <EmptyState title="مفيش مسودات في انتظار المراجعة" hint="هتظهر هنا أول ما الجدولة اليومية تولّد مقالة جديدة." />
+        <EmptyState
+          title="مفيش مسودات في انتظار المراجعة"
+          hint="هتظهر هنا أول ما الجدولة اليومية تولّد مقالة جديدة."
+        />
       ) : (
         rows.map((row) => (
           <Panel
@@ -79,7 +100,8 @@ export function BlogDraftsTab() {
             title={row.title}
             description={
               <>
-                {row.postDate} · {row.slot === "morning" ? "صباحية" : "مسائية"} · {row.generationModel ?? "—"}
+                {row.postDate} · {row.slot === "morning" ? "صباحية" : "مسائية"} ·{" "}
+                {row.generationModel ?? "—"}
               </>
             }
             action={
@@ -92,7 +114,11 @@ export function BlogDraftsTab() {
                 >
                   رفض
                 </Button>
-                <Button size="sm" disabled={busyId === row.id} onClick={() => void decide(row.id, "approve")}>
+                <Button
+                  size="sm"
+                  disabled={busyId === row.id}
+                  onClick={() => void decide(row.id, "approve")}
+                >
                   نشر
                 </Button>
               </div>

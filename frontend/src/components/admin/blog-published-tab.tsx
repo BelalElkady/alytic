@@ -64,7 +64,9 @@ export function PublishedPostsTab() {
         setRows(result.posts);
         setError(null);
       })
-      .catch((caught: any) => setError(caught?.message ?? "تعذر تحميل المقالات المنشورة"));
+      .catch((caught) =>
+        setError(caught instanceof Error ? caught.message : "تعذر تحميل المقالات المنشورة"),
+      );
   };
 
   useEffect(() => {
@@ -84,7 +86,10 @@ export function PublishedPostsTab() {
   const saveEdit = async (id: string) => {
     if (!edit) return;
     setBusyId(id);
-    const tags = edit.tags.split(/[،,]/).map((t) => t.trim()).filter(Boolean);
+    const tags = edit.tags
+      .split(/[،,]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
     try {
       await patch(`/api/admin/blog-drafts/${id}`, {
         title: edit.title.trim(),
@@ -93,14 +98,23 @@ export function PublishedPostsTab() {
         content: edit.blocks,
       });
       toast.success("اتحفظت التعديلات");
-      setRows((prev) =>
-        prev?.map((r) =>
-          r.id === id ? { ...r, title: edit.title.trim(), dek: edit.dek.trim() || null, tags, content: edit.blocks } : r,
-        ) ?? null,
+      setRows(
+        (prev) =>
+          prev?.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  title: edit.title.trim(),
+                  dek: edit.dek.trim() || null,
+                  tags,
+                  content: edit.blocks,
+                }
+              : r,
+          ) ?? null,
       );
       cancelEdit();
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر حفظ التعديلات");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر حفظ التعديلات");
     } finally {
       setBusyId(null);
     }
@@ -112,8 +126,8 @@ export function PublishedPostsTab() {
       await post(`/api/admin/blog-drafts/${id}/unpublish`);
       toast.success("اتشالت المقالة من الموقع ورجعت مسودة");
       setRows((prev) => prev?.filter((r) => r.id !== id) ?? null);
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر إلغاء النشر");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر إلغاء النشر");
     } finally {
       setBusyId(null);
     }
@@ -128,8 +142,8 @@ export function PublishedPostsTab() {
       toast.success("اتحذفت المقالة نهائيًا");
       setRows((prev) => prev?.filter((r) => r.id !== id) ?? null);
       setDeleteId(null);
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر حذف المقالة");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر حذف المقالة");
     } finally {
       setBusyId(null);
     }
@@ -138,30 +152,48 @@ export function PublishedPostsTab() {
   const updateBlock = (index: number, patchBlock: { text?: string; items?: string[] }) => {
     setEdit((prev) => {
       if (!prev) return prev;
-      const blocks = prev.blocks.map((b, i) => (i === index ? ({ ...b, ...patchBlock } as ContentBlock) : b));
+      const blocks = prev.blocks.map((b, i) =>
+        i === index ? ({ ...b, ...patchBlock } as ContentBlock) : b,
+      );
       return { ...prev, blocks };
     });
   };
 
   const removeBlock = (index: number) => {
-    setEdit((prev) => (prev ? { ...prev, blocks: prev.blocks.filter((_, i) => i !== index) } : prev));
+    setEdit((prev) =>
+      prev ? { ...prev, blocks: prev.blocks.filter((_, i) => i !== index) } : prev,
+    );
   };
 
   const addBlock = (type: ContentBlock["type"]) => {
     setEdit((prev) => {
       if (!prev) return prev;
-      const block: ContentBlock = type === "list" ? { type: "list", items: [""] } : { type, text: "" };
+      const block: ContentBlock =
+        type === "list" ? { type: "list", items: [""] } : { type, text: "" };
       return { ...prev, blocks: [...prev.blocks, block] };
     });
   };
 
-  if (error) return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
+  if (error)
+    return (
+      <ErrorState
+        message={error}
+        action={
+          <Button variant="outline" size="sm" onClick={load}>
+            حاول تاني
+          </Button>
+        }
+      />
+    );
   if (!rows) return <LoadingBlock rows={3} />;
 
   return (
     <div className="space-y-4">
       {rows.length === 0 ? (
-        <EmptyState title="مفيش مقالات منشورة دلوقتي" hint="المقالات اللي بتوافق عليها من تبويب المسودات هتظهر هنا." />
+        <EmptyState
+          title="مفيش مقالات منشورة دلوقتي"
+          hint="المقالات اللي بتوافق عليها من تبويب المسودات هتظهر هنا."
+        />
       ) : (
         rows.map((row) => {
           const isEditing = editId === row.id;
@@ -173,7 +205,8 @@ export function PublishedPostsTab() {
               description={
                 <>
                   {row.postDate} · {row.slot === "morning" ? "صباحية" : "مسائية"}
-                  {row.publishedAt && ` · اتنشرت ${new Date(row.publishedAt).toLocaleString("ar-EG")}`}
+                  {row.publishedAt &&
+                    ` · اتنشرت ${new Date(row.publishedAt).toLocaleString("ar-EG")}`}
                 </>
               }
               action={
@@ -188,10 +221,20 @@ export function PublishedPostsTab() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" disabled={busy} onClick={() => startEdit(row)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => startEdit(row)}
+                    >
                       تعديل
                     </Button>
-                    <Button variant="outline" size="sm" disabled={busy} onClick={() => void unpublish(row.id)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void unpublish(row.id)}
+                    >
                       إلغاء النشر
                     </Button>
                     <Button
@@ -211,22 +254,38 @@ export function PublishedPostsTab() {
                 <div className="space-y-3">
                   <div className="space-y-1">
                     <label className="text-[12px] text-muted-foreground">العنوان</label>
-                    <Input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} />
+                    <Input
+                      value={edit.title}
+                      onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[12px] text-muted-foreground">المقدمة</label>
-                    <Textarea rows={2} value={edit.dek} onChange={(e) => setEdit({ ...edit, dek: e.target.value })} />
+                    <Textarea
+                      rows={2}
+                      value={edit.dek}
+                      onChange={(e) => setEdit({ ...edit, dek: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[12px] text-muted-foreground">الوسوم (افصل بينها بفاصلة)</label>
-                    <Input value={edit.tags} onChange={(e) => setEdit({ ...edit, tags: e.target.value })} />
+                    <label className="text-[12px] text-muted-foreground">
+                      الوسوم (افصل بينها بفاصلة)
+                    </label>
+                    <Input
+                      value={edit.tags}
+                      onChange={(e) => setEdit({ ...edit, tags: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-3 border-t pt-3">
                     {edit.blocks.map((block, index) => (
                       <div key={index} className="space-y-1">
                         <div className="flex items-center justify-between">
                           <label className="text-[12px] text-muted-foreground">
-                            {block.type === "heading" ? "عنوان فرعي" : block.type === "list" ? "قائمة (سطر لكل عنصر)" : "فقرة"}
+                            {block.type === "heading"
+                              ? "عنوان فرعي"
+                              : block.type === "list"
+                                ? "قائمة (سطر لكل عنصر)"
+                                : "فقرة"}
                           </label>
                           <Button variant="ghost" size="sm" onClick={() => removeBlock(index)}>
                             حذف الفقرة
@@ -236,7 +295,9 @@ export function PublishedPostsTab() {
                           <Textarea
                             rows={3}
                             value={block.items.join("\n")}
-                            onChange={(e) => updateBlock(index, { items: e.target.value.split("\n") })}
+                            onChange={(e) =>
+                              updateBlock(index, { items: e.target.value.split("\n") })
+                            }
                           />
                         ) : (
                           <Textarea
@@ -297,8 +358,8 @@ export function PublishedPostsTab() {
           <AlertDialogHeader className="text-start">
             <AlertDialogTitle>حذف المقالة نهائيًا؟</AlertDialogTitle>
             <AlertDialogDescription className="leading-relaxed">
-              هتتشال المقالة من قاعدة البيانات بالكامل ومش هينفع استرجاعها بعد الحذف. لو عايز بس تشيلها من
-              الموقع، استخدم "إلغاء النشر" بدل الحذف.
+              هتتشال المقالة من قاعدة البيانات بالكامل ومش هينفع استرجاعها بعد الحذف. لو عايز بس
+              تشيلها من الموقع، استخدم "إلغاء النشر" بدل الحذف.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">

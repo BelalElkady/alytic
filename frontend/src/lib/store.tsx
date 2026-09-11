@@ -85,6 +85,7 @@ type DeskValue = {
 
 const DeskContext = createContext<DeskValue | null>(null);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDesk() {
   const value = useContext(DeskContext);
   if (!value) throw new Error("useDesk must be used inside <DeskProvider>");

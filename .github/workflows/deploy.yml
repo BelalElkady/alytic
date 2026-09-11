@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: 20
+  NODE_VERSION: 22
   DEPLOY_PATH: /opt/alytic
   BACKEND_PORT: 3000
   FRONTEND_PORT: 8080
