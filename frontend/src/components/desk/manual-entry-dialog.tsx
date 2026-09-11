@@ -3,7 +3,13 @@ import { toast } from "sonner";
 
 import { EmptyState, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { post } from "@/lib/api";
 import { useDesk } from "@/lib/store";
@@ -65,8 +71,8 @@ export function ManualEntryDialog() {
       setManualOpen(false);
       await reload();
       toast.success("تم حفظ التعديلات");
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر الحفظ");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر الحفظ");
     } finally {
       setBusy(false);
     }
@@ -107,10 +113,30 @@ export function ManualEntryDialog() {
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <Field label="عدد الأسهم" value={entry.shares} step="1" onChange={(v) => set(row.code, "shares", v)} />
-                    <Field label="متوسط الشراء" value={entry.avgCost} step="0.0001" onChange={(v) => set(row.code, "avgCost", v)} />
-                    <Field label="وقف" value={entry.stop} step="0.01" onChange={(v) => set(row.code, "stop", v)} />
-                    <Field label="هدف" value={entry.target} step="0.01" onChange={(v) => set(row.code, "target", v)} />
+                    <Field
+                      label="عدد الأسهم"
+                      value={entry.shares}
+                      step="1"
+                      onChange={(v) => set(row.code, "shares", v)}
+                    />
+                    <Field
+                      label="متوسط الشراء"
+                      value={entry.avgCost}
+                      step="0.0001"
+                      onChange={(v) => set(row.code, "avgCost", v)}
+                    />
+                    <Field
+                      label="وقف"
+                      value={entry.stop}
+                      step="0.01"
+                      onChange={(v) => set(row.code, "stop", v)}
+                    />
+                    <Field
+                      label="هدف"
+                      value={entry.target}
+                      step="0.01"
+                      onChange={(v) => set(row.code, "target", v)}
+                    />
                   </div>
                 </div>
               );

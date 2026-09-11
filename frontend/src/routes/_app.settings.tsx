@@ -15,7 +15,6 @@ import {
 } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 
-
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({
     meta: [
@@ -36,6 +35,7 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsPage() {
   const { reload, pf } = useDesk();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the settings API response shape
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [armed, setArmed] = useState(false);
@@ -52,14 +52,15 @@ function SettingsPage() {
     toast.success("رجّعنا الأسلوب لسلوكك التلقائي في التداول");
   };
 
-
   const load = () => {
     api("/api/settings")
       .then((result) => {
         setData(result);
         setError(null);
       })
-      .catch((caught) => setError(caught?.message ?? "تعذر تحميل الإعدادات"));
+      .catch((caught) =>
+        setError(caught instanceof Error ? caught.message : "تعذر تحميل الإعدادات"),
+      );
   };
 
   useEffect(load, []);
@@ -76,14 +77,24 @@ function SettingsPage() {
       load();
       setArmed(false);
       toast.success("تم مسح السجل والصفقات");
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر المسح");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر المسح");
     } finally {
       setResetting(false);
     }
   };
 
-  if (error) return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
+  if (error)
+    return (
+      <ErrorState
+        message={error}
+        action={
+          <Button variant="outline" size="sm" onClick={load}>
+            حاول تاني
+          </Button>
+        }
+      />
+    );
   if (!data) return <LoadingBlock rows={3} />;
 
   const base = data.rules;
@@ -97,7 +108,6 @@ function SettingsPage() {
   };
   const activeStyle = INVEST_STYLES.find((item) => item.key === style)!;
 
-
   return (
     <div className="space-y-4">
       <Panel
@@ -107,14 +117,19 @@ function SettingsPage() {
         {auto ? (
           <Notice tone="info" className="mb-3">
             {inferred
-              ? `الأسلوب دلوقتي مستنتج تلقائيًا من صفقاتك السابقة: ${INVEST_STYLES.find((item) => item.key === inferred)!.label
-              }. اختار سلوك من تحت لو عايز تثبّته بدل الاستنتاج التلقائي.`
+              ? `الأسلوب دلوقتي مستنتج تلقائيًا من صفقاتك السابقة: ${
+                  INVEST_STYLES.find((item) => item.key === inferred)!.label
+                }. اختار سلوك من تحت لو عايز تثبّته بدل الاستنتاج التلقائي.`
               : "مفيش صفقات كفاية لسه لاستنتاج أسلوبك تلقائيًا، فمُفعّل حاليًا أسلوب متوسط المدى كافتراضي. اختار سلوك من تحت أو خلّي التطبيق يستنتجه لما تتراكم صفقاتك."}
           </Notice>
         ) : (
           <Notice tone="info" className="mb-3">
             سلوكك الاستثماري مثبّت يدويًا دلوقتي، مش مستنتج من سلوكك في التداول.{" "}
-            <button type="button" onClick={resetToAuto} className="font-semibold underline underline-offset-2">
+            <button
+              type="button"
+              onClick={resetToAuto}
+              className="font-semibold underline underline-offset-2"
+            >
               رجّعه تلقائي
             </button>
           </Notice>
@@ -128,10 +143,11 @@ function SettingsPage() {
                 type="button"
                 onClick={() => chooseStyle(item.key)}
                 aria-pressed={active}
-                className={`rounded-lg border px-4 py-3 text-center transition-colors ${active
+                className={`rounded-lg border px-4 py-3 text-center transition-colors ${
+                  active
                     ? "border-primary bg-primary/10 ring-1 ring-primary"
                     : "border-border bg-surface hover:bg-muted"
-                  }`}
+                }`}
               >
                 <div className="text-[14px] font-semibold">{item.label}</div>
                 <div className="mt-0.5 text-[12px] text-muted-foreground">({item.horizon})</div>
@@ -141,10 +157,7 @@ function SettingsPage() {
         </div>
       </Panel>
 
-      <Panel
-        title="قواعد التوصيات المفعّلة"
-        description={activeStyle.description}
-      >
+      <Panel title="قواعد التوصيات المفعّلة" description={activeStyle.description}>
         <ul className="space-y-2 text-[13px] leading-relaxed">
           {[
             `وقف متحرك ${rules.trailing.trailPct}% يتفعّل تلقائيًا لما السهم يعلى ${rules.trailing.activateAtProfitPct}% فوق تكلفتك، ولا ينزل أبدًا.`,

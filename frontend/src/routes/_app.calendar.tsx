@@ -99,8 +99,8 @@ function CalendarPage() {
       await post("/api/log/note", { date: selected, note: noteValue });
       await reloadLog();
       toast.success("تم حفظ الملاحظة");
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر الحفظ");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر الحفظ");
     } finally {
       setSaving(false);
     }
@@ -114,9 +114,7 @@ function CalendarPage() {
           <div className="flex flex-wrap items-center gap-1.5">
             <Select
               value={String(month.getMonth())}
-              onValueChange={(value) =>
-                setMonth(new Date(month.getFullYear(), Number(value), 1))
-              }
+              onValueChange={(value) => setMonth(new Date(month.getFullYear(), Number(value), 1))}
             >
               <SelectTrigger className="h-9 w-[110px]" aria-label="اختر الشهر">
                 <SelectValue />
@@ -214,7 +212,11 @@ function CalendarPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3 rounded-lg border bg-surface p-3">
               <Stat label="قيمة المحفظة" value={int(entry.total)} />
-              <Stat label="تغيّر اليوم" value={signed(entry.dayChange)} valueClassName={tone(entry.dayChange)} />
+              <Stat
+                label="تغيّر اليوم"
+                value={signed(entry.dayChange)}
+                valueClassName={tone(entry.dayChange)}
+              />
               <Stat label="إجمالي الربح" value={signed(entry.pl)} valueClassName={tone(entry.pl)} />
             </div>
 
@@ -244,7 +246,9 @@ function CalendarPage() {
                     <TableRow key={code}>
                       <TableCell className="font-medium">{code}</TableCell>
                       <TableCell className="num text-right">{fmt(price)}</TableCell>
-                      <TableCell className="num text-right text-down">{fmt(entry.stops?.[code])}</TableCell>
+                      <TableCell className="num text-right text-down">
+                        {fmt(entry.stops?.[code])}
+                      </TableCell>
                       <TableCell className="max-w-72 text-[12.5px] whitespace-normal text-muted-foreground">
                         {entry.recs?.[code]?.text ?? "—"}
                       </TableCell>

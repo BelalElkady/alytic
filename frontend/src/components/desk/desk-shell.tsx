@@ -84,7 +84,8 @@ export function DeskShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (authChecked && !user) void navigate({ to: "/login", search: { mode: "login" }, replace: true });
+    if (authChecked && !user)
+      void navigate({ to: "/login", search: { mode: "login" }, replace: true });
   }, [authChecked, user, navigate]);
 
   if (!authChecked || !user) {
@@ -97,7 +98,6 @@ export function DeskShell({ children }: { children: ReactNode }) {
     );
   }
 
-
   return (
     <div className="min-h-screen bg-surface pb-20 md:pb-0">
       <DeskHeader />
@@ -105,7 +105,9 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <RequirePhoneDialog />
       <VerifyEmailBanner />
       <HeroBar />
-      <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">{children}</main>
+      <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
+        {children}
+      </main>
       <footer className="border-t bg-surface">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-4 px-3 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <Logo />
@@ -141,8 +143,8 @@ function VerifyEmailBanner() {
       await resendVerification(user.email);
       setSent(true);
       toast.success("اتبعت رابط تفعيل جديد على بريدك");
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر إرسال رابط التفعيل");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر إرسال رابط التفعيل");
     } finally {
       setSending(false);
     }
@@ -155,7 +157,12 @@ function VerifyEmailBanner() {
           <Mail className="size-4 shrink-0" />
           لسه ما فعّلتش بريدك الإلكتروني ({user.email}). راجع صندوق الوارد وافتح رابط التفعيل.
         </AlertDescription>
-        <Button size="sm" variant="outline" onClick={() => void resend()} disabled={sending || sent}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void resend()}
+          disabled={sending || sent}
+        >
           {sending && <Spinner />}
           {sent ? "اتبعت" : "إعادة إرسال الرابط"}
         </Button>
@@ -185,15 +192,15 @@ function RequirePhoneDialog() {
     setError(null);
     try {
       await updatePhone(phone);
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر حفظ رقم الموبايل");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر حفظ رقم الموبايل");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <AlertDialog open onOpenChange={() => { }}>
+    <AlertDialog open onOpenChange={() => {}}>
       <AlertDialogContent>
         <AlertDialogHeader className="text-start">
           <AlertDialogTitle>محتاجين رقم موبايلك</AlertDialogTitle>
@@ -235,8 +242,17 @@ function RequirePhoneDialog() {
 }
 
 function DeskHeader() {
-  const { user, signOut, openMarket, setManualOpen, reload, reloadLog, lastPriceSync, priceError, pf } =
-    useDesk();
+  const {
+    user,
+    signOut,
+    openMarket,
+    setManualOpen,
+    reload,
+    reloadLog,
+    lastPriceSync,
+    priceError,
+    pf,
+  } = useDesk();
   const { dark, toggle } = useTheme();
   const { style: investStyle, auto: investStyleAuto } = useActiveInvestStyle(pf?.trades);
   const investStyleLabel = INVEST_STYLES.find((style) => style.key === investStyle)?.label;
@@ -279,8 +295,8 @@ function DeskHeader() {
       } else {
         toast.success(`تم تحديث ${imported} سهم من ${files.length} صورة`, { description: scope });
       }
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر قراءة الصور");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر قراءة الصور");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -293,8 +309,8 @@ function DeskHeader() {
       const result = await post("/api/snapshot");
       await reloadLog();
       toast.success(`تم حفظ إغلاق ${result.saved}`);
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر حفظ الإغلاق");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر حفظ الإغلاق");
     } finally {
       setSnapshotting(false);
     }
@@ -349,7 +365,12 @@ function DeskHeader() {
             <Radar className="size-4" />
             تحليل السوق
           </Button>
-          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
             {uploading ? <Spinner /> : <Upload className="size-4" />}
             رفع صور المحفظة
           </Button>
@@ -357,7 +378,12 @@ function DeskHeader() {
             <PencilLine className="size-4" />
             إدخال يدوي
           </Button>
-          <Button size="sm" variant="outline" onClick={() => void saveSnapshot()} disabled={snapshotting}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void saveSnapshot()}
+            disabled={snapshotting}
+          >
             {snapshotting ? <Spinner /> : <CalendarDays className="size-4" />}
             سجّل إغلاق اليوم
           </Button>
@@ -377,13 +403,16 @@ function DeskHeader() {
         <DesktopNav />
       </div>
 
-      <AlertDialog open={Boolean(pendingFiles)} onOpenChange={(open) => !open && setPendingFiles(null)}>
+      <AlertDialog
+        open={Boolean(pendingFiles)}
+        onOpenChange={(open) => !open && setPendingFiles(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader className="text-start">
             <AlertDialogTitle>الصور دي بتمثل المحفظة كاملة؟</AlertDialogTitle>
             <AlertDialogDescription className="leading-relaxed">
-              «استبدال المحفظة» يمسح الأسهم اللي مش موجودة في الصور. «إضافة/تحديث» بيحدّث الأسهم اللي
-              في الصور بس ويسيب الباقي زي ما هو.
+              «استبدال المحفظة» يمسح الأسهم اللي مش موجودة في الصور. «إضافة/تحديث» بيحدّث الأسهم
+              اللي في الصور بس ويسيب الباقي زي ما هو.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">
@@ -423,7 +452,10 @@ function DeskHeader() {
 function DesktopNav() {
   const { user } = useDesk();
   return (
-    <nav className="scrollbar-slim -mx-1 hidden gap-1 overflow-x-auto px-1 md:flex" aria-label="التبويبات">
+    <nav
+      className="scrollbar-slim -mx-1 hidden gap-1 overflow-x-auto px-1 md:flex"
+      aria-label="التبويبات"
+    >
       {NAV.filter((item) => !item.adminOnly || user?.isAdmin).map(({ to, label, icon: Icon }) => (
         <Link
           key={to}

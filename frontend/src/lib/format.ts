@@ -37,5 +37,4 @@ export const arDay = (iso?: string | null) => {
   return date.toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
 };
 
-export const clamp = (value: number, min = 0, max = 100) =>
-  Math.min(max, Math.max(min, value));
+export const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));

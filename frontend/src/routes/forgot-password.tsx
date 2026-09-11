@@ -28,8 +28,8 @@ function ForgotPasswordPage() {
     try {
       await post("/api/auth/forgot-password", { email });
       setSent(true);
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر إرسال رابط إعادة التعيين");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر إرسال رابط إعادة التعيين");
     } finally {
       setBusy(false);
     }
@@ -49,7 +49,11 @@ function ForgotPasswordPage() {
             <p className="text-[13px] leading-relaxed text-muted-foreground">
               لو البريد ده مسجل عندنا، هيوصلك رابط لإعادة تعيين كلمة السر خلال دقايق.
             </p>
-            <Link to="/login" search={{ mode: "login" }} className="mt-2 text-[13px] text-primary underline-offset-4 hover:underline">
+            <Link
+              to="/login"
+              search={{ mode: "login" }}
+              className="mt-2 text-[13px] text-primary underline-offset-4 hover:underline"
+            >
               العودة لتسجيل الدخول
             </Link>
           </div>
@@ -86,7 +90,11 @@ function ForgotPasswordPage() {
               </Button>
 
               <p className="text-center text-[13px] text-muted-foreground">
-                <Link to="/login" search={{ mode: "login" }} className="font-medium text-primary underline-offset-4 hover:underline">
+                <Link
+                  to="/login"
+                  search={{ mode: "login" }}
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
                   العودة لتسجيل الدخول
                 </Link>
               </p>

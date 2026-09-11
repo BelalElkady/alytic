@@ -11,7 +11,10 @@ export const Route = createFileRoute("/_app/indices")({
   head: () => ({
     meta: [
       { title: "المؤشرات — EGXpert" },
-      { name: "description", content: "الأداء اليومي لمؤشرات البورصة المصرية، وأفضل وأسوأ سهم في كل مؤشر." },
+      {
+        name: "description",
+        content: "الأداء اليومي لمؤشرات البورصة المصرية، وأفضل وأسوأ سهم في كل مؤشر.",
+      },
     ],
   }),
   component: IndicesPage,
@@ -58,7 +61,16 @@ function IndicesPage() {
   }, []);
 
   if (error) {
-    return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
+    return (
+      <ErrorState
+        message={error}
+        action={
+          <Button variant="outline" size="sm" onClick={load}>
+            حاول تاني
+          </Button>
+        }
+      />
+    );
   }
   if (!rows) return <LoadingBlock rows={4} />;
 
@@ -68,7 +80,8 @@ function IndicesPage() {
         <h1 className="text-[17px] font-semibold tracking-tight">المؤشرات</h1>
         {asOf && (
           <span className="text-[12px] text-muted-foreground">
-            آخر تحديث {new Date(asOf).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+            آخر تحديث{" "}
+            {new Date(asOf).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
       </div>
@@ -96,7 +109,12 @@ function IndexCard({ row }: { row: IndexRow }) {
         </>
       }
       action={
-        <span className={cn("num text-[20px] font-bold tabular-nums", hasChange ? tone(row.changePct) : "text-muted-foreground")}>
+        <span
+          className={cn(
+            "num text-[20px] font-bold tabular-nums",
+            hasChange ? tone(row.changePct) : "text-muted-foreground",
+          )}
+        >
           {hasChange ? pct(row.changePct) : "—"}
         </span>
       }
@@ -104,11 +122,16 @@ function IndexCard({ row }: { row: IndexRow }) {
       <div className="space-y-3">
         {hasPoints && (
           <p className="text-[12px] text-muted-foreground">
-            التغيّر اليوم: <span className={cn("num", tone(row.changePoints))}>{signed(row.changePoints, 1)} نقطة</span>
+            التغيّر اليوم:{" "}
+            <span className={cn("num", tone(row.changePoints))}>
+              {signed(row.changePoints, 1)} نقطة
+            </span>
           </p>
         )}
         {row.quotedCount === 0 ? (
-          <p className="text-[12.5px] text-muted-foreground">مفيش أسعار حية متاحة دلوقتي لأسهم المؤشر.</p>
+          <p className="text-[12.5px] text-muted-foreground">
+            مفيش أسعار حية متاحة دلوقتي لأسهم المؤشر.
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <MoverBox label="أفضل سهم اليوم" stock={row.best} positive />
@@ -120,10 +143,23 @@ function IndexCard({ row }: { row: IndexRow }) {
   );
 }
 
-function MoverBox({ label, stock, positive }: { label: string; stock: IndexStock | null; positive: boolean }) {
+function MoverBox({
+  label,
+  stock,
+  positive,
+}: {
+  label: string;
+  stock: IndexStock | null;
+  positive: boolean;
+}) {
   if (!stock) return null;
   return (
-    <div className={cn("rounded-lg border px-3 py-2.5", positive ? "border-up/40 bg-up-soft" : "border-down/40 bg-down-soft")}>
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2.5",
+        positive ? "border-up/40 bg-up-soft" : "border-down/40 bg-down-soft",
+      )}
+    >
       <div className="text-[11.5px] font-medium text-muted-foreground">{label}</div>
       <div className="mt-1 flex items-baseline justify-between gap-2">
         <div className="min-w-0">
@@ -131,7 +167,9 @@ function MoverBox({ label, stock, positive }: { label: string; stock: IndexStock
           <div className="truncate text-[11.5px] text-muted-foreground">{stock.name}</div>
         </div>
         <div className="shrink-0 text-right">
-          <div className={cn("num font-semibold", tone(stock.changePct))}>{pct(stock.changePct)}</div>
+          <div className={cn("num font-semibold", tone(stock.changePct))}>
+            {pct(stock.changePct)}
+          </div>
           <div className="num text-[11.5px] text-muted-foreground">{fmt(stock.price)}</div>
         </div>
       </div>

@@ -63,8 +63,12 @@ function CashPage() {
     setCash(String(pf?.cash ?? 0));
   }, [pf?.cash]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the portfolio watchlist shape
   const watchlist: [string, any][] = Object.entries(pf?.watchlist ?? {});
-  const watchCodes = watchlist.map(([code]) => code).sort().join(",");
+  const watchCodes = watchlist
+    .map(([code]) => code)
+    .sort()
+    .join(",");
 
   // Re-fetches price/score/signal for every favorite whenever the set changes —
   // this is what makes the list "monitor" a stock rather than just remember it.
@@ -105,8 +109,8 @@ function CashPage() {
       await post("/api/portfolio/cash", { cash: +cash });
       await reloadPortfolio();
       toast.success("تم تحديث الكاش");
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر تحديث الكاش");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تحديث الكاش");
     } finally {
       setSavingCash(false);
     }
@@ -125,8 +129,8 @@ function CashPage() {
       setWatchCode("");
       setWatchNote("");
       toast.success("تمت الإضافة للأسهم المفضلة");
-    } catch (caught: any) {
-      setWatchError(caught?.message ?? "تعذر الإضافة");
+    } catch (caught) {
+      setWatchError(caught instanceof Error ? caught.message : "تعذر الإضافة");
     } finally {
       setAddingWatch(false);
     }
@@ -136,8 +140,8 @@ function CashPage() {
     try {
       await post("/api/portfolio/watchlist", { code, remove: true });
       await reloadPortfolio();
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر الحذف");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر الحذف");
     }
   };
 
@@ -197,7 +201,11 @@ function CashPage() {
             />
           </div>
           <div className="flex items-end">
-            <Button className="w-full sm:w-auto" onClick={() => void addWatch()} disabled={addingWatch}>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => void addWatch()}
+              disabled={addingWatch}
+            >
               {addingWatch && <Spinner />}
               إضافة
             </Button>
@@ -208,7 +216,10 @@ function CashPage() {
 
         <div className="mt-4">
           {watchlist.length === 0 ? (
-            <EmptyState title="مفيش أسهم مفضلة لسه" hint="ضيف سهم وهيظهر هنا مع سعره وتغيّره اليومي." />
+            <EmptyState
+              title="مفيش أسهم مفضلة لسه"
+              hint="ضيف سهم وهيظهر هنا مع سعره وتغيّره اليومي."
+            />
           ) : (
             <div className="scrollbar-slim overflow-x-auto rounded-lg border">
               <Table>
@@ -231,9 +242,15 @@ function CashPage() {
                       <TableRow key={code}>
                         <TableCell className="font-medium">{code}</TableCell>
                         <TableCell className="text-muted-foreground">
-                          {row ? `${row.name ?? "—"} · ${row.sector ?? "—"}` : favLoading ? "…" : "—"}
+                          {row
+                            ? `${row.name ?? "—"} · ${row.sector ?? "—"}`
+                            : favLoading
+                              ? "…"
+                              : "—"}
                         </TableCell>
-                        <TableCell className="num text-right">{row ? fmt(row.price) : "—"}</TableCell>
+                        <TableCell className="num text-right">
+                          {row ? fmt(row.price) : "—"}
+                        </TableCell>
                         <TableCell className={`num text-right ${tone(row?.changePct)}`}>
                           {row?.changePct != null ? pct(row.changePct, 1) : "—"}
                         </TableCell>

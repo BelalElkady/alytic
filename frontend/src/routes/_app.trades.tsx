@@ -7,7 +7,13 @@ import { EmptyState, Panel, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -45,7 +51,7 @@ function TradesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const trades: any[] = pf?.trades ?? [];
+  const trades = pf?.trades ?? [];
   const realized = pf?.realizedPnl ?? 0;
 
   const submit = async () => {
@@ -66,8 +72,8 @@ function TradesPage() {
       await reload();
       setForm({ code: "", side: "buy", shares: "", price: "", date: "" });
       toast.success("تم تسجيل الصفقة وتحديث المحفظة");
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر تسجيل الصفقة");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر تسجيل الصفقة");
     } finally {
       setBusy(false);
     }
@@ -110,7 +116,9 @@ function TradesPage() {
               className="num"
               type="number"
               value={form.shares}
-              onChange={(event) => setForm((previous) => ({ ...previous, shares: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, shares: event.target.value }))
+              }
             />
           </div>
           <div className="space-y-1.5">
@@ -121,7 +129,9 @@ function TradesPage() {
               type="number"
               step="0.01"
               value={form.price}
-              onChange={(event) => setForm((previous) => ({ ...previous, price: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, price: event.target.value }))
+              }
             />
           </div>
           <div className="space-y-1.5">
@@ -131,7 +141,9 @@ function TradesPage() {
               className="num"
               type="date"
               value={form.date}
-              onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, date: event.target.value }))
+              }
             />
           </div>
           <div className="flex items-end">
@@ -181,7 +193,9 @@ function TradesPage() {
                     </TableCell>
                     <TableCell className="num text-right">{int(trade.shares)}</TableCell>
                     <TableCell className="num text-right">{fmt(trade.price)}</TableCell>
-                    <TableCell className="num text-right text-muted-foreground">{fmt(trade.commission)}</TableCell>
+                    <TableCell className="num text-right text-muted-foreground">
+                      {fmt(trade.commission)}
+                    </TableCell>
                     <TableCell className={cn("num text-right", tone(trade.realized))}>
                       {trade.realized != null ? signed(trade.realized) : "—"}
                     </TableCell>

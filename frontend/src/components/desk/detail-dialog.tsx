@@ -11,6 +11,7 @@ import { mergedTarget } from "@/lib/targets";
 /** Per-stock analysis, same /api/analyze/:code payload as before. */
 export function DetailDialog() {
   const { detailCode, openDetail } = useDesk();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the /api/analyze response shape
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,15 +57,16 @@ export function DetailDialog() {
                 label="السعر"
                 value={fmt(snapshot.price.close)}
                 sub={
-                  <span className={tone(snapshot.price.changePct)}>{pct(snapshot.price.changePct)}</span>
+                  <span className={tone(snapshot.price.changePct)}>
+                    {pct(snapshot.price.changePct)}
+                  </span>
                 }
               />
+              <Stat label="التقييم" value={`${technical.score}/100`} sub={technical.signal?.ar} />
               <Stat
-                label="التقييم"
-                value={`${technical.score}/100`}
-                sub={technical.signal?.ar}
+                label="الاتجاه"
+                value={<span className="text-[14px]">{snapshot.trend.label}</span>}
               />
-              <Stat label="الاتجاه" value={<span className="text-[14px]">{snapshot.trend.label}</span>} />
               <Stat label="RSI" value={fmt(snapshot.momentum.rsi14, 1)} />
             </div>
 
@@ -126,7 +128,11 @@ export function DetailDialog() {
                             {fmt(plan.targets.long.price)} ج · {pct(plan.targets.long.upsidePct)}
                           </span>
                         }
-                        hint={[plan.targets.long.basis, plan.targets.long.horizon.ar, plan.targets.long.caveat]
+                        hint={[
+                          plan.targets.long.basis,
+                          plan.targets.long.horizon.ar,
+                          plan.targets.long.caveat,
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       />
@@ -167,21 +173,15 @@ export function DetailDialog() {
   );
 }
 
-function Line({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: React.ReactNode;
-  hint?: string;
-}) {
+function Line({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-end font-medium">
         {value}
-        {hint && <div className="mt-0.5 text-[11.5px] font-normal text-muted-foreground">{hint}</div>}
+        {hint && (
+          <div className="mt-0.5 text-[11.5px] font-normal text-muted-foreground">{hint}</div>
+        )}
       </dd>
     </div>
   );
@@ -194,6 +194,7 @@ function LevelList({
   positive = false,
 }: {
   title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the /api/analyze response shape
   levels: any[];
   empty: string;
   positive?: boolean;
@@ -203,6 +204,7 @@ function LevelList({
       <div className="border-b bg-surface px-4 py-2 text-[13px] font-semibold">{title}</div>
       <div className="divide-y text-[13px]">
         {levels?.length ? (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the /api/analyze response shape
           levels.slice(0, 4).map((level: any) => (
             <div key={level.price} className="flex justify-between px-4 py-2">
               <span className="num font-medium">{fmt(level.price)}</span>
@@ -220,10 +222,21 @@ function LevelList({
   );
 }
 
-function ReasonList({ title, items, tone: variant }: { title: string; items: string[]; tone: "up" | "down" }) {
+function ReasonList({
+  title,
+  items,
+  tone: variant,
+}: {
+  title: string;
+  items: string[];
+  tone: "up" | "down";
+}) {
   return (
     <div>
-      <Badge variant="outline" className={variant === "up" ? "border-up/40 text-up" : "border-down/40 text-down"}>
+      <Badge
+        variant="outline"
+        className={variant === "up" ? "border-up/40 text-up" : "border-down/40 text-down"}
+      >
         {title}
       </Badge>
       <ul className="mt-2 space-y-1.5 text-[13px] leading-relaxed">

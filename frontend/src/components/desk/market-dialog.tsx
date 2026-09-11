@@ -19,8 +19,13 @@ const INDEX_OPTIONS = [
   { value: "EGX100", label: "EGX100" },
 ];
 
-const action = (row: any) => {
-  if (row.position) return { label: `موجود عندك · ${row.signal?.ar ?? "راجع المركز"}`, tone: "wait" };
+/** Mirrors the /api/scan response shape, kept loose like the rest of the desk types. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ScanRow = any;
+
+const action = (row: ScanRow) => {
+  if (row.position)
+    return { label: `موجود عندك · ${row.signal?.ar ?? "راجع المركز"}`, tone: "wait" };
   if (row.worthBuyingNow) return { label: "فرصة قابلة للتنفيذ الآن", tone: "buy" };
   if (row.entryStatus === "limit_pullback") return { label: "استنى تصحيح وأمر محدد", tone: "wait" };
   if (row.entryStatus === "too_extended") return { label: "ممتد — لا تطارد السعر", tone: "wait" };
@@ -36,7 +41,7 @@ const toneClass: Record<string, string> = {
 /** Market / cash-allocation scan, same /api/scan payload as before. */
 export function MarketDialog() {
   const { marketFocus, openMarket, pf } = useDesk();
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState("ALL");
   const { style, auto } = useActiveInvestStyle(pf?.trades);
@@ -64,23 +69,24 @@ export function MarketDialog() {
 
   const isCash = marketFocus === "cash";
   const rows = [...(data?.results ?? [])].sort(
-    (a: any, b: any) =>
+    (a: ScanRow, b: ScanRow) =>
       (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
   );
-  const shown = isCash ? rows.filter((row: any) => row.cashPlanSelected) : rows.slice(0, 60);
-  const actionable = rows.filter((row: any) => row.worthBuyingNow).length;
-  const held = rows.filter((row: any) => row.position).length;
+  const shown = isCash ? rows.filter((row: ScanRow) => row.cashPlanSelected) : rows.slice(0, 60);
+  const actionable = rows.filter((row: ScanRow) => row.worthBuyingNow).length;
+  const held = rows.filter((row: ScanRow) => row.position).length;
 
   return (
     <Dialog open={Boolean(marketFocus)} onOpenChange={(open) => !open && openMarket(null)}>
       <DialogContent className="max-h-[88vh] gap-4 overflow-y-auto sm:max-w-3xl">
         <DialogHeader className="text-start">
-          <DialogTitle className="text-base">{isCash ? "أفضل توزيع للكاش" : "تحليل السوق"}</DialogTitle>
+          <DialogTitle className="text-base">
+            {isCash ? "أفضل توزيع للكاش" : "تحليل السوق"}
+          </DialogTitle>
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
             {isCash
               ? `أسهم مختارة من أقل المخاطر وأعلى الجودة، بتوزيع متساوٍ تقريبًا واحتياطي ${fmt(data?.cashPlan?.reserveCash ?? 0)} ج.`
-              : `ترتيب الأسهم حسب التقييم والفرص القابلة للتنفيذ${index !== "ALL" ? ` — أسهم ${index} بس` : ""}.`}
-            {" "}
+              : `ترتيب الأسهم حسب التقييم والفرص القابلة للتنفيذ${index !== "ALL" ? ` — أسهم ${index} بس` : ""}.`}{" "}
             حسب أسلوبك: {INVEST_STYLES.find((s) => s.key === style)?.label ?? "متوسط المدى"}
             {auto ? " (مستنتج من سلوكك في التداول)" : ""}.
           </p>
@@ -111,7 +117,8 @@ export function MarketDialog() {
               {isCash ? (
                 <>
                   <span>
-                    القابل للتوزيع: <b className="num">{int(data.cashPlan?.investableCash ?? 0)} ج</b>
+                    القابل للتوزيع:{" "}
+                    <b className="num">{int(data.cashPlan?.investableCash ?? 0)} ج</b>
                   </span>
                   <span>
                     لكل سهم: <b className="num">{int(data.cashPlan?.allocationPerStock ?? 0)} ج</b>
@@ -129,15 +136,12 @@ export function MarketDialog() {
             </div>
 
             <div className="space-y-3">
-              {shown.map((row: any) => {
+              {shown.map((row: ScanRow) => {
                 const state = action(row);
                 return (
                   <div
                     key={row.code}
-                    className={cn(
-                      "rounded-lg border p-4",
-                      row.position ? "bg-surface" : "bg-card",
-                    )}
+                    className={cn("rounded-lg border p-4", row.position ? "bg-surface" : "bg-card")}
                   >
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
                       <div className="min-w-0">

@@ -3,12 +3,7 @@ import { cn } from "@/lib/utils";
 /** EGXpert brand mark: a rising candlestick chart inside a rounded shield. */
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 40 40"
-      role="img"
-      aria-label="EGXpert"
-      className={cn("size-9", className)}
-    >
+    <svg viewBox="0 0 40 40" role="img" aria-label="EGXpert" className={cn("size-9", className)}>
       <defs>
         <linearGradient id="egx-mark" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="var(--primary)" />
@@ -34,13 +29,7 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
-export function Logo({
-  className,
-  tagline = true,
-}: {
-  className?: string;
-  tagline?: boolean;
-}) {
+export function Logo({ className, tagline = true }: { className?: string; tagline?: boolean }) {
   return (
     <span className={cn("flex items-center gap-2.5", className)}>
       <LogoMark className="size-9 shrink-0" />

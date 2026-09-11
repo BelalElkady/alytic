@@ -40,8 +40,8 @@ function ResetPasswordPage() {
     try {
       await post("/api/auth/reset-password", { token, password });
       setDone(true);
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر إعادة تعيين كلمة السر");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر إعادة تعيين كلمة السر");
     } finally {
       setBusy(false);
     }
@@ -56,7 +56,10 @@ function ResetPasswordPage() {
           <div className="flex flex-col items-center gap-3">
             <XCircle className="size-8 text-down" />
             <p className="text-[15px] font-semibold">رابط إعادة التعيين غير صالح</p>
-            <Link to="/forgot-password" className="mt-2 text-[13px] text-primary underline-offset-4 hover:underline">
+            <Link
+              to="/forgot-password"
+              className="mt-2 text-[13px] text-primary underline-offset-4 hover:underline"
+            >
               اطلب رابط جديد
             </Link>
           </div>
@@ -64,7 +67,10 @@ function ResetPasswordPage() {
           <div className="flex flex-col items-center gap-3">
             <CheckCircle2 className="size-8 text-up" />
             <p className="text-[15px] font-semibold">تم تغيير كلمة السر بنجاح</p>
-            <Button className="mt-2 w-full" onClick={() => void navigate({ to: "/login", search: { mode: "login" } })}>
+            <Button
+              className="mt-2 w-full"
+              onClick={() => void navigate({ to: "/login", search: { mode: "login" } })}
+            >
               تسجيل الدخول
             </Button>
           </div>

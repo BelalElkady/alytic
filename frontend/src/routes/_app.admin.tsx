@@ -3,11 +3,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, ErrorState, LoadingBlock, Notice, Panel, Spinner } from "@/components/desk/state-blocks";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingBlock,
+  Notice,
+  Panel,
+  Spinner,
+} from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { api, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
@@ -96,7 +110,9 @@ function IndicesTab() {
         setRows(result.indices);
         setError(null);
       })
-      .catch((caught) => setError(caught?.message ?? "تعذر تحميل بيانات المؤشرات"));
+      .catch((caught) =>
+        setError(caught instanceof Error ? caught.message : "تعذر تحميل بيانات المؤشرات"),
+      );
   };
 
   useEffect(() => {
@@ -105,20 +121,32 @@ function IndicesTab() {
 
   const query = search.trim().toUpperCase();
   const matches = useMemo(
-    () => (query && rows ? rows.filter((row) => row.tickers.some((t) => matchesQuery(t, query))) : []),
+    () =>
+      query && rows ? rows.filter((row) => row.tickers.some((t) => matchesQuery(t, query))) : [],
     [rows, query],
   );
 
-  if (error) return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
+  if (error)
+    return (
+      <ErrorState
+        message={error}
+        action={
+          <Button variant="outline" size="sm" onClick={load}>
+            حاول تاني
+          </Button>
+        }
+      />
+    );
   if (!rows) return <LoadingBlock rows={3} />;
 
   return (
     <div className="space-y-4">
       <Notice tone="info">
-        الملف: CSV أو Excel (xls/xlsx) — سطر/صف لكل كود سهم (زي COMI)، أو عمود عنوانه Ticker/Code/Symbol/Reuters Code/RIC
-        (بيتجاهل عمود ISIN لو موجود). كود مش موجود أصلًا في قاعدة الأسهم بيتضاف تلقائيًا كسهم جديد
-        — لو الملف فيه عمود Company Name/Name بيتاخد منه الاسم. رفع ملف جديد بيستبدل القائمة بالكامل
-        (EGX100 بيتحسب تلقائيًا من EGX30 + EGX70 إلا لو رُفع ملف مستقل ليه).
+        الملف: CSV أو Excel (xls/xlsx) — سطر/صف لكل كود سهم (زي COMI)، أو عمود عنوانه
+        Ticker/Code/Symbol/Reuters Code/RIC (بيتجاهل عمود ISIN لو موجود). كود مش موجود أصلًا في
+        قاعدة الأسهم بيتضاف تلقائيًا كسهم جديد — لو الملف فيه عمود Company Name/Name بيتاخد منه
+        الاسم. رفع ملف جديد بيستبدل القائمة بالكامل (EGX100 بيتحسب تلقائيًا من EGX30 + EGX70 إلا لو
+        رُفع ملف مستقل ليه).
       </Notice>
 
       <Input
@@ -141,7 +169,15 @@ function IndicesTab() {
   );
 }
 
-function IndexPanel({ row, onChanged, highlight }: { row: IndexRow; onChanged: () => void; highlight: string }) {
+function IndexPanel({
+  row,
+  onChanged,
+  highlight,
+}: {
+  row: IndexRow;
+  onChanged: () => void;
+  highlight: string;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState<string[]>([]);
@@ -151,12 +187,16 @@ function IndexPanel({ row, onChanged, highlight }: { row: IndexRow; onChanged: (
     setAdded([]);
     try {
       const bytes = await file.arrayBuffer();
-      const result = await postRaw(`/api/admin/indices/${row.name}`, bytes, file.type || "application/octet-stream");
+      const result = await postRaw(
+        `/api/admin/indices/${row.name}`,
+        bytes,
+        file.type || "application/octet-stream",
+      );
       toast.success(`تم حفظ ${result.saved} كود لمؤشر ${LABELS[row.name] ?? row.name}`);
       if (result.added?.length) setAdded(result.added);
       onChanged();
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر رفع الملف");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر رفع الملف");
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -170,8 +210,8 @@ function IndexPanel({ row, onChanged, highlight }: { row: IndexRow; onChanged: (
       toast.success(`تم استرجاع القائمة الافتراضية لمؤشر ${LABELS[row.name] ?? row.name}`);
       setAdded([]);
       onChanged();
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر الاسترجاع");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر الاسترجاع");
     } finally {
       setBusy(false);
     }
@@ -279,7 +319,9 @@ function UsersTab() {
         setRows(result.users);
         setError(null);
       })
-      .catch((caught) => setError(caught?.message ?? "تعذر تحميل بيانات المستخدمين"));
+      .catch((caught) =>
+        setError(caught instanceof Error ? caught.message : "تعذر تحميل بيانات المستخدمين"),
+      );
   };
 
   useEffect(() => {
@@ -292,7 +334,17 @@ function UsersTab() {
     [rows, query],
   );
 
-  if (error) return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
+  if (error)
+    return (
+      <ErrorState
+        message={error}
+        action={
+          <Button variant="outline" size="sm" onClick={load}>
+            حاول تاني
+          </Button>
+        }
+      />
+    );
   if (!rows) return <LoadingBlock rows={3} />;
 
   return (
@@ -366,12 +418,18 @@ function UserRow({ row }: { row: AdminUserRow }) {
             })
           : "—"}
       </TableCell>
-      <TableCell className="num text-right">{capital != null ? `${int(capital)} ج` : "—"}</TableCell>
-      <TableCell className={cn("num text-right", pf ? tone(pf.realizedPnl) : "text-muted-foreground")}>
+      <TableCell className="num text-right">
+        {capital != null ? `${int(capital)} ج` : "—"}
+      </TableCell>
+      <TableCell
+        className={cn("num text-right", pf ? tone(pf.realizedPnl) : "text-muted-foreground")}
+      >
         {pf ? signed(pf.realizedPnl) : "—"}
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {pf ? `${pf.tradesCount} صفقة · ${pf.positionsCount} مركز · ${pf.watchlistCount} متابعة` : "لا توجد محفظة"}
+        {pf
+          ? `${pf.tradesCount} صفقة · ${pf.positionsCount} مركز · ${pf.watchlistCount} متابعة`
+          : "لا توجد محفظة"}
       </TableCell>
       <TableCell>{inferredStyle ? STYLE_LABEL[inferredStyle] : "—"}</TableCell>
       <TableCell>

@@ -5,10 +5,30 @@ export type StyleKey = "trader" | "medium" | "long";
 export const STYLE_STORAGE_KEY = "alytic-invest-style";
 const STYLE_EVENT = "alytic-invest-style-change";
 
-export const INVEST_STYLES: { key: StyleKey; label: string; horizon: string; description: string }[] = [
-  { key: "trader", label: "مضارب", horizon: "أيام", description: "أسلوب المضارب — أفق أيام، خروج سريع وأهداف قريبة." },
-  { key: "medium", label: "متوسط المدى", horizon: "أسابيع", description: "أسلوب متوسط المدى — أفق أسابيع لشهور." },
-  { key: "long", label: "طويل المدى", horizon: "شهور", description: "أسلوب طويل المدى — أفق شهور، صبر أكبر وأهداف أوسع." },
+export const INVEST_STYLES: {
+  key: StyleKey;
+  label: string;
+  horizon: string;
+  description: string;
+}[] = [
+  {
+    key: "trader",
+    label: "مضارب",
+    horizon: "أيام",
+    description: "أسلوب المضارب — أفق أيام، خروج سريع وأهداف قريبة.",
+  },
+  {
+    key: "medium",
+    label: "متوسط المدى",
+    horizon: "أسابيع",
+    description: "أسلوب متوسط المدى — أفق أسابيع لشهور.",
+  },
+  {
+    key: "long",
+    label: "طويل المدى",
+    horizon: "شهور",
+    description: "أسلوب طويل المدى — أفق شهور، صبر أكبر وأهداف أوسع.",
+  },
 ];
 
 export type StyleRules = {
@@ -222,13 +242,12 @@ export function styleRecommendation(
   },
   style: StyleKey,
 ): Recommendation {
-  const fallback: Recommendation =
-    position.recommendation ?? {
-      action: "hold",
-      label: "احتفاظ",
-      text: "التوصية مش متاحة — أعد تشغيل الخادم.",
-      order: null,
-    };
+  const fallback: Recommendation = position.recommendation ?? {
+    action: "hold",
+    label: "احتفاظ",
+    text: "التوصية مش متاحة — أعد تشغيل الخادم.",
+    order: null,
+  };
 
   const rules = STYLE_RULES[style];
   const price = row.price;

@@ -39,12 +39,14 @@ export const Route = createFileRoute("/_app/portfolio")({
       { title: "EGXpert" },
       {
         name: "description",
-        content: "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
+        content:
+          "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
       { property: "og:title", content: "EGXpert" },
       {
         property: "og:description",
-        content: "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
+        content:
+          "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
     ],
   }),
@@ -92,11 +94,20 @@ function PositionsPage() {
     .map((row) => {
       const p = row.position;
       if (p.stopBreached)
-        return { tone: "danger" as const, text: `${row.code}: أغلق تحت وقف الخسارة ${fmt(p.stop)} — خروج` };
+        return {
+          tone: "danger" as const,
+          text: `${row.code}: أغلق تحت وقف الخسارة ${fmt(p.stop)} — خروج`,
+        };
       if ((p.distanceToStopPct ?? 99) <= 3)
-        return { tone: "warn" as const, text: `${row.code}: قريب من الوقف (${fmt(p.distanceToStopPct, 1)}%)` };
+        return {
+          tone: "warn" as const,
+          text: `${row.code}: قريب من الوقف (${fmt(p.distanceToStopPct, 1)}%)`,
+        };
       if (p.triggers?.atTarget)
-        return { tone: "success" as const, text: `${row.code}: وصل الهدف ${fmt(row.midTarget?.price)}` };
+        return {
+          tone: "success" as const,
+          text: `${row.code}: وصل الهدف ${fmt(row.midTarget?.price)}`,
+        };
       return null;
     })
     .filter(Boolean) as { tone: "danger" | "warn" | "success"; text: string }[];
@@ -142,8 +153,8 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
       await post("/api/portfolio/holding", { code: row.code, shares: 0 });
       toast.success(`تم حذف ${row.code} من المحفظة`);
       void reload();
-    } catch (caught: any) {
-      toast.error(caught?.message ?? "تعذر حذف السهم");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر حذف السهم");
     } finally {
       setDeleting(false);
       setConfirmOpen(false);
@@ -191,7 +202,11 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
               </TooltipProvider>
             )}
             {memberOf.map((name) => (
-              <Badge key={name} variant="outline" className="border-border bg-surface-2 text-[10.5px] text-muted-foreground">
+              <Badge
+                key={name}
+                variant="outline"
+                className="border-border bg-surface-2 text-[10.5px] text-muted-foreground"
+              >
                 {name}
               </Badge>
             ))}
@@ -204,7 +219,9 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
         <div className="shrink-0 text-end">
           <div className="num text-[17px] font-semibold tracking-tight">{fmt(row.price)}</div>
           {row.changePct != null && (
-            <div className={cn("num text-[12px]", tone(row.changePct))}>{pct(row.changePct)} اليوم</div>
+            <div className={cn("num text-[12px]", tone(row.changePct))}>
+              {pct(row.changePct)} اليوم
+            </div>
           )}
         </div>
         <div className="flex shrink-0 items-start pt-0.5">

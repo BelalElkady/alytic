@@ -41,7 +41,9 @@ function BlogIndexPage() {
         setPosts(result.posts);
         setError(null);
       })
-      .catch((caught: any) => setError(caught?.message ?? "تعذر تحميل المقالات"));
+      .catch((caught) =>
+        setError(caught instanceof Error ? caught.message : "تعذر تحميل المقالات"),
+      );
   }, []);
 
   return (
@@ -75,7 +77,9 @@ function BlogIndexPage() {
                 )}
                 <h2 className="mt-3 text-[16px] font-semibold leading-snug">{post.title}</h2>
                 {post.dek && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{post.dek}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+                    {post.dek}
+                  </p>
                 )}
                 <p className="num mt-4 text-[11.5px] text-muted-foreground">
                   {new Date(post.publishedAt).toLocaleDateString("ar-EG")}

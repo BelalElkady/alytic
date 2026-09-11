@@ -40,9 +40,9 @@ function VerifyEmailPage() {
         await post("/api/auth/verify", { token });
         markEmailVerified();
         setStatus("ok");
-      } catch (caught: any) {
+      } catch (caught) {
         setStatus("error");
-        setMessage(caught?.message ?? "تعذر تفعيل البريد الإلكتروني");
+        setMessage(caught instanceof Error ? caught.message : "تعذر تفعيل البريد الإلكتروني");
       }
     })();
   }, [token, markEmailVerified]);
@@ -81,7 +81,11 @@ function VerifyEmailPage() {
             <XCircle className="size-8 text-down" />
             <p className="text-[15px] font-semibold">تعذر تفعيل البريد الإلكتروني</p>
             {message && <p className="text-[13px] text-muted-foreground">{message}</p>}
-            <Link to="/login" search={{ mode: "login" }} className="mt-2 text-[13px] text-primary underline-offset-4 hover:underline">
+            <Link
+              to="/login"
+              search={{ mode: "login" }}
+              className="mt-2 text-[13px] text-primary underline-offset-4 hover:underline"
+            >
               العودة لتسجيل الدخول
             </Link>
           </div>

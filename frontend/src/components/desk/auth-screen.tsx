@@ -44,8 +44,8 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
         await signIn("login", { email, password, remember });
         await navigate({ to: "/portfolio" });
       }
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر إكمال العملية");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر إكمال العملية");
     } finally {
       setBusy(false);
     }
@@ -57,8 +57,8 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
     try {
       await signInWithGoogle(credential);
       await navigate({ to: "/portfolio" });
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر تسجيل الدخول بجوجل");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر تسجيل الدخول بجوجل");
     } finally {
       setGoogleBusy(false);
     }

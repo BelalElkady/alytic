@@ -37,8 +37,8 @@ function AdminLoginPage() {
       // Full navigation, not the router — DeskProvider only reads the session
       // once on mount, and this page never mounted it.
       window.location.href = "/admin";
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر تسجيل الدخول");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر تسجيل الدخول");
     } finally {
       setBusy(false);
     }

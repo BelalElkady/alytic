@@ -47,7 +47,6 @@ async function forward(request: Request): Promise<Response> {
     );
   }
 
-
   const out = new Headers();
   res.headers.forEach((value, key) => {
     if (HOP_BY_HOP.has(key.toLowerCase())) return;
@@ -66,7 +65,6 @@ async function forward(request: Request): Promise<Response> {
     }
     out.append(key, value);
   });
-
 
   // Alytic currently reports an existing registration as a generic 500. It is
   // an expected account conflict, so normalize only that known response while

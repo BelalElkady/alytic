@@ -64,10 +64,7 @@ export function StockPicker({
                   }}
                 >
                   <Check
-                    className={cn(
-                      "size-4",
-                      stock.code === value ? "opacity-100" : "opacity-0",
-                    )}
+                    className={cn("size-4", stock.code === value ? "opacity-100" : "opacity-0")}
                   />
                   <span className="font-medium">{stock.code}</span>
                   <span className="truncate text-muted-foreground">{stock.ar || stock.en}</span>

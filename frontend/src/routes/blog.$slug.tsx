@@ -66,7 +66,7 @@ function BlogPostPage() {
     setError(null);
     api(`/api/blog/${slug}`)
       .then((result) => setPost(result.post))
-      .catch((caught: any) => setError(caught?.message ?? "تعذر تحميل المقالة"));
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "تعذر تحميل المقالة"));
   }, [slug]);
 
   return (

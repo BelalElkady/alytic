@@ -84,7 +84,11 @@ const FEATURES = [
 const STEPS = [
   { n: "١", title: "اعمل حساب", text: "دقيقة واحدة، وتجربة مجانية ٧ أيام بدون أي التزام." },
   { n: "٢", title: "ضيف أسهمك", text: "إدخال يدوي سريع أو رفع صورة محفظتك ويتقرأ تلقائيًا." },
-  { n: "٣", title: "اتابع وقرّر", text: "توصية يومية لكل سهم، تنبيهات الوقف، وأهداف محدّدة بأرقام." },
+  {
+    n: "٣",
+    title: "اتابع وقرّر",
+    text: "توصية يومية لكل سهم، تنبيهات الوقف، وأهداف محدّدة بأرقام.",
+  },
 ];
 
 function LandingPage() {
@@ -212,9 +216,19 @@ function PreviewCard() {
 
       <div className="mt-3 space-y-2">
         {[
-          { code: "COMI", rec: "احتفاظ", tone: "border-border bg-surface-2 text-foreground", price: "٧٥٫٤٠" },
+          {
+            code: "COMI",
+            rec: "احتفاظ",
+            tone: "border-border bg-surface-2 text-foreground",
+            price: "٧٥٫٤٠",
+          },
           { code: "SWDY", rec: "زيادة", tone: "border-up/40 bg-up-soft text-up", price: "٨٫١٨" },
-          { code: "TMGH", rec: "تخفيف", tone: "border-warn/40 bg-warn-soft text-foreground", price: "٤٥٫١٠" },
+          {
+            code: "TMGH",
+            rec: "تخفيف",
+            tone: "border-warn/40 bg-warn-soft text-foreground",
+            price: "٤٥٫١٠",
+          },
         ].map((row) => (
           <div
             key={row.code}

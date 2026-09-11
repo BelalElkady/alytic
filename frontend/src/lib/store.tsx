@@ -14,7 +14,7 @@ import { useActiveInvestStyle } from "./invest-style";
 
 /* Types kept intentionally loose: they mirror the existing API responses
  * and must not constrain fields the engine may add. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export type Position = any;
 export type Row = {
   code: string;
@@ -38,6 +38,7 @@ export type User = {
   isAdmin?: boolean;
   [key: string]: any;
 };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export const PRICE_REFRESH_MS = 20 * 1000;
 
@@ -134,8 +135,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       setRows(scanned);
       setLog((await api("/api/log")).log ?? {});
       setError(null);
-    } catch (caught: any) {
-      setError(caught?.message ?? "حدث خطأ غير متوقع");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "حدث خطأ غير متوقع");
     } finally {
       setLoading(false);
     }

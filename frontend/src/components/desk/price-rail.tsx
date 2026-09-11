@@ -44,7 +44,12 @@ export function PriceRail({
   // doesn't show two labels fighting over the same spot.
   const oneTarget = mergedTargetPrice(target, longTarget);
   if (oneTarget != null) {
-    marks.push({ value: oneTarget, label: `الهدف ${fmt(oneTarget)}`, dot: "bg-up", text: "text-up" });
+    marks.push({
+      value: oneTarget,
+      label: `الهدف ${fmt(oneTarget)}`,
+      dot: "bg-up",
+      text: "text-up",
+    });
   } else {
     if (longTarget != null && (!target || longTarget > target * 1.01))
       marks.push({
@@ -54,7 +59,12 @@ export function PriceRail({
         text: "text-up",
       });
     if (target != null)
-      marks.push({ value: target, label: `هدف متوسط ${fmt(target)}`, dot: "bg-up", text: "text-up" });
+      marks.push({
+        value: target,
+        label: `هدف متوسط ${fmt(target)}`,
+        dot: "bg-up",
+        text: "text-up",
+      });
   }
   if (cost != null)
     marks.push({
@@ -167,9 +177,7 @@ export function PriceRail({
       ) : (
         <>
           {railLine}
-          {!compact && (
-            <div className="relative min-h-9 text-[11px]">{legendPills(false)}</div>
-          )}
+          {!compact && <div className="relative min-h-9 text-[11px]">{legendPills(false)}</div>}
         </>
       )}
     </div>

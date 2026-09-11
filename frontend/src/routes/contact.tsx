@@ -42,8 +42,8 @@ function ContactPage() {
     try {
       await post("/api/contact", { name, email, message });
       setSent(true);
-    } catch (caught: any) {
-      setError(caught?.message ?? "تعذر إرسال الرسالة");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر إرسال الرسالة");
     } finally {
       setBusy(false);
     }

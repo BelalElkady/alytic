@@ -56,7 +56,9 @@ export function EmptyState({
     <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-surface px-6 py-10 text-center">
       <div className="text-muted-foreground">{icon ?? <Inbox className="size-5" />}</div>
       <p className="text-sm font-medium">{title}</p>
-      {hint && <p className="max-w-sm text-[12.5px] leading-relaxed text-muted-foreground">{hint}</p>}
+      {hint && (
+        <p className="max-w-sm text-[12.5px] leading-relaxed text-muted-foreground">{hint}</p>
+      )}
       {action && <div className="mt-2">{action}</div>}
     </div>
   );
