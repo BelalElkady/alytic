@@ -35,12 +35,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, post } from "@/lib/api";
 import { int, signed, tone } from "@/lib/format";
+import { INVEST_STYLES, useInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -218,6 +220,8 @@ function DeskHeader() {
   const { user, signOut, openMarket, setManualOpen, reload, reloadLog, lastPriceSync, priceError } =
     useDesk();
   const { dark, toggle } = useTheme();
+  const investStyle = useInvestStyle();
+  const investStyleLabel = INVEST_STYLES.find((style) => style.key === investStyle)?.label;
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -302,6 +306,13 @@ function DeskHeader() {
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
+            {investStyleLabel && (
+              <Link to="/settings" aria-label="سلوكك الاستثماري">
+                <Badge variant="secondary" className="whitespace-nowrap">
+                  الأسلوب: {investStyleLabel}
+                </Badge>
+              </Link>
+            )}
             <span className="hidden max-w-32 truncate text-[12.5px] text-muted-foreground sm:inline">
               {user?.name || user?.email}
             </span>
