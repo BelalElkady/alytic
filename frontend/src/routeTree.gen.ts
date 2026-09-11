@@ -21,6 +21,7 @@ import { Route as AppAdminRouteImport } from './routes/_app.admin'
 import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
 import { Route as AppCashRouteImport } from './routes/_app.cash'
 import { Route as AppChartsRouteImport } from './routes/_app.charts'
+import { Route as AppIndicesRouteImport } from './routes/_app.indices'
 import { Route as AppPortfolioRouteImport } from './routes/_app.portfolio'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppTargetsRouteImport } from './routes/_app.targets'
@@ -87,6 +88,11 @@ const AppChartsRoute = AppChartsRouteImport.update({
   path: '/charts',
   getParentRoute: () => AppRoute,
 } as any)
+const AppIndicesRoute = AppIndicesRouteImport.update({
+  id: '/indices',
+  path: '/indices',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPortfolioRoute = AppPortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/calendar': typeof AppCalendarRoute
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
+  '/indices': typeof AppIndicesRoute
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
@@ -149,6 +156,7 @@ export interface FileRoutesByTo {
   '/calendar': typeof AppCalendarRoute
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
+  '/indices': typeof AppIndicesRoute
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
@@ -170,6 +178,7 @@ export interface FileRoutesById {
   '/_app/calendar': typeof AppCalendarRoute
   '/_app/cash': typeof AppCashRoute
   '/_app/charts': typeof AppChartsRoute
+  '/_app/indices': typeof AppIndicesRoute
   '/_app/portfolio': typeof AppPortfolioRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/targets': typeof AppTargetsRoute
@@ -191,6 +200,7 @@ export interface FileRouteTypes {
     | '/calendar'
     | '/cash'
     | '/charts'
+    | '/indices'
     | '/portfolio'
     | '/settings'
     | '/targets'
@@ -210,6 +220,7 @@ export interface FileRouteTypes {
     | '/calendar'
     | '/cash'
     | '/charts'
+    | '/indices'
     | '/portfolio'
     | '/settings'
     | '/targets'
@@ -230,6 +241,7 @@ export interface FileRouteTypes {
     | '/_app/calendar'
     | '/_app/cash'
     | '/_app/charts'
+    | '/_app/indices'
     | '/_app/portfolio'
     | '/_app/settings'
     | '/_app/targets'
@@ -337,6 +349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChartsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/indices': {
+      id: '/_app/indices'
+      path: '/indices'
+      fullPath: '/indices'
+      preLoaderRoute: typeof AppIndicesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/portfolio': {
       id: '/_app/portfolio'
       path: '/portfolio'
@@ -387,6 +406,7 @@ interface AppRouteChildren {
   AppCalendarRoute: typeof AppCalendarRoute
   AppCashRoute: typeof AppCashRoute
   AppChartsRoute: typeof AppChartsRoute
+  AppIndicesRoute: typeof AppIndicesRoute
   AppPortfolioRoute: typeof AppPortfolioRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTargetsRoute: typeof AppTargetsRoute
@@ -398,6 +418,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCalendarRoute: AppCalendarRoute,
   AppCashRoute: AppCashRoute,
   AppChartsRoute: AppChartsRoute,
+  AppIndicesRoute: AppIndicesRoute,
   AppPortfolioRoute: AppPortfolioRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTargetsRoute: AppTargetsRoute,

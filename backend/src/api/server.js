@@ -34,6 +34,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
 import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
+import { fetchEgx30Spot } from '../data/yahoo.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml } from '../emailTemplates.js';
@@ -160,6 +161,53 @@ app.get('/api/universe', (_req, res) => {
 // src/config/indices.js for sourcing and its accuracy caveats.
 app.get('/api/indices', wrap(async (_req, res) => {
   res.json({ indices: await effectiveIndices(), asOf: INDICES_AS_OF });
+}));
+
+/**
+ * Today's behavior for each of EGX's four headline indices, plus the best
+ * and worst constituent of the day — for the desk's "Indices" tab. There is
+ * no native spot/history feed for EGX70/EGX33/EGX100 (see config/indices.js),
+ * so each index's daily change is the simple average of its constituents'
+ * live changePct; EGX30 additionally carries Yahoo's real ^CASE30 spot
+ * change where reachable, reported separately from the computed average
+ * rather than replacing it.
+ */
+app.get('/api/indices/performance', wrap(async (_req, res) => {
+  const membership = await effectiveIndices();
+  const names = Object.keys(membership);
+  const allCodes = [...new Set(names.flatMap((name) => membership[name] ?? []))];
+  const [quotes, egx30Spot] = await Promise.all([
+    fetchLatestQuotes(allCodes),
+    fetchEgx30Spot().catch(() => null),
+  ]);
+
+  const indices = names.map((name) => {
+    const rows = (membership[name] ?? [])
+      .map((code) => {
+        const quote = quotes.get(code);
+        if (!quote || !Number.isFinite(quote.changePct)) return null;
+        return { code, name: lookup(code)?.ar || lookup(code)?.en || code, price: quote.price, changePct: quote.changePct };
+      })
+      .filter(Boolean);
+    const avgChangePct = rows.length
+      ? +(rows.reduce((sum, r) => sum + r.changePct, 0) / rows.length).toFixed(2)
+      : null;
+    const best = rows.length ? rows.reduce((a, b) => (b.changePct > a.changePct ? b : a)) : null;
+    const worst = rows.length ? rows.reduce((a, b) => (b.changePct < a.changePct ? b : a)) : null;
+    const spot = name === 'EGX30' ? egx30Spot : null;
+    return {
+      name,
+      changePct: spot?.changePct ?? avgChangePct,
+      avgChangePct,
+      spotValue: spot?.value ?? null,
+      constituentCount: (membership[name] ?? []).length,
+      quotedCount: rows.length,
+      best,
+      worst,
+    };
+  });
+
+  res.json({ asOf: new Date().toISOString(), indices });
 }));
 
 // ---- Admin ------------------------------------------------------------------

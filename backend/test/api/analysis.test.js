@@ -97,6 +97,28 @@ test('GET /api/scan plans the cash allocation across the requested codes', async
   assert.equal(styled.body.style, 'trader');
 });
 
+test('GET /api/indices/performance answers with one row per index even when the feed is unreachable', async () => {
+  const res = await request(baseUrl, 'GET', '/api/indices/performance', { cookie });
+  assert.equal(res.status, 200, res.text);
+  assert.ok(res.body.asOf);
+  assert.ok(Array.isArray(res.body.indices));
+  assert.deepEqual(res.body.indices.map((i) => i.name).sort(), ['EGX100', 'EGX30', 'EGX33', 'EGX70']);
+  for (const row of res.body.indices) {
+    assert.ok(row.constituentCount > 0);
+    assert.ok(row.quotedCount >= 0);
+    // With the live feed unreachable in tests, best/worst/changePct degrade to
+    // null rather than the request failing — never a partial/broken shape.
+    if (row.quotedCount === 0) {
+      assert.equal(row.best, null);
+      assert.equal(row.worst, null);
+      assert.equal(row.avgChangePct, null);
+    } else {
+      assert.ok(row.best.code && Number.isFinite(row.best.changePct));
+      assert.ok(row.worst.code && Number.isFinite(row.worst.changePct));
+    }
+  }
+});
+
 test('GET /api/quotes answers with a quote map even when the feed is unreachable', async () => {
   const res = await request(baseUrl, 'GET', '/api/quotes?codes=ABUK,SWDY', { cookie });
   assert.equal(res.status, 200);

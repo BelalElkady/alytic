@@ -1,5 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
+  Activity,
   BarChart3,
   CalendarDays,
   Crosshair,
@@ -48,6 +49,7 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/portfolio", label: "الأسهم", icon: Wallet, adminOnly: false },
+  { to: "/indices", label: "المؤشرات", icon: Activity, adminOnly: false },
   { to: "/targets", label: "الأهداف", icon: Crosshair, adminOnly: false },
   { to: "/calendar", label: "التقويم", icon: CalendarDays, adminOnly: false },
   { to: "/charts", label: "الرسوم", icon: BarChart3, adminOnly: false },
