@@ -107,14 +107,13 @@ function SettingsPage() {
         {auto ? (
           <Notice tone="info" className="mb-3">
             {inferred
-              ? `الأسلوب دلوقتي مستنتج تلقائيًا من صفقاتك السابقة: ${
-                  INVEST_STYLES.find((item) => item.key === inferred)!.label
-                }. اختار سلوك من تحت لو عايز تثبّته بدل الاستنتاج التلقائي.`
+              ? `الأسلوب دلوقتي مستنتج تلقائيًا من صفقاتك السابقة: ${INVEST_STYLES.find((item) => item.key === inferred)!.label
+              }. اختار سلوك من تحت لو عايز تثبّته بدل الاستنتاج التلقائي.`
               : "مفيش صفقات كفاية لسه لاستنتاج أسلوبك تلقائيًا، فمُفعّل حاليًا أسلوب متوسط المدى كافتراضي. اختار سلوك من تحت أو خلّي التطبيق يستنتجه لما تتراكم صفقاتك."}
           </Notice>
         ) : (
           <Notice tone="info" className="mb-3">
-            الأسلوب مثبّت يدويًا دلوقتي، مش مستنتج من سلوكك في التداول.{" "}
+            سلوكك الاستثماري مثبّت يدويًا دلوقتي، مش مستنتج من سلوكك في التداول.{" "}
             <button type="button" onClick={resetToAuto} className="font-semibold underline underline-offset-2">
               رجّعه تلقائي
             </button>
@@ -129,11 +128,10 @@ function SettingsPage() {
                 type="button"
                 onClick={() => chooseStyle(item.key)}
                 aria-pressed={active}
-                className={`rounded-lg border px-4 py-3 text-center transition-colors ${
-                  active
+                className={`rounded-lg border px-4 py-3 text-center transition-colors ${active
                     ? "border-primary bg-primary/10 ring-1 ring-primary"
                     : "border-border bg-surface hover:bg-muted"
-                }`}
+                  }`}
               >
                 <div className="text-[14px] font-semibold">{item.label}</div>
                 <div className="mt-0.5 text-[12px] text-muted-foreground">({item.horizon})</div>

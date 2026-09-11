@@ -16,51 +16,88 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { post } from "@/lib/api";
-import { fmt, int } from "@/lib/format";
+import { api, post } from "@/lib/api";
+import { fmt, int, pct, tone } from "@/lib/format";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/cash")({
   head: () => ({
     meta: [
-      { title: "الكاش وقائمة المراقبة — EGXpert" },
+      { title: "الكاش والأسهم المفضلة — EGXpert" },
       {
         name: "description",
-        content: "إدارة الكاش المتاح، نسبته من رأس المال، وأوامر شراء محددة على مستويات دعم.",
+        content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
-      { property: "og:title", content: "الكاش وقائمة المراقبة — EGXpert" },
+      { property: "og:title", content: "الكاش والأسهم المفضلة — EGXpert" },
       {
         property: "og:description",
-        content: "إدارة الكاش المتاح، نسبته من رأس المال، وأوامر شراء محددة على مستويات دعم.",
+        content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
     ],
   }),
   component: CashPage,
 });
 
+type FavoriteRow = {
+  code: string;
+  name?: string;
+  sector?: string;
+  price?: number;
+  changePct?: number | null;
+  score?: number;
+  signal?: { ar?: string };
+};
+
 function CashPage() {
   const { pf, totals, reloadPortfolio, openMarket } = useDesk();
   const [cash, setCash] = useState("");
   const [savingCash, setSavingCash] = useState(false);
-  const [watch, setWatch] = useState({ code: "", entry: "", stop: "", target: "", qty: "" });
+  const [watchCode, setWatchCode] = useState("");
+  const [watchNote, setWatchNote] = useState("");
   const [watchError, setWatchError] = useState<string | null>(null);
   const [addingWatch, setAddingWatch] = useState(false);
+  const [favRows, setFavRows] = useState<Record<string, FavoriteRow>>({});
+  const [favLoading, setFavLoading] = useState(false);
 
   useEffect(() => {
     setCash(String(pf?.cash ?? 0));
   }, [pf?.cash]);
+
+  const watchlist: [string, any][] = Object.entries(pf?.watchlist ?? {});
+  const watchCodes = watchlist.map(([code]) => code).sort().join(",");
+
+  // Re-fetches price/score/signal for every favorite whenever the set changes —
+  // this is what makes the list "monitor" a stock rather than just remember it.
+  useEffect(() => {
+    if (!watchCodes) {
+      setFavRows({});
+      return;
+    }
+    let cancelled = false;
+    setFavLoading(true);
+    api(`/api/scan?codes=${watchCodes}`)
+      .then((result) => {
+        if (cancelled) return;
+        const byCode: Record<string, FavoriteRow> = {};
+        for (const row of result?.results ?? []) byCode[row.code] = row;
+        setFavRows(byCode);
+      })
+      .catch(() => {})
+      .finally(() => !cancelled && setFavLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [watchCodes]);
 
   const share = totals.value + totals.cash ? (totals.cash / (totals.value + totals.cash)) * 100 : 0;
   const advice =
     totals.cash <= 0
       ? "مفيش كاش متاح حاليًا. أي شراء جديد لازم يجي من بيع جزئي لسهم مربح — ما تشتريش بالدين."
       : share < 10
-        ? `الكاش ${fmt(share, 0)}% بس من المحفظة — قليل. احتفظ به كاحتياطي، وما تدخلش صفقة جديدة إلا لو اتنفذ أمر من قائمة المراقبة عند سعره المحدد.`
+        ? `الكاش ${fmt(share, 0)}% بس من المحفظة — قليل. احتفظ به كاحتياطي، وما تدخلش صفقة جديدة إلا على فرصة واضحة من أسهمك المفضلة أو تحليل السوق.`
         : share < 30
           ? `الكاش ${fmt(share, 0)}% — نسبة صحية. وزّعه: ثلث على أوامر محددة، وثلث ينتظر تصحيح المؤشر، وثلث يفضل نقدي.`
           : `الكاش ${fmt(share, 0)}% — عالي. ابدأ نشر تدريجي على 3 أسابيع بأوامر محددة. الباقي صندوق نقدي — مش فلوس نايمة، ده عائد + ذخيرة.`;
-
-  const watchlist: [string, any][] = Object.entries(pf?.watchlist ?? {});
 
   const saveCash = async () => {
     setSavingCash(true);
@@ -76,23 +113,18 @@ function CashPage() {
   };
 
   const addWatch = async () => {
-    if (!watch.code) {
+    if (!watchCode) {
       setWatchError("اختار سهم من القائمة الأول.");
       return;
     }
     setAddingWatch(true);
     setWatchError(null);
     try {
-      await post("/api/portfolio/watchlist", {
-        code: watch.code,
-        entry: +watch.entry,
-        stop: +watch.stop,
-        target: +watch.target,
-        qty: +watch.qty,
-      });
+      await post("/api/portfolio/watchlist", { code: watchCode, note: watchNote || null });
       await reloadPortfolio();
-      setWatch({ code: "", entry: "", stop: "", target: "", qty: "" });
-      toast.success("تمت الإضافة لقائمة المراقبة");
+      setWatchCode("");
+      setWatchNote("");
+      toast.success("تمت الإضافة للأسهم المفضلة");
     } catch (caught: any) {
       setWatchError(caught?.message ?? "تعذر الإضافة");
     } finally {
@@ -147,22 +179,23 @@ function CashPage() {
       </Panel>
 
       <Panel
-        title="قائمة المراقبة — أسهم مقترحة للكاش"
-        description="أوامر شراء محددة على مستويات دعم، مش بسعر السوق. لو اتنفذ أمر، سجّله في الصفقات وهيتحوّل لمركز."
+        title="الأسهم المفضلة"
+        description="اختار الأسهم اللي يهمك سعرها، والصفحة تتابع سعرها وتغيّرها اليومي وتقييمها أولًا بأول — من غير خطة شراء."
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
             <Label>السهم</Label>
-            <StockPicker
-              value={watch.code}
-              onChange={(code) => setWatch((previous) => ({ ...previous, code }))}
-              className="sm:w-full"
+            <StockPicker value={watchCode} onChange={setWatchCode} className="sm:w-full" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+            <Label htmlFor="watch-note">ملاحظة (اختياري)</Label>
+            <Input
+              id="watch-note"
+              value={watchNote}
+              onChange={(event) => setWatchNote(event.target.value)}
+              placeholder="مثلاً: استنى تصحيح لمستوى الدعم"
             />
           </div>
-          <NumberField label="سعر الدخول" value={watch.entry} onChange={(v) => setWatch((p) => ({ ...p, entry: v }))} />
-          <NumberField label="الوقف" value={watch.stop} onChange={(v) => setWatch((p) => ({ ...p, stop: v }))} />
-          <NumberField label="الهدف" value={watch.target} onChange={(v) => setWatch((p) => ({ ...p, target: v }))} />
-          <NumberField label="العدد" value={watch.qty} step="1" onChange={(v) => setWatch((p) => ({ ...p, qty: v }))} />
           <div className="flex items-end">
             <Button className="w-full sm:w-auto" onClick={() => void addWatch()} disabled={addingWatch}>
               {addingWatch && <Spinner />}
@@ -175,42 +208,38 @@ function CashPage() {
 
         <div className="mt-4">
           {watchlist.length === 0 ? (
-            <EmptyState title="قائمة المراقبة فاضية" hint="ضيف سهم بأمر محدد وهيظهر هنا." />
+            <EmptyState title="مفيش أسهم مفضلة لسه" hint="ضيف سهم وهيظهر هنا مع سعره وتغيّره اليومي." />
           ) : (
             <div className="scrollbar-slim overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-start">الكود</TableHead>
-                    <TableHead className="text-start">سعر الدخول</TableHead>
-                    <TableHead className="text-start">الوقف</TableHead>
-                    <TableHead className="text-start">الهدف</TableHead>
-                    <TableHead className="text-start">العدد</TableHead>
-                    <TableHead className="text-start">التكلفة</TableHead>
-                    <TableHead className="text-start">مخاطرة</TableHead>
-                    <TableHead className="text-start">عائد 1:</TableHead>
+                    <TableHead className="text-start">الاسم</TableHead>
+                    <TableHead className="text-start">السعر</TableHead>
+                    <TableHead className="text-start">التغير اليومي</TableHead>
+                    <TableHead className="text-start">التقييم</TableHead>
+                    <TableHead className="text-start">الإشارة</TableHead>
+                    <TableHead className="text-start">ملاحظة</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {watchlist.map(([code, item]) => {
-                    const risk = item.entry && item.stop ? ((item.entry - item.stop) / item.entry) * 100 : null;
-                    const rr =
-                      item.entry && item.stop && item.target
-                        ? (item.target - item.entry) / (item.entry - item.stop)
-                        : null;
+                    const row = favRows[code];
                     return (
                       <TableRow key={code}>
                         <TableCell className="font-medium">{code}</TableCell>
-                        <TableCell className="num text-right">{fmt(item.entry)}</TableCell>
-                        <TableCell className="num text-right text-down">{fmt(item.stop)}</TableCell>
-                        <TableCell className="num text-right text-up">{fmt(item.target)}</TableCell>
-                        <TableCell className="num text-right">{int(item.qty)}</TableCell>
-                        <TableCell className="num text-right">
-                          {item.entry && item.qty ? int(item.entry * item.qty) : "—"}
+                        <TableCell className="text-muted-foreground">
+                          {row ? `${row.name ?? "—"} · ${row.sector ?? "—"}` : favLoading ? "…" : "—"}
                         </TableCell>
-                        <TableCell className="num text-right">{risk != null ? `${fmt(risk, 1)}%` : "—"}</TableCell>
-                        <TableCell className="num text-right">{rr != null ? fmt(rr, 1) : "—"}</TableCell>
+                        <TableCell className="num text-right">{row ? fmt(row.price) : "—"}</TableCell>
+                        <TableCell className={`num text-right ${tone(row?.changePct)}`}>
+                          {row?.changePct != null ? pct(row.changePct, 1) : "—"}
+                        </TableCell>
+                        <TableCell className="num text-right">{row?.score ?? "—"}</TableCell>
+                        <TableCell className="text-right">{row?.signal?.ar ?? "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">{item.note || "—"}</TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"
@@ -230,31 +259,6 @@ function CashPage() {
           )}
         </div>
       </Panel>
-    </div>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  step = "0.01",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  step?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Input
-        className="num"
-        type="number"
-        step={step}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
     </div>
   );
 }

@@ -21,7 +21,7 @@ test.describe("desk flows", () => {
     await expect(page.getByText("ABUK")).toBeVisible({ timeout: 30_000 });
   });
 
-  test("cash management and the watchlist round-trip", async ({ page }) => {
+  test("cash management and the favorites round-trip", async ({ page }) => {
     await registerViaUi(page);
 
     await goto(page, "/cash");
@@ -29,17 +29,11 @@ test.describe("desk flows", () => {
     await page.getByRole("button", { name: "حفظ", exact: true }).click();
     await expectToast(page, "تم تحديث الكاش");
 
-    // watchlist add + remove. The watchlist NumberFields render <label> as a
-    // sibling of <input> (no htmlFor), so target each input via its label.
-    const watchField = (label: string) =>
-      page.locator(`label:text-is("${label}") + input`);
+    // favorites add + remove — just a code and an optional note, no order plan.
     await pickStock(page, "SWDY");
-    await watchField("سعر الدخول").fill("90");
-    await watchField("الوقف").fill("82");
-    await watchField("الهدف").fill("110");
-    await watchField("العدد").fill("200");
+    await page.getByLabel("ملاحظة (اختياري)").fill("راقبه");
     await page.getByRole("button", { name: "إضافة", exact: true }).click();
-    await expectToast(page, "تمت الإضافة لقائمة المراقبة");
+    await expectToast(page, "تمت الإضافة للأسهم المفضلة");
     await expect(page.getByRole("row").filter({ hasText: "SWDY" })).toBeVisible();
 
     await page.getByRole("button", { name: "حذف SWDY" }).click();

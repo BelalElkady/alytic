@@ -193,12 +193,13 @@ test('the whole portfolio lifecycle over HTTP', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.positions.ABUK.stop, 44);
 
-  // watchlist add + remove
+  // watchlist (favorites) add + remove
   res = await request(baseUrl, 'POST', '/api/portfolio/watchlist', {
-    body: { code: 'SWDY', entry: 90, stop: 82, target: 110, note: 'راقبه' }, cookie,
+    body: { code: 'SWDY', note: 'راقبه' }, cookie,
   });
   assert.equal(res.status, 200);
   assert.ok(res.body.watchlist.SWDY);
+  assert.equal(res.body.watchlist.SWDY.note, 'راقبه');
   res = await request(baseUrl, 'POST', '/api/portfolio/watchlist', { body: { code: 'SWDY', remove: true }, cookie });
   assert.equal(res.body.watchlist.SWDY, undefined);
 

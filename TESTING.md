@@ -117,7 +117,7 @@ npx playwright show-report tests/e2e/report
 
 The specs drive the Arabic UI like a user: landing/pricing pages, registration
 and login (including the duplicate-email and wrong-password errors), recording
-trades, the portfolio view, cash + watchlist, saving the daily close into the
+trades, the portfolio view, cash + favorites, saving the daily close into the
 calendar, the manual-entry correction dialog, and state persistence across a
 logout/login cycle.
 

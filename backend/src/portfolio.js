@@ -15,7 +15,7 @@ import { lookup } from './config/universe.js';
 const EMPTY = {
   cash: 0,
   positions: {},   // code -> { shares, avgCost, stop, target, openedAt }
-  watchlist: {},   // code -> { entry, stop, target, qty, note }
+  watchlist: {},   // favorites the user picked to watch — code -> { addedAt, note }
   trades: [],      // { date, code, side, shares, price, commission, note }
   // One entry per saved close, keyed YYYY-MM-DD. This is what the calendar and
   // the equity curve read — without it the app can show today but has no

@@ -528,14 +528,15 @@ app.post('/api/portfolio/holding', wrap(async (req, res) => {
   res.json(updated);
 }));
 
+/** The user's favorite stocks — just codes to keep an eye on, no order plan attached. */
 app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
-  const { code, entry, stop, target, qty, note, remove } = req.body ?? {};
+  const { code, note, remove } = req.body ?? {};
   if (!code) return res.status(400).json({ error: 'محتاج code' });
   const c = String(code).toUpperCase();
   const updated = await withPortfolio(req.user.id, (portfolio) => {
     const watchlist = { ...portfolio.watchlist };
     if (remove) delete watchlist[c];
-    else watchlist[c] = { entry: Number(entry) || null, stop: Number(stop) || null, target: Number(target) || null, qty: Number(qty) || null, note: note ?? null };
+    else watchlist[c] = { addedAt: watchlist[c]?.addedAt ?? new Date().toISOString(), note: note ?? null };
     return { ...portfolio, watchlist };
   });
   res.json(updated);
