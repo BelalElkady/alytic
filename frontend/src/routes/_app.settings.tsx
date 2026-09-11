@@ -2,14 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { ErrorState, LoadingBlock, Panel, Spinner } from "@/components/desk/state-blocks";
+import { ErrorState, LoadingBlock, Notice, Panel, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { api, post } from "@/lib/api";
 import {
+  clearInvestStyle,
   INVEST_STYLES,
   STYLE_RULES,
   setInvestStyle,
-  useInvestStyle,
+  useActiveInvestStyle,
   type StyleKey,
 } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
@@ -34,16 +35,21 @@ export const Route = createFileRoute("/_app/settings")({
 });
 
 function SettingsPage() {
-  const { reload } = useDesk();
+  const { reload, pf } = useDesk();
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [armed, setArmed] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const style = useInvestStyle();
+  const { style, auto, inferred } = useActiveInvestStyle(pf?.trades);
 
   const chooseStyle = (next: StyleKey) => {
     setInvestStyle(next);
     toast.success(`تم تفعيل قواعد ${INVEST_STYLES.find((item) => item.key === next)!.label}`);
+  };
+
+  const resetToAuto = () => {
+    clearInvestStyle();
+    toast.success("رجّعنا الأسلوب لسلوكك التلقائي في التداول");
   };
 
 
@@ -98,6 +104,22 @@ function SettingsPage() {
         title="اختار سلوكك الاستثماري لتحديد قواعد التوصيات"
         description="الاختيار بيغيّر قواعد التوصيات وتوصية كل سهم في صفحة المراكز فورًا."
       >
+        {auto ? (
+          <Notice tone="info" className="mb-3">
+            {inferred
+              ? `الأسلوب دلوقتي مستنتج تلقائيًا من صفقاتك السابقة: ${
+                  INVEST_STYLES.find((item) => item.key === inferred)!.label
+                }. اختار سلوك من تحت لو عايز تثبّته بدل الاستنتاج التلقائي.`
+              : "مفيش صفقات كفاية لسه لاستنتاج أسلوبك تلقائيًا، فمُفعّل حاليًا أسلوب متوسط المدى كافتراضي. اختار سلوك من تحت أو خلّي التطبيق يستنتجه لما تتراكم صفقاتك."}
+          </Notice>
+        ) : (
+          <Notice tone="info" className="mb-3">
+            الأسلوب مثبّت يدويًا دلوقتي، مش مستنتج من سلوكك في التداول.{" "}
+            <button type="button" onClick={resetToAuto} className="font-semibold underline underline-offset-2">
+              رجّعه تلقائي
+            </button>
+          </Notice>
+        )}
         <div className="grid gap-2 sm:grid-cols-3">
           {INVEST_STYLES.map((item) => {
             const active = item.key === style;

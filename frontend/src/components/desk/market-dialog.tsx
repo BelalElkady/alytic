@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "@/lib/api";
 import { fmt, int, pct } from "@/lib/format";
-import { INVEST_STYLES, useInvestStyle } from "@/lib/invest-style";
+import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { mergedTarget } from "@/lib/targets";
 import { cn } from "@/lib/utils";
@@ -35,11 +35,11 @@ const toneClass: Record<string, string> = {
 
 /** Market / cash-allocation scan, same /api/scan payload as before. */
 export function MarketDialog() {
-  const { marketFocus, openMarket } = useDesk();
+  const { marketFocus, openMarket, pf } = useDesk();
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState("ALL");
-  const style = useInvestStyle();
+  const { style, auto } = useActiveInvestStyle(pf?.trades);
 
   useEffect(() => {
     if (!marketFocus) return;
@@ -81,7 +81,8 @@ export function MarketDialog() {
               ? `أسهم مختارة من أقل المخاطر وأعلى الجودة، بتوزيع متساوٍ تقريبًا واحتياطي ${fmt(data?.cashPlan?.reserveCash ?? 0)} ج.`
               : `ترتيب الأسهم حسب التقييم والفرص القابلة للتنفيذ${index !== "ALL" ? ` — أسهم ${index} بس` : ""}.`}
             {" "}
-            حسب أسلوبك: {INVEST_STYLES.find((s) => s.key === style)?.label ?? "متوسط المدى"}.
+            حسب أسلوبك: {INVEST_STYLES.find((s) => s.key === style)?.label ?? "متوسط المدى"}
+            {auto ? " (مستنتج من سلوكك في التداول)" : ""}.
           </p>
         </DialogHeader>
 

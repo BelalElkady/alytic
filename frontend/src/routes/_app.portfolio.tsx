@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { post } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
-import { styleRecommendation, useInvestStyle } from "@/lib/invest-style";
+import { styleRecommendation, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk, type Row } from "@/lib/store";
 
 import { cn } from "@/lib/utils";
@@ -125,10 +125,10 @@ function PositionsPage() {
 }
 
 function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
-  const { reload, indices } = useDesk();
+  const { reload, indices, pf } = useDesk();
   const memberOf = indices[row.code] ?? [];
   const p = row.position;
-  const style = useInvestStyle();
+  const { style } = useActiveInvestStyle(pf?.trades);
   const rec = styleRecommendation(row, p, style);
   const critical = p.stopBreached;
   const near = !critical && (p.distanceToStopPct ?? 99) <= 3;

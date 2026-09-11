@@ -42,7 +42,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, post } from "@/lib/api";
 import { int, signed, tone } from "@/lib/format";
-import { INVEST_STYLES, useInvestStyle } from "@/lib/invest-style";
+import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -175,7 +175,7 @@ function RequirePhoneDialog() {
   };
 
   return (
-    <AlertDialog open onOpenChange={() => {}}>
+    <AlertDialog open onOpenChange={() => { }}>
       <AlertDialogContent>
         <AlertDialogHeader className="text-start">
           <AlertDialogTitle>محتاجين رقم موبايلك</AlertDialogTitle>
@@ -217,10 +217,10 @@ function RequirePhoneDialog() {
 }
 
 function DeskHeader() {
-  const { user, signOut, openMarket, setManualOpen, reload, reloadLog, lastPriceSync, priceError } =
+  const { user, signOut, openMarket, setManualOpen, reload, reloadLog, lastPriceSync, priceError, pf } =
     useDesk();
   const { dark, toggle } = useTheme();
-  const investStyle = useInvestStyle();
+  const { style: investStyle, auto: investStyleAuto } = useActiveInvestStyle(pf?.trades);
   const investStyleLabel = INVEST_STYLES.find((style) => style.key === investStyle)?.label;
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
@@ -309,7 +309,8 @@ function DeskHeader() {
             {investStyleLabel && (
               <Link to="/settings" aria-label="سلوكك الاستثماري">
                 <Badge variant="secondary" className="whitespace-nowrap">
-                  الأسلوب: {investStyleLabel}
+                  سلوكك الاستثماري: {investStyleLabel}
+                  {investStyleAuto ? " (تلقائي)" : ""}
                 </Badge>
               </Link>
             )}
@@ -409,7 +410,7 @@ function DesktopNav() {
         <Link
           key={to}
           to={to}
-          
+
           className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-secondary data-[status=active]:text-foreground"
         >
           <Icon className="size-4" />

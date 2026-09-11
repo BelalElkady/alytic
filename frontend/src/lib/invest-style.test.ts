@@ -2,13 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 
 import {
+  clearInvestStyle,
+  hasExplicitInvestStyle,
+  inferInvestStyle,
   INVEST_STYLES,
   setInvestStyle,
   STYLE_STORAGE_KEY,
   styleRecommendation,
   STYLE_RULES,
+  useActiveInvestStyle,
   useInvestStyle,
   type StyleKey,
+  type Trade,
 } from "./invest-style";
 
 afterEach(() => {
@@ -59,6 +64,81 @@ describe("useInvestStyle", () => {
     window.localStorage.setItem(STYLE_STORAGE_KEY, "yolo");
     const { result } = renderHook(() => useInvestStyle());
     expect(result.current).toBe("medium");
+  });
+});
+
+describe("hasExplicitInvestStyle / clearInvestStyle", () => {
+  it("is false until a style is chosen, and clearInvestStyle drops back to auto", () => {
+    expect(hasExplicitInvestStyle()).toBe(false);
+    setInvestStyle("trader");
+    expect(hasExplicitInvestStyle()).toBe(true);
+    clearInvestStyle();
+    expect(hasExplicitInvestStyle()).toBe(false);
+  });
+});
+
+/** `count` closed round trips on the same code, each held for `holdDays`. */
+function tradesWithHoldingDays(holdDays: number, count = 3): Trade[] {
+  const trades: Trade[] = [];
+  for (let i = 0; i < count; i++) {
+    const buy = new Date(Date.UTC(2024, 0, 1 + i * 200));
+    const sell = new Date(buy.getTime() + holdDays * 86_400_000);
+    trades.push({ date: buy.toISOString().slice(0, 10), code: "ABC", side: "buy", shares: 100 });
+    trades.push({ date: sell.toISOString().slice(0, 10), code: "ABC", side: "sell", shares: 100 });
+  }
+  return trades;
+}
+
+describe("inferInvestStyle", () => {
+  it("returns null with no trades or too few closed round trips", () => {
+    expect(inferInvestStyle(undefined)).toBeNull();
+    expect(inferInvestStyle([])).toBeNull();
+    expect(inferInvestStyle(tradesWithHoldingDays(5, 2))).toBeNull();
+  });
+
+  it("classifies short average holds as trader", () => {
+    expect(inferInvestStyle(tradesWithHoldingDays(3))).toBe("trader");
+  });
+
+  it("classifies weeks-to-months holds as medium", () => {
+    expect(inferInvestStyle(tradesWithHoldingDays(30))).toBe("medium");
+  });
+
+  it("classifies months-long holds as long", () => {
+    expect(inferInvestStyle(tradesWithHoldingDays(120))).toBe("long");
+  });
+
+  it("FIFO-matches sells against the earliest open buy lots, out of input order", () => {
+    const trades: Trade[] = [
+      { date: "2024-01-01", code: "ABC", side: "buy", shares: 50 },
+      { date: "2024-01-10", code: "ABC", side: "buy", shares: 50 },
+      { date: "2024-01-05", code: "ABC", side: "sell", shares: 30 },
+      { date: "2024-02-01", code: "ABC", side: "sell", shares: 20 },
+      { date: "2024-02-05", code: "ABC", side: "sell", shares: 50 },
+    ];
+    expect(inferInvestStyle(trades)).not.toBeNull();
+  });
+});
+
+describe("useActiveInvestStyle", () => {
+  it("uses the inferred style until the user picks one explicitly", () => {
+    const { result } = renderHook(() => useActiveInvestStyle(tradesWithHoldingDays(120)));
+    expect(result.current).toEqual({ style: "long", auto: true, inferred: "long" });
+  });
+
+  it("an explicit choice always wins over the inferred style", () => {
+    act(() => {
+      setInvestStyle("long");
+    });
+    const { result } = renderHook(() => useActiveInvestStyle(tradesWithHoldingDays(3)));
+    expect(result.current.auto).toBe(false);
+    expect(result.current.style).toBe("long");
+    expect(result.current.inferred).toBe("trader");
+  });
+
+  it("falls back to medium when there isn't enough trade history to infer from", () => {
+    const { result } = renderHook(() => useActiveInvestStyle([]));
+    expect(result.current).toEqual({ style: "medium", auto: true, inferred: null });
   });
 });
 

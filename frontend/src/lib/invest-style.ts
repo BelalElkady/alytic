@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type StyleKey = "trader" | "medium" | "long";
 
@@ -78,6 +78,19 @@ export function setInvestStyle(next: StyleKey) {
   window.dispatchEvent(new CustomEvent(STYLE_EVENT, { detail: next }));
 }
 
+/** Drops back to auto mode — the behaviour inferred from trade history decides the style again. */
+export function clearInvestStyle() {
+  window.localStorage.removeItem(STYLE_STORAGE_KEY);
+  window.dispatchEvent(new CustomEvent(STYLE_EVENT, { detail: null }));
+}
+
+/** True once the user has picked a style by hand — as opposed to it defaulting from behaviour or "medium". */
+export function hasExplicitInvestStyle(): boolean {
+  if (typeof window === "undefined") return false;
+  const saved = window.localStorage.getItem(STYLE_STORAGE_KEY);
+  return saved === "trader" || saved === "medium" || saved === "long";
+}
+
 /** Reactive read of the chosen behaviour, synced across pages/tabs. */
 export function useInvestStyle(): StyleKey {
   const [style, setStyle] = useState<StyleKey>("medium");
@@ -92,6 +105,93 @@ export function useInvestStyle(): StyleKey {
     };
   }, []);
   return style;
+}
+
+export type Trade = { date: string; code: string; side: "buy" | "sell"; shares: number };
+
+// Fewer completed round trips than this and there isn't enough history to
+// read behaviour from — stick with the manual/default style instead of
+// guessing off one or two trades.
+const MIN_CLOSED_TRADES = 3;
+const TRADER_MAX_AVG_DAYS = 10;
+const MEDIUM_MAX_AVG_DAYS = 60;
+
+function daysBetween(from: string, to: string): number {
+  const ms = new Date(to).getTime() - new Date(from).getTime();
+  return Number.isFinite(ms) ? Math.max(0, ms / 86_400_000) : 0;
+}
+
+/**
+ * Classifies trading behaviour from how long positions are actually held —
+ * each sell is FIFO-matched against the earliest open buy lots for that
+ * code, and the share-weighted average holding period is bucketed against
+ * the same horizons INVEST_STYLES describes (days / weeks / months). Returns
+ * null when there's fewer than MIN_CLOSED_TRADES closed round trips, so
+ * callers can fall back to the manual choice or the "medium" default.
+ */
+export function inferInvestStyle(trades: Trade[] | null | undefined): StyleKey | null {
+  if (!trades?.length) return null;
+  const openLots: Record<string, { shares: number; date: string }[]> = {};
+  let weightedDays = 0;
+  let matchedShares = 0;
+  let closedTrips = 0;
+
+  for (const t of [...trades].sort((a, b) => a.date.localeCompare(b.date))) {
+    const lots = (openLots[t.code] ??= []);
+    if (t.side === "buy") {
+      lots.push({ shares: t.shares, date: t.date });
+      continue;
+    }
+    if (t.side !== "sell") continue;
+    let remaining = t.shares;
+    while (remaining > 0 && lots.length) {
+      const lot = lots[0]!;
+      const matched = Math.min(remaining, lot.shares);
+      weightedDays += daysBetween(lot.date, t.date) * matched;
+      matchedShares += matched;
+      remaining -= matched;
+      lot.shares -= matched;
+      if (lot.shares <= 0) lots.shift();
+    }
+    closedTrips += 1;
+  }
+
+  if (closedTrips < MIN_CLOSED_TRADES || matchedShares === 0) return null;
+  const avgDays = weightedDays / matchedShares;
+  if (avgDays < TRADER_MAX_AVG_DAYS) return "trader";
+  if (avgDays < MEDIUM_MAX_AVG_DAYS) return "medium";
+  return "long";
+}
+
+export type ActiveInvestStyle = {
+  /** The style to actually use — the manual pick if there is one, otherwise the inferred (or default) one. */
+  style: StyleKey;
+  /** True while no manual choice has been made, i.e. `style` is behaviour-derived. */
+  auto: boolean;
+  /** What behaviour alone would suggest, independent of any manual pick — null with too little trade history. */
+  inferred: StyleKey | null;
+};
+
+/**
+ * The style that should actually drive recommendations: an explicit choice
+ * from the settings page always wins, but until one is made this reads the
+ * user's own trade history instead of silently defaulting to "medium".
+ */
+export function useActiveInvestStyle(trades: Trade[] | null | undefined): ActiveInvestStyle {
+  const manual = useInvestStyle();
+  const [explicit, setExplicit] = useState(hasExplicitInvestStyle());
+  useEffect(() => {
+    const sync = () => setExplicit(hasExplicitInvestStyle());
+    sync();
+    window.addEventListener(STYLE_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(STYLE_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+  const inferred = useMemo(() => inferInvestStyle(trades), [trades]);
+  return { style: explicit ? manual : (inferred ?? manual), auto: !explicit, inferred };
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
