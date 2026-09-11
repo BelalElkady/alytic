@@ -25,12 +25,12 @@ import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, rec
 import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
-// change for the text-analysis path can never silently redirect vision too —
-// this is the one deliberate holdout on Claude (Qwen's vision accuracy is
-// untested and this feature has a history of real accuracy bugs). A stale
-// model override once sent this route to a text-only "thinking" model with
-// zero vision-capable endpoints, producing an opaque 404 — verified live.
-const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'anthropic/claude-sonnet-5';
+// change for the text-analysis path can never silently redirect vision too.
+// Configurable via ALYTIC_VISION_MODEL in .env — must be a vision-capable
+// OpenRouter model. A stale model override once sent this route to a
+// text-only "thinking" model with zero vision-capable endpoints, producing
+// an opaque 404 — verified live.
+const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
 import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
@@ -145,6 +145,9 @@ app.use('/api/admin', (req, res, next) => {
 const TICKER_HEADERS = ['TICKER', 'CODE', 'SYMBOL', 'REUTERS CODE', 'RIC'];
 const NAME_HEADERS = ['COMPANY NAME', 'NAME', 'COMPANY'];
 
+/** "REUTERS_CODE" / "SYMB_NAME_ENG" -> "REUTERS CODE" / "SYMB NAME ENG" — exports vary between spaces and underscores for the same header. */
+const normalizeHeader = (cell) => cell.replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
+
 /** True if `buffer` starts with an Excel file's magic bytes — ZIP (.xlsx/.xlsm) or OLE compound (.xls). */
 function looksLikeSpreadsheet(buffer) {
   if (buffer.length < 4) return false;
@@ -209,9 +212,13 @@ function parseTickerFile(buffer) {
   const rows = fileToRows(buffer).filter((cells) => cells.some((cell) => cell));
   if (!rows.length) return [];
 
-  const headerRow = rows[0].map((cell) => cell.toUpperCase());
+  const headerRow = rows[0].map((cell) => normalizeHeader(cell.toUpperCase()));
   const codeColumn = headerRow.findIndex((cell) => TICKER_HEADERS.includes(cell));
-  const nameColumn = headerRow.findIndex((cell) => NAME_HEADERS.includes(cell));
+  // A plain NAME_HEADERS match, or — for exports like "SYMB_NAME_ENG"/"SYMB_NAME_ARB"
+  // that qualify the column rather than just naming it — any header with "NAME" as
+  // one of its words. Safe as a broader check here (unlike the ticker column) since
+  // nothing but an actual name column has that word.
+  const nameColumn = headerRow.findIndex((cell) => NAME_HEADERS.includes(cell) || cell.split(' ').includes('NAME'));
   const dataRows = codeColumn >= 0 ? rows.slice(1) : rows;
   const index = codeColumn >= 0 ? codeColumn : 0;
 
