@@ -177,7 +177,7 @@ function LandingPage() {
           </div>
           <Button asChild size="lg">
             <Link to="/login" search={{ mode: "register" }}>
-              إنشاء حساب
+              ابدأ تجربتك المجانية
             </Link>
           </Button>
         </div>
