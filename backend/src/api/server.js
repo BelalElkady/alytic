@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios } from '../db.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -385,6 +385,42 @@ app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
   if (!UPLOADABLE_INDICES.includes(name)) return res.status(400).json({ error: `مؤشر غير قابل للرفع: ${name}` });
   await clearIndexOverride(name);
   res.json({ ok: true, name, tickers: await codesForIndex(name) });
+}));
+
+// Every registered user plus a summary of their portfolio (cash, positions,
+// watchlist, trades) for the admin users list. Trades are trimmed to the
+// fields frontend/src/lib/invest-style.ts's inferInvestStyle() needs, rather
+// than duplicating that FIFO-matching logic on the server.
+app.get('/api/admin/users', wrap(async (req, res) => {
+  const [users, portfolios] = await Promise.all([getAllUsers(), getAllPortfolios()]);
+  const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
+
+  const rows = users.map((u) => {
+    const pf = portfolioByUser.get(u.id);
+    const positions = pf ? Object.values(pf.positions ?? {}) : [];
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      phone: u.phone,
+      isAdmin: u.is_admin,
+      emailVerified: u.email_verified,
+      googleLinked: Boolean(u.google_id),
+      createdAt: u.created_at,
+      lastLoginAt: u.last_login_at,
+      portfolio: pf && {
+        cash: pf.cash ?? 0,
+        positionsCount: positions.length,
+        positionsValue: positions.reduce((sum, p) => sum + (p.shares ?? 0) * (p.avgCost ?? 0), 0),
+        watchlistCount: Object.keys(pf.watchlist ?? {}).length,
+        tradesCount: (pf.trades ?? []).length,
+        realizedPnl: pf.realizedPnl ?? 0,
+        updatedAt: pf.updatedAt ?? null,
+        trades: (pf.trades ?? []).map((t) => ({ date: t.date, code: t.code, side: t.side, shares: t.shares })),
+      },
+    };
+  });
+  res.json({ users: rows });
 }));
 
 // ---- Analysis --------------------------------------------------------------

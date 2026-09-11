@@ -2,10 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { ErrorState, LoadingBlock, Notice, Panel, Spinner } from "@/components/desk/state-blocks";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState, ErrorState, LoadingBlock, Notice, Panel, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, post, postRaw } from "@/lib/api";
+import { arDay, int, signed, tone } from "@/lib/format";
+import { INVEST_STYLES, inferInvestStyle, type StyleKey, type Trade } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +18,7 @@ export const Route = createFileRoute("/_app/admin")({
   head: () => ({
     meta: [
       { title: "الإدارة — EGXpert" },
-      { name: "description", content: "رفع قوائم أسهم المؤشرات (EGX30 / EGX70 / EGX33 / EGX100) كملف CSV أو Excel." },
+      { name: "description", content: "إدارة قوائم المؤشرات والمستخدمين المسجّلين." },
     ],
   }),
   component: AdminPage,
@@ -42,6 +47,28 @@ const LABELS: Record<string, string> = {
 
 function AdminPage() {
   const { user } = useDesk();
+
+  if (!user?.isAdmin) {
+    return <ErrorState message="الصفحة دي للمشرفين بس." />;
+  }
+
+  return (
+    <Tabs defaultValue="indices" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="indices">المؤشرات</TabsTrigger>
+        <TabsTrigger value="users">المستخدمين</TabsTrigger>
+      </TabsList>
+      <TabsContent value="indices">
+        <IndicesTab />
+      </TabsContent>
+      <TabsContent value="users">
+        <UsersTab />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function IndicesTab() {
   const [rows, setRows] = useState<IndexRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -56,8 +83,8 @@ function AdminPage() {
   };
 
   useEffect(() => {
-    if (user?.isAdmin) load();
-  }, [user?.isAdmin]);
+    load();
+  }, []);
 
   const query = search.trim().toUpperCase();
   const matches = useMemo(
@@ -65,9 +92,6 @@ function AdminPage() {
     [rows, query],
   );
 
-  if (!user?.isAdmin) {
-    return <ErrorState message="الصفحة دي للمشرفين بس." />;
-  }
   if (error) return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
   if (!rows) return <LoadingBlock rows={3} />;
 
@@ -193,5 +217,143 @@ function IndexPanel({ row, onChanged, highlight }: { row: IndexRow; onChanged: (
         </Notice>
       )}
     </Panel>
+  );
+}
+
+type AdminUserPortfolio = {
+  cash: number;
+  positionsCount: number;
+  positionsValue: number;
+  watchlistCount: number;
+  tradesCount: number;
+  realizedPnl: number;
+  updatedAt: string | null;
+  trades: Trade[];
+};
+
+type AdminUserRow = {
+  id: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  isAdmin: boolean;
+  emailVerified: boolean;
+  googleLinked: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+  portfolio: AdminUserPortfolio | null;
+};
+
+const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
+  INVEST_STYLES.map((s) => [s.key, s.label]),
+) as Record<StyleKey, string>;
+
+const matchesUser = (row: AdminUserRow, query: string) =>
+  [row.email, row.name, row.phone].some((field) => field?.toLowerCase().includes(query));
+
+function UsersTab() {
+  const [rows, setRows] = useState<AdminUserRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const load = () => {
+    api("/api/admin/users")
+      .then((result) => {
+        setRows(result.users);
+        setError(null);
+      })
+      .catch((caught) => setError(caught?.message ?? "تعذر تحميل بيانات المستخدمين"));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const query = search.trim().toLowerCase();
+  const filtered = useMemo(
+    () => (rows ? (query ? rows.filter((row) => matchesUser(row, query)) : rows) : []),
+    [rows, query],
+  );
+
+  if (error) return <ErrorState message={error} action={<Button variant="outline" size="sm" onClick={load}>حاول تاني</Button>} />;
+  if (!rows) return <LoadingBlock rows={3} />;
+
+  return (
+    <div className="space-y-4">
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="ابحث بالبريد الإلكتروني أو الاسم أو رقم الهاتف…"
+      />
+      <Panel
+        title="المستخدمون المسجّلون"
+        description={`${filtered.length} من ${rows.length} مستخدم`}
+        bodyClassName="px-0 py-0 sm:px-0"
+      >
+        {filtered.length === 0 ? (
+          <div className="p-4">
+            <EmptyState title="لا يوجد مستخدمون مطابقون" hint="جرّب كلمة بحث مختلفة." />
+          </div>
+        ) : (
+          <div className="scrollbar-slim overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-start">المستخدم</TableHead>
+                  <TableHead className="text-start">الهاتف</TableHead>
+                  <TableHead className="text-start">تاريخ التسجيل</TableHead>
+                  <TableHead className="text-start">آخر دخول</TableHead>
+                  <TableHead className="text-start">رأس المال</TableHead>
+                  <TableHead className="text-start">ربح محقق</TableHead>
+                  <TableHead className="text-start">النشاط الاستثماري</TableHead>
+                  <TableHead className="text-start">الأسلوب</TableHead>
+                  <TableHead className="text-start">الحالة</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((row) => (
+                  <UserRow key={row.id} row={row} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+function UserRow({ row }: { row: AdminUserRow }) {
+  const pf = row.portfolio;
+  const inferredStyle = pf ? inferInvestStyle(pf.trades) : null;
+  const capital = pf ? pf.cash + pf.positionsValue : null;
+
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="min-w-0">
+          <div className="truncate font-medium">{row.email}</div>
+          {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.name}</div>}
+        </div>
+      </TableCell>
+      <TableCell className="num text-right">{row.phone || "—"}</TableCell>
+      <TableCell className="num text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
+      <TableCell className="num text-right">{row.lastLoginAt ? arDay(row.lastLoginAt.slice(0, 10)) : "—"}</TableCell>
+      <TableCell className="num text-right">{capital != null ? `${int(capital)} ج` : "—"}</TableCell>
+      <TableCell className={cn("num text-right", pf ? tone(pf.realizedPnl) : "text-muted-foreground")}>
+        {pf ? signed(pf.realizedPnl) : "—"}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {pf ? `${pf.tradesCount} صفقة · ${pf.positionsCount} مركز · ${pf.watchlistCount} متابعة` : "لا توجد محفظة"}
+      </TableCell>
+      <TableCell>{inferredStyle ? STYLE_LABEL[inferredStyle] : "—"}</TableCell>
+      <TableCell>
+        <div className="flex flex-wrap gap-1">
+          {row.isAdmin && <Badge>مشرف</Badge>}
+          {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
+          {row.googleLinked && <Badge variant="secondary">Google</Badge>}
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

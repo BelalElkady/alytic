@@ -19,7 +19,7 @@ export const Route = createFileRoute("/login")({
       { property: "og:title", content: "دخول أو إنشاء حساب — EGXpert" },
       {
         property: "og:description",
-        content: "دخول سريع لمكتب المحفظة، أو إنشاء حساب جديد بتجربة مجانية ٧ أيام.",
+        content: "دخول سريع لـ EGXpert، أو إنشاء حساب جديد بتجربة مجانية ٧ أيام.",
       },
     ],
   }),

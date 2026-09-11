@@ -214,6 +214,23 @@ export async function setUserAdmin(id, isAdmin) {
   must(await supabase.from('users').update({ is_admin: Boolean(isAdmin) }).eq('id', id), 'setUserAdmin');
 }
 
+/** Every registered user, newest first — for the admin users list. Excludes auth secrets (password hash/salt, tokens). */
+export async function getAllUsers() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, email, name, phone, is_admin, email_verified, google_id, created_at, last_login_at')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`getAllUsers: ${error.message}`);
+  return data;
+}
+
+/** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. */
+export async function getAllPortfolios() {
+  const { data, error } = await supabase.from('portfolios').select('user_id, state_json');
+  if (error) throw new Error(`getAllPortfolios: ${error.message}`);
+  return data;
+}
+
 /** @returns {{tickers:string[],updatedAt:string,updatedBy:string|null}|null} an admin-uploaded ticker list for this index, or null if none was ever uploaded. */
 export async function getIndexOverride(indexName) {
   const { data, error } = await supabase.from('index_overrides').select('*').eq('index_name', indexName).maybeSingle();

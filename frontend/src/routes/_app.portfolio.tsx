@@ -36,12 +36,12 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_app/portfolio")({
   head: () => ({
     meta: [
-      { title: "مكتب المحفظة — EGXpert" },
+      { title: "EGXpert" },
       {
         name: "description",
         content: "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
-      { property: "og:title", content: "مكتب المحفظة — EGXpert" },
+      { property: "og:title", content: "EGXpert" },
       {
         property: "og:description",
         content: "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",

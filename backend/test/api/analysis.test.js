@@ -18,6 +18,8 @@ const UP = synthBars({ sessions: 300, start: 100, driftPct: 0.12, seed: 31 });
 const FLAT = synthBars({ sessions: 260, start: 80, driftPct: 0.01, seed: 32 });
 await writeBars('ABUK', UP);
 await writeBars('SWDY', FLAT);
+// EFIC shares ABUK's materials sector — used by the sector-exposure cash-plan test.
+await writeBars('EFIC', synthBars({ sessions: 300, start: 100, driftPct: 0.12, seed: 52 }));
 await writeBars('ORAS', frozenBars({ sessions: 80 }));
 
 const ctx = await startServer();
@@ -78,14 +80,23 @@ test('GET /api/scan plans the cash allocation across the requested codes', async
     assert.ok(row.score >= 0 && row.score <= 100);
     assert.ok(row.signal);
     assert.ok(row.price > 0);
+    assert.ok(row.sector, 'rows carry the Arabic sector label');
     if (row.buyPlan) {
       assert.ok(row.buyPlan.entry > 0);
       assert.ok(row.buyPlan.stop > 0);
       assert.ok(Number.isInteger(row.buyPlan.shares));
       assert.ok(row.buyPlan.cost >= 0);
+      assert.ok(Number.isInteger(row.buyPlan.riskLimitShares), 'risk-sized shares (sector-aware)');
+      assert.ok(Number.isInteger(row.buyPlan.cashLimitShares));
+      assert.ok(row.buyPlan.cashAfter >= 0);
+      assert.ok(row.buyPlan.reason);
     }
   }
-  assert.ok(res.body.cashPlan);
+  const cp = res.body.cashPlan;
+  assert.ok(cp);
+  assert.ok(cp.selectedCodes.every((c) => ['ABUK', 'SWDY'].includes(c)));
+  assert.ok(cp.investableCash >= 0 && cp.reserveCash >= 0 && cp.allocationPerStock >= 0);
+  assert.ok(cp.unallocatedCash >= 0);
   assert.ok(res.body.actionableCodes.every((c) => ['ABUK', 'SWDY'].includes(c)));
 
   const badStyle = await request(baseUrl, 'GET', '/api/scan?codes=ABUK&style=yolo', { cookie });
@@ -95,6 +106,52 @@ test('GET /api/scan plans the cash allocation across the requested codes', async
   const styled = await request(baseUrl, 'GET', '/api/scan?codes=ABUK&style=trader', { cookie });
   assert.equal(styled.status, 200);
   assert.equal(styled.body.style, 'trader');
+});
+
+test('the cash plan sizes candidates against the sector the book is already in', async () => {
+  // ABUK and EFIC share the materials sector. Without a position both size
+  // normally; once the book holds a large ABUK stake the sector cap binds and
+  // EFIC sizes to zero — dropping out of the cash plan instead of piling on.
+  const sectorRow = (res, code) => res.body.results.find((r) => r.code === code);
+
+  // Baseline: no positions → EFIC is a real candidate with a positive risk size.
+  const { cookie: cleanCookie } = await registerUser(baseUrl);
+  await request(baseUrl, 'POST', '/api/portfolio/cash', { body: { cash: 1_000_000 }, cookie: cleanCookie });
+  const clean = await request(baseUrl, 'GET', '/api/scan?codes=ABUK,EFIC', { cookie: cleanCookie });
+  assert.equal(clean.status, 200, clean.text);
+  const cleanEfic = sectorRow(clean, 'EFIC');
+  assert.equal(cleanEfic.position, null);
+  assert.ok(cleanEfic.score >= 58, `EFIC should read as actionable (score ${cleanEfic.score})`);
+  assert.equal(cleanEfic.worthBuyingNow, true);
+  assert.ok(cleanEfic.midTarget?.price, 'an actionable row needs a mid target to be a candidate');
+  assert.ok(Number.isInteger(cleanEfic.buyPlan.riskLimitShares) && cleanEfic.buyPlan.riskLimitShares > 0,
+    `unsaturated EFIC should size to shares, got ${cleanEfic.buyPlan?.riskLimitShares}`);
+
+  // Now hold a large ABUK stake: 4,000 shares × the fixture close (~143 EGP)
+  // is ~40% of capital — past the 30% sector cap.
+  const { cookie: heavyCookie } = await registerUser(baseUrl);
+  await request(baseUrl, 'POST', '/api/portfolio/cash', { body: { cash: 1_000_000 }, cookie: heavyCookie });
+  const trade = await request(baseUrl, 'POST', '/api/portfolio/trade', {
+    body: { code: 'ABUK', side: 'buy', shares: 4_000, price: 1 }, cookie: heavyCookie,
+  });
+  assert.equal(trade.status, 200);
+  const heavy = await request(baseUrl, 'GET', '/api/scan?codes=ABUK,EFIC', { cookie: heavyCookie });
+  assert.equal(heavy.status, 200, heavy.text);
+
+  const heavyEfic = sectorRow(heavy, 'EFIC');
+  assert.equal(heavyEfic.sector, cleanEfic.sector, 'ABUK and EFIC share the sector');
+  assert.equal(heavyEfic.buyPlan.riskLimitShares, 0, 'the saturated sector must size to zero');
+  assert.equal(heavyEfic.buyPlan.shares, 0);
+  assert.equal(heavyEfic.cashPlanSelected, false);
+  // "للقطاع" (for-the-sector) is "لـ" + "القطاع" with the alef elided per
+  // normal Arabic orthography, so "القطاع" is never a literal substring of it.
+  assert.ok(heavyEfic.buyPlan.reason.includes('قطاع'), heavyEfic.buyPlan.reason);
+  assert.ok(!heavy.body.cashPlan.selectedCodes.includes('EFIC'));
+
+  // The held row itself keeps a position and is never a buy candidate.
+  const heldAbuk = sectorRow(heavy, 'ABUK');
+  assert.ok(heldAbuk.position);
+  assert.ok(!heavy.body.cashPlan.selectedCodes.includes('ABUK'));
 });
 
 test('GET /api/indices/performance answers with one row per index even when the feed is unreachable', async () => {

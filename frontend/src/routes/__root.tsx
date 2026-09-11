@@ -80,13 +80,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Alytic — مكتب المحفظة" },
+      { title: "Alytic — EGXpert" },
       {
         name: "description",
         content:
           "مكتب تحليل وإدارة محفظة البورصة المصرية: مراكزك، وقف الخسارة، الأهداف والتوصيات اليومية.",
       },
-      { property: "og:title", content: "Alytic — مكتب المحفظة" },
+      { property: "og:title", content: "Alytic — EGXpert" },
       {
         property: "og:description",
         content:

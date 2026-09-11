@@ -66,7 +66,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
         </Link>
         <div>
           <h2 className="text-2xl font-bold leading-snug tracking-tight">
-            مكتب محفظتك في البورصة المصرية
+            كل قرار في محفظتك مبني على أرقام، مش تخمين
           </h2>
           <p className="mt-3 max-w-md text-[14px] leading-relaxed text-muted-foreground">
             سجّل دخولك وشوف كل سهم بالتفصيل: القيمة، الربح، وقف الخسارة، الهدف، والتوصية المناسبة

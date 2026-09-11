@@ -47,9 +47,21 @@ test('analyzeTicker runs the whole engine with no AI and no network', async () =
   assert.ok(a.plan.targets.long != null);
   assert.ok(a.plan.targets.long.price != null || a.plan.targets.long.note);
 
+  // The Arabic sector label — what the scan cash plan groups exposure by.
+  assert.ok(typeof a.sectorAr === 'string' && a.sectorAr.length > 0, `sectorAr: ${a.sectorAr}`);
+
   // Identical input → identical output, byte for byte.
   const again = await analyzeTicker('ABUK', { withFundamentals: false });
   assert.deepEqual(JSON.stringify(again), JSON.stringify(a));
+});
+
+test('each ticker carries its own Arabic sector label', async () => {
+  const [abuk, comi] = await Promise.all([
+    analyzeTicker('ABUK', { withFundamentals: false }),
+    analyzeTicker('COMI', { withFundamentals: false }),
+  ]);
+  assert.ok(abuk.sectorAr && comi.sectorAr);
+  assert.notEqual(abuk.sectorAr, comi.sectorAr, 'materials vs banks must label differently');
 });
 
 test('a downtrend gets no long-term target and a lower score', async () => {

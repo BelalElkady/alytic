@@ -192,7 +192,7 @@ function PreviewCard() {
       <div className="flex items-center gap-2.5 rounded-xl border bg-card px-3.5 py-3">
         <LogoMark className="size-8" />
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold">مكتب المحفظة</p>
+          <p className="text-[13px] font-semibold">EGXpert</p>
           <p className="text-[11px] text-muted-foreground">تحديث الأسعار الآن</p>
         </div>
       </div>
