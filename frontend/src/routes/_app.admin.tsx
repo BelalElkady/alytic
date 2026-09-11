@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ErrorState, LoadingBlock, Notice, Panel, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api, post, postRaw } from "@/lib/api";
 import { useDesk } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/admin")({
   head: () => ({
@@ -17,14 +19,19 @@ export const Route = createFileRoute("/_app/admin")({
   component: AdminPage,
 });
 
+type Ticker = { code: string; name: string };
+
 type IndexRow = {
   name: string;
-  tickers: string[];
+  tickers: Ticker[];
   count: number;
   source: "default" | "upload";
   updatedAt: string | null;
   updatedBy: string | null;
 };
+
+const matchesQuery = (ticker: Ticker, query: string) =>
+  ticker.code.includes(query) || ticker.name.toUpperCase().includes(query);
 
 const LABELS: Record<string, string> = {
   EGX30: "EGX30",
@@ -37,6 +44,7 @@ function AdminPage() {
   const { user } = useDesk();
   const [rows, setRows] = useState<IndexRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const load = () => {
     api("/api/admin/indices")
@@ -50,6 +58,12 @@ function AdminPage() {
   useEffect(() => {
     if (user?.isAdmin) load();
   }, [user?.isAdmin]);
+
+  const query = search.trim().toUpperCase();
+  const matches = useMemo(
+    () => (query && rows ? rows.filter((row) => row.tickers.some((t) => matchesQuery(t, query))) : []),
+    [rows, query],
+  );
 
   if (!user?.isAdmin) {
     return <ErrorState message="الصفحة دي للمشرفين بس." />;
@@ -65,14 +79,28 @@ function AdminPage() {
         — لو الملف فيه عمود Company Name/Name بيتاخد منه الاسم. رفع ملف جديد بيستبدل القائمة بالكامل
         (EGX100 بيتحسب تلقائيًا من EGX30 + EGX70 إلا لو رُفع ملف مستقل ليه).
       </Notice>
+
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="ابحث بكود السهم أو اسم الشركة عشان تعرف موجود في أنهي مؤشر…"
+      />
+      {query && (
+        <Notice tone={matches.length ? "success" : "warn"}>
+          {matches.length
+            ? `"${search}" موجود في: ${matches.map((m) => LABELS[m.name] ?? m.name).join("، ")}`
+            : `"${search}" مش موجود في أي مؤشر من اللي هنا.`}
+        </Notice>
+      )}
+
       {rows.map((row) => (
-        <IndexPanel key={row.name} row={row} onChanged={load} />
+        <IndexPanel key={row.name} row={row} onChanged={load} highlight={query} />
       ))}
     </div>
   );
 }
 
-function IndexPanel({ row, onChanged }: { row: IndexRow; onChanged: () => void }) {
+function IndexPanel({ row, onChanged, highlight }: { row: IndexRow; onChanged: () => void; highlight: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState<string[]>([]);
@@ -141,12 +169,22 @@ function IndexPanel({ row, onChanged }: { row: IndexRow; onChanged: () => void }
         </div>
       }
     >
-      <div className="flex flex-wrap gap-1.5">
-        {row.tickers.map((code) => (
-          <span key={code} className="rounded-md bg-surface px-2 py-1 text-[12px] font-medium">
-            {code}
-          </span>
-        ))}
+      <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
+        {row.tickers.map((ticker) => {
+          const isMatch = Boolean(highlight) && matchesQuery(ticker, highlight);
+          return (
+            <div
+              key={ticker.code}
+              className={cn(
+                "flex items-baseline gap-1.5 rounded-md px-2 py-1 text-[12px]",
+                isMatch ? "bg-primary/15 ring-1 ring-primary" : "bg-surface",
+              )}
+            >
+              <span className="shrink-0 font-medium">{ticker.code}</span>
+              <span className="truncate text-muted-foreground">{ticker.name}</span>
+            </div>
+          );
+        })}
       </div>
       {added.length > 0 && (
         <Notice tone="warn" className="mt-3">

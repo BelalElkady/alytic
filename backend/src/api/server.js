@@ -228,7 +228,12 @@ app.get('/api/admin/indices', wrap(async (req, res) => {
   const overrides = await getAllIndexOverrides();
   const indices = await Promise.all(UPLOADABLE_INDICES.map(async (name) => {
     const override = overrides[name];
-    const tickers = await codesForIndex(name);
+    const codes = await codesForIndex(name);
+    // The company name so the admin UI can show more than a bare code, and
+    // so a search can match on it too — pulled from the live universe
+    // (verified entries and admin-registered custom stocks alike), not from
+    // whatever an upload's own name column happened to say.
+    const tickers = codes.map((code) => ({ code, name: lookup(code)?.ar || lookup(code)?.en || code }));
     return {
       name,
       tickers,
