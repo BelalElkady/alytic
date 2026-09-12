@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   ArrowRight,
+  ChevronDown,
   Copy,
   CreditCard,
   HelpCircle,
@@ -112,12 +113,14 @@ export function ChatWidget() {
   const endRef = useRef<HTMLDivElement>(null);
   const modeInitialized = useRef(false);
   // How many real messages existed when the current bot "session" started —
-  // 0 until "new topic" is used. Generalizes every "is this the first
+  // 0 until "back to menu" is used. Generalizes every "is this the first
   // message yet" check below from a global count to a per-session one, so
-  // starting a new topic after a real thread already exists behaves exactly
-  // like a first-time visit instead of being compared against the whole
-  // thread's history.
+  // going back after a real thread already exists behaves exactly like a
+  // first-time visit instead of being compared against the whole thread's
+  // history. Everything before this index renders in its own collapsed box
+  // (see showPrevious) instead of alongside the new session.
   const [branchAt, setBranchAt] = useState(0);
+  const [showPrevious, setShowPrevious] = useState(false);
 
   const load = useCallback(async ({ markRead }: { markRead: boolean }) => {
     try {
@@ -201,11 +204,13 @@ export function ChatWidget() {
   // Always available, and always starts a clean, separate chat rather than
   // reopening the menu on top of whatever's already on screen: clears the
   // bot's own bubbles and moves branchAt to the end of the real thread so
-  // far, which hides that thread from view (see the render below) until a
-  // new real message — after this point — brings the view back.
+  // far. Nothing is deleted — everything up to that point folds into its own
+  // collapsed "previous conversation" box (see the render below) instead of
+  // sharing the view with the new session.
   const backToMenu = () => {
     setBot([]);
     setBranchAt(messages.length);
+    setShowPrevious(false);
     setMode("menu");
   };
 
@@ -337,11 +342,28 @@ export function ChatWidget() {
             </div>
           ) : (
             <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
-              {/* Messages before the last "back to menu" (branchAt) are
-                  deliberately not rendered here — clicking back starts a
-                  clean, separate chat rather than a divider on top of the
-                  old one. They're still the same underlying thread on the
-                  backend; only this view stops showing them. */}
+              {branchAt > 0 && (
+                <div className="rounded-lg border bg-secondary/40">
+                  <button
+                    type="button"
+                    onClick={() => setShowPrevious((previous) => !previous)}
+                    className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-[12px] font-medium text-muted-foreground"
+                  >
+                    المحادثة السابقة
+                    <ChevronDown
+                      className={cn("size-3.5 transition-transform", showPrevious && "rotate-180")}
+                    />
+                  </button>
+                  {showPrevious && (
+                    <div className="space-y-2.5 border-t px-2.5 py-2.5">
+                      {messages.slice(0, branchAt).map((message) => (
+                        <MessageBubble key={message.id} message={message} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <Bubble side="admin">أهلًا! تحب أساعدك في إيه؟</Bubble>
 
               {bot.map((bubble) => (
