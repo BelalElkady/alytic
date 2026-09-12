@@ -5,10 +5,12 @@ import {
   CalendarClock,
   CalendarDays,
   Crosshair,
+  HelpCircle,
   LineChart,
   LogOut,
   Mail,
   Moon,
+  Newspaper,
   PencilLine,
   Radar,
   RefreshCw,
@@ -60,6 +62,8 @@ const NAV = [
   { to: "/cash", label: "الكاش", icon: LineChart, adminOnly: false },
   { to: "/trades", label: "الصفقات", icon: RefreshCw, adminOnly: false },
   { to: "/settings", label: "الإعدادات", icon: Settings, adminOnly: false },
+  { to: "/blog", label: "تابع اخبار البورصة", icon: Newspaper, adminOnly: false },
+  { to: "/how-to-use", label: "طريقة الاستخدام", icon: HelpCircle, adminOnly: false },
   { to: "/admin", label: "الإدارة", icon: ShieldCheck, adminOnly: true },
 ] as const;
 

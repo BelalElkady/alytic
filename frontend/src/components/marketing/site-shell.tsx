@@ -10,6 +10,7 @@ import { useDesk } from "@/lib/store";
 const LINKS = [
   { to: "/", label: "الرئيسية" },
   { to: "/blog", label: "تابع اخبار البورصة" },
+  { to: "/how-to-use", label: "طريقة الاستخدام" },
   { to: "/pricing", label: "الأسعار" },
   { to: "/contact", label: "تواصل معنا" },
 ] as const;
