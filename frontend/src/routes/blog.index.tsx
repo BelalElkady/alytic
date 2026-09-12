@@ -1,8 +1,8 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { EmptyState, ErrorState, LoadingBlock } from "@/components/desk/state-blocks";
-import { Badge } from "@/components/ui/badge";
+import { BlogCard, type BlogPostSummary } from "@/components/marketing/blog-card";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/blog/")({
@@ -22,15 +22,6 @@ export const Route = createFileRoute("/blog/")({
   }),
   component: BlogIndexPage,
 });
-
-type BlogPostSummary = {
-  slug: string;
-  title: string;
-  dek: string | null;
-  tags: string[];
-  imageUrl: string | null;
-  publishedAt: string;
-};
 
 function BlogIndexPage() {
   const [posts, setPosts] = useState<BlogPostSummary[] | null>(null);
@@ -65,37 +56,7 @@ function BlogIndexPage() {
         {!error && posts && posts.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {posts.map((post) => (
-              <Link
-                key={post.slug}
-                to="/blog/$slug"
-                params={{ slug: post.slug }}
-                className="flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-colors hover:border-primary/40"
-              >
-                {post.imageUrl && (
-                  <img
-                    src={post.imageUrl}
-                    alt={post.title}
-                    className="aspect-[16/9] w-full object-cover"
-                    loading="lazy"
-                  />
-                )}
-                <div className="flex flex-1 flex-col p-5">
-                  {post.tags?.[0] && (
-                    <Badge variant="outline" className="w-fit">
-                      {post.tags[0]}
-                    </Badge>
-                  )}
-                  <h2 className="mt-3 text-[16px] font-semibold leading-snug">{post.title}</h2>
-                  {post.dek && (
-                    <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-                      {post.dek}
-                    </p>
-                  )}
-                  <p className="num mt-4 text-[11.5px] text-muted-foreground">
-                    {new Date(post.publishedAt).toLocaleDateString("ar-EG")}
-                  </p>
-                </div>
-              </Link>
+              <BlogCard key={post.slug} post={post} />
             ))}
           </div>
         )}

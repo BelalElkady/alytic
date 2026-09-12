@@ -13,6 +13,7 @@ import {
 
 import { LogoMark } from "@/components/brand/logo";
 import { SiteShell } from "@/components/marketing/site-shell";
+import { LatestPosts } from "@/components/marketing/latest-posts";
 import { ToolExplainer } from "@/components/marketing/tool-explainer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -190,9 +191,10 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* Last on the page for everyone: it's reference detail, read by someone
-          who has already decided the pitch above is worth a closer look. */}
+      {/* Reference detail, read by someone who has already decided the pitch
+          above is worth a closer look — then the newest articles last. */}
       <ToolExplainer />
+      <LatestPosts />
     </SiteShell>
   );
 }
