@@ -453,7 +453,7 @@ export async function addCustomStocks(stocks, addedBy) {
   );
 }
 
-/** @returns {object|null} the stored draft/post for that (day, batch slot), or null if never generated — used by getOrGenerateDailyBlogBatch to avoid regenerating. */
+/** @returns {object|null} the stored draft/post for that (day, batch slot), or null if never generated — used by getOrGenerateNextBlogArticle to avoid regenerating. */
 export async function getBlogPostByBatch(postDate, batchIndex) {
   const { data, error } = await supabase.from('blog_posts').select('*').eq('post_date', postDate).eq('batch_index', batchIndex).maybeSingle();
   if (error) throw new Error(`getBlogPostByBatch: ${error.message}`);
@@ -465,6 +465,36 @@ export async function getBlogPostsForDate(postDate) {
   const { data, error } = await supabase.from('blog_posts').select('*').eq('post_date', postDate).order('batch_index', { ascending: true });
   if (error) throw new Error(`getBlogPostsForDate: ${error.message}`);
   return data;
+}
+
+/**
+ * The day's topic plan (one discoverTopics() call's worth of keyword/angle
+ * pairs), so spreading the ten articles across several cron runs a couple
+ * hours apart doesn't re-run — and re-pay for — discovery on every run.
+ * @returns {object|null} the stored row, or null if today's plan hasn't been generated yet.
+ */
+export async function getDailyBlogTopics(postDate) {
+  const { data, error } = await supabase.from('blog_daily_topics').select('*').eq('post_date', postDate).maybeSingle();
+  if (error) throw new Error(`getDailyBlogTopics: ${error.message}`);
+  return data;
+}
+
+/**
+ * Stores today's topic plan. Insert-if-absent (like putMarketReport) so two
+ * cron runs racing to create the same day's plan can't both land one —
+ * whichever writes first wins, and the loser's caller should re-read.
+ * @returns {object|null} the inserted row, or null if a plan for this postDate already existed.
+ */
+export async function putDailyBlogTopics(postDate, topics, model) {
+  const { data, error } = await supabase
+    .from('blog_daily_topics')
+    .upsert(
+      { post_date: postDate, topics_json: topics, model: model ?? null, generated_at: new Date().toISOString() },
+      { onConflict: 'post_date', ignoreDuplicates: true },
+    )
+    .select('*');
+  if (error) throw new Error(`putDailyBlogTopics: ${error.message}`);
+  return data[0] ?? null;
 }
 
 /**

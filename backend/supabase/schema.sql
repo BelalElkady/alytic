@@ -242,6 +242,18 @@ begin
   end if;
 end $$;
 
+-- One discoverTopics() call's worth of keyword/news-angle pairs per day —
+-- generated once and reused across the several cron runs (spaced ~2 hours
+-- apart, one article each) that fill in that day's batch_index slots, so
+-- discovery isn't re-run (and re-paid for) on every single-article run. See
+-- getOrGenerateNextBlogArticle in src/agent/blogGenerator.js.
+create table if not exists blog_daily_topics (
+  post_date text primary key,
+  topics_json jsonb not null,
+  model text,
+  generated_at timestamptz not null default now()
+);
+
 -- The CLI/local dev account. INSERT ... ON CONFLICT DO NOTHING equivalent —
 -- safe to run every time this file is applied.
 insert into users (id, email, name, password_salt, password_hash, email_verified, created_at)

@@ -1,24 +1,34 @@
 /**
  * Auto-generated blog posts: ten Arabic articles about the Egyptian Exchange
- * (EGX) written once a day (see /api/cron/blog-generate in server.js,
- * triggered by .github/workflows/blog-cron.yml) and held as drafts until an
- * admin approves them (see /api/admin/blog-drafts).
+ * (EGX) written one at a time, spaced a couple of hours apart across the day
+ * (see /api/cron/blog-generate in server.js, triggered every 2 hours by
+ * .github/workflows/blog-cron.yml) and held as drafts until an admin
+ * approves them (see /api/admin/blog-drafts).
  *
  * Two-stage daily workflow:
- *  1. discoverTopics() researches EGX news once and clusters it into 10
- *     distinct (primary keyword, news angle) pairs — one per article, no
- *     overlap.
- *  2. generateArticle() writes, reviews, and stores one article per topic.
+ *  1. discoverTopics() researches EGX news once a day and clusters it into
+ *     10 distinct (primary keyword, news angle) pairs — one per article, no
+ *     overlap. The result is persisted (blog_daily_topics) so the several
+ *     cron runs that follow across the day don't each re-run — and re-pay
+ *     for — discovery.
+ *  2. Each cron run writes, reviews, and stores exactly one article: the
+ *     next not-yet-generated topic in that day's plan.
  *
  * Mirrors marketAnalysis.js's cache-or-generate shape: one generation per
  * (post_date, batch_index), read afterward by every visitor rather than
- * regenerated per request. See getOrGenerateDailyBlogBatch, which callers
+ * regenerated per request. See getOrGenerateNextBlogArticle, which callers
  * should use instead of calling the pieces directly.
  */
 
 import { z } from 'zod';
 import { requestStructuredOR } from './clientOpenRouter.js';
-import { getBlogPostByBatch, getBlogPostsForDate, insertBlogPostDraft } from '../db.js';
+import {
+  getBlogPostByBatch,
+  getBlogPostsForDate,
+  getDailyBlogTopics,
+  insertBlogPostDraft,
+  putDailyBlogTopics,
+} from '../db.js';
 
 // Pinned independently of ALYTIC_MODEL: the blog generator always wants a
 // model with real web-search tool support, regardless of what the
@@ -278,47 +288,58 @@ async function generateReviewAndStore({ postDate, batchIndex, topic }) {
   return inserted;
 }
 
-// One in-flight batch per postDate within this process — stops two racing
-// cron/admin calls from each paying for their own generation before the
-// first's inserts land.
+/**
+ * Loads today's topic plan, generating and persisting it on the first call
+ * of the day. Insert-if-absent (putDailyBlogTopics): if two cron runs race
+ * to create it, whichever writes first wins and the other reads that one
+ * back instead of using its own (discarded) discovery results.
+ */
+async function getOrCreateTopicsForDay(postDate) {
+  const existing = await getDailyBlogTopics(postDate);
+  if (existing) return existing.topics_json;
+
+  const { topics, raw } = await discoverTopics({ postDate });
+  const stored = await putDailyBlogTopics(postDate, topics, raw.model);
+  if (stored) return stored.topics_json;
+  const winner = await getDailyBlogTopics(postDate);
+  return winner.topics_json;
+}
+
+// One in-flight generation per postDate within this process — stops two
+// racing cron/admin calls from each paying for their own generation before
+// the first's insert lands.
 const inFlight = new Map();
 
 /**
- * The entry point every route should use. Returns today's batch of articles
- * (from storage where already generated, generating whatever is still
- * missing) for postDate. Runs the ten articles sequentially — free-tier
- * OpenRouter models are rate-sensitive, and a failure partway through still
- * leaves the earlier articles stored so a retry only pays for what's left.
+ * The entry point every route should use. Generates and stores exactly the
+ * next missing article for postDate (today by default) and returns it,
+ * along with how many articles exist for the day so far. A no-op — returns
+ * generated: null — once ARTICLES_PER_DAY is already reached.
+ *
+ * Deliberately one article per call rather than the whole day's batch: this
+ * is meant to be triggered every couple of hours (see blog-cron.yml)
+ * instead of all at once, so the ten articles land spread across the day.
+ * Topic discovery still runs only once a day — see getOrCreateTopicsForDay.
  */
-export async function getOrGenerateDailyBlogBatch({ postDate = new Date().toISOString().slice(0, 10) } = {}) {
+export async function getOrGenerateNextBlogArticle({ postDate = new Date().toISOString().slice(0, 10) } = {}) {
   const existing = await getBlogPostsForDate(postDate);
-  if (existing.length >= ARTICLES_PER_DAY) return existing;
+  if (existing.length >= ARTICLES_PER_DAY) {
+    return { postDate, totalToday: existing.length, generated: null };
+  }
 
   if (inFlight.has(postDate)) return inFlight.get(postDate);
 
   const task = (async () => {
-    const byBatchIndex = new Map(existing.map((p) => [p.batch_index, p]));
-    const { topics } = await discoverTopics({ postDate });
-
-    const results = [];
-    for (let i = 0; i < ARTICLES_PER_DAY; i++) {
-      const batchIndex = i + 1;
-      const already = byBatchIndex.get(batchIndex);
-      if (already) {
-        results.push(already);
-        continue;
-      }
-      const topic = topics[i];
-      try {
-        const inserted = await generateReviewAndStore({ postDate, batchIndex, topic });
-        // Someone else's insert may have won the race — re-read either way so
-        // every caller sees exactly what ended up stored.
-        results.push(inserted ?? (await getBlogPostByBatch(postDate, batchIndex)));
-      } catch (err) {
-        console.error(`Article ${batchIndex}/${ARTICLES_PER_DAY} for ${postDate} failed — continuing with the rest of the batch:`, err);
-      }
-    }
-    return results;
+    // existing is ordered by batch_index and generation always fills the
+    // lowest missing slot first, so the count is also the next slot number.
+    const batchIndex = existing.length + 1;
+    const topics = await getOrCreateTopicsForDay(postDate);
+    const topic = topics[batchIndex - 1];
+    const inserted = await generateReviewAndStore({ postDate, batchIndex, topic });
+    // Someone else's insert may have won the race — re-read either way so
+    // the caller sees exactly what ended up stored.
+    const post = inserted ?? (await getBlogPostByBatch(postDate, batchIndex));
+    return { postDate, totalToday: existing.length + 1, generated: post };
   })();
   inFlight.set(postDate, task);
   try {

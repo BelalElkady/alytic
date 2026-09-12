@@ -1,8 +1,11 @@
 name: Generate blog post
 
 on:
+  # Every 2 hours. Each run writes at most one article — the next missing
+  # slot in today's 10-article plan — so ten runs a day fill the whole batch
+  # and any run past the 10th is a fast no-op. See getOrGenerateNextBlogArticle.
   schedule:
-    - cron: '0 6 * * *' # ~09:00 Africa/Cairo
+    - cron: '0 */2 * * *'
   workflow_dispatch: {}
 
 env:
@@ -10,14 +13,14 @@ env:
 
 jobs:
   generate:
-    name: Trigger daily draft batch generation
+    name: Trigger next blog article generation
     runs-on: ubuntu-latest
     environment: production
-    # Ten articles generated sequentially against free-tier models (each with
-    # its own web search + a review pass, plus an occasional word-count
-    # retry) can take a while — generous headroom over the realistic case so
-    # a slow day doesn't get cut off mid-batch.
-    timeout-minutes: 45
+    # A single article (occasionally preceded by the day's one-time topic
+    # discovery call) is far quicker than the old whole-batch run, but still
+    # generous headroom for a slow model/web-search round trip or a
+    # word-count retry.
+    timeout-minutes: 15
     steps:
       - name: Validate secrets
         shell: bash
@@ -40,23 +43,21 @@ jobs:
       # Calls the backend over the VPS's own loopback interface, the same way
       # deploy.yml's post-deploy health check does — the cron endpoint is
       # never exposed on the public internet, so this SSH hop is the trigger
-      # rather than a public HTTPS URL. The endpoint now awaits the whole
-      # ten-article batch before responding, so this step (and therefore the
-      # workflow run) only goes green once every draft is actually stored —
-      # command_timeout/curl's --max-time are sized well above the realistic
-      # several-minute batch duration, and the job-level timeout-minutes
-      # above is the final backstop.
-      - name: Request daily blog batch generation over SSH
+      # rather than a public HTTPS URL. The endpoint awaits its one article
+      # before responding, so this step (and therefore the workflow run)
+      # only goes green once that article is actually stored (or the run
+      # correctly no-ops because today's 10 already exist).
+      - name: Request next blog article generation over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          command_timeout: 40m
+          command_timeout: 12m
           envs: BLOG_CRON_SECRET,BACKEND_PORT
           script: |
-            curl --fail --silent --show-error --max-time 2100 -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/blog-generate" \
+            curl --fail --silent --show-error --max-time 600 -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/blog-generate" \
               -H "X-Cron-Secret: $BLOG_CRON_SECRET" \
               -H "Content-Type: application/json" \
               -d '{}'

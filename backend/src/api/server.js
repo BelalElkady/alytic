@@ -246,13 +246,12 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
   });
 }));
 
-// Triggered once a day by .github/workflows/blog-cron.yml over the VPS's
+// Triggered every 2 hours by .github/workflows/blog-cron.yml over the VPS's
 // loopback interface (never exposed publicly) — see that workflow for why a
 // shared secret rather than a session cookie gates this instead of
-// /api/admin. Generating all 10 articles sequentially can take several
-// minutes against free-tier models, so this responds immediately and lets
-// the batch run in the background — getOrGenerateDailyBlogBatch's own
-// in-flight map still stops a retried trigger from generating twice.
+// /api/admin. Each trigger generates exactly one article (the next missing
+// slot in today's 10-article plan) so the day's batch lands spread out
+// rather than all at once; once 10 exist for the day this is a fast no-op.
 const BLOG_CRON_SECRET = process.env.BLOG_CRON_SECRET;
 app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   if (!BLOG_CRON_SECRET || req.get('X-Cron-Secret') !== BLOG_CRON_SECRET) {
@@ -260,13 +259,17 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   }
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
   const postDate = typeof req.body?.postDate === 'string' ? req.body.postDate : undefined;
-  const { getOrGenerateDailyBlogBatch } = await import('../agent/blogGenerator.js');
+  const { getOrGenerateNextBlogArticle } = await import('../agent/blogGenerator.js');
   // Awaited on purpose: the GitHub Actions workflow that calls this should
-  // only go green once the whole day's batch is actually stored, not the
-  // moment generation starts — see blog-cron.yml's long ssh/curl timeouts,
-  // sized for the several minutes ten sequential articles can take.
-  const posts = await getOrGenerateDailyBlogBatch({ postDate });
-  res.json({ ok: true, count: posts.length, posts: posts.map((p) => ({ id: p.id, slug: p.slug, status: p.status })) });
+  // only go green once this run's article (if any) is actually stored, not
+  // the moment generation starts.
+  const result = await getOrGenerateNextBlogArticle({ postDate });
+  res.json({
+    ok: true,
+    postDate: result.postDate,
+    totalToday: result.totalToday,
+    generated: result.generated ? { id: result.generated.id, slug: result.generated.slug, status: result.generated.status } : null,
+  });
 }));
 
 // The prices the "اشترك" screen quotes. Payment details are deliberately not
