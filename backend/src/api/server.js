@@ -307,12 +307,19 @@ const PAID_PATHS = [
   '/fundamentals/',
   '/portfolio/import-screenshot',
 ];
+// The status is 402 so the client can recognise this case without string
+// matching, but the message is written to be shown to the user as-is: it says
+// which of the two things ran out and what to do next, never a bare code.
 app.use('/api', async (req, res, next) => {
   if (!req.user || !PAID_PATHS.some((prefix) => req.path.startsWith(prefix))) return next();
   const access = await accessInfo(req.user);
   if (access.hasAccess) return next();
+  const expired = Boolean(access.currentPeriodEnd);
   res.status(402).json({
-    error: 'انتهت تجربتك المجانية — اشترك عشان تكمل.',
+    error: expired
+      ? 'اشتراكك انتهى. حوّل قيمة التجديد على InstaPay وهنفعّل حسابك تاني.'
+      : 'انتهت تجربتك المجانية. حوّل قيمة الاشتراك على InstaPay وهنفعّل حسابك.',
+    reason: expired ? 'subscription_expired' : 'trial_ended',
     requiresSubscription: true,
   });
 });

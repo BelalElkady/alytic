@@ -183,14 +183,27 @@ function ExpiryBanner() {
   );
 }
 
-/** Replaces the desk once access lapses — see the `locked` branch in DeskShell. */
+/**
+ * Replaces the desk once access lapses — see the `locked` branch in DeskShell.
+ * A user who never subscribed is told their trial ended, not that a
+ * subscription they never had expired; currentPeriodEnd is what separates the
+ * two (it is only ever set by an admin granting a period).
+ */
 function SubscriptionWall() {
+  const { user } = useDesk();
+  const expired = Boolean(user?.currentPeriodEnd);
+
   return (
     <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
-      <h2 className="text-[17px] font-semibold">اشتراكك انتهى</h2>
+      <h2 className="text-[17px] font-semibold">
+        {expired ? "اشتراكك انتهى" : "خلصت التجربة المجانية"}
+      </h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-        بياناتك ومحفظتك زي ما هي ومحدش هيمسّها — التحليل والأسعار اللحظية بس اللي متوقفة لحد ما
-        تجدّد.
+        {expired
+          ? `اشتراكك انتهى${user?.currentPeriodEnd ? ` يوم ${arDay(user.currentPeriodEnd.slice(0, 10))}` : ""}. `
+          : "جرّبت EGXpert ٤ أيام كاملة بكل المزايا. "}
+        محفظتك وصفقاتك وكل بياناتك زي ما هي ومحدش هيمسّها — التحليل والأسعار اللحظية بس اللي واقفة
+        لحد ما تشترك.
       </p>
       <div className="mt-5">
         <SubscribePanel compact />

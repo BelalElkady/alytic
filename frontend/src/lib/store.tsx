@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { api, post } from "./api";
+import { ApiError, api, post } from "./api";
 import { useActiveInvestStyle } from "./invest-style";
 
 /* Types kept intentionally loose: they mirror the existing API responses
@@ -135,6 +135,31 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   // re-fetches positions with the matching stop/target/recommendation.
   const { style } = useActiveInvestStyle(pf?.trades);
 
+  // Re-reads entitlements without a sign-out. Activation is manual, so a user
+  // who has sent their InstaPay transfer needs a way to pick up the unlock the
+  // moment an admin grants the period — see SubscribePanel's "حوّلت بالفعل".
+  const refreshUser = useCallback(async () => {
+    const { user: me } = await api("/api/auth/me");
+    setUser(me ?? null);
+    if (me) setCashScanAvailableToday(me.cashScanAvailableToday ?? true);
+    return me ?? null;
+  }, []);
+
+  /**
+   * A 402 means the trial or the subscription ran out mid-session (the tab was
+   * open across the expiry). Re-reading /api/auth/me flips hasAccess, which
+   * swaps the desk for the subscribe screen — so the user gets that explanation
+   * rather than a failed-request error where their portfolio used to be.
+   */
+  const handledExpiry = useCallback(
+    async (caught: unknown) => {
+      if (!(caught instanceof ApiError) || caught.status !== 402) return false;
+      await refreshUser();
+      return true;
+    },
+    [refreshUser],
+  );
+
   /** Same sequence as before: portfolio → scan of held codes → daily log. */
   const reload = useCallback(async () => {
     setLoading(true);
@@ -151,11 +176,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       setLog((await api("/api/log")).log ?? {});
       setError(null);
     } catch (caught) {
+      if (await handledExpiry(caught)) return;
       setError(caught instanceof Error ? caught.message : "حدث خطأ غير متوقع");
     } finally {
       setLoading(false);
     }
-  }, [style]);
+  }, [style, handledExpiry]);
 
   const reloadPortfolio = useCallback(async () => {
     setPf(await api("/api/portfolio"));
@@ -188,50 +214,54 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshPrices = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
-    const current = rowsRef.current;
-    if (!current.length || (typeof document !== "undefined" && document.hidden)) return;
-    if (!force && Date.now() - lastRefreshAt.current < PRICE_REFRESH_MS - 1000) return;
-    lastRefreshAt.current = Date.now();
-    try {
-      const codes = current.map((row) => row.code).join(",");
-      const { quotes } = await api(`/api/quotes?codes=${encodeURIComponent(codes)}`);
-      setRows((previous) =>
-        previous.map((row) => {
-          const quote = quotes?.[row.code];
-          if (!quote?.price) return row;
-          const position = row.position
-            ? {
-                ...row.position,
-                marketValue: +(row.position.shares * quote.price).toFixed(2),
-                unrealizedEgp: +(
-                  row.position.shares *
-                  (quote.price - row.position.avgCost)
-                ).toFixed(2),
-                unrealizedPct: +(
-                  ((quote.price - row.position.avgCost) / row.position.avgCost) *
-                  100
-                ).toFixed(2),
-              }
-            : row.position;
-          return {
-            ...row,
-            price: quote.price,
-            lastTradePrice: quote.price,
-            lastTradeTime: quote.time,
-            changePct: quote.changePct ?? row.changePct,
-            position,
-          };
-        }),
-      );
-      setPriceError(false);
-      setLastPriceSync(
-        new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
-      );
-    } catch {
-      setPriceError(true);
-    }
-  }, []);
+  const refreshPrices = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      const current = rowsRef.current;
+      if (!current.length || (typeof document !== "undefined" && document.hidden)) return;
+      if (!force && Date.now() - lastRefreshAt.current < PRICE_REFRESH_MS - 1000) return;
+      lastRefreshAt.current = Date.now();
+      try {
+        const codes = current.map((row) => row.code).join(",");
+        const { quotes } = await api(`/api/quotes?codes=${encodeURIComponent(codes)}`);
+        setRows((previous) =>
+          previous.map((row) => {
+            const quote = quotes?.[row.code];
+            if (!quote?.price) return row;
+            const position = row.position
+              ? {
+                  ...row.position,
+                  marketValue: +(row.position.shares * quote.price).toFixed(2),
+                  unrealizedEgp: +(
+                    row.position.shares *
+                    (quote.price - row.position.avgCost)
+                  ).toFixed(2),
+                  unrealizedPct: +(
+                    ((quote.price - row.position.avgCost) / row.position.avgCost) *
+                    100
+                  ).toFixed(2),
+                }
+              : row.position;
+            return {
+              ...row,
+              price: quote.price,
+              lastTradePrice: quote.price,
+              lastTradeTime: quote.time,
+              changePct: quote.changePct ?? row.changePct,
+              position,
+            };
+          }),
+        );
+        setPriceError(false);
+        setLastPriceSync(
+          new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+        );
+      } catch (caught) {
+        if (await handledExpiry(caught)) return;
+        setPriceError(true);
+      }
+    },
+    [handledExpiry],
+  );
 
   /* Session check on mount — unchanged endpoint and cookie behaviour. */
   useEffect(() => {
@@ -308,16 +338,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const updatePhone = useCallback(async (phone: string) => {
     const result = await post("/api/account/phone", { phone });
     setUser(result.user);
-  }, []);
-
-  // Re-reads entitlements without a sign-out. Activation is manual, so a user
-  // who has sent their InstaPay transfer needs a way to pick up the unlock the
-  // moment an admin grants the period — see SubscribePanel's "حوّلت بالفعل".
-  const refreshUser = useCallback(async () => {
-    const { user: me } = await api("/api/auth/me");
-    setUser(me ?? null);
-    if (me) setCashScanAvailableToday(me.cashScanAvailableToday ?? true);
-    return me ?? null;
   }, []);
 
   const totals = useMemo<Totals>(() => {
