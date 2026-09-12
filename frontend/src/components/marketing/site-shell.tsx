@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
+import { ChatWidget } from "@/components/support/chat-widget";
 import { useDesk } from "@/lib/store";
 
 const LINKS = [
@@ -85,6 +86,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </footer>
+
+      {/* Signed-in only (it renders nothing otherwise) — but it belongs here
+          as well as in the desk, because the subscribe and pricing pages are
+          exactly where someone decides to ask about a plan. */}
+      <ChatWidget />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { MessageCircle, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -72,8 +73,6 @@ export function ChatWidget() {
     if (open) endRef.current?.scrollIntoView({ block: "end" });
   }, [open, messages]);
 
-  if (!user) return null;
-
   const send = async () => {
     const body = draft.trim();
     if (!body || sending) return;
@@ -117,64 +116,98 @@ export function ChatWidget() {
             </p>
           </header>
 
-          <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
-            {messages.length === 0 && !error && (
-              <p className="py-6 text-center text-[12.5px] leading-relaxed text-muted-foreground">
-                ابعتلنا رسالتك وهنرد عليك هنا. لو عايز تشترك، اكتبلنا وهنبعتلك بيانات الدفع
-                والتفاصيل كلها.
+          {/* A thread is keyed to an account, so there is nowhere to put a
+              visitor's message — point them at the two things that do work. */}
+          {!user ? (
+            <div className="space-y-3 p-4">
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                سجّل دخولك عشان تكلّمنا من هنا ونرد عليك في نفس المكان. لو لسه معندكش حساب، ابدأ
+                تجربة مجانية ٤ أيام.
               </p>
-            )}
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-relaxed",
-                  message.sender === "user"
-                    ? "ms-auto bg-primary text-primary-foreground"
-                    : "me-auto bg-secondary",
-                )}
-              >
-                <p className="whitespace-pre-wrap break-words">{message.body}</p>
-                <p
+              <div className="flex flex-wrap gap-2">
+                <Button asChild size="sm">
+                  <Link to="/login" search={{ mode: "login" }}>
+                    دخول
+                  </Link>
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/login" search={{ mode: "register" }}>
+                    حساب جديد
+                  </Link>
+                </Button>
+              </div>
+              <p className="text-[12px] text-muted-foreground">
+                أو ابعتلنا من{" "}
+                <Link to="/contact" className="font-medium text-primary hover:underline">
+                  صفحة تواصل معنا
+                </Link>
+                .
+              </p>
+            </div>
+          ) : (
+            <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
+              {messages.length === 0 && !error && (
+                <p className="py-6 text-center text-[12.5px] leading-relaxed text-muted-foreground">
+                  ابعتلنا رسالتك وهنرد عليك هنا. لو عايز تشترك، اكتبلنا وهنبعتلك بيانات الدفع
+                  والتفاصيل كلها.
+                </p>
+              )}
+              {messages.map((message) => (
+                <div
+                  key={message.id}
                   className={cn(
-                    "num mt-1 text-[10.5px]",
+                    "max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-relaxed",
                     message.sender === "user"
-                      ? "text-primary-foreground/70"
-                      : "text-muted-foreground",
+                      ? "ms-auto bg-primary text-primary-foreground"
+                      : "me-auto bg-secondary",
                   )}
                 >
-                  {time(message.createdAt)}
-                </p>
+                  <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                  <p
+                    className={cn(
+                      "num mt-1 text-[10.5px]",
+                      message.sender === "user"
+                        ? "text-primary-foreground/70"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {time(message.createdAt)}
+                  </p>
+                </div>
+              ))}
+              <div ref={endRef} />
+            </div>
+          )}
+
+          {user && (
+            <>
+              {error && <p className="px-4 pb-2 text-[12px] text-down">{error}</p>}
+
+              <div className="flex items-end gap-2 border-t p-3">
+                <Textarea
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void send();
+                    }
+                  }}
+                  placeholder="اكتب رسالتك…"
+                  rows={2}
+                  className="min-h-0 resize-none text-[13px]"
+                />
+                <Button
+                  size="icon"
+                  onClick={() => void send()}
+                  disabled={sending || !draft.trim()}
+                  aria-label="إرسال"
+                >
+                  {sending ? <Spinner /> : <Send className="size-4" />}
+                </Button>
               </div>
-            ))}
-            <div ref={endRef} />
-          </div>
-
-          {error && <p className="px-4 pb-2 text-[12px] text-down">{error}</p>}
-
-          <div className="flex items-end gap-2 border-t p-3">
-            <Textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder="اكتب رسالتك…"
-              rows={2}
-              className="min-h-0 resize-none text-[13px]"
-            />
-            <Button
-              size="icon"
-              onClick={() => void send()}
-              disabled={sending || !draft.trim()}
-              aria-label="إرسال"
-            >
-              {sending ? <Spinner /> : <Send className="size-4" />}
-            </Button>
-          </div>
+            </>
+          )}
         </section>
       )}
     </>
