@@ -157,8 +157,6 @@ function LandingPage() {
         </div>
       </section>
 
-      {!user && <ToolExplainer />}
-
       {/* Steps */}
       <section className="border-y bg-surface">
         <div className="mx-auto w-full max-w-6xl px-4 py-14">
@@ -199,6 +197,8 @@ function LandingPage() {
           </Button>
         </div>
       </section>
+
+      {!user && <ToolExplainer />}
     </SiteShell>
   );
 }

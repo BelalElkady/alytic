@@ -169,6 +169,13 @@ export function ChatWidget() {
     setMode("human");
   };
 
+  // Once a real message reaches support there is an actual thread to keep,
+  // so the way back to the menu only shows while it's still the bot talking.
+  const backToMenu = () => {
+    setBot([]);
+    setMode("menu");
+  };
+
   const send = async () => {
     const body = draft.trim();
     if (!body || sending) return;
@@ -250,6 +257,17 @@ export function ChatWidget() {
             <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
               <Bubble side="admin">أهلًا! تحب أساعدك في إيه؟</Bubble>
 
+              {mode !== "menu" && messages.length === 0 && (
+                <button
+                  type="button"
+                  onClick={backToMenu}
+                  className="flex items-center gap-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ArrowRight className="size-3.5" />
+                  رجوع للخيارات
+                </button>
+              )}
+
               {bot.map((bubble) => (
                 <Bubble key={bubble.id} side={bubble.side}>
                   {bubble.text}
@@ -266,7 +284,7 @@ export function ChatWidget() {
                     عندي سؤال مش فاهمه
                   </Choice>
                   <Choice icon={MessageCircle} onClick={escalate}>
-                    عايز أكلم حد مننا
+                    عايز اكلم خدمة العملاء
                   </Choice>
                 </div>
               )}
