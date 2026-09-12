@@ -34,6 +34,7 @@ import {
 import { api, del, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
+import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, inferInvestStyle, type StyleKey, type Trade } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
@@ -82,6 +83,7 @@ function AdminPage() {
       <TabsList>
         <TabsTrigger value="indices">المؤشرات</TabsTrigger>
         <TabsTrigger value="users">المستخدمين</TabsTrigger>
+        <TabsTrigger value="support">الدعم</TabsTrigger>
         <TabsTrigger value="blog">المدونة</TabsTrigger>
       </TabsList>
       <TabsContent value="indices">
@@ -89,6 +91,9 @@ function AdminPage() {
       </TabsContent>
       <TabsContent value="users">
         <UsersTab />
+      </TabsContent>
+      <TabsContent value="support">
+        <SupportTab />
       </TabsContent>
       <TabsContent value="blog">
         <Tabs defaultValue="pending" className="space-y-4">

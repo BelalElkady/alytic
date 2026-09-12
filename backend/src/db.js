@@ -333,6 +333,56 @@ export async function listSubscriptionGrants(userId, { limit = 20 } = {}) {
   return data;
 }
 
+/** One user's support thread, oldest first — the whole conversation, which stays small enough not to need paging. */
+export async function listSupportMessages(userId) {
+  const { data, error } = await supabase
+    .from('support_messages')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`listSupportMessages: ${error.message}`);
+  return data;
+}
+
+export async function insertSupportMessage({ userId, sender, body, sentBy }) {
+  const { data, error } = await supabase
+    .from('support_messages')
+    .insert({ user_id: userId, sender, body, sent_by: sentBy ?? null })
+    .select('*')
+    .single();
+  if (error) throw new Error(`insertSupportMessage: ${error.message}`);
+  return data;
+}
+
+/** Marks the other side's messages in this thread as seen. `sender` is whose messages to mark, i.e. the side that did NOT call this. */
+export async function markSupportMessagesRead(userId, sender) {
+  must(
+    await supabase
+      .from('support_messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('sender', sender)
+      .is('read_at', null),
+    'markSupportMessagesRead',
+  );
+}
+
+/**
+ * Recent messages across every thread, newest first, for the admin inbox —
+ * grouped into threads by the caller. Capped rather than paged: the inbox
+ * shows active conversations, and an individual thread is read in full by
+ * listSupportMessages.
+ */
+export async function listRecentSupportMessages({ limit = 500 } = {}) {
+  const { data, error } = await supabase
+    .from('support_messages')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listRecentSupportMessages: ${error.message}`);
+  return data;
+}
+
 export async function setUserAdmin(id, isAdmin) {
   must(await supabase.from('users').update({ is_admin: Boolean(isAdmin) }).eq('id', id), 'setUserAdmin');
 }

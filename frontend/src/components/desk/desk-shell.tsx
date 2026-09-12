@@ -28,6 +28,7 @@ import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
 import { MarketDialog } from "@/components/desk/market-dialog";
 import { Spinner, Stat } from "@/components/desk/state-blocks";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
+import { ChatWidget } from "@/components/support/chat-widget";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -140,6 +141,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
         </div>
       </footer>
       <MobileNav />
+      <ChatWidget />
       <DetailDialog />
       <MarketDialog />
       <ManualEntryDialog />

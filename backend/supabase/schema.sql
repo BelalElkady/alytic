@@ -127,6 +127,27 @@ create table if not exists subscription_grants (
 );
 create index if not exists idx_subscription_grants_user on subscription_grants (user_id, created_at desc);
 
+-- The in-app support chat. One thread per user (there is nothing to key a
+-- second conversation on), so a "thread" is just every row sharing a user_id
+-- read in created_at order. This is the subscription path as well as support:
+-- users ask to subscribe here and an admin answers with the transfer details,
+-- which is why /api/support is never behind the paywall — a lapsed account
+-- has to be able to reach us to renew.
+--
+-- read_at is per message and set by whichever side did NOT write it, on
+-- opening the thread: unread-for-the-user is admin messages with a null
+-- read_at, and vice versa.
+create table if not exists support_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  sender text not null check (sender in ('user', 'admin')),
+  body text not null,
+  sent_by text references users(id),
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_support_messages_user on support_messages (user_id, created_at);
+
 -- Admin-uploaded replacements for the built-in index membership lists in
 -- src/config/indices.js. Absence of a row means "use the built-in default" —
 -- see codesForIndex() there, which checks here first.

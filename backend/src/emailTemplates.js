@@ -66,6 +66,25 @@ export function alreadyRegisteredEmailHtml(name, appUrl) {
 }
 
 /** Sent to the site's contact address from the public "تواصل معنا" form. */
+/**
+ * Sent when a user writes into the in-app support chat. Replying by email
+ * would be invisible to them — the conversation lives in the app — so this
+ * points at the admin panel instead of inviting a reply-to.
+ */
+export function supportMessageEmailHtml({ name, email, message, appUrl }) {
+  return layout(`
+    <p>رسالة جديدة في الشات من مستخدم EGXpert:</p>
+    <table role="presentation" width="100%" style="margin:16px 0;border-collapse:collapse;">
+      <tr><td style="padding:4px 0;color:#94a3b8;width:80px;">الاسم</td><td>${escapeHtml(name || '—')}</td></tr>
+      <tr><td style="padding:4px 0;color:#94a3b8;">البريد</td><td dir="ltr" style="text-align:right;">${escapeHtml(email)}</td></tr>
+    </table>
+    <p style="white-space:pre-wrap;background:#0b1220;padding:16px;border-radius:8px;">${escapeHtml(message)}</p>
+    <p style="font-size:13px;color:#94a3b8;">
+      رُد عليها من لوحة الإدارة → الدعم${appUrl ? `: <a href="${escapeHtml(appUrl)}/admin" style="color:#60a5fa;">${escapeHtml(appUrl)}/admin</a>` : ''}
+    </p>
+  `);
+}
+
 export function contactEmailHtml({ name, email, message }) {
   return layout(`
     <p>رسالة جديدة من نموذج "تواصل معنا" في EGXpert:</p>

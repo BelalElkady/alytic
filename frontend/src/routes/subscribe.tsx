@@ -13,12 +13,12 @@ export const Route = createFileRoute("/subscribe")({
       {
         name: "description",
         content:
-          "اشترك في EGXpert بتحويل InstaPay: شهري ١٤٩ جنيه أو سنوي ١٦١٠ جنيه، وبنفعّل حسابك بعد مراجعة التحويل.",
+          "اشترك في EGXpert: شهري ١٤٩ جنيه أو سنوي ١٦١٠ جنيه. كلّمنا في الشات وهنبعتلك بيانات الدفع ونفعّل حسابك.",
       },
       { property: "og:title", content: "طريقة الاشتراك — EGXpert" },
       {
         property: "og:description",
-        content: "حوّل على InstaPay وابعتلنا الإيصال، وهنفعّل اشتراكك يدويًا.",
+        content: "كلّمنا في الشات وهنبعتلك بيانات الدفع وكل التفاصيل.",
       },
     ],
   }),
@@ -31,11 +31,11 @@ function SubscribePage() {
   return (
     <SiteShell>
       <section className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
-        <Badge variant="outline">الاشتراك بتحويل InstaPay</Badge>
+        <Badge variant="outline">الاشتراك عن طريق الشات</Badge>
         <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">طريقة الاشتراك</h1>
         <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-          مفيش دفع بالبطاقة على الموقع. بتحوّل على InstaPay، وبنراجع التحويل ونفعّل حسابك يدويًا —
-          وبعدها بتستخدم كل المزايا لحد تاريخ انتهاء الاشتراك.
+          مفيش دفع بالبطاقة على الموقع. كلّمنا في الشات جوّه التطبيق وقولّنا الباقة اللي عايزها،
+          وهنبعتلك بيانات الدفع وكل التفاصيل — وبنفعّل حسابك أول ما نراجع التحويل.
         </p>
 
         <div className="mt-8">

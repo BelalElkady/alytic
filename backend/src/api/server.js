@@ -20,8 +20,8 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants } from '../db.js';
-import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
+import { PLANS, planFor, addMonths } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -38,7 +38,7 @@ import { readBars, cairoToday } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
-import { contactEmailHtml } from '../emailTemplates.js';
+import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
 
 // Where the public contact form's messages land. Same default as
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
@@ -267,12 +267,11 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   res.json({ ok: true, started: true });
 }));
 
-// What the "اشترك" screen shows: the prices, and the InstaPay account to
-// transfer to. Public — the pricing page reads it too. A null address means
-// INSTAPAY_ADDRESS isn't configured, and the screen tells the user to contact
-// support instead of rendering a blank field.
+// The prices the "اشترك" screen quotes. Payment details are deliberately not
+// here: users ask on the support chat and an admin sends them privately, so
+// no account number is published to anyone who can curl this.
 app.get('/api/billing/plans', (_req, res) => {
-  res.json({ plans: Object.values(PLANS), instapay: INSTAPAY });
+  res.json({ plans: Object.values(PLANS) });
 });
 
 app.use('/api', async (req, res, next) => {
@@ -334,6 +333,66 @@ app.use('/api', async (req, res, next) => {
     requiresSubscription: true,
   });
 });
+
+// ---- Support chat ----------------------------------------------------------
+// Deliberately outside PAID_PATHS: this is how a user asks to subscribe and
+// how a lapsed account asks to renew, so locking it behind the paywall would
+// wall off the only route back to paying.
+
+const MAX_MESSAGE_LENGTH = 2000;
+const chatLimiter = rateLimited(40, 15);
+
+const publicMessage = (row) => ({
+  id: row.id,
+  sender: row.sender,
+  body: row.body,
+  createdAt: row.created_at,
+  readAt: row.read_at,
+});
+
+// Only marks the admin's messages read when the caller says the panel is
+// actually open (?read=1). The widget polls in the background to keep its
+// unread badge current, and marking on every poll would clear that badge
+// before the user ever saw it.
+app.get('/api/support/messages', wrap(async (req, res) => {
+  const messages = await listSupportMessages(req.user.id);
+  if (req.query.read === '1' && messages.some((m) => m.sender === 'admin' && !m.read_at)) {
+    await markSupportMessagesRead(req.user.id, 'admin');
+  }
+  res.json({ messages: messages.map(publicMessage) });
+}));
+
+app.post('/api/support/messages', chatLimiter, wrap(async (req, res) => {
+  const body = String(req.body?.body ?? '').trim();
+  if (!body) return res.status(400).json({ error: 'اكتب رسالتك الأول' });
+  if (body.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ error: `الرسالة طويلة أوي (الحد ${MAX_MESSAGE_LENGTH} حرف)` });
+  }
+
+  const existing = await listSupportMessages(req.user.id);
+  const message = await insertSupportMessage({ userId: req.user.id, sender: 'user', body });
+
+  // One notification per burst: someone typing three quick lines shouldn't
+  // land as three emails. A gap longer than this, or an admin reply in
+  // between, starts a new burst and notifies again.
+  const previous = existing[existing.length - 1];
+  const withinBurst =
+    previous?.sender === 'user' && Date.now() - new Date(previous.created_at).getTime() < 10 * 60 * 1000;
+  if (!withinBurst) {
+    await sendEmail({
+      to: CONTACT_EMAIL,
+      subject: `رسالة شات جديدة من ${req.user.email}`,
+      html: supportMessageEmailHtml({
+        name: req.user.name,
+        email: req.user.email,
+        message: body,
+        appUrl: process.env.APP_URL ?? FRONTEND_URL,
+      }),
+    }).catch((err) => console.error('support notification email failed:', err));
+  }
+
+  res.status(201).json({ message: publicMessage(message) });
+}));
 
 // Google sign-in never collects a phone number, but registration requires
 // one — this is how a Google account fills that in afterward. Placed after
@@ -699,6 +758,62 @@ app.get('/api/admin/users/:id/subscription', wrap(async (req, res) => {
       createdAt: g.created_at,
     })),
   });
+}));
+
+// The admin inbox: one entry per user who has ever written in, newest
+// activity first, with the unread count that drives the tab's badge.
+app.get('/api/admin/support', wrap(async (req, res) => {
+  const [messages, users] = await Promise.all([listRecentSupportMessages(), getAllUsers()]);
+  const userById = new Map(users.map((u) => [u.id, u]));
+
+  const threads = new Map();
+  // listRecentSupportMessages is newest-first, so the first row seen for a
+  // user is that thread's latest message.
+  for (const message of messages) {
+    let thread = threads.get(message.user_id);
+    if (!thread) {
+      const user = userById.get(message.user_id);
+      thread = {
+        userId: message.user_id,
+        email: user?.email ?? message.user_id,
+        name: user?.name ?? '',
+        lastMessage: message.body,
+        lastSender: message.sender,
+        lastAt: message.created_at,
+        unread: 0,
+      };
+      threads.set(message.user_id, thread);
+    }
+    if (message.sender === 'user' && !message.read_at) thread.unread += 1;
+  }
+
+  res.json({ threads: [...threads.values()] });
+}));
+
+app.get('/api/admin/support/:userId', wrap(async (req, res) => {
+  const messages = await listSupportMessages(req.params.userId);
+  if (messages.some((m) => m.sender === 'user' && !m.read_at)) {
+    await markSupportMessagesRead(req.params.userId, 'user');
+  }
+  res.json({ messages: messages.map(publicMessage) });
+}));
+
+app.post('/api/admin/support/:userId', wrap(async (req, res) => {
+  const body = String(req.body?.body ?? '').trim();
+  if (!body) return res.status(400).json({ error: 'اكتب الرد الأول' });
+  if (body.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ error: `الرسالة طويلة أوي (الحد ${MAX_MESSAGE_LENGTH} حرف)` });
+  }
+  const target = await getUserById(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
+
+  const message = await insertSupportMessage({
+    userId: target.id,
+    sender: 'admin',
+    body,
+    sentBy: req.user.id,
+  });
+  res.status(201).json({ message: publicMessage(message) });
 }));
 
 // Drafts (and everything else generated) waiting on human review before they
