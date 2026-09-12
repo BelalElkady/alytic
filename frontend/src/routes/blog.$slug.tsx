@@ -13,7 +13,7 @@ export const Route = createFileRoute("/blog/$slug")({
 });
 
 type ContentBlock =
-  | { type: "heading"; text: string }
+  | { type: "heading"; level: 2 | 3; text: string }
   | { type: "paragraph"; text: string }
   | { type: "list"; items: string[] };
 
@@ -31,10 +31,18 @@ function BlogContent({ blocks }: { blocks: ContentBlock[] }) {
     <div className="space-y-4">
       {blocks.map((block, index) => {
         if (block.type === "heading") {
+          const Heading = block.level === 3 ? "h3" : "h2";
           return (
-            <h2 key={index} className="text-[18px] font-semibold tracking-tight">
+            <Heading
+              key={index}
+              className={
+                block.level === 3
+                  ? "text-[16px] font-semibold tracking-tight"
+                  : "text-[18px] font-semibold tracking-tight"
+              }
+            >
               {block.text}
-            </h2>
+            </Heading>
           );
         }
         if (block.type === "list") {

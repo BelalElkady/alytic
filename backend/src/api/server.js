@@ -173,27 +173,35 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
     post: {
       slug: post.slug,
       title: post.title,
+      metaDescription: post.meta_description,
       dek: post.dek,
       content: post.content_json,
       tags: post.tags,
+      image: post.image_json,
       publishedAt: post.published_at,
     },
   });
 }));
 
-// Triggered by .github/workflows/blog-cron.yml over the VPS's loopback
-// interface (never exposed publicly) — see that workflow for why a shared
-// secret rather than a session cookie gates this instead of /api/admin.
+// Triggered once a day by .github/workflows/blog-cron.yml over the VPS's
+// loopback interface (never exposed publicly) — see that workflow for why a
+// shared secret rather than a session cookie gates this instead of
+// /api/admin. Generating all 10 articles sequentially can take several
+// minutes against free-tier models, so this responds immediately and lets
+// the batch run in the background — getOrGenerateDailyBlogBatch's own
+// in-flight map still stops a retried trigger from generating twice.
 const BLOG_CRON_SECRET = process.env.BLOG_CRON_SECRET;
 app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   if (!BLOG_CRON_SECRET || req.get('X-Cron-Secret') !== BLOG_CRON_SECRET) {
     return res.status(403).json({ error: 'forbidden' });
   }
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
-  const slot = req.body?.slot === 'evening' ? 'evening' : 'morning';
-  const { getOrGenerateBlogPost } = await import('../agent/blogGenerator.js');
-  const post = await getOrGenerateBlogPost({ slot });
-  res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
+  const postDate = typeof req.body?.postDate === 'string' ? req.body.postDate : undefined;
+  const { getOrGenerateDailyBlogBatch } = await import('../agent/blogGenerator.js');
+  getOrGenerateDailyBlogBatch({ postDate }).catch((err) => {
+    console.error('getOrGenerateDailyBlogBatch failed:', err);
+  });
+  res.json({ ok: true, started: true });
 }));
 
 app.use('/api', async (req, res, next) => {
@@ -488,14 +496,18 @@ app.get('/api/admin/blog-drafts', wrap(async (req, res) => {
   res.json({
     posts: posts.map((p) => ({
       id: p.id,
-      slot: p.slot,
+      batchIndex: p.batch_index,
       postDate: p.post_date,
       slug: p.slug,
+      primaryKeyword: p.primary_keyword,
+      secondaryKeywords: p.secondary_keywords,
       title: p.title,
+      metaDescription: p.meta_description,
       dek: p.dek,
       content: p.content_json,
       tags: p.tags,
       sources: p.sources_json,
+      image: p.image_json,
       status: p.status,
       generationModel: p.generation_model,
       reviewModel: p.review_model,
@@ -526,12 +538,13 @@ app.post('/api/admin/blog-drafts/:id/unpublish', wrap(async (req, res) => {
 }));
 
 app.patch('/api/admin/blog-drafts/:id', wrap(async (req, res) => {
-  const { title, dek, content, tags } = req.body ?? {};
+  const { title, dek, metaDescription, content, tags } = req.body ?? {};
   if (title !== undefined && typeof title !== 'string') return res.status(400).json({ error: 'العنوان لازم يكون نص' });
   if (dek !== undefined && dek !== null && typeof dek !== 'string') return res.status(400).json({ error: 'المقدمة لازم تكون نص' });
+  if (metaDescription !== undefined && typeof metaDescription !== 'string') return res.status(400).json({ error: 'الوصف التعريفي لازم يكون نص' });
   if (content !== undefined && !Array.isArray(content)) return res.status(400).json({ error: 'المحتوى لازم يكون قائمة فقرات' });
   if (tags !== undefined && !Array.isArray(tags)) return res.status(400).json({ error: 'الوسوم لازم تكون قائمة' });
-  const post = await updateBlogPost(req.params.id, { title, dek, content, tags });
+  const post = await updateBlogPost(req.params.id, { title, dek, metaDescription, content, tags });
   if (!post) return res.status(404).json({ error: 'المقالة غير موجودة' });
   res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
 }));

@@ -13,26 +13,45 @@ import { Button } from "@/components/ui/button";
 import { api, post } from "@/lib/api";
 
 type ContentBlock =
-  | { type: "heading"; text: string }
+  | { type: "heading"; level: 2 | 3; text: string }
   | { type: "paragraph"; text: string }
   | { type: "list"; items: string[] };
 
+type ImageSpec = {
+  concept: string;
+  alt: string;
+  caption: string;
+  ratioAndFilename: string;
+};
+
 type BlogDraft = {
   id: string;
-  slot: "morning" | "evening";
+  batchIndex: number;
   postDate: string;
   slug: string;
+  primaryKeyword: string;
+  secondaryKeywords: string[];
   title: string;
+  metaDescription: string;
   dek: string | null;
   content: ContentBlock[];
   tags: string[];
   sources: { title: string; url: string }[] | null;
+  image: ImageSpec | null;
   status: "draft" | "approved" | "rejected" | "published";
   generationModel: string | null;
   reviewModel: string | null;
   review: { verdict: "pass" | "flag"; notes: string } | null;
   generatedAt: string;
 };
+
+function countWords(content: ContentBlock[]): number {
+  const text = content
+    .map((b) => (b.type === "list" ? b.items.join(" ") : b.text))
+    .join(" ")
+    .trim();
+  return text ? text.split(/\s+/).length : 0;
+}
 
 /** Draft blog posts written by src/agent/blogGenerator.js, waiting for a human to approve or reject before /api/blog serves them. */
 export function BlogDraftsTab() {
@@ -84,8 +103,8 @@ export function BlogDraftsTab() {
   return (
     <div className="space-y-4">
       <Notice tone="info">
-        مسودات مكتوبة تلقائيًا (qwen3) ومراجَعة بنموذج ثاني قبل ما توصلك هنا. راجع المحتوى والمصادر
-        قبل النشر — النشر بيظهر المقالة فورًا في /blog وفي الشريط المتحرك.
+        10 مسودات مكتوبة تلقائيًا كل يوم ومراجَعة بنموذج ثاني قبل ما توصلك هنا. راجع المحتوى والمصادر
+        وعدد الكلمات قبل النشر — النشر بيظهر المقالة فورًا في /blog وفي الشريط المتحرك.
       </Notice>
 
       {rows.length === 0 ? (
@@ -100,8 +119,8 @@ export function BlogDraftsTab() {
             title={row.title}
             description={
               <>
-                {row.postDate} · {row.slot === "morning" ? "صباحية" : "مسائية"} ·{" "}
-                {row.generationModel ?? "—"}
+                {row.postDate} · مقالة {row.batchIndex}/10 · {row.generationModel ?? "—"} ·{" "}
+                {countWords(row.content)} كلمة
               </>
             }
             action={
@@ -129,7 +148,16 @@ export function BlogDraftsTab() {
                 مراجعة {row.reviewModel ?? ""}: {row.review.notes}
               </Notice>
             )}
-            {row.dek && <p className="text-[13px] text-muted-foreground">{row.dek}</p>}
+            <div className="flex flex-wrap gap-1.5">
+              <Badge>{row.primaryKeyword}</Badge>
+              {row.secondaryKeywords?.map((kw) => (
+                <Badge key={kw} variant="outline">
+                  {kw}
+                </Badge>
+              ))}
+            </div>
+            <p className="mt-2 text-[12px] text-muted-foreground">الوصف التعريفي (meta): {row.metaDescription}</p>
+            {row.dek && <p className="mt-2 text-[13px] text-muted-foreground">{row.dek}</p>}
             <div className="mt-3 flex flex-wrap gap-1.5">
               {row.tags?.map((tag) => (
                 <Badge key={tag} variant="outline">
@@ -137,6 +165,15 @@ export function BlogDraftsTab() {
                 </Badge>
               ))}
             </div>
+            {row.image && (
+              <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-[12px] leading-relaxed text-muted-foreground">
+                <p className="font-semibold text-foreground">صورة المقالة المقترحة</p>
+                <p className="mt-1">{row.image.concept}</p>
+                <p className="mt-1">Alt: {row.image.alt}</p>
+                <p>تعليق: {row.image.caption}</p>
+                <p>{row.image.ratioAndFilename}</p>
+              </div>
+            )}
             <div className="mt-4 space-y-2 text-[13px] leading-relaxed">
               {row.content.map((block, index) =>
                 block.type === "list" ? (
@@ -146,7 +183,10 @@ export function BlogDraftsTab() {
                     ))}
                   </ul>
                 ) : (
-                  <p key={index} className={block.type === "heading" ? "font-semibold" : ""}>
+                  <p
+                    key={index}
+                    className={block.type === "heading" ? (block.level === 3 ? "font-semibold ps-3" : "font-semibold") : ""}
+                  >
                     {block.text}
                   </p>
                 ),

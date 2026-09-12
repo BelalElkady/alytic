@@ -2,37 +2,18 @@ name: Generate blog post
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # ~09:00 Africa/Cairo
-    - cron: '0 14 * * *' # ~17:00 Africa/Cairo
-  workflow_dispatch:
-    inputs:
-      slot:
-        description: Which slot to generate
-        type: choice
-        options: [morning, evening]
-        default: morning
+    - cron: '0 6 * * *' # ~09:00 Africa/Cairo
+  workflow_dispatch: {}
 
 env:
   BACKEND_PORT: 3000
 
 jobs:
   generate:
-    name: Trigger draft generation
+    name: Trigger daily draft batch generation
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Determine slot
-        id: slot
-        shell: bash
-        run: |
-          if [ -n "${{ inputs.slot }}" ]; then
-            echo "value=${{ inputs.slot }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "0 14 * * *" ]; then
-            echo "value=evening" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=morning" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Validate secrets
         shell: bash
         env:
@@ -54,20 +35,21 @@ jobs:
       # Calls the backend over the VPS's own loopback interface, the same way
       # deploy.yml's post-deploy health check does — the cron endpoint is
       # never exposed on the public internet, so this SSH hop is the trigger
-      # rather than a public HTTPS URL.
-      - name: Request draft generation over SSH
+      # rather than a public HTTPS URL. The endpoint kicks off the ten-article
+      # batch in the background and responds immediately, so this call
+      # returns fast even though the batch itself takes several minutes.
+      - name: Request daily blog batch generation over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: BLOG_CRON_SECRET,BACKEND_PORT,SLOT
+          envs: BLOG_CRON_SECRET,BACKEND_PORT
           script: |
             curl --fail --silent --show-error -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/blog-generate" \
               -H "X-Cron-Secret: $BLOG_CRON_SECRET" \
               -H "Content-Type: application/json" \
-              -d "{\"slot\":\"$SLOT\"}"
+              -d '{}'
         env:
           BLOG_CRON_SECRET: ${{ secrets.BLOG_CRON_SECRET }}
-          SLOT: ${{ steps.slot.outputs.value }}

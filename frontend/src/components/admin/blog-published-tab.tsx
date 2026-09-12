@@ -19,16 +19,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, del, patch, post } from "@/lib/api";
 
 type ContentBlock =
-  | { type: "heading"; text: string }
+  | { type: "heading"; level: 2 | 3; text: string }
   | { type: "paragraph"; text: string }
   | { type: "list"; items: string[] };
 
 type BlogPost = {
   id: string;
-  slot: "morning" | "evening";
+  batchIndex: number;
   postDate: string;
   slug: string;
+  primaryKeyword: string;
   title: string;
+  metaDescription: string;
   dek: string | null;
   content: ContentBlock[];
   tags: string[];
@@ -38,6 +40,7 @@ type BlogPost = {
 type EditState = {
   title: string;
   dek: string;
+  metaDescription: string;
   tags: string;
   blocks: ContentBlock[];
 };
@@ -45,6 +48,7 @@ type EditState = {
 const toEditState = (row: BlogPost): EditState => ({
   title: row.title,
   dek: row.dek ?? "",
+  metaDescription: row.metaDescription,
   tags: row.tags?.join("، ") ?? "",
   blocks: row.content.map((b) => ({ ...b })),
 });
@@ -94,6 +98,7 @@ export function PublishedPostsTab() {
       await patch(`/api/admin/blog-drafts/${id}`, {
         title: edit.title.trim(),
         dek: edit.dek.trim() || null,
+        metaDescription: edit.metaDescription.trim(),
         tags,
         content: edit.blocks,
       });
@@ -106,6 +111,7 @@ export function PublishedPostsTab() {
                   ...r,
                   title: edit.title.trim(),
                   dek: edit.dek.trim() || null,
+                  metaDescription: edit.metaDescription.trim(),
                   tags,
                   content: edit.blocks,
                 }
@@ -169,7 +175,11 @@ export function PublishedPostsTab() {
     setEdit((prev) => {
       if (!prev) return prev;
       const block: ContentBlock =
-        type === "list" ? { type: "list", items: [""] } : { type, text: "" };
+        type === "list"
+          ? { type: "list", items: [""] }
+          : type === "heading"
+            ? { type: "heading", level: 2, text: "" }
+            : { type: "paragraph", text: "" };
       return { ...prev, blocks: [...prev.blocks, block] };
     });
   };
@@ -204,7 +214,7 @@ export function PublishedPostsTab() {
               title={row.title}
               description={
                 <>
-                  {row.postDate} · {row.slot === "morning" ? "صباحية" : "مسائية"}
+                  {row.postDate} · مقالة {row.batchIndex}/10
                   {row.publishedAt &&
                     ` · اتنشرت ${new Date(row.publishedAt).toLocaleString("ar-EG")}`}
                 </>
@@ -269,6 +279,16 @@ export function PublishedPostsTab() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-[12px] text-muted-foreground">
+                      الوصف التعريفي (meta description، ١٤٠-١٦٠ حرف)
+                    </label>
+                    <Textarea
+                      rows={2}
+                      value={edit.metaDescription}
+                      onChange={(e) => setEdit({ ...edit, metaDescription: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[12px] text-muted-foreground">
                       الوسوم (افصل بينها بفاصلة)
                     </label>
                     <Input
@@ -323,7 +343,8 @@ export function PublishedPostsTab() {
                 </div>
               ) : (
                 <>
-                  {row.dek && <p className="text-[13px] text-muted-foreground">{row.dek}</p>}
+                  <Badge>{row.primaryKeyword}</Badge>
+                  {row.dek && <p className="mt-2 text-[13px] text-muted-foreground">{row.dek}</p>}
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {row.tags?.map((tag) => (
                       <Badge key={tag} variant="outline">
@@ -340,7 +361,16 @@ export function PublishedPostsTab() {
                           ))}
                         </ul>
                       ) : (
-                        <p key={index} className={block.type === "heading" ? "font-semibold" : ""}>
+                        <p
+                          key={index}
+                          className={
+                            block.type === "heading"
+                              ? block.level === 3
+                                ? "font-semibold ps-3"
+                                : "font-semibold"
+                              : ""
+                          }
+                        >
                           {block.text}
                         </p>
                       ),

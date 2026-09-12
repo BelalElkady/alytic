@@ -280,18 +280,26 @@ export async function addCustomStocks(stocks, addedBy) {
   );
 }
 
-/** @returns {object|null} the stored draft/post for that (day, slot), or null if never generated — used by getOrGenerateBlogPost to avoid regenerating. */
-export async function getBlogPostBySlot(postDate, slot) {
-  const { data, error } = await supabase.from('blog_posts').select('*').eq('post_date', postDate).eq('slot', slot).maybeSingle();
-  if (error) throw new Error(`getBlogPostBySlot: ${error.message}`);
+/** @returns {object|null} the stored draft/post for that (day, batch slot), or null if never generated — used by getOrGenerateDailyBlogBatch to avoid regenerating. */
+export async function getBlogPostByBatch(postDate, batchIndex) {
+  const { data, error } = await supabase.from('blog_posts').select('*').eq('post_date', postDate).eq('batch_index', batchIndex).maybeSingle();
+  if (error) throw new Error(`getBlogPostByBatch: ${error.message}`);
+  return data;
+}
+
+/** @returns {object[]} every article already generated for that day, ordered by batch_index — used to resume a partially-completed daily batch instead of paying for already-stored articles again. */
+export async function getBlogPostsForDate(postDate) {
+  const { data, error } = await supabase.from('blog_posts').select('*').eq('post_date', postDate).order('batch_index', { ascending: true });
+  if (error) throw new Error(`getBlogPostsForDate: ${error.message}`);
   return data;
 }
 
 /**
  * Inserts a freshly generated draft. Insert-if-absent (like putMarketReport)
- * so two concurrent cron calls for the same (day, slot) can't both land a row —
- * whichever writes first wins, and the loser's caller should re-read instead.
- * @returns {object|null} the inserted row, or null if a row for this (day, slot) already existed.
+ * so two concurrent runs for the same (day, batch_index) can't both land a
+ * row — whichever writes first wins, and the loser's caller should re-read
+ * instead.
+ * @returns {object|null} the inserted row, or null if a row for this (day, batch_index) already existed.
  */
 export async function insertBlogPostDraft(row) {
   const { data, error } = await supabase
@@ -299,13 +307,17 @@ export async function insertBlogPostDraft(row) {
     .upsert(
       {
         post_date: row.postDate,
-        slot: row.slot,
+        batch_index: row.batchIndex,
         slug: row.slug,
+        primary_keyword: row.primaryKeyword,
+        secondary_keywords: row.secondaryKeywords ?? [],
         title: row.title,
+        meta_description: row.metaDescription,
         dek: row.dek ?? null,
         content_json: row.content,
         tags: row.tags ?? [],
         sources_json: row.sources ?? null,
+        image_json: row.image ?? null,
         status: 'draft',
         generation_model: row.generationModel ?? null,
         generation_usage_json: row.generationUsage ?? null,
@@ -313,7 +325,7 @@ export async function insertBlogPostDraft(row) {
         review_json: row.review ?? null,
         generated_at: new Date().toISOString(),
       },
-      { onConflict: 'post_date,slot', ignoreDuplicates: true },
+      { onConflict: 'post_date,batch_index', ignoreDuplicates: true },
     )
     .select('*');
   if (error) throw new Error(`insertBlogPostDraft: ${error.message}`);
@@ -359,10 +371,11 @@ export async function setBlogPostStatus(id, status, approvedBy) {
 }
 
 /** Edits editorial fields on an existing post (draft or already published) — used by the admin blog tab's edit form. */
-export async function updateBlogPost(id, { title, dek, content, tags } = {}) {
+export async function updateBlogPost(id, { title, dek, metaDescription, content, tags } = {}) {
   const patch = {};
   if (title !== undefined) patch.title = title;
   if (dek !== undefined) patch.dek = dek;
+  if (metaDescription !== undefined) patch.meta_description = metaDescription;
   if (content !== undefined) patch.content_json = content;
   if (tags !== undefined) patch.tags = tags;
   const { data, error } = await supabase.from('blog_posts').update(patch).eq('id', id).select('*').maybeSingle();

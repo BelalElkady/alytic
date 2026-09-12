@@ -101,21 +101,25 @@ create table if not exists custom_stocks (
 );
 
 -- Auto-generated blog posts (Egyptian market news + technical analysis),
--- written twice a day by src/agent/blogGenerator.js and held as a draft
--- until an admin approves them — see /api/admin/blog-drafts in server.js.
--- (post_date, slot) mirrors market_reports' (report_date, style) key: one
--- generation attempt per slot per day, so a retried cron run doesn't spend
--- twice.
+-- written once a day in a batch of 10 by src/agent/blogGenerator.js and held
+-- as drafts until an admin approves them — see /api/admin/blog-drafts in
+-- server.js. (post_date, batch_index) mirrors market_reports' (report_date,
+-- style) key: one generation attempt per article slot per day, so a retried
+-- cron run doesn't spend twice.
 create table if not exists blog_posts (
   id uuid primary key default gen_random_uuid(),
   post_date text not null,
-  slot text not null check (slot in ('morning', 'evening')),
+  batch_index int not null,
   slug text not null unique,
+  primary_keyword text not null,
+  secondary_keywords text[] not null default '{}',
   title text not null,
+  meta_description text not null,
   dek text,
   content_json jsonb not null,
   tags text[] not null default '{}',
   sources_json jsonb,
+  image_json jsonb,
   status text not null default 'draft'
     check (status in ('draft', 'approved', 'rejected', 'published')),
   generation_model text,
@@ -126,9 +130,45 @@ create table if not exists blog_posts (
   approved_at timestamptz,
   published_at timestamptz,
   generated_at timestamptz not null default now(),
-  unique (post_date, slot)
+  unique (post_date, batch_index)
 );
 create index if not exists idx_blog_posts_status on blog_posts (status, published_at desc);
+
+-- Migration from the old twice-a-day (post_date, slot) shape to ten
+-- articles/day keyed by (post_date, batch_index). Guarded on the presence of
+-- the old `slot` column so this is a no-op — and references nothing that no
+-- longer exists — on a fresh install that already created the table above in
+-- its final shape.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'blog_posts' and column_name = 'slot') then
+    execute 'alter table blog_posts add column if not exists batch_index int';
+    execute $sql$update blog_posts set batch_index = case slot when 'morning' then 1 when 'evening' then 2 end where batch_index is null$sql$;
+    execute 'alter table blog_posts alter column batch_index set not null';
+    execute 'alter table blog_posts drop constraint if exists blog_posts_slot_check';
+    execute 'alter table blog_posts drop constraint if exists blog_posts_post_date_slot_key';
+    execute 'alter table blog_posts drop column slot';
+  end if;
+end $$;
+
+alter table blog_posts add column if not exists primary_keyword text;
+update blog_posts set primary_keyword = coalesce(primary_keyword, tags[1], 'البورصة المصرية') where primary_keyword is null;
+alter table blog_posts alter column primary_keyword set not null;
+
+alter table blog_posts add column if not exists secondary_keywords text[] not null default '{}';
+
+alter table blog_posts add column if not exists meta_description text;
+update blog_posts set meta_description = coalesce(meta_description, left(dek, 160), left(title, 160)) where meta_description is null;
+alter table blog_posts alter column meta_description set not null;
+
+alter table blog_posts add column if not exists image_json jsonb;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'blog_posts_post_date_batch_index_key') then
+    alter table blog_posts add constraint blog_posts_post_date_batch_index_key unique (post_date, batch_index);
+  end if;
+end $$;
 
 -- The CLI/local dev account. INSERT ... ON CONFLICT DO NOTHING equivalent —
 -- safe to run every time this file is applied.
