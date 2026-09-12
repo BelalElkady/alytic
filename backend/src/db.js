@@ -238,9 +238,34 @@ export async function recordCashScanUsage(userId, usageDate) {
   return data.length > 0;
 }
 
+/**
+ * True when the failure is "this table was never created" rather than a real
+ * query error. The subscription tables ship in supabase/schema.sql, which is
+ * applied by hand, so a backend deploy can legitimately reach production
+ * before the migration does. Treating that as "no subscriptions exist" is not
+ * a guess — a table that doesn't exist holds no rows — and it keeps an
+ * un-migrated deploy on the free trial instead of failing every request.
+ * PGRST205 is PostgREST's schema-cache miss; 42P01 is Postgres' undefined_table.
+ */
+const isMissingTable = (error) => error?.code === 'PGRST205' || error?.code === '42P01';
+
+let warnedMissingSubscriptions = false;
+function warnMissingSubscriptions(context) {
+  if (warnedMissingSubscriptions) return;
+  warnedMissingSubscriptions = true;
+  console.error(
+    `${context}: the subscriptions tables are missing — apply backend/supabase/schema.sql. ` +
+      'Every account is being treated as never-subscribed until then.',
+  );
+}
+
 /** @returns {object|null} the user's plan row, or null if they never paid. Says nothing about whether the period is still live — the caller compares current_period_end. */
 export async function getSubscription(userId) {
   const { data, error } = await supabase.from('subscriptions').select('*').eq('user_id', userId).maybeSingle();
+  if (isMissingTable(error)) {
+    warnMissingSubscriptions('getSubscription');
+    return null;
+  }
   if (error) throw new Error(`getSubscription: ${error.message}`);
   return data;
 }
@@ -248,6 +273,10 @@ export async function getSubscription(userId) {
 /** Every subscription row, keyed by user_id — for the admin users list, which needs each user's plan alongside their profile. */
 export async function getAllSubscriptions() {
   const { data, error } = await supabase.from('subscriptions').select('*');
+  if (isMissingTable(error)) {
+    warnMissingSubscriptions('getAllSubscriptions');
+    return [];
+  }
   if (error) throw new Error(`getAllSubscriptions: ${error.message}`);
   return data;
 }

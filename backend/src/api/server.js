@@ -310,9 +310,20 @@ const PAID_PATHS = [
 // The status is 402 so the client can recognise this case without string
 // matching, but the message is written to be shown to the user as-is: it says
 // which of the two things ran out and what to do next, never a bare code.
+// The try/catch matters: an unhandled rejection in middleware reaches
+// Express's default handler, which answers with an HTML body the frontend
+// can't read a message out of — the user would see a bare "فشل الطلب (500)"
+// where their portfolio should be. A failed entitlement check is reported as
+// such instead, and never silently grants access.
 app.use('/api', async (req, res, next) => {
   if (!req.user || !PAID_PATHS.some((prefix) => req.path.startsWith(prefix))) return next();
-  const access = await accessInfo(req.user);
+  let access;
+  try {
+    access = await accessInfo(req.user);
+  } catch (err) {
+    console.error('entitlement check failed:', err);
+    return res.status(503).json({ error: 'تعذر التحقق من اشتراكك دلوقتي — جرّب تاني بعد شوية.' });
+  }
   if (access.hasAccess) return next();
   const expired = Boolean(access.currentPeriodEnd);
   res.status(402).json({
