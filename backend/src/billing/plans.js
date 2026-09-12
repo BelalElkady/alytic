@@ -4,12 +4,14 @@
  * these are the figures the "اشترك" screen quotes and the admin panel
  * defaults to.
  *
- * Yearly is twelve months less 10% (149 × 12 × 0.9 = 1609.2), rounded up to a
- * whole pound.
+ * Yearly saves 189 EGP against twelve monthly payments (149 × 12 = 1788),
+ * i.e. 10.6%. Customer-facing copy says "توفير ١٨٩ جنيه" rather than a
+ * percentage: the exact figure needs no rounding, and rounding 10.57 up to 11
+ * would overstate the saving.
  */
 export const PLANS = {
   monthly: { key: 'monthly', label: 'شهري', priceEgp: 149, months: 1 },
-  yearly: { key: 'yearly', label: 'سنوي', priceEgp: 1610, months: 12 },
+  yearly: { key: 'yearly', label: 'سنوي', priceEgp: 1599, months: 12 },
 };
 
 export const planFor = (key) => PLANS[String(key ?? '')] ?? null;

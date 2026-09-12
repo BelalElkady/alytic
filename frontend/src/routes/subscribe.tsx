@@ -13,7 +13,7 @@ export const Route = createFileRoute("/subscribe")({
       {
         name: "description",
         content:
-          "اشترك في EGXpert: شهري ١٤٩ جنيه أو سنوي ١٦١٠ جنيه. كلّمنا في الشات وهنبعتلك بيانات الدفع ونفعّل حسابك.",
+          "اشترك في EGXpert: شهري ١٤٩ جنيه أو سنوي ١٥٩٩ جنيه. كلّمنا في الشات وهنبعتلك بيانات الدفع ونفعّل حسابك.",
       },
       { property: "og:title", content: "طريقة الاشتراك — EGXpert" },
       {

@@ -61,7 +61,7 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[14px] font-semibold">{option.label}</span>
-                {option.key === "yearly" && <Badge variant="outline">وفّر ١٠٪</Badge>}
+                {option.key === "yearly" && <Badge variant="outline">وفّر ١٨٩ جنيه</Badge>}
               </div>
               <p className="mt-2 flex items-end gap-1.5">
                 <span className="num text-2xl font-bold">{EG_NUMBER.format(option.priceEgp)}</span>
