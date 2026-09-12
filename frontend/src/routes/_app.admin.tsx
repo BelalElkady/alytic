@@ -40,10 +40,12 @@ import { INVEST_STYLES, inferInvestStyle, type StyleKey, type Trade } from "@/li
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
+const BASE_TITLE = "الإدارة — EGXpert";
+
 export const Route = createFileRoute("/_app/admin")({
   head: () => ({
     meta: [
-      { title: "الإدارة — EGXpert" },
+      { title: BASE_TITLE },
       { name: "description", content: "إدارة قوائم المؤشرات والمستخدمين المسجّلين." },
     ],
   }),
@@ -71,8 +73,41 @@ const LABELS: Record<string, string> = {
   EGX100: "EGX100",
 };
 
+/**
+ * Polls the same thread list the support tab shows and mirrors its total
+ * unread count onto the browser tab title (e.g. "(3) الإدارة — EGXpert") —
+ * so a new message is visible from any admin tab, not just while the support
+ * tab happens to be open. Cleared back to the plain title once every thread
+ * is read (or reads zero) and restored on unmount so it never leaks onto a
+ * different page's tab title.
+ */
+function useUnreadTitleBadge(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const { threads } = await api("/api/admin/support");
+        if (cancelled) return;
+        const total = threads.reduce((sum: number, t: { unread: number }) => sum + t.unread, 0);
+        document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
+      } catch {
+        // Best-effort badge — a failed poll just leaves the last count showing.
+      }
+    };
+    void poll();
+    const timer = setInterval(poll, 20 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.title = BASE_TITLE;
+    };
+  }, [enabled]);
+}
+
 function AdminPage() {
   const { user } = useDesk();
+  useUnreadTitleBadge(Boolean(user?.isAdmin));
 
   if (!user?.isAdmin) {
     return <ErrorState message="الصفحة دي للمشرفين بس." />;
