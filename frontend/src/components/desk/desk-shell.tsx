@@ -470,7 +470,7 @@ function DeskHeader() {
               className="whitespace-nowrap"
               title="تحليل الكاش متاح مرة واحدة يوميًا"
             >
-              تحليل الكاش: {cashScanAvailableToday ? "متاح اليوم" : "مستخدم اليوم"}
+              تحليل الكاش: باقي {cashScanAvailableToday ? 1 : 0} محاولة
             </Badge>
             {investStyleLabel && (
               <Link to="/settings" aria-label="سلوكك الاستثماري">
