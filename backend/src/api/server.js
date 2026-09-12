@@ -21,7 +21,7 @@ import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
-import { PLANS, planFor, addMonths } from '../billing/plans.js';
+import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -350,6 +350,13 @@ const publicMessage = (row) => ({
   readAt: row.read_at,
 });
 
+// What the bot answers "عايز أشترك" with. Behind the session on purpose:
+// this is the one place the InstaPay account is disclosed, so it only ever
+// reaches a signed-in account whose transfer we can later match.
+app.get('/api/support/subscribe-info', wrap(async (_req, res) => {
+  res.json({ plans: Object.values(PLANS), instapay: INSTAPAY });
+}));
+
 // Only marks the admin's messages read when the caller says the panel is
 // actually open (?read=1). The widget polls in the background to keep its
 // unread badge current, and marking on every poll would clear that badge
@@ -378,10 +385,16 @@ app.post('/api/support/messages', chatLimiter, wrap(async (req, res) => {
   const previous = existing[existing.length - 1];
   const withinBurst =
     previous?.sender === 'user' && Date.now() - new Date(previous.created_at).getTime() < 10 * 60 * 1000;
+  // The bot answers the common questions itself, so a message that arrives
+  // with intent=help means the user chose "كلّمني مع حد" — worth saying in the
+  // subject line so it stands out from a general chat message.
+  const wantsHuman = req.body?.intent === 'help';
   if (!withinBurst) {
     await sendEmail({
       to: CONTACT_EMAIL,
-      subject: `رسالة شات جديدة من ${req.user.email}`,
+      subject: wantsHuman
+        ? `طلب مساعدة من ${req.user.email}`
+        : `رسالة شات جديدة من ${req.user.email}`,
       html: supportMessageEmailHtml({
         name: req.user.name,
         email: req.user.email,

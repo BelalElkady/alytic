@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { MessageCircle, Send, X } from "lucide-react";
+import { ArrowRight, Copy, CreditCard, HelpCircle, MessageCircle, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,14 @@ export type SupportMessage = {
   readAt: string | null;
 };
 
+type Plan = { key: string; label: string; priceEgp: number; months: number };
+type SubscribeInfo = {
+  plans: Plan[];
+  instapay: { address: string | null; accountName: string | null };
+};
+
 const POLL_MS = 15 * 1000;
+const EG_NUMBER = new Intl.NumberFormat("ar-EG");
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString("ar-EG", {
@@ -28,18 +36,59 @@ const time = (iso: string) =>
   });
 
 /**
- * The support chat, and the only place subscription details are handed over —
- * they're never published on a page. Reachable even when the paywall has
- * replaced the desk, since a lapsed user needs it to arrange a renewal.
- *
- * Polls rather than holding a socket: messages are answered by a human in
- * minutes, so a 15s poll while the panel is open is more than enough and
- * costs nothing to operate.
+ * The questions the bot can answer without a human, each pointing at the page
+ * that explains it properly. Anything not covered here funnels to "كلّمني مع
+ * حد", so the fallback is always a person rather than a dead end.
+ */
+const TOPICS = [
+  {
+    q: "الأداة بتشتغل إزاي؟",
+    a: "EGXpert بيقرأ محفظتك الحقيقية وأسعار البورصة اللحظية، وبيحسب لكل سهم وقف خسارة وهدفين وتوصية يومية حسب أسلوبك في الاستثمار.",
+    to: "/",
+    linkLabel: "الشرح التفصيلي",
+  },
+  {
+    q: "إزاي أضيف أسهمي؟",
+    a: 'من شاشة "الأسهم" تقدر تدخّل السهم يدويًا بالكمية ومتوسط سعر الشراء، أو ترفع لقطة شاشة من تطبيق السمسار وهي تتقرا تلقائيًا.',
+    to: "/how-to-use",
+    linkLabel: "دليل الاستخدام",
+  },
+  {
+    q: "يعني إيه وقف الخسارة والأهداف؟",
+    a: "لكل سهم بنحسب سعر تخرج عنده لو السوق مشي ضدك (وقف الخسارة)، وهدفين للربح — محسوبين من حركة السهم نفسه ومن أسلوبك: مضارب، متوسط المدى، أو طويل المدى.",
+    to: "/how-to-use",
+    linkLabel: "دليل الاستخدام",
+  },
+  {
+    q: 'ليه لازم أضغط "سجّل إغلاق اليوم"؟',
+    a: "لأنه اللي بيبني تاريخ محفظتك. الأسعار الحية بتتغيّر وبتمسح بعضها، والزرار ده بيحفظ لقطة ثابتة لليوم تظهر بعد كده في التقويم والرسوم.",
+    to: "/how-to-use",
+    linkLabel: "دليل الاستخدام",
+  },
+  {
+    q: "الأسعار كام؟",
+    a: "شهري ١٤٩ جنيه، أو سنوي ١٦١٠ جنيه بخصم ١٠٪. والتجربة المجانية ٤ أيام بكل المزايا وبدون بطاقة.",
+    to: "/pricing",
+    linkLabel: "صفحة الأسعار",
+  },
+] as const;
+
+type BotBubble = { id: string; side: "user" | "admin"; text: string; node?: React.ReactNode };
+type Mode = "menu" | "topics" | "human";
+
+/**
+ * A guided bot in front of the human inbox. Most people arrive wanting one of
+ * three things — to subscribe, to understand something, or to reach a person —
+ * so it asks which, answers the first two itself, and only escalates the
+ * third. That keeps the admin inbox to messages that actually need a reply,
+ * and gets the subscriber their payment details instantly instead of waiting.
  */
 export function ChatWidget() {
   const { user } = useDesk();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
+  const [bot, setBot] = useState<BotBubble[]>([]);
+  const [mode, setMode] = useState<Mode>("menu");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +99,9 @@ export function ChatWidget() {
     try {
       const { messages: list } = await api(`/api/support/messages${markRead ? "?read=1" : ""}`);
       setMessages(list);
+      // An existing conversation means a person is already involved — skip
+      // the menu and show it, rather than greeting them like a first visit.
+      if (list.length > 0) setMode("human");
       setUnread(
         markRead ? 0 : list.filter((m: SupportMessage) => m.sender === "admin" && !m.readAt).length,
       );
@@ -59,9 +111,6 @@ export function ChatWidget() {
     }
   }, []);
 
-  // Polls while closed too, so a reply raises the badge without the user
-  // opening anything. read=1 is only sent when the panel is open — otherwise
-  // the poll itself would clear the badge before it was ever seen.
   useEffect(() => {
     if (!user) return;
     void load({ markRead: open });
@@ -71,7 +120,54 @@ export function ChatWidget() {
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ block: "end" });
-  }, [open, messages]);
+  }, [open, messages, bot, mode]);
+
+  const say = (side: "user" | "admin", text: string, node?: React.ReactNode) =>
+    setBot((previous) => [
+      ...previous,
+      { id: `${Date.now()}-${previous.length}`, side, text, node },
+    ]);
+
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("اتنسخ");
+    } catch {
+      toast.error("تعذر النسخ — انسخه يدويًا");
+    }
+  };
+
+  const chooseSubscribe = async () => {
+    say("user", "عايز أشترك");
+    try {
+      const info: SubscribeInfo = await api("/api/support/subscribe-info");
+      const prices = info.plans
+        .map((p) => `${p.label}: ${EG_NUMBER.format(p.priceEgp)} جنيه`)
+        .join(" · ");
+      if (info.instapay.address) {
+        say(
+          "admin",
+          `تمام! الأسعار: ${prices}.\nحوّل المبلغ على InstaPay على الحساب ده، وبعدها ابعتلنا صورة الإيصال هنا وهنفعّل اشتراكك على طول.`,
+          <InstapayCard info={info.instapay} onCopy={copy} />,
+        );
+      } else {
+        say(
+          "admin",
+          `تمام! الأسعار: ${prices}.\nاكتبلنا هنا الباقة اللي عايزها وحد مننا هيبعتلك بيانات التحويل حالًا.`,
+        );
+      }
+      setMode("human");
+    } catch {
+      say("admin", "حصلت مشكلة وإحنا بنجيب بيانات الاشتراك. اكتبلنا هنا وهنبعتهالك.");
+      setMode("human");
+    }
+  };
+
+  const escalate = () => {
+    say("user", "عايز أكلم حد مننا");
+    say("admin", "تمام، اكتب رسالتك هنا وهنرد عليك في أقرب وقت.");
+    setMode("human");
+  };
 
   const send = async () => {
     const body = draft.trim();
@@ -79,9 +175,15 @@ export function ChatWidget() {
     setSending(true);
     setError(null);
     try {
-      const { message } = await post("/api/support/messages", { body });
+      // First message of a conversation is flagged as a help request so the
+      // notification email says so.
+      const { message } = await post("/api/support/messages", {
+        body,
+        intent: messages.length === 0 ? "help" : undefined,
+      });
       setMessages((previous) => [...previous, message]);
       setDraft("");
+      if (messages.length === 0) say("admin", "وصلتنا رسالتك — هنرد عليك في أقرب وقت.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر إرسال الرسالة");
     } finally {
@@ -146,40 +248,60 @@ export function ChatWidget() {
             </div>
           ) : (
             <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
-              {messages.length === 0 && !error && (
-                <p className="py-6 text-center text-[12.5px] leading-relaxed text-muted-foreground">
-                  ابعتلنا رسالتك وهنرد عليك هنا. لو عايز تشترك، اكتبلنا وهنبعتلك بيانات الدفع
-                  والتفاصيل كلها.
-                </p>
-              )}
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-relaxed",
-                    message.sender === "user"
-                      ? "ms-auto bg-primary text-primary-foreground"
-                      : "me-auto bg-secondary",
-                  )}
-                >
-                  <p className="whitespace-pre-wrap break-words">{message.body}</p>
-                  <p
-                    className={cn(
-                      "num mt-1 text-[10.5px]",
-                      message.sender === "user"
-                        ? "text-primary-foreground/70"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {time(message.createdAt)}
-                  </p>
+              <Bubble side="admin">أهلًا! تحب أساعدك في إيه؟</Bubble>
+
+              {bot.map((bubble) => (
+                <Bubble key={bubble.id} side={bubble.side}>
+                  {bubble.text}
+                  {bubble.node}
+                </Bubble>
+              ))}
+
+              {mode === "menu" && (
+                <div className="space-y-2 pt-1">
+                  <Choice icon={CreditCard} onClick={() => void chooseSubscribe()}>
+                    عايز أشترك
+                  </Choice>
+                  <Choice icon={HelpCircle} onClick={() => setMode("topics")}>
+                    عندي سؤال مش فاهمه
+                  </Choice>
+                  <Choice icon={MessageCircle} onClick={escalate}>
+                    عايز أكلم حد مننا
+                  </Choice>
                 </div>
+              )}
+
+              {mode === "topics" && (
+                <div className="space-y-2 pt-1">
+                  <Bubble side="admin">سؤالك عن إيه؟</Bubble>
+                  {TOPICS.map((topic) => (
+                    <Choice
+                      key={topic.q}
+                      onClick={() => {
+                        say("user", topic.q);
+                        say("admin", topic.a, <TopicLink to={topic.to} label={topic.linkLabel} />);
+                        setMode("human");
+                      }}
+                    >
+                      {topic.q}
+                    </Choice>
+                  ))}
+                  <Choice icon={MessageCircle} onClick={escalate}>
+                    سؤالي مش موجود — كلّمني مع حد
+                  </Choice>
+                </div>
+              )}
+
+              {messages.map((message) => (
+                <Bubble key={message.id} side={message.sender} at={message.createdAt}>
+                  {message.body}
+                </Bubble>
               ))}
               <div ref={endRef} />
             </div>
           )}
 
-          {user && (
+          {user && mode === "human" && (
             <>
               {error && <p className="px-4 pb-2 text-[12px] text-down">{error}</p>}
 
@@ -211,5 +333,99 @@ export function ChatWidget() {
         </section>
       )}
     </>
+  );
+}
+
+function Bubble({
+  side,
+  at,
+  children,
+}: {
+  side: "user" | "admin";
+  at?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-relaxed",
+        side === "user" ? "ms-auto bg-primary text-primary-foreground" : "me-auto bg-secondary",
+      )}
+    >
+      <div className="whitespace-pre-wrap break-words">{children}</div>
+      {at && (
+        <p
+          className={cn(
+            "num mt-1 text-[10.5px]",
+            side === "user" ? "text-primary-foreground/70" : "text-muted-foreground",
+          )}
+        >
+          {time(at)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Choice({
+  icon: Icon,
+  onClick,
+  children,
+}: {
+  icon?: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-xl border bg-card px-3 py-2.5 text-start text-[13px] font-medium transition-colors hover:border-primary/50 hover:bg-accent"
+    >
+      {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
+      {children}
+    </button>
+  );
+}
+
+function TopicLink({ to, label }: { to: string; label: string }) {
+  return (
+    <Link
+      to={to}
+      className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline"
+    >
+      {label}
+      <ArrowRight className="size-3.5 rotate-180" />
+    </Link>
+  );
+}
+
+function InstapayCard({
+  info,
+  onCopy,
+}: {
+  info: { address: string | null; accountName: string | null };
+  onCopy: (text: string) => void;
+}) {
+  if (!info.address) return null;
+  return (
+    <div className="mt-2 rounded-lg border bg-card p-2.5">
+      <p className="text-[11px] text-muted-foreground">حساب InstaPay</p>
+      <code className="mt-0.5 block text-[13px] font-semibold text-foreground" dir="ltr">
+        {info.address}
+      </code>
+      {info.accountName && (
+        <p className="mt-0.5 text-[11.5px] text-muted-foreground">{info.accountName}</p>
+      )}
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-2 h-7 px-2 text-[12px]"
+        onClick={() => onCopy(info.address as string)}
+      >
+        <Copy className="size-3.5" />
+        نسخ
+      </Button>
+    </div>
   );
 }

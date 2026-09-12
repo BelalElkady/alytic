@@ -15,6 +15,19 @@ export const PLANS = {
 export const planFor = (key) => PLANS[String(key ?? '')] ?? null;
 
 /**
+ * Where users send the transfer. Handed out by the support bot to a
+ * signed-in user and nowhere else — never from the public /api/billing/plans
+ * — so the account isn't published to anyone who can curl the site, and every
+ * disclosure belongs to an account we can match a transfer against. Kept in
+ * the environment rather than the repo so it never lands in git; without
+ * INSTAPAY_ADDRESS the bot says an admin will send the details instead.
+ */
+export const INSTAPAY = {
+  address: process.env.INSTAPAY_ADDRESS ?? null,
+  accountName: process.env.INSTAPAY_ACCOUNT_NAME ?? null,
+};
+
+/**
  * Calendar-month arithmetic that never rolls over: adding a month to Jan 31
  * lands on Feb 28/29, not Mar 3, so a subscription bought on the 31st keeps
  * renewing near month-end instead of drifting a day forward every period.
