@@ -218,11 +218,25 @@ export function ChatWidget() {
           className="fixed bottom-36 start-4 z-50 flex max-h-[70vh] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl md:bottom-22"
           aria-label="الدردشة مع الدعم"
         >
-          <header className="border-b px-4 py-3">
-            <h2 className="text-[14px] font-semibold">تواصل معانا</h2>
-            <p className="text-[11.5px] text-muted-foreground">
-              للاشتراك أو أي استفسار — بنرد في أقرب وقت.
-            </p>
+          <header className="flex items-center gap-2 border-b px-4 py-3">
+            {/* Fixed in the header (not the scrolling thread) so it stays
+                reachable once the conversation grows past one screen. */}
+            {user && mode !== "menu" && messages.length === 0 && (
+              <button
+                type="button"
+                onClick={backToMenu}
+                aria-label="رجوع للخيارات"
+                className="-ms-1 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <ArrowRight className="size-4" />
+              </button>
+            )}
+            <div>
+              <h2 className="text-[14px] font-semibold">تواصل معانا</h2>
+              <p className="text-[11.5px] text-muted-foreground">
+                للاشتراك أو أي استفسار — بنرد في أقرب وقت.
+              </p>
+            </div>
           </header>
 
           {/* A thread is keyed to an account, so there is nowhere to put a
@@ -256,17 +270,6 @@ export function ChatWidget() {
           ) : (
             <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
               <Bubble side="admin">أهلًا! تحب أساعدك في إيه؟</Bubble>
-
-              {mode !== "menu" && messages.length === 0 && (
-                <button
-                  type="button"
-                  onClick={backToMenu}
-                  className="flex items-center gap-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <ArrowRight className="size-3.5" />
-                  رجوع للخيارات
-                </button>
-              )}
 
               {bot.map((bubble) => (
                 <Bubble key={bubble.id} side={bubble.side}>
