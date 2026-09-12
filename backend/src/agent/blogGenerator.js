@@ -22,6 +22,7 @@
 
 import { z } from 'zod';
 import { requestStructuredOR } from './clientOpenRouter.js';
+import { searchStockImage } from './stockImage.js';
 import {
   getBlogPostByBatch,
   getBlogPostsForDate,
@@ -102,6 +103,9 @@ export const BlogPostSchema = z.object({
     alt: z.string().describe('Arabic alt text for the feature image'),
     caption: z.string().describe('Arabic caption for the feature image'),
     ratioAndFilename: z.string().describe('Recommended aspect ratio and a suggested filename, e.g. "16:9 — comi-q3-earnings-egx30.jpg"'),
+    searchQuery: z
+      .string()
+      .describe('2-4 ENGLISH keywords (never Arabic) for a stock-photo search matching the concept, e.g. "stock market chart finance" or "bank building egypt"'),
   }),
 });
 
@@ -265,6 +269,10 @@ async function generateReviewAndStore({ postDate, batchIndex, topic }) {
     review = { ...review, verdict: 'flag', notes: note };
   }
 
+  // Best-effort — never throws (see stockImage.js), so a search hiccup only
+  // means this one post publishes without a photo, not that generation fails.
+  const stockImage = await searchStockImage(post.image?.searchQuery);
+
   const slug = `${post.slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'egx-update'}-${postDate}-${batchIndex}`;
 
   const inserted = await insertBlogPostDraft({
@@ -280,6 +288,11 @@ async function generateReviewAndStore({ postDate, batchIndex, topic }) {
     tags: post.tags,
     sources: post.sources,
     image: post.image,
+    imageUrl: stockImage?.url ?? null,
+    imageThumbUrl: stockImage?.thumbUrl ?? null,
+    imageSourceUrl: stockImage?.sourceUrl ?? null,
+    imageCreditName: stockImage?.creditName ?? null,
+    imageCreditUrl: stockImage?.creditUrl ?? null,
     generationModel: genRaw.model,
     generationUsage: genRaw.usage,
     reviewModel,

@@ -28,6 +28,7 @@ type BlogPostSummary = {
   title: string;
   dek: string | null;
   tags: string[];
+  imageUrl: string | null;
   publishedAt: string;
 };
 
@@ -68,22 +69,32 @@ function BlogIndexPage() {
                 key={post.slug}
                 to="/blog/$slug"
                 params={{ slug: post.slug }}
-                className="flex flex-col rounded-2xl border bg-card p-5 shadow-sm transition-colors hover:border-primary/40"
+                className="flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-colors hover:border-primary/40"
               >
-                {post.tags?.[0] && (
-                  <Badge variant="outline" className="w-fit">
-                    {post.tags[0]}
-                  </Badge>
+                {post.imageUrl && (
+                  <img
+                    src={post.imageUrl}
+                    alt={post.title}
+                    className="aspect-[16/9] w-full object-cover"
+                    loading="lazy"
+                  />
                 )}
-                <h2 className="mt-3 text-[16px] font-semibold leading-snug">{post.title}</h2>
-                {post.dek && (
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-                    {post.dek}
+                <div className="flex flex-1 flex-col p-5">
+                  {post.tags?.[0] && (
+                    <Badge variant="outline" className="w-fit">
+                      {post.tags[0]}
+                    </Badge>
+                  )}
+                  <h2 className="mt-3 text-[16px] font-semibold leading-snug">{post.title}</h2>
+                  {post.dek && (
+                    <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+                      {post.dek}
+                    </p>
+                  )}
+                  <p className="num mt-4 text-[11.5px] text-muted-foreground">
+                    {new Date(post.publishedAt).toLocaleDateString("ar-EG")}
                   </p>
-                )}
-                <p className="num mt-4 text-[11.5px] text-muted-foreground">
-                  {new Date(post.publishedAt).toLocaleDateString("ar-EG")}
-                </p>
+                </div>
               </Link>
             ))}
           </div>

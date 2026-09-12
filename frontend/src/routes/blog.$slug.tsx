@@ -17,14 +17,56 @@ type ContentBlock =
   | { type: "paragraph"; text: string }
   | { type: "list"; items: string[] };
 
+type BlogImage = {
+  url: string;
+  sourceUrl: string | null;
+  creditName: string | null;
+  creditUrl: string | null;
+};
+
 type BlogPost = {
   slug: string;
   title: string;
   dek: string | null;
   content: ContentBlock[];
   tags: string[];
+  image: BlogImage | null;
   publishedAt: string;
 };
+
+function BlogHeroImage({ image, alt }: { image: BlogImage; alt: string }) {
+  return (
+    <figure className="mt-4">
+      <img
+        src={image.url}
+        alt={alt}
+        className="aspect-[16/9] w-full rounded-2xl border object-cover"
+        loading="eager"
+      />
+      {image.creditName && (
+        <figcaption className="mt-1.5 text-[11px] text-muted-foreground">
+          Photo by{" "}
+          {image.creditUrl ? (
+            <a href={image.creditUrl} target="_blank" rel="noreferrer" className="underline">
+              {image.creditName}
+            </a>
+          ) : (
+            image.creditName
+          )}{" "}
+          on{" "}
+          <a
+            href="https://unsplash.com/?utm_source=egxpert&utm_medium=referral"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            Unsplash
+          </a>
+        </figcaption>
+      )}
+    </figure>
+  );
+}
 
 function BlogContent({ blocks }: { blocks: ContentBlock[] }) {
   return (
@@ -95,6 +137,7 @@ function BlogPostPage() {
             ))}
           </div>
           <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{post.title}</h1>
+          {post.image && <BlogHeroImage image={post.image} alt={post.title} />}
           {post.dek && (
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{post.dek}</p>
           )}

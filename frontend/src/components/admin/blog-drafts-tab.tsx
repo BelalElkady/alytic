@@ -38,6 +38,9 @@ type BlogDraft = {
   tags: string[];
   sources: { title: string; url: string }[] | null;
   image: ImageSpec | null;
+  imageUrl: string | null;
+  imageSourceUrl: string | null;
+  imageCreditName: string | null;
   status: "draft" | "approved" | "rejected" | "published";
   generationModel: string | null;
   reviewModel: string | null;
@@ -165,14 +168,38 @@ export function BlogDraftsTab() {
                 </Badge>
               ))}
             </div>
-            {row.image && (
-              <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-[12px] leading-relaxed text-muted-foreground">
-                <p className="font-semibold text-foreground">صورة المقالة المقترحة</p>
-                <p className="mt-1">{row.image.concept}</p>
-                <p className="mt-1">Alt: {row.image.alt}</p>
-                <p>تعليق: {row.image.caption}</p>
-                <p>{row.image.ratioAndFilename}</p>
+            {row.imageUrl ? (
+              <div className="mt-3">
+                <img
+                  src={row.imageUrl}
+                  alt={row.image?.alt ?? row.title}
+                  className="aspect-[16/9] w-full rounded-lg border object-cover"
+                />
+                {row.imageCreditName && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Photo by{" "}
+                    {row.imageSourceUrl ? (
+                      <a href={row.imageSourceUrl} target="_blank" rel="noreferrer" className="underline">
+                        {row.imageCreditName}
+                      </a>
+                    ) : (
+                      row.imageCreditName
+                    )}{" "}
+                    on Unsplash
+                  </p>
+                )}
               </div>
+            ) : (
+              row.image && (
+                <div className="mt-3 rounded-lg border bg-down-soft p-3 text-[12px] leading-relaxed text-down">
+                  <p className="font-semibold">
+                    مفيش صورة حقيقية اتلاقت (تأكد من UNSPLASH_ACCESS_KEY) — دي مواصفات الصورة المطلوبة بس:
+                  </p>
+                  <p className="mt-1">{row.image.concept}</p>
+                  <p className="mt-1">Alt: {row.image.alt}</p>
+                  <p>تعليق: {row.image.caption}</p>
+                </div>
+              )
             )}
             <div className="mt-4 space-y-2 text-[13px] leading-relaxed">
               {row.content.map((block, index) =>

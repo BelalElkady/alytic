@@ -521,6 +521,11 @@ export async function insertBlogPostDraft(row) {
         tags: row.tags ?? [],
         sources_json: row.sources ?? null,
         image_json: row.image ?? null,
+        image_url: row.imageUrl ?? null,
+        image_thumb_url: row.imageThumbUrl ?? null,
+        image_source_url: row.imageSourceUrl ?? null,
+        image_credit_name: row.imageCreditName ?? null,
+        image_credit_url: row.imageCreditUrl ?? null,
         status: 'draft',
         generation_model: row.generationModel ?? null,
         generation_usage_json: row.generationUsage ?? null,
@@ -547,7 +552,7 @@ export async function listBlogPosts({ status, limit = 50 } = {}) {
 export async function listPublishedBlogPosts({ limit = 20 } = {}) {
   const { data, error } = await supabase
     .from('blog_posts')
-    .select('slug, title, dek, tags, published_at')
+    .select('slug, title, dek, tags, image_thumb_url, published_at')
     .eq('status', 'published')
     .order('published_at', { ascending: false })
     .limit(limit);

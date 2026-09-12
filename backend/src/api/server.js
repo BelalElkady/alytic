@@ -225,7 +225,7 @@ app.get('/api/blog', wrap(async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
   const posts = await listPublishedBlogPosts({ limit });
   res.json({
-    posts: posts.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek, tags: p.tags, publishedAt: p.published_at })),
+    posts: posts.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek, tags: p.tags, imageUrl: p.image_thumb_url, publishedAt: p.published_at })),
   });
 }));
 
@@ -240,7 +240,14 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
       dek: post.dek,
       content: post.content_json,
       tags: post.tags,
-      image: post.image_json,
+      image: post.image_url
+        ? {
+            url: post.image_url,
+            sourceUrl: post.image_source_url,
+            creditName: post.image_credit_name,
+            creditUrl: post.image_credit_url,
+          }
+        : null,
       publishedAt: post.published_at,
     },
   });
@@ -855,6 +862,10 @@ app.get('/api/admin/blog-drafts', wrap(async (req, res) => {
       tags: p.tags,
       sources: p.sources_json,
       image: p.image_json,
+      imageUrl: p.image_url,
+      imageSourceUrl: p.image_source_url,
+      imageCreditName: p.image_credit_name,
+      imageCreditUrl: p.image_credit_url,
       status: p.status,
       generationModel: p.generation_model,
       reviewModel: p.review_model,

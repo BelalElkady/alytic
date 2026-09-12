@@ -235,6 +235,16 @@ alter table blog_posts alter column meta_description set not null;
 
 alter table blog_posts add column if not exists image_json jsonb;
 
+-- The model's image_json is only a text spec (concept/alt/caption) — it can't
+-- produce an actual photo. These columns hold the real stock photo fetched
+-- for that spec via src/agent/stockImage.js (Unsplash), null if the search
+-- found nothing or UNSPLASH_ACCESS_KEY isn't set.
+alter table blog_posts add column if not exists image_url text;
+alter table blog_posts add column if not exists image_thumb_url text;
+alter table blog_posts add column if not exists image_source_url text;
+alter table blog_posts add column if not exists image_credit_name text;
+alter table blog_posts add column if not exists image_credit_url text;
+
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'blog_posts_post_date_batch_index_key') then
