@@ -560,6 +560,17 @@ export async function listPublishedBlogPosts({ limit = 20 } = {}) {
   return data;
 }
 
+/** Every published slug, for /sitemap.xml — unlike listPublishedBlogPosts above, no cap. */
+export async function listAllPublishedBlogSlugs() {
+  const { data, error } = await supabase
+    .from('blog_posts')
+    .select('slug, published_at')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false });
+  if (error) throw new Error(`listAllPublishedBlogSlugs: ${error.message}`);
+  return data;
+}
+
 export async function getPublishedBlogPostBySlug(slug) {
   const { data, error } = await supabase.from('blog_posts').select('*').eq('slug', slug).eq('status', 'published').maybeSingle();
   if (error) throw new Error(`getPublishedBlogPostBySlug: ${error.message}`);

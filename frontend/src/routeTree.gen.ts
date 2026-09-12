@@ -18,6 +18,7 @@ import { Route as HowToUseRouteImport } from './routes/how-to-use'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SubscribeRouteImport } from './routes/subscribe'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppAdminRouteImport } from './routes/_app.admin'
@@ -76,6 +77,11 @@ const PricingRoute = PricingRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SubscribeRoute = SubscribeRouteImport.update({
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/subscribe': typeof SubscribeRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AppAdminRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/subscribe': typeof SubscribeRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AppAdminRoute
@@ -214,6 +222,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/subscribe': typeof SubscribeRoute
   '/verify-email': typeof VerifyEmailRoute
   '/_app/admin': typeof AppAdminRoute
@@ -241,6 +250,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/reset-password'
+    | '/sitemap.xml'
     | '/subscribe'
     | '/verify-email'
     | '/admin'
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/reset-password'
+    | '/sitemap.xml'
     | '/subscribe'
     | '/verify-email'
     | '/admin'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/reset-password'
+    | '/sitemap.xml'
     | '/subscribe'
     | '/verify-email'
     | '/_app/admin'
@@ -318,6 +330,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SubscribeRoute: typeof SubscribeRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   AdminLoginRoute: typeof AdminLoginRoute
@@ -387,6 +400,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/subscribe': {
@@ -545,6 +565,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   SubscribeRoute: SubscribeRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   AdminLoginRoute: AdminLoginRoute,

@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
 import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -253,6 +253,15 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
   });
 }));
 
+// Every published slug, no pagination — backs frontend/src/routes/sitemap[.]xml.ts,
+// which fetches this on every request rather than a cron-written static file (a
+// deploy rebuilds frontend/.output from scratch on every push, see
+// .github/workflows/deploy.yml, which would just wipe a file written at runtime).
+app.get('/api/sitemap-urls', wrap(async (req, res) => {
+  const posts = await listAllPublishedBlogSlugs();
+  res.json({ posts: posts.map((p) => ({ slug: p.slug, publishedAt: p.published_at })) });
+}));
+
 // Triggered every 2 hours by .github/workflows/blog-cron.yml over the VPS's
 // loopback interface (never exposed publicly) — see that workflow for why a
 // shared secret rather than a session cookie gates this instead of
@@ -295,6 +304,7 @@ app.use('/api', async (req, res, next) => {
     req.path === '/contact' ||
     req.path === '/blog' ||
     req.path.startsWith('/blog/') ||
+    req.path === '/sitemap-urls' ||
     req.path === '/billing/plans' ||
     req.path === '/cron/blog-generate'
   ) return next();
