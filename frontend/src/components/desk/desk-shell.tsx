@@ -53,6 +53,7 @@ import { api, post } from "@/lib/api";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
+import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -68,25 +69,6 @@ const NAV = [
   { to: "/how-to-use", label: "طريقة الاستخدام", icon: HelpCircle, adminOnly: false },
   { to: "/admin", label: "الإدارة", icon: ShieldCheck, adminOnly: true },
 ] as const;
-
-function useTheme() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const saved = localStorage.getItem("alytic-theme");
-    const isDark = saved === "dark";
-    setDark(isDark);
-    document.documentElement.classList.toggle("dark", isDark);
-  }, []);
-  const toggle = () => {
-    setDark((previous) => {
-      const next = !previous;
-      document.documentElement.classList.toggle("dark", next);
-      localStorage.setItem("alytic-theme", next ? "dark" : "light");
-      return next;
-    });
-  };
-  return { dark, toggle };
-}
 
 export function DeskShell({ children }: { children: ReactNode }) {
   const { user, authChecked } = useDesk();

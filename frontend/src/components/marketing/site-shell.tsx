@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Moon, Sun } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/brand/logo";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
 import { ChatWidget } from "@/components/support/chat-widget";
 import { useDesk } from "@/lib/store";
+import { useTheme } from "@/lib/theme";
 
 const LINKS = [
   { to: "/", label: "الرئيسية" },
@@ -21,6 +23,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   // pointing at /login — otherwise a signed-in user sees "دخول" here and
   // assumes their session was lost.
   const { user } = useDesk();
+  const { dark, toggle } = useTheme();
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 border-b bg-card/85 backdrop-blur">
@@ -41,6 +44,9 @@ export function SiteShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={toggle} aria-label="تبديل الوضع الليلي">
+              {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </Button>
             {user ? (
               <Button
                 asChild
