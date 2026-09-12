@@ -34,9 +34,9 @@ function LoginPage() {
   const navigate = useNavigate();
 
   // Reachable while already signed in (e.g. a stale "دخول" link, or a direct
-  // visit) — bounce straight to the desk instead of showing the form again.
+  // visit) — bounce straight home instead of showing the form again.
   useEffect(() => {
-    if (authChecked && user) void navigate({ to: "/portfolio", replace: true });
+    if (authChecked && user) void navigate({ to: "/", replace: true });
   }, [authChecked, user, navigate]);
 
   if (authChecked && user) return null;

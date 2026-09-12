@@ -42,7 +42,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
         setRegistered(true);
       } else {
         await signIn("login", { email, password, remember });
-        await navigate({ to: "/portfolio" });
+        await navigate({ to: "/" });
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر إكمال العملية");
@@ -56,7 +56,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
     setError(null);
     try {
       await signInWithGoogle(credential);
-      await navigate({ to: "/portfolio" });
+      await navigate({ to: "/" });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر تسجيل الدخول بجوجل");
     } finally {

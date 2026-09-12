@@ -41,7 +41,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </nav>
           <div className="flex items-center gap-2">
             {user ? (
-              <Button asChild size="sm">
+              <Button
+                asChild
+                size="sm"
+                className="ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
+              >
                 <Link to="/portfolio">صفحتك</Link>
               </Button>
             ) : (
