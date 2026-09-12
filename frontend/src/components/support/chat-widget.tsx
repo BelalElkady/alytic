@@ -94,6 +94,7 @@ export function ChatWidget() {
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
+  const modeInitialized = useRef(false);
 
   const load = useCallback(async ({ markRead }: { markRead: boolean }) => {
     try {
@@ -101,7 +102,12 @@ export function ChatWidget() {
       setMessages(list);
       // An existing conversation means a person is already involved — skip
       // the menu and show it, rather than greeting them like a first visit.
-      if (list.length > 0) setMode("human");
+      // Only on the first load though: later polls must not stomp on the
+      // user navigating back to the menu with a thread already open.
+      if (!modeInitialized.current) {
+        if (list.length > 0) setMode("human");
+        modeInitialized.current = true;
+      }
       setUnread(
         markRead ? 0 : list.filter((m: SupportMessage) => m.sender === "admin" && !m.readAt).length,
       );
@@ -169,8 +175,9 @@ export function ChatWidget() {
     setMode("human");
   };
 
-  // Once a real message reaches support there is an actual thread to keep,
-  // so the way back to the menu only shows while it's still the bot talking.
+  // Real messages (the actual thread) stay untouched — this only clears the
+  // bot's own bubbles and returns to the menu, from which the thread still
+  // renders below.
   const backToMenu = () => {
     setBot([]);
     setMode("menu");
@@ -221,7 +228,7 @@ export function ChatWidget() {
           <header className="flex items-center gap-2 border-b px-4 py-3">
             {/* Fixed in the header (not the scrolling thread) so it stays
                 reachable once the conversation grows past one screen. */}
-            {user && mode !== "menu" && messages.length === 0 && (
+            {user && mode !== "menu" && (
               <button
                 type="button"
                 onClick={backToMenu}
