@@ -14,7 +14,6 @@ import {
 import { LogoMark } from "@/components/brand/logo";
 import { SiteShell } from "@/components/marketing/site-shell";
 import { ToolExplainer } from "@/components/marketing/tool-explainer";
-import { useDesk } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -94,15 +93,8 @@ const STEPS = [
 ];
 
 function LandingPage() {
-  // A signed-in subscriber doesn't need the sales hero — they need to know
-  // what the tool does — so the explainer moves above it for them, and sits
-  // mid-page for visitors who are still being introduced to the product.
-  const { user } = useDesk();
-
   return (
     <SiteShell>
-      {user && <ToolExplainer />}
-
       {/* Hero */}
       <section className="border-b bg-card">
         <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 py-14 sm:py-20 lg:grid-cols-[1.05fr_0.95fr]">
@@ -198,7 +190,9 @@ function LandingPage() {
         </div>
       </section>
 
-      {!user && <ToolExplainer />}
+      {/* Last on the page for everyone: it's reference detail, read by someone
+          who has already decided the pitch above is worth a closer look. */}
+      <ToolExplainer />
     </SiteShell>
   );
 }
