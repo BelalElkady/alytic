@@ -5,6 +5,7 @@ import {
   CreditCard,
   HelpCircle,
   MessageCircle,
+  MessageSquarePlus,
   Paperclip,
   Send,
   X,
@@ -111,6 +112,13 @@ export function ChatWidget() {
   const [unread, setUnread] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
   const modeInitialized = useRef(false);
+  // How many real messages existed when the current bot "session" started —
+  // 0 until "new topic" is used. Generalizes every "is this the first
+  // message yet" check below from a global count to a per-session one, so
+  // starting a new topic after a real thread already exists behaves exactly
+  // like a first-time visit instead of being compared against the whole
+  // thread's history.
+  const [branchAt, setBranchAt] = useState(0);
 
   const load = useCallback(async ({ markRead }: { markRead: boolean }) => {
     try {
@@ -193,10 +201,21 @@ export function ChatWidget() {
 
   // Once a real message reaches support there is an actual thread to keep, so
   // this (and the button that calls it) only ever shows while it's still the
-  // bot talking — going back to the menu once a real conversation exists
-  // would otherwise plant the menu picker on top of that thread.
+  // bot talking in the *current* session — going back to the menu mid-thread
+  // would otherwise plant the menu picker on top of that thread. See
+  // startNewTopic for the deliberate way to do that instead.
   const backToMenu = () => {
     setBot([]);
+    setMode("menu");
+  };
+
+  // Re-opens the menu without touching the existing thread: messages up to
+  // this point render above a divider, and everything from here on — the
+  // bot's new menu/topic exchange, plus any real messages sent afterward —
+  // renders below it, so the two don't read as one merged block.
+  const startNewTopic = () => {
+    setBot([]);
+    setBranchAt(messages.length);
     setMode("menu");
   };
 
@@ -206,15 +225,16 @@ export function ChatWidget() {
     setSending(true);
     setError(null);
     try {
-      // First message of a conversation is flagged as a help request so the
-      // notification email says so.
+      // First message of a session (the whole thread, or since the last "new
+      // topic") is flagged as a help request so the notification email says so.
+      const isFirstOfSession = messages.length === branchAt;
       const { message } = await post("/api/support/messages", {
         body,
-        intent: messages.length === 0 ? "help" : undefined,
+        intent: isFirstOfSession ? "help" : undefined,
       });
       setMessages((previous) => [...previous, message]);
       setDraft("");
-      if (messages.length === 0) say("admin", "وصلتنا رسالتك — هنرد عليك في أقرب وقت.");
+      if (isFirstOfSession) say("admin", "وصلتنا رسالتك — هنرد عليك في أقرب وقت.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر إرسال الرسالة");
     } finally {
@@ -237,14 +257,14 @@ export function ChatWidget() {
     setSending(true);
     setError(null);
     try {
-      const wasEmpty = messages.length === 0;
+      const isFirstOfSession = messages.length === branchAt;
       const { message } = await postRaw(
-        `/api/support/messages/image${wasEmpty ? "?intent=help" : ""}`,
+        `/api/support/messages/image${isFirstOfSession ? "?intent=help" : ""}`,
         file,
         file.type,
       );
       setMessages((previous) => [...previous, message]);
-      if (wasEmpty) say("admin", "وصلتنا صورتك — هنرد عليك في أقرب وقت.");
+      if (isFirstOfSession) say("admin", "وصلتنا صورتك — هنرد عليك في أقرب وقت.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر رفع الصورة");
     } finally {
@@ -275,9 +295,10 @@ export function ChatWidget() {
         >
           <header className="flex items-center gap-2 border-b px-4 py-3">
             {/* Fixed in the header (not the scrolling thread) so it stays
-                reachable once the conversation grows past one screen. Hidden
-                once a real message exists — see backToMenu. */}
-            {user && mode !== "menu" && messages.length === 0 && (
+                reachable once the conversation grows past one screen. Only
+                one of these shows at a time: back-to-menu while the current
+                session has no real message yet, new-topic once it does. */}
+            {user && mode !== "menu" && messages.length === branchAt && (
               <button
                 type="button"
                 onClick={backToMenu}
@@ -285,6 +306,16 @@ export function ChatWidget() {
                 className="-ms-1 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <ArrowRight className="size-4" />
+              </button>
+            )}
+            {user && mode === "human" && messages.length > branchAt && (
+              <button
+                type="button"
+                onClick={startNewTopic}
+                aria-label="موضوع جديد"
+                className="-ms-1 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <MessageSquarePlus className="size-4" />
               </button>
             )}
             <div>
@@ -325,6 +356,18 @@ export function ChatWidget() {
             </div>
           ) : (
             <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
+              {messages.slice(0, branchAt).map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))}
+
+              {branchAt > 0 && (
+                <div className="flex items-center gap-2 py-1">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-[11px] text-muted-foreground">موضوع جديد</span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+              )}
+
               <Bubble side="admin">أهلًا! تحب أساعدك في إيه؟</Bubble>
 
               {bot.map((bubble) => (
@@ -369,19 +412,8 @@ export function ChatWidget() {
                 </div>
               )}
 
-              {messages.map((message) => (
-                <Bubble key={message.id} side={message.sender} at={message.createdAt}>
-                  {message.imageUrl && (
-                    <a href={message.imageUrl} target="_blank" rel="noreferrer">
-                      <img
-                        src={message.imageUrl}
-                        alt="مرفق"
-                        className="max-h-48 rounded-lg object-contain"
-                      />
-                    </a>
-                  )}
-                  {message.body}
-                </Bubble>
+              {messages.slice(branchAt).map((message) => (
+                <MessageBubble key={message.id} message={message} />
               ))}
               <div ref={endRef} />
             </div>
@@ -473,6 +505,19 @@ function Bubble({
         </p>
       )}
     </div>
+  );
+}
+
+function MessageBubble({ message }: { message: SupportMessage }) {
+  return (
+    <Bubble side={message.sender} at={message.createdAt}>
+      {message.imageUrl && (
+        <a href={message.imageUrl} target="_blank" rel="noreferrer">
+          <img src={message.imageUrl} alt="مرفق" className="max-h-48 rounded-lg object-contain" />
+        </a>
+      )}
+      {message.body}
+    </Bubble>
   );
 }
 
