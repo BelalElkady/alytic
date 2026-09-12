@@ -110,9 +110,7 @@ function LandingPage() {
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
-                <Link to="/login" search={{ mode: "register" }}>
-                  ابدأ التجربة المجانية
-                </Link>
+                <Link to="/pricing">ابدأ التجربة المجانية</Link>
               </Button>
               <Button asChild size="lg" variant="outline">
                 <Link to="/pricing">شوف الأسعار</Link>
@@ -186,9 +184,7 @@ function LandingPage() {
             </p>
           </div>
           <Button asChild size="lg">
-            <Link to="/login" search={{ mode: "register" }}>
-              ابدأ تجربتك المجانية
-            </Link>
+            <Link to="/pricing">ابدأ تجربتك المجانية</Link>
           </Button>
         </div>
       </section>

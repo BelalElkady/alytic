@@ -310,9 +310,7 @@ function HowToUsePage() {
             </p>
           </div>
           <Button asChild size="lg">
-            <Link to="/login" search={{ mode: "register" }}>
-              ابدأ تجربتك المجانية
-            </Link>
+            <Link to="/pricing">ابدأ تجربتك المجانية</Link>
           </Button>
         </div>
       </section>

@@ -51,9 +51,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
                   </Link>
                 </Button>
                 <Button asChild size="sm">
-                  <Link to="/login" search={{ mode: "register" }}>
-                    ابدأ مجانًا
-                  </Link>
+                  <Link to="/pricing">ابدأ مجانًا</Link>
                 </Button>
               </>
             )}
