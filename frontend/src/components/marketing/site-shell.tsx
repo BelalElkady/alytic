@@ -47,7 +47,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
                 size="lg"
                 className="bg-up text-white hover:bg-up/90 dark:text-black"
               >
-                <Link to="/portfolio">صفحتك</Link>
+                <Link to="/portfolio">لوحة التحكم</Link>
               </Button>
             ) : (
               <>

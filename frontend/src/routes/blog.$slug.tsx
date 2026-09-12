@@ -1,4 +1,4 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { ErrorState, LoadingBlock } from "@/components/desk/state-blocks";
@@ -108,6 +108,7 @@ function BlogContent({ blocks }: { blocks: ContentBlock[] }) {
 
 function BlogPostPage() {
   const { slug } = Route.useParams();
+  const navigate = useNavigate();
   const [post, setPost] = useState<BlogPost | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,9 +122,20 @@ function BlogPostPage() {
 
   return (
     <article className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
-      <Link to="/blog" className="text-[13px] text-muted-foreground hover:text-foreground">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => void navigate({ to: "/blog" })}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            void navigate({ to: "/blog" });
+          }
+        }}
+        className="cursor-pointer text-[13px] text-muted-foreground hover:text-foreground"
+      >
         ← كل المقالات
-      </Link>
+      </div>
 
       {error && <ErrorState message={error} />}
       {!error && !post && <LoadingBlock rows={5} />}
