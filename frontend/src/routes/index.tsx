@@ -82,7 +82,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "١", title: "اعمل حساب", text: "دقيقة واحدة، وتجربة مجانية ٧ أيام بدون أي التزام." },
+  { n: "١", title: "اعمل حساب", text: "دقيقة واحدة، وتجربة مجانية ٤ أيام بدون أي التزام." },
   { n: "٢", title: "ضيف أسهمك", text: "إدخال يدوي سريع أو رفع صورة محفظتك ويتقرأ تلقائيًا." },
   {
     n: "٣",
@@ -99,7 +99,7 @@ function LandingPage() {
         <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 py-14 sm:py-20 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
             <Badge variant="outline" className="border-up/40 bg-up-soft text-up">
-              تجربة مجانية ٧ أيام — بدون بطاقة
+              تجربة مجانية ٤ أيام — بدون بطاقة
             </Badge>
             <h1 className="mt-4 text-3xl font-bold leading-[1.25] tracking-tight sm:text-4xl lg:text-[42px]">
               خبير البورصة المصرية في جيبك
@@ -167,6 +167,12 @@ function LandingPage() {
               </li>
             ))}
           </ol>
+          <Link
+            to="/how-to-use"
+            className="mt-6 inline-block text-[13px] font-medium text-primary underline-offset-4 hover:underline"
+          >
+            شرح تفصيلي لطريقة استخدام الأداة ←
+          </Link>
         </div>
       </section>
 
@@ -176,7 +182,7 @@ function LandingPage() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight">جرّبها على محفظتك الحقيقية</h2>
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
-              ٧ أيام مجانًا بكل المزايا. لو مش عاجبتك، سيبها بدون أي خصم.
+              ٤ أيام مجانًا بكل المزايا. لو مش عاجبتك، سيبها بدون أي خصم.
             </p>
           </div>
           <Button asChild size="lg">

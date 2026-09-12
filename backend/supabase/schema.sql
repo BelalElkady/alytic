@@ -76,6 +76,18 @@ create table if not exists portfolio_reviews (
   primary key (user_id, report_date, style)
 );
 
+-- Tracks the one "تحليل الكاش" (cash-allocation scan) a user is allowed per
+-- Cairo calendar day — see /api/scan's focus=cash handling in
+-- src/api/server.js. usage_date is a plain YYYY-MM-DD string (cairoToday()),
+-- not a timestamp, so "today" means the same thing here as everywhere else in
+-- the app that keys by trading day.
+create table if not exists cash_scan_usage (
+  user_id text not null references users(id) on delete cascade,
+  usage_date text not null,
+  used_at timestamptz not null default now(),
+  primary key (user_id, usage_date)
+);
+
 -- Admin-uploaded replacements for the built-in index membership lists in
 -- src/config/indices.js. Absence of a row means "use the built-in default" —
 -- see codesForIndex() there, which checks here first.

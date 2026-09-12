@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage } from '../db.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -33,7 +33,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars } from '../data/cache.js';
+import { readBars, cairoToday } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
@@ -42,6 +42,21 @@ import { contactEmailHtml } from '../emailTemplates.js';
 // Where the public contact form's messages land. Same default as
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'belal.elkady4@gmail.com';
+
+// Every account is on a 4-day free trial from the moment it's created —
+// there's no separate `plan`/`subscription` column, just a window off
+// users.created_at. Nothing outside the header badge is actually gated by
+// this yet (see cashScanAvailableToday below for the one real limit).
+const TRIAL_DAYS = 4;
+function trialInfo(user) {
+  const startedAt = new Date(user.createdAt).getTime();
+  const daysElapsed = Math.floor((Date.now() - startedAt) / (24 * 60 * 60 * 1000));
+  return {
+    trialDaysTotal: TRIAL_DAYS,
+    trialDaysLeft: Math.max(0, TRIAL_DAYS - daysElapsed),
+    trialActive: daysElapsed < TRIAL_DAYS,
+  };
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
@@ -131,9 +146,14 @@ app.post('/api/auth/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
+// Length of the free trial shown/counted down in the header — see
+// TRIAL_DAYS below and cashScanAvailableToday, the only two things it
+// actually affects today (there's no paid-plan enforcement yet).
 app.get('/api/auth/me', wrap(async (req, res) => {
   const user = await userFromRequest(req);
-  res.json({ user });
+  if (!user) return res.json({ user: null });
+  const cashScanAvailableToday = user.isAdmin ? true : !(await hasCashScanUsage(user.id, cairoToday()));
+  res.json({ user: { ...user, ...trialInfo(user), cashScanAvailableToday } });
 }));
 
 // Public "تواصل معنا" form — no login required, and never blocked by a
@@ -597,6 +617,22 @@ app.get('/api/scan', wrap(async (req, res) => {
     : indexCodes ?? ALL_CODES;
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
+
+  // "تحليل الكاش" (focus=cash, see market-dialog.tsx) is limited to one use
+  // per user per Cairo day — everything else /api/scan powers (market scan,
+  // per-position refresh) stays unlimited. Admins are exempt so testing this
+  // doesn't burn the one real credit the product has. Checked with an
+  // atomic insert-if-absent (recordCashScanUsage) rather than a read-then-act
+  // check, so two racing requests can't both slip through.
+  if (req.query.focus === 'cash' && !req.user.isAdmin) {
+    const spent = await recordCashScanUsage(req.user.id, cairoToday());
+    if (!spent) {
+      return res.status(429).json({
+        error: 'استخدمت تحليل الكاش النهارده بالفعل — متاح تاني بكرة.',
+        limitReached: true,
+      });
+    }
+  }
   // A style changes which rule numbers the engine sizes and gates setups
   // with — same deterministic engine, different risk/reward and sizing
   // inputs, exactly like every other `rules` param it already accepts.

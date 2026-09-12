@@ -252,6 +252,7 @@ function DeskHeader() {
     lastPriceSync,
     priceError,
     pf,
+    cashScanAvailableToday,
   } = useDesk();
   const { dark, toggle } = useTheme();
   const { style: investStyle, auto: investStyleAuto } = useActiveInvestStyle(pf?.trades);
@@ -267,6 +268,11 @@ function DeskHeader() {
     month: "long",
     year: "numeric",
   });
+
+  // trialDaysLeft/trialActive come from /api/auth/me (server.js's trialInfo)
+  // — computed off the account's created_at, not stored client-side.
+  const trialDaysLeft = typeof user?.trialDaysLeft === "number" ? user.trialDaysLeft : null;
+  const trialActive = Boolean(user?.trialActive);
 
   const importFiles = async (files: File[], replaceAll: boolean) => {
     setUploading(true);
@@ -339,7 +345,26 @@ function DeskHeader() {
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            {trialDaysLeft !== null && (
+              <Link to="/pricing" aria-label="حالة التجربة المجانية">
+                <Badge
+                  variant="outline"
+                  className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
+                >
+                  {trialActive
+                    ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم" : "أيام"}`
+                    : "انتهت التجربة المجانية"}
+                </Badge>
+              </Link>
+            )}
+            <Badge
+              variant={cashScanAvailableToday ? "secondary" : "outline"}
+              className="whitespace-nowrap"
+              title="تحليل الكاش متاح مرة واحدة يوميًا"
+            >
+              تحليل الكاش: {cashScanAvailableToday ? "متاح اليوم" : "مستخدم اليوم"}
+            </Badge>
             {investStyleLabel && (
               <Link to="/settings" aria-label="سلوكك الاستثماري">
                 <Badge variant="secondary" className="whitespace-nowrap">

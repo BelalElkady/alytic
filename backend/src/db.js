@@ -210,6 +210,34 @@ export async function putPortfolioReview(userId, reportDate, style, portfolioHas
   if (error) throw new Error(`putPortfolioReview: ${error.message}`);
 }
 
+/** Whether this user has already used today's one cash-scan credit. */
+export async function hasCashScanUsage(userId, usageDate) {
+  const { data, error } = await supabase
+    .from('cash_scan_usage')
+    .select('user_id')
+    .eq('user_id', userId)
+    .eq('usage_date', usageDate)
+    .maybeSingle();
+  if (error) throw new Error(`hasCashScanUsage: ${error.message}`);
+  return Boolean(data);
+}
+
+/**
+ * Atomically spends today's cash-scan credit, the same insert-if-absent
+ * pattern as putMarketReport: two requests racing for the same user/day must
+ * not both succeed.
+ * @returns {boolean} true if this call was the one that spent the credit,
+ *   false if it was already spent for that user/day.
+ */
+export async function recordCashScanUsage(userId, usageDate) {
+  const { data, error } = await supabase
+    .from('cash_scan_usage')
+    .upsert({ user_id: userId, usage_date: usageDate }, { onConflict: 'user_id,usage_date', ignoreDuplicates: true })
+    .select('user_id');
+  if (error) throw new Error(`recordCashScanUsage: ${error.message}`);
+  return data.length > 0;
+}
+
 export async function setUserAdmin(id, isAdmin) {
   must(await supabase.from('users').update({ is_admin: Boolean(isAdmin) }).eq('id', id), 'setUserAdmin');
 }

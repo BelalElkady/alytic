@@ -36,6 +36,11 @@ export type User = {
   phone?: string | null;
   emailVerified?: boolean;
   isAdmin?: boolean;
+  createdAt?: string;
+  trialDaysLeft?: number;
+  trialDaysTotal?: number;
+  trialActive?: boolean;
+  cashScanAvailableToday?: boolean;
   [key: string]: any;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -82,6 +87,8 @@ type DeskValue = {
   openMarket: (focus: "market" | "cash" | null) => void;
   manualOpen: boolean;
   setManualOpen: (open: boolean) => void;
+  cashScanAvailableToday: boolean;
+  markCashScanUsed: () => void;
 };
 
 const DeskContext = createContext<DeskValue | null>(null);
@@ -109,6 +116,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [marketFocus, setMarketFocus] = useState<"market" | "cash" | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [cashScanAvailableToday, setCashScanAvailableToday] = useState(true);
+  const markCashScanUsed = useCallback(() => setCashScanAvailableToday(false), []);
 
   const rowsRef = useRef<Row[]>([]);
   rowsRef.current = rows;
@@ -224,7 +233,10 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const { user: me } = await api("/api/auth/me");
-        if (!cancelled && me) setUser(me);
+        if (!cancelled && me) {
+          setUser(me);
+          setCashScanAvailableToday(me.cashScanAvailableToday ?? true);
+        }
       } catch {
         /* offline or unauthenticated — the auth screen handles both */
       } finally {
@@ -336,6 +348,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     openMarket: setMarketFocus,
     manualOpen,
     setManualOpen,
+    cashScanAvailableToday,
+    markCashScanUsed,
   };
 
   return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;
