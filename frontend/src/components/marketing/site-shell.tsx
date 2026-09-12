@@ -44,8 +44,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
             {user ? (
               <Button
                 asChild
-                size="sm"
-                className="ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
+                size="lg"
+                className="bg-up text-white hover:bg-up/90 dark:text-black"
               >
                 <Link to="/portfolio">صفحتك</Link>
               </Button>
