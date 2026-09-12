@@ -9,6 +9,7 @@ import {
   LineChart,
   LogOut,
   Mail,
+  Menu,
   Moon,
   Newspaper,
   PencilLine,
@@ -46,6 +47,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, post } from "@/lib/api";
 import { arDay, int, signed, tone } from "@/lib/format";
@@ -612,30 +614,54 @@ function DesktopNav() {
 function MobileNav() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { user } = useDesk();
+  const [open, setOpen] = useState(false);
+
+  const items = NAV.filter((item) => !item.adminOnly || user?.isAdmin);
+  const active = items.find((item) => pathname.startsWith(item.to));
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
   return (
-    <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden"
-      aria-label="التبويبات"
-    >
-      <div className="scrollbar-slim flex justify-between gap-0.5 overflow-x-auto px-1 py-1.5">
-        {NAV.filter((item) => !item.adminOnly || user?.isAdmin).map(({ to, label, icon: Icon }) => {
-          const active = pathname.startsWith(to);
-          return (
-            <Link
-              key={to}
-              to={to}
-              className={cn(
-                "flex min-w-16 flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[10.5px] font-medium transition-colors",
-                active ? "bg-secondary text-foreground" : "text-muted-foreground",
-              )}
-            >
-              <Icon className="size-4.5" />
-              {label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-3 py-2 backdrop-blur md:hidden"
+        aria-label="التبويبات"
+      >
+        <SheetTrigger asChild>
+          <Button variant="outline" className="w-full justify-center gap-2">
+            <Menu className="size-4" />
+            {active?.label ?? "التبويبات"}
+          </Button>
+        </SheetTrigger>
+      </nav>
+      <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto rounded-t-2xl">
+        <SheetHeader>
+          <SheetTitle>التبويبات</SheetTitle>
+        </SheetHeader>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {items.map(({ to, label, icon: Icon }) => {
+            const isActive = pathname.startsWith(to);
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-[13px] font-medium transition-colors",
+                  isActive
+                    ? "border-transparent bg-secondary text-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <Icon className="size-4" />
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
