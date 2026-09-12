@@ -2,8 +2,10 @@
  * Auto-generated blog posts: ten Arabic articles about the Egyptian Exchange
  * (EGX) written one at a time, spaced a couple of hours apart across the day
  * (see /api/cron/blog-generate in server.js, triggered every 2 hours by
- * .github/workflows/blog-cron.yml) and held as drafts until an admin
- * approves them (see /api/admin/blog-drafts).
+ * .github/workflows/blog-cron.yml). Published immediately on generation, no
+ * admin click required — the review model's verdict/notes still land on the
+ * row either way, so a flagged post is still visible for an admin to
+ * unpublish (see /api/admin/blog-drafts).
  *
  * Two-stage daily workflow:
  *  1. discoverTopics() researches EGX news once a day and clusters it into
@@ -114,11 +116,12 @@ const ReviewSchema = z.object({
   notes: z.string().describe('Arabic — what an admin reviewer should check before approving, or why it looks fine'),
 });
 
-function buildDiscoverySystemPrompt() {
+function buildDiscoverySystemPrompt(postDate) {
   return `أنت استراتيجي محتوى مالي وخبير SEO متخصص في البورصة المصرية (EGX)، وظيفتك بناء خطة المحتوى اليومية.
 
 قواعد:
 - استخدم أداة البحث على الإنترنت للوصول لآخر أخبار البورصة المصرية فعليًا — ما تخترعش أخبار أو أرقام.
+- قبل ما تدرج أي خبر في الخطة، تأكد من تاريخ نشره الفعلي (مش مجرد ظهوره في نتيجة البحث النهاردة). اقبل بس أخبار مؤرخة في نفس يوم ${postDate} أو الـ48 ساعة اللي قبله — أي خبر أقدم من كده، أو نتيجة بحث تاريخها مش واضح، ارفضها واختار زاوية تانية بدلها.
 - اختار ${ARTICLES_PER_DAY} زوايا إخبارية مختلفة تمامًا (مؤشرات، إفصاحات شركات، توزيعات أرباح، زيادات رأس مال، قرارات الرقابة المالية، طروحات وإدراجات، أداء قطاعات، محركات اقتصادية كلية) — من غير أي تداخل بين الزوايا.
 - كل زاوية لازم تتربط بكلمة مفتاحية عربية مختلفة عالية البحث، وما يتكررش نفس المفتاح في أكتر من زاوية.`;
 }
@@ -136,7 +139,7 @@ export async function discoverTopics({ postDate }) {
     schema: TopicPlanSchema,
     schemaName: 'blog_topic_plan',
     maxTokens: 4000,
-    system: buildDiscoverySystemPrompt(),
+    system: buildDiscoverySystemPrompt(postDate),
     messages: [{ role: 'user', content: userMessage }],
     webSearch: { engine: 'auto', max_results: 8, max_uses: 10 },
   });
@@ -144,11 +147,12 @@ export async function discoverTopics({ postDate }) {
   return { topics: data.topics, raw };
 }
 
-function buildArticleSystemPrompt() {
+function buildArticleSystemPrompt(postDate) {
   return `أنت كاتب محتوى مالي وخبير SEO لموقع EGXpert، متخصص في البورصة المصرية (EGX). اكتب مقالة إخبارية/تحليلية واحدة بالعربية الفصحى وبأسلوب مالي احترافي، موجهة لمستثمر مصري عادي مبتدئ في التداول.
 
 قواعد:
 - استخدم أداة البحث على الإنترنت للوصول لأخبار ومعلومات حديثة فعلاً عن القصة المحددة المطلوبة — ما تخترعش أرقام أو أحداث أو أسماء شركات أو تواريخ أو اقتباسات.
+- قبل ما تستخدم أي معلومة من نتيجة بحث، تأكد من تاريخ نشرها الفعلي: اقبل بس مصادر مؤرخة في نفس يوم ${postDate} أو الـ48 ساعة اللي قبله. لو المصدر قديم أو تاريخه مش واضح، ما تكتبش معلوماته على إنها خبر حالي — ابحث عن مصدر أحدث بدل ما تعتمد عليه.
 - كل رقم أو خبر تذكره لازم يكون مبني على مصدر حقيقي رجعت له بالبحث؛ اذكر مصادرك في حقل sources. لو معندكش خبر أو رقم مؤكد، قول كده صراحة بدل ما تخترعه.
 - المقالة لازم تكون بين ${MIN_WORDS} و${MAX_WORDS} كلمة بالظبط — عدّ الكلمات والتزم بالحدود.
 - استخدم الكلمة المفتاحية الأساسية في العنوان (H1)، في عنوان فرعي واحد على الأقل (H2)، وفي أول 100 كلمة من المقالة. وزّع الكلمات المفتاحية الثانوية في المحتوى من غير حشو.
@@ -170,7 +174,7 @@ async function generateArticle({ postDate, topic }) {
     schema: BlogPostSchema,
     schemaName: 'blog_post',
     maxTokens: 6000,
-    system: buildArticleSystemPrompt(),
+    system: buildArticleSystemPrompt(postDate),
     messages: [{ role: 'user', content: userMessage }],
     webSearch: { engine: 'auto', max_results: 6, max_uses: 8 },
   });
@@ -203,7 +207,7 @@ async function generateArticleWithinWordCount({ postDate, topic }) {
       schema: BlogPostSchema,
       schemaName: 'blog_post',
       maxTokens: 6000,
-      system: buildArticleSystemPrompt(),
+      system: buildArticleSystemPrompt(postDate),
       messages: [
         { role: 'user', content: `اكتب مقالة عن: ${topic.newsAngle} (الكلمة المفتاحية: ${topic.primaryKeyword})` },
         { role: 'assistant', content: JSON.stringify(post) },

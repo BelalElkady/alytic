@@ -526,12 +526,17 @@ export async function insertBlogPostDraft(row) {
         image_source_url: row.imageSourceUrl ?? null,
         image_credit_name: row.imageCreditName ?? null,
         image_credit_url: row.imageCreditUrl ?? null,
-        status: 'draft',
         generation_model: row.generationModel ?? null,
         generation_usage_json: row.generationUsage ?? null,
         review_model: row.reviewModel ?? null,
         review_json: row.review ?? null,
+        // Published immediately by default — no admin click required. The
+        // review model's verdict/notes are still stored either way, so a
+        // "flag" is visible on the live post for an admin to unpublish
+        // (POST /api/admin/blog-drafts/:id/unpublish) rather than a gate.
+        status: 'published',
         generated_at: new Date().toISOString(),
+        published_at: new Date().toISOString(),
       },
       { onConflict: 'post_date,batch_index', ignoreDuplicates: true },
     )
