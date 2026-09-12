@@ -40,6 +40,11 @@ export type User = {
   trialDaysLeft?: number;
   trialDaysTotal?: number;
   trialActive?: boolean;
+  trialEndsAt?: string;
+  plan?: "monthly" | "yearly" | "custom" | null;
+  subscriptionActive?: boolean;
+  currentPeriodEnd?: string | null;
+  hasAccess?: boolean;
   cashScanAvailableToday?: boolean;
   [key: string]: any;
 };
@@ -66,6 +71,7 @@ type DeskValue = {
   resendVerification: (email: string) => Promise<void>;
   markEmailVerified: () => void;
   updatePhone: (phone: string) => Promise<void>;
+  refreshUser: () => Promise<User | null>;
   pf: Portfolio;
   rows: Row[];
   log: Record<string, LogEntry>;
@@ -248,15 +254,20 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // hasAccess === false means the trial lapsed with no live plan: the desk
+  // renders the paywall instead, so loading (and paying for) scans and quotes
+  // that the API would answer with 402 anyway is pure waste.
+  const hasAccess = user ? user.hasAccess !== false : false;
+
   useEffect(() => {
-    if (!user) return;
+    if (!user || !hasAccess) return;
     void loadUniverse();
     void loadIndices();
     void reload();
-  }, [user, loadUniverse, loadIndices, reload]);
+  }, [user, hasAccess, loadUniverse, loadIndices, reload]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !hasAccess) return;
     const timer = setInterval(() => void refreshPrices(), PRICE_REFRESH_MS);
     const onVisible = () => {
       if (!document.hidden) void refreshPrices({ force: true });
@@ -266,7 +277,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [user, refreshPrices]);
+  }, [user, hasAccess, refreshPrices]);
 
   // Registration no longer logs the caller in directly (the backend never
   // reveals whether the email was already taken, so it can't hand back a
@@ -299,6 +310,16 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  // Re-reads entitlements without a sign-out. Activation is manual, so a user
+  // who has sent their InstaPay transfer needs a way to pick up the unlock the
+  // moment an admin grants the period — see SubscribePanel's "حوّلت بالفعل".
+  const refreshUser = useCallback(async () => {
+    const { user: me } = await api("/api/auth/me");
+    setUser(me ?? null);
+    if (me) setCashScanAvailableToday(me.cashScanAvailableToday ?? true);
+    return me ?? null;
+  }, []);
+
   const totals = useMemo<Totals>(() => {
     const cost = rows.reduce((sum, r) => sum + r.position.shares * r.position.avgCost, 0);
     const value = rows.reduce((sum, r) => sum + (r.position.marketValue ?? 0), 0);
@@ -327,6 +348,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     resendVerification,
     markEmailVerified,
     updatePhone,
+    refreshUser,
     pf,
     rows,
     log,

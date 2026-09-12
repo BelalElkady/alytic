@@ -88,6 +88,45 @@ create table if not exists cash_scan_usage (
   primary key (user_id, usage_date)
 );
 
+-- A user's paid access. There is no payment gateway: the user sends the fee
+-- over InstaPay and an admin activates the account from the admin panel, so
+-- this row is written by a human action, never by a callback. One row per
+-- user — the app sells one product with two period lengths, not stacked
+-- add-ons — re-dated on every renewal. No row means "never subscribed", in
+-- which case access depends only on the free-trial window off
+-- users.created_at. current_period_end is the single source of truth for
+-- whether paid access is live right now; see accessInfo() in
+-- src/api/server.js. Expiry needs no job to enforce it: the date simply
+-- stops being in the future.
+create table if not exists subscriptions (
+  user_id text primary key references users(id) on delete cascade,
+  plan text not null check (plan in ('monthly', 'yearly', 'custom')),
+  started_at timestamptz not null default now(),
+  current_period_end timestamptz not null,
+  granted_by text references users(id),
+  note text,
+  updated_at timestamptz not null default now()
+);
+
+-- Append-only record of every activation, extension and revocation an admin
+-- performed: who did it, what it cost, and the InstaPay reference the user
+-- sent. The subscriptions row above only holds the current state, so this is
+-- the only place a disputed payment ("I paid on the 3rd") can be checked
+-- against, and the only way to see that a period was cut short by hand.
+create table if not exists subscription_grants (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  plan text not null,
+  period_end timestamptz,
+  amount_egp numeric,
+  reference text,
+  note text,
+  action text not null default 'grant' check (action in ('grant', 'revoke')),
+  granted_by text references users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_subscription_grants_user on subscription_grants (user_id, created_at desc);
+
 -- Admin-uploaded replacements for the built-in index membership lists in
 -- src/config/indices.js. Absence of a row means "use the built-in default" —
 -- see codesForIndex() there, which checks here first.

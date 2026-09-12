@@ -18,6 +18,7 @@ import { Route as HowToUseRouteImport } from './routes/how-to-use'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SubscribeRouteImport } from './routes/subscribe'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppAdminRouteImport } from './routes/_app.admin'
 import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
@@ -75,6 +76,11 @@ const PricingRoute = PricingRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubscribeRoute = SubscribeRouteImport.update({
+  id: '/subscribe',
+  path: '/subscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/subscribe': typeof SubscribeRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AppAdminRoute
   '/calendar': typeof AppCalendarRoute
@@ -180,6 +187,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/subscribe': typeof SubscribeRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin': typeof AppAdminRoute
   '/calendar': typeof AppCalendarRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/subscribe': typeof SubscribeRoute
   '/verify-email': typeof VerifyEmailRoute
   '/_app/admin': typeof AppAdminRoute
   '/_app/calendar': typeof AppCalendarRoute
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/reset-password'
+    | '/subscribe'
     | '/verify-email'
     | '/admin'
     | '/calendar'
@@ -255,6 +265,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/reset-password'
+    | '/subscribe'
     | '/verify-email'
     | '/admin'
     | '/calendar'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/reset-password'
+    | '/subscribe'
     | '/verify-email'
     | '/_app/admin'
     | '/_app/calendar'
@@ -306,6 +318,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SubscribeRoute: typeof SubscribeRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   AdminLoginRoute: typeof AdminLoginRoute
   ApiPublicSplatRoute: typeof ApiPublicSplatRoute
@@ -374,6 +387,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subscribe': {
+      id: '/subscribe'
+      path: '/subscribe'
+      fullPath: '/subscribe'
+      preLoaderRoute: typeof SubscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/verify-email': {
@@ -525,6 +545,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SubscribeRoute: SubscribeRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   AdminLoginRoute: AdminLoginRoute,
   ApiPublicSplatRoute: ApiPublicSplatRoute,

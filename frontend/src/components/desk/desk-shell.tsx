@@ -2,6 +2,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   BarChart3,
+  CalendarClock,
   CalendarDays,
   Crosshair,
   LineChart,
@@ -20,6 +21,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { SubscribePanel } from "@/components/billing/subscribe-panel";
 import { Logo, LogoMark } from "@/components/brand/logo";
 import { DetailDialog } from "@/components/desk/detail-dialog";
 import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
@@ -43,7 +45,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, post } from "@/lib/api";
-import { int, signed, tone } from "@/lib/format";
+import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -98,15 +100,22 @@ export function DeskShell({ children }: { children: ReactNode }) {
     );
   }
 
+  // The trial lapsed with no live plan: the desk itself is what's being sold,
+  // so it's replaced by the subscribe instructions rather than rendered empty
+  // over an API that would answer 402 anyway. The header stays so the user can
+  // still see their status and sign out.
+  const locked = user.hasAccess === false;
+
   return (
     <div className="min-h-screen bg-surface pb-20 md:pb-0">
       <DeskHeader />
       <BlogTicker />
       <RequirePhoneDialog />
       <VerifyEmailBanner />
-      <HeroBar />
+      <ExpiryBanner />
+      {!locked && <HeroBar />}
       <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
-        {children}
+        {locked ? <SubscriptionWall /> : children}
       </main>
       <footer className="border-t bg-surface">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-4 px-3 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -135,6 +144,58 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <MarketDialog />
       <ManualEntryDialog />
     </div>
+  );
+}
+
+/**
+ * The only warning a user gets before access stops — chosen over an email
+ * reminder because activation is manual: they need lead time to send the
+ * InstaPay transfer and for it to be checked by hand. Shows in the last
+ * stretch of a trial or a paid period, and stays put (no dismiss) since
+ * missing it means losing access.
+ */
+const EXPIRY_WARNING_DAYS = 5;
+function ExpiryBanner() {
+  const { user } = useDesk();
+  if (!user || user.hasAccess === false) return null;
+
+  const endsAt = user.subscriptionActive ? user.currentPeriodEnd : user.trialEndsAt;
+  if (!endsAt) return null;
+  const daysLeft = Math.ceil((new Date(endsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  if (daysLeft > EXPIRY_WARNING_DAYS) return null;
+
+  const remaining = daysLeft <= 0 ? "النهارده" : daysLeft === 1 ? "بكرة" : `بعد ${daysLeft} أيام`;
+
+  return (
+    <div className="mx-auto w-full max-w-6xl px-3 pt-3 sm:px-5">
+      <Alert className="flex flex-col gap-2 border-amber-500/40 bg-amber-500/10 sm:flex-row sm:items-center sm:justify-between">
+        <AlertDescription className="flex items-center gap-2 text-[13px]">
+          <CalendarClock className="size-4 shrink-0" />
+          {user.subscriptionActive
+            ? `اشتراكك بينتهي ${remaining} (${arDay(endsAt.slice(0, 10))}). جدّده عشان متفقدش الوصول.`
+            : `تجربتك المجانية بتنتهي ${remaining}. اشترك عشان تكمل.`}
+        </AlertDescription>
+        <Button size="sm" asChild>
+          <Link to="/subscribe">طريقة الاشتراك</Link>
+        </Button>
+      </Alert>
+    </div>
+  );
+}
+
+/** Replaces the desk once access lapses — see the `locked` branch in DeskShell. */
+function SubscriptionWall() {
+  return (
+    <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+      <h2 className="text-[17px] font-semibold">اشتراكك انتهى</h2>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+        بياناتك ومحفظتك زي ما هي ومحدش هيمسّها — التحليل والأسعار اللحظية بس اللي متوقفة لحد ما
+        تجدّد.
+      </p>
+      <div className="mt-5">
+        <SubscribePanel compact />
+      </div>
+    </section>
   );
 }
 
@@ -277,10 +338,14 @@ function DeskHeader() {
     year: "numeric",
   });
 
-  // trialDaysLeft/trialActive come from /api/auth/me (server.js's trialInfo)
-  // — computed off the account's created_at, not stored client-side.
+  // Entitlement fields come from /api/auth/me (server.js's accessInfo) — the
+  // trial window is derived from created_at and the plan from the
+  // subscriptions row, so neither is stored client-side.
   const trialDaysLeft = typeof user?.trialDaysLeft === "number" ? user.trialDaysLeft : null;
   const trialActive = Boolean(user?.trialActive);
+  const subscriptionActive = Boolean(user?.subscriptionActive);
+  const periodEnd = user?.currentPeriodEnd ?? null;
+  const locked = user?.hasAccess === false;
 
   const importFiles = async (files: File[], replaceAll: boolean) => {
     setUploading(true);
@@ -354,17 +419,30 @@ function DeskHeader() {
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-            {trialDaysLeft !== null && (
-              <Link to="/pricing" aria-label="حالة التجربة المجانية">
-                <Badge
-                  variant="outline"
-                  className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
-                >
-                  {trialActive
-                    ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم" : "أيام"}`
-                    : "انتهت التجربة المجانية"}
+            {subscriptionActive ? (
+              <Link to="/subscribe" aria-label="حالة الاشتراك">
+                <Badge variant="secondary" className="whitespace-nowrap">
+                  {user?.plan === "yearly"
+                    ? "اشتراك سنوي"
+                    : user?.plan === "monthly"
+                      ? "اشتراك شهري"
+                      : "اشتراك"}
+                  {periodEnd ? ` حتى ${arDay(periodEnd.slice(0, 10))}` : ""}
                 </Badge>
               </Link>
+            ) : (
+              trialDaysLeft !== null && (
+                <Link to="/subscribe" aria-label="حالة التجربة المجانية">
+                  <Badge
+                    variant="outline"
+                    className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
+                  >
+                    {trialActive
+                      ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم" : "أيام"}`
+                      : "انتهت التجربة المجانية"}
+                  </Badge>
+                </Link>
+              )
             )}
             <Badge
               variant={cashScanAvailableToday ? "secondary" : "outline"}
@@ -393,7 +471,13 @@ function DeskHeader() {
           </div>
         </div>
 
-        <div className="scrollbar-slim -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5">
+        <div
+          className={cn(
+            "scrollbar-slim -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5",
+            // Every action here hits an endpoint the paywall answers with 402.
+            locked && "hidden",
+          )}
+        >
           <Button size="sm" onClick={() => openMarket("market")}>
             <Radar className="size-4" />
             تحليل السوق

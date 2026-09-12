@@ -20,7 +20,8 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants } from '../db.js';
+import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
@@ -43,19 +44,61 @@ import { contactEmailHtml } from '../emailTemplates.js';
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'belal.elkady4@gmail.com';
 
-// Every account is on a 4-day free trial from the moment it's created —
-// there's no separate `plan`/`subscription` column, just a window off
-// users.created_at. Nothing outside the header badge is actually gated by
-// this yet (see cashScanAvailableToday below for the one real limit).
+// Every account is on a 4-day free trial from the moment it's created — the
+// window is derived from users.created_at rather than stored, so there is
+// nothing to reset or backfill.
 const TRIAL_DAYS = 4;
+const DAY_MS = 24 * 60 * 60 * 1000;
 function trialInfo(user) {
-  const startedAt = new Date(user.createdAt).getTime();
-  const daysElapsed = Math.floor((Date.now() - startedAt) / (24 * 60 * 60 * 1000));
+  const startedAt = new Date(user.createdAt ?? user.created_at).getTime();
+  const daysElapsed = Math.floor((Date.now() - startedAt) / DAY_MS);
   return {
     trialDaysTotal: TRIAL_DAYS,
     trialDaysLeft: Math.max(0, TRIAL_DAYS - daysElapsed),
     trialActive: daysElapsed < TRIAL_DAYS,
+    trialEndsAt: new Date(startedAt + TRIAL_DAYS * DAY_MS),
   };
+}
+
+/**
+ * Everything the client needs to know about what this account may do, and the
+ * one place `hasAccess` is decided: an unexpired trial, a live paid period,
+ * or a staff/CLI account. Admins and the built-in 'local' CLI user bypass
+ * billing entirely — the CLI has no way to pay and locking it out would break
+ * local development.
+ */
+async function accessInfo(user) {
+  const trial = trialInfo(user);
+  const subscription = await getSubscription(user.id);
+  const periodEnd = subscription ? new Date(subscription.current_period_end) : null;
+  const subscriptionActive = Boolean(periodEnd && periodEnd.getTime() > Date.now());
+  const exempt = Boolean(user.isAdmin) || user.id === 'local';
+  return {
+    trialDaysTotal: trial.trialDaysTotal,
+    trialDaysLeft: trial.trialDaysLeft,
+    trialActive: trial.trialActive,
+    trialEndsAt: trial.trialEndsAt.toISOString(),
+    plan: subscriptionActive ? subscription.plan : null,
+    subscriptionActive,
+    currentPeriodEnd: periodEnd ? periodEnd.toISOString() : null,
+    hasAccess: exempt || trial.trialActive || subscriptionActive,
+  };
+}
+
+/**
+ * Where a newly granted period should start counting from: whichever is
+ * furthest out of now, the end of an unused free trial, and an already-running
+ * paid period. So activating a user who is still inside their trial credits
+ * the remaining trial days onto the end of the subscription instead of
+ * burning them, and renewing early stacks rather than truncating.
+ */
+async function periodStartFor(userId) {
+  const user = await getUserById(userId);
+  const existing = await getSubscription(userId);
+  const candidates = [Date.now()];
+  if (user) candidates.push(trialInfo({ createdAt: user.created_at }).trialEndsAt.getTime());
+  if (existing) candidates.push(new Date(existing.current_period_end).getTime());
+  return new Date(Math.max(...candidates));
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -146,14 +189,14 @@ app.post('/api/auth/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
-// Length of the free trial shown/counted down in the header — see
-// TRIAL_DAYS below and cashScanAvailableToday, the only two things it
-// actually affects today (there's no paid-plan enforcement yet).
+// Carries the whole entitlement picture (trial countdown, live plan,
+// hasAccess) so the frontend can render the header badge and the paywall
+// without a second round trip. See accessInfo above.
 app.get('/api/auth/me', wrap(async (req, res) => {
   const user = await userFromRequest(req);
   if (!user) return res.json({ user: null });
   const cashScanAvailableToday = user.isAdmin ? true : !(await hasCashScanUsage(user.id, cairoToday()));
-  res.json({ user: { ...user, ...trialInfo(user), cashScanAvailableToday } });
+  res.json({ user: { ...user, ...(await accessInfo(user)), cashScanAvailableToday } });
 }));
 
 // Public "تواصل معنا" form — no login required, and never blocked by a
@@ -224,6 +267,14 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   res.json({ ok: true, started: true });
 }));
 
+// What the "اشترك" screen shows: the prices, and the InstaPay account to
+// transfer to. Public — the pricing page reads it too. A null address means
+// INSTAPAY_ADDRESS isn't configured, and the screen tells the user to contact
+// support instead of rendering a blank field.
+app.get('/api/billing/plans', (_req, res) => {
+  res.json({ plans: Object.values(PLANS), instapay: INSTAPAY });
+});
+
 app.use('/api', async (req, res, next) => {
   if (
     req.path.startsWith('/auth/') ||
@@ -233,12 +284,37 @@ app.use('/api', async (req, res, next) => {
     req.path === '/contact' ||
     req.path === '/blog' ||
     req.path.startsWith('/blog/') ||
+    req.path === '/billing/plans' ||
     req.path === '/cron/blog-generate'
   ) return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
   req.user = user;
   next();
+});
+
+// What the trial and the subscription actually buy: the endpoints that carry
+// the product's value or spend money per call. Everything else a signed-in
+// user can reach — their portfolio, trade log, settings — stays open after the
+// trial lapses, so an unpaid account can still read and export its own data
+// instead of having it held hostage.
+const PAID_PATHS = [
+  '/scan',
+  '/quotes',
+  '/review',
+  '/market-analysis',
+  '/analyze/',
+  '/fundamentals/',
+  '/portfolio/import-screenshot',
+];
+app.use('/api', async (req, res, next) => {
+  if (!req.user || !PAID_PATHS.some((prefix) => req.path.startsWith(prefix))) return next();
+  const access = await accessInfo(req.user);
+  if (access.hasAccess) return next();
+  res.status(402).json({
+    error: 'انتهت تجربتك المجانية — اشترك عشان تكمل.',
+    requiresSubscription: true,
+  });
 });
 
 // Google sign-in never collects a phone number, but registration requires
@@ -476,12 +552,19 @@ app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
 // fields frontend/src/lib/invest-style.ts's inferInvestStyle() needs, rather
 // than duplicating that FIFO-matching logic on the server.
 app.get('/api/admin/users', wrap(async (req, res) => {
-  const [users, portfolios] = await Promise.all([getAllUsers(), getAllPortfolios()]);
+  const [users, portfolios, subscriptions] = await Promise.all([
+    getAllUsers(),
+    getAllPortfolios(),
+    getAllSubscriptions(),
+  ]);
   const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
+  const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
 
   const rows = users.map((u) => {
     const pf = portfolioByUser.get(u.id);
     const positions = pf ? Object.values(pf.positions ?? {}) : [];
+    const subscription = subscriptionByUser.get(u.id);
+    const trial = trialInfo({ createdAt: u.created_at });
     return {
       id: u.id,
       email: u.email,
@@ -492,6 +575,15 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       googleLinked: Boolean(u.google_id),
       createdAt: u.created_at,
       lastLoginAt: u.last_login_at,
+      trialActive: trial.trialActive,
+      trialEndsAt: trial.trialEndsAt.toISOString(),
+      subscription: subscription && {
+        plan: subscription.plan,
+        currentPeriodEnd: subscription.current_period_end,
+        active: new Date(subscription.current_period_end).getTime() > Date.now(),
+        note: subscription.note,
+        updatedAt: subscription.updated_at,
+      },
       portfolio: pf && {
         cash: pf.cash ?? 0,
         positionsCount: positions.length,
@@ -505,6 +597,90 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     };
   });
   res.json({ users: rows });
+}));
+
+// Turns a user premium after their InstaPay transfer lands. This is the only
+// thing in the app that grants paid access — there is no gateway and no
+// self-serve checkout, so an admin doing this by hand is the whole billing
+// flow. `plan` is monthly/yearly for a standard period, or 'custom' with an
+// explicit endsAt for anything else (a gift period, a goodwill extension, or
+// correcting a mistake). Standard periods are measured from periodStartFor(),
+// so activating someone mid-trial doesn't cost them their remaining trial days.
+app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
+  const target = await getUserById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
+
+  const requested = String(req.body?.plan ?? '');
+  const plan = planFor(requested);
+  let currentPeriodEnd;
+  if (plan) {
+    currentPeriodEnd = addMonths(await periodStartFor(target.id), plan.months);
+  } else if (requested === 'custom') {
+    currentPeriodEnd = new Date(String(req.body?.endsAt ?? ''));
+    if (Number.isNaN(currentPeriodEnd.getTime())) return res.status(400).json({ error: 'اكتب تاريخ انتهاء صحيح' });
+    if (currentPeriodEnd.getTime() <= Date.now()) return res.status(400).json({ error: 'تاريخ الانتهاء لازم يكون في المستقبل' });
+  } else {
+    return res.status(400).json({ error: 'اختر باقة صحيحة' });
+  }
+
+  const amountEgp = req.body?.amountEgp == null ? (plan?.priceEgp ?? null) : Number(req.body.amountEgp);
+  if (amountEgp != null && !Number.isFinite(amountEgp)) return res.status(400).json({ error: 'المبلغ غير صحيح' });
+  const reference = String(req.body?.reference ?? '').trim().slice(0, 200) || null;
+  const note = String(req.body?.note ?? '').trim().slice(0, 500) || null;
+
+  await putSubscription({
+    userId: target.id,
+    plan: plan?.key ?? 'custom',
+    currentPeriodEnd: currentPeriodEnd.toISOString(),
+    grantedBy: req.user.id,
+    note,
+  });
+  await recordSubscriptionGrant({
+    userId: target.id,
+    plan: plan?.key ?? 'custom',
+    periodEnd: currentPeriodEnd.toISOString(),
+    amountEgp,
+    reference,
+    note,
+    action: 'grant',
+    grantedBy: req.user.id,
+  });
+  res.json({ ok: true, subscription: { plan: plan?.key ?? 'custom', currentPeriodEnd: currentPeriodEnd.toISOString(), active: true } });
+}));
+
+// Ends paid access now — a refund, a chargeback, or an activation entered
+// against the wrong account. The grant history survives (see the
+// subscription_grants comment in supabase/schema.sql).
+app.delete('/api/admin/users/:id/subscription', wrap(async (req, res) => {
+  const existing = await getSubscription(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'مفيش اشتراك للمستخدم ده' });
+  await deleteSubscription(req.params.id);
+  await recordSubscriptionGrant({
+    userId: req.params.id,
+    plan: existing.plan,
+    periodEnd: existing.current_period_end,
+    note: String(req.body?.note ?? '').trim().slice(0, 500) || null,
+    action: 'revoke',
+    grantedBy: req.user.id,
+  });
+  res.json({ ok: true });
+}));
+
+/** Activation history for one user — what to check when a payment is disputed or entered twice. */
+app.get('/api/admin/users/:id/subscription', wrap(async (req, res) => {
+  const grants = await listSubscriptionGrants(req.params.id);
+  res.json({
+    grants: grants.map((g) => ({
+      id: g.id,
+      plan: g.plan,
+      action: g.action,
+      periodEnd: g.period_end,
+      amountEgp: g.amount_egp,
+      reference: g.reference,
+      note: g.note,
+      createdAt: g.created_at,
+    })),
+  });
 }));
 
 // Drafts (and everything else generated) waiting on human review before they

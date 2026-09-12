@@ -238,6 +238,72 @@ export async function recordCashScanUsage(userId, usageDate) {
   return data.length > 0;
 }
 
+/** @returns {object|null} the user's plan row, or null if they never paid. Says nothing about whether the period is still live — the caller compares current_period_end. */
+export async function getSubscription(userId) {
+  const { data, error } = await supabase.from('subscriptions').select('*').eq('user_id', userId).maybeSingle();
+  if (error) throw new Error(`getSubscription: ${error.message}`);
+  return data;
+}
+
+/** Every subscription row, keyed by user_id — for the admin users list, which needs each user's plan alongside their profile. */
+export async function getAllSubscriptions() {
+  const { data, error } = await supabase.from('subscriptions').select('*');
+  if (error) throw new Error(`getAllSubscriptions: ${error.message}`);
+  return data;
+}
+
+/** Starts or extends the user's plan. One row per user, so a renewal overwrites rather than stacking — the caller computes the new current_period_end. */
+export async function putSubscription({ userId, plan, currentPeriodEnd, grantedBy, note }) {
+  must(
+    await supabase.from('subscriptions').upsert(
+      {
+        user_id: userId,
+        plan,
+        current_period_end: currentPeriodEnd,
+        granted_by: grantedBy ?? null,
+        note: note ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' },
+    ),
+    'putSubscription',
+  );
+}
+
+/** Ends paid access immediately. The audit trail lives in subscription_grants, so dropping the row loses no history. */
+export async function deleteSubscription(userId) {
+  must(await supabase.from('subscriptions').delete().eq('user_id', userId), 'deleteSubscription');
+}
+
+/** Appends one admin action to the audit log — see the subscription_grants comment in supabase/schema.sql. */
+export async function recordSubscriptionGrant({ userId, plan, periodEnd, amountEgp, reference, note, action, grantedBy }) {
+  must(
+    await supabase.from('subscription_grants').insert({
+      user_id: userId,
+      plan,
+      period_end: periodEnd ?? null,
+      amount_egp: amountEgp ?? null,
+      reference: reference ?? null,
+      note: note ?? null,
+      action: action ?? 'grant',
+      granted_by: grantedBy ?? null,
+    }),
+    'recordSubscriptionGrant',
+  );
+}
+
+/** This user's activation history, newest first — shown in the admin panel when reviewing a disputed or repeated payment. */
+export async function listSubscriptionGrants(userId, { limit = 20 } = {}) {
+  const { data, error } = await supabase
+    .from('subscription_grants')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listSubscriptionGrants: ${error.message}`);
+  return data;
+}
+
 export async function setUserAdmin(id, isAdmin) {
   must(await supabase.from('users').update({ is_admin: Boolean(isAdmin) }).eq('id', id), 'setUserAdmin');
 }

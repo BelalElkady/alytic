@@ -12,7 +12,16 @@ import {
   Spinner,
 } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -22,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, post, postRaw } from "@/lib/api";
+import { api, del, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
@@ -288,6 +297,14 @@ type AdminUserPortfolio = {
   trades: Trade[];
 };
 
+type AdminSubscription = {
+  plan: "monthly" | "yearly" | "custom";
+  currentPeriodEnd: string;
+  active: boolean;
+  note: string | null;
+  updatedAt: string;
+};
+
 type AdminUserRow = {
   id: string;
   email: string;
@@ -298,6 +315,9 @@ type AdminUserRow = {
   googleLinked: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  trialActive: boolean;
+  trialEndsAt: string;
+  subscription: AdminSubscription | null;
   portfolio: AdminUserPortfolio | null;
 };
 
@@ -376,12 +396,13 @@ function UsersTab() {
                   <TableHead className="text-start">ربح محقق</TableHead>
                   <TableHead className="text-start">النشاط الاستثماري</TableHead>
                   <TableHead className="text-start">الأسلوب</TableHead>
+                  <TableHead className="text-start">الاشتراك</TableHead>
                   <TableHead className="text-start">الحالة</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((row) => (
-                  <UserRow key={row.id} row={row} />
+                  <UserRow key={row.id} row={row} onChanged={load} />
                 ))}
               </TableBody>
             </Table>
@@ -392,7 +413,7 @@ function UsersTab() {
   );
 }
 
-function UserRow({ row }: { row: AdminUserRow }) {
+function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void }) {
   const pf = row.portfolio;
   const inferredStyle = pf ? inferInvestStyle(pf.trades) : null;
   const capital = pf ? pf.cash + pf.positionsValue : null;
@@ -433,6 +454,9 @@ function UserRow({ row }: { row: AdminUserRow }) {
       </TableCell>
       <TableCell>{inferredStyle ? STYLE_LABEL[inferredStyle] : "—"}</TableCell>
       <TableCell>
+        <SubscriptionCell row={row} onChanged={onChanged} />
+      </TableCell>
+      <TableCell>
         <div className="flex flex-wrap gap-1">
           {row.isAdmin && <Badge>مشرف</Badge>}
           {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
@@ -440,5 +464,150 @@ function UserRow({ row }: { row: AdminUserRow }) {
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+const PLAN_LABEL: Record<AdminSubscription["plan"], string> = {
+  monthly: "شهري",
+  yearly: "سنوي",
+  custom: "مخصص",
+};
+
+/**
+ * Where a paid account actually gets switched on. Activation is manual by
+ * design — the user transfers over InstaPay and an admin records it here —
+ * so this is the only path to premium access in the whole product.
+ */
+function SubscriptionCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [endsAt, setEndsAt] = useState("");
+  const [reference, setReference] = useState("");
+  const subscription = row.subscription;
+
+  const grant = async (plan: "monthly" | "yearly" | "custom") => {
+    setBusy(true);
+    try {
+      await post(`/api/admin/users/${row.id}/subscription`, {
+        plan,
+        endsAt: plan === "custom" ? endsAt : undefined,
+        reference: reference.trim() || undefined,
+      });
+      toast.success(`تم تفعيل اشتراك ${row.email}`);
+      setOpen(false);
+      setReference("");
+      setEndsAt("");
+      onChanged();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تفعيل الاشتراك");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async () => {
+    setBusy(true);
+    try {
+      await del(`/api/admin/users/${row.id}/subscription`);
+      toast.success(`تم إيقاف اشتراك ${row.email}`);
+      setOpen(false);
+      onChanged();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر إيقاف الاشتراك");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {subscription?.active ? (
+        <Badge variant="secondary" className="whitespace-nowrap">
+          {PLAN_LABEL[subscription.plan]} · حتى {arDay(subscription.currentPeriodEnd.slice(0, 10))}
+        </Badge>
+      ) : subscription ? (
+        <Badge variant="destructive" className="whitespace-nowrap">
+          انتهى {arDay(subscription.currentPeriodEnd.slice(0, 10))}
+        </Badge>
+      ) : row.trialActive ? (
+        <Badge variant="outline" className="whitespace-nowrap">
+          تجربة حتى {arDay(row.trialEndsAt.slice(0, 10))}
+        </Badge>
+      ) : (
+        <Badge variant="outline" className="whitespace-nowrap text-muted-foreground">
+          مفيش اشتراك
+        </Badge>
+      )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]">
+            {subscription?.active ? "تعديل" : "تفعيل"}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-start">
+            <DialogTitle>اشتراك {row.email}</DialogTitle>
+            <DialogDescription className="leading-relaxed">
+              المدة بتبدأ من نهاية التجربة أو نهاية الاشتراك الحالي — أيهما أبعد — فالتفعيل وسط
+              التجربة مش بيضيّع الأيام الباقية.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor={`ref-${row.id}`}>مرجع التحويل (اختياري)</Label>
+              <Input
+                id={`ref-${row.id}`}
+                value={reference}
+                onChange={(event) => setReference(event.target.value)}
+                placeholder="رقم عملية InstaPay أو ملاحظة"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void grant("monthly")} disabled={busy}>
+                {busy && <Spinner />}+ شهر
+              </Button>
+              <Button onClick={() => void grant("yearly")} disabled={busy}>
+                {busy && <Spinner />}+ سنة
+              </Button>
+            </div>
+
+            <div className="space-y-1.5 border-t pt-4">
+              <Label htmlFor={`ends-${row.id}`}>أو تاريخ انتهاء مخصص</Label>
+              <div className="flex gap-2">
+                <Input
+                  id={`ends-${row.id}`}
+                  type="date"
+                  value={endsAt}
+                  onChange={(event) => setEndsAt(event.target.value)}
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => void grant("custom")}
+                  disabled={busy || !endsAt}
+                >
+                  حفظ
+                </Button>
+              </div>
+            </div>
+
+            {subscription && (
+              <div className="border-t pt-4">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void revoke()}
+                  disabled={busy}
+                >
+                  إيقاف الاشتراك فورًا
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
