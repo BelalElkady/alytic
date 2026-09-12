@@ -261,10 +261,12 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
   const postDate = typeof req.body?.postDate === 'string' ? req.body.postDate : undefined;
   const { getOrGenerateDailyBlogBatch } = await import('../agent/blogGenerator.js');
-  getOrGenerateDailyBlogBatch({ postDate }).catch((err) => {
-    console.error('getOrGenerateDailyBlogBatch failed:', err);
-  });
-  res.json({ ok: true, started: true });
+  // Awaited on purpose: the GitHub Actions workflow that calls this should
+  // only go green once the whole day's batch is actually stored, not the
+  // moment generation starts — see blog-cron.yml's long ssh/curl timeouts,
+  // sized for the several minutes ten sequential articles can take.
+  const posts = await getOrGenerateDailyBlogBatch({ postDate });
+  res.json({ ok: true, count: posts.length, posts: posts.map((p) => ({ id: p.id, slug: p.slug, status: p.status })) });
 }));
 
 // The prices the "اشترك" screen quotes. Payment details are deliberately not

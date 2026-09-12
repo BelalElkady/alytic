@@ -13,6 +13,11 @@ jobs:
     name: Trigger daily draft batch generation
     runs-on: ubuntu-latest
     environment: production
+    # Ten articles generated sequentially against free-tier models (each with
+    # its own web search + a review pass, plus an occasional word-count
+    # retry) can take a while — generous headroom over the realistic case so
+    # a slow day doesn't get cut off mid-batch.
+    timeout-minutes: 45
     steps:
       - name: Validate secrets
         shell: bash
@@ -35,9 +40,12 @@ jobs:
       # Calls the backend over the VPS's own loopback interface, the same way
       # deploy.yml's post-deploy health check does — the cron endpoint is
       # never exposed on the public internet, so this SSH hop is the trigger
-      # rather than a public HTTPS URL. The endpoint kicks off the ten-article
-      # batch in the background and responds immediately, so this call
-      # returns fast even though the batch itself takes several minutes.
+      # rather than a public HTTPS URL. The endpoint now awaits the whole
+      # ten-article batch before responding, so this step (and therefore the
+      # workflow run) only goes green once every draft is actually stored —
+      # command_timeout/curl's --max-time are sized well above the realistic
+      # several-minute batch duration, and the job-level timeout-minutes
+      # above is the final backstop.
       - name: Request daily blog batch generation over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -45,9 +53,10 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
+          command_timeout: 40m
           envs: BLOG_CRON_SECRET,BACKEND_PORT
           script: |
-            curl --fail --silent --show-error -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/blog-generate" \
+            curl --fail --silent --show-error --max-time 2100 -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/blog-generate" \
               -H "X-Cron-Secret: $BLOG_CRON_SECRET" \
               -H "Content-Type: application/json" \
               -d '{}'
