@@ -5,11 +5,14 @@ import {
   Camera,
   CalendarDays,
   Crosshair,
+  HelpCircle,
   LineChart,
   PencilLine,
+  Radar,
   RefreshCw,
   Settings,
   ShieldCheck,
+  Upload,
   Wallet,
 } from "lucide-react";
 
@@ -59,6 +62,29 @@ const START_STEPS = [
   },
 ];
 
+const TOOLBAR = [
+  {
+    icon: Radar,
+    label: "تحليل السوق",
+    text: "نافذة تحليل تفصيلي — إما نظرة عامة على السوق كله، أو تحليل عميق لسهم واحد تختاره: مستويات الدخول والخروج، والسيناريوهات المحتملة.",
+  },
+  {
+    icon: Upload,
+    label: "رفع صور المحفظة",
+    text: "ارفع لقطة شاشة من تطبيق السمسار بتاعك، وEGXpert بيقرأ الأسهم والكميات والكاش من الصورة ويحدّث محفظتك تلقائيًا. الرفع بيستبدل مراكزك الحالية بالكامل بما يظهر في الصورة، فاستخدمه لما تكون عايز تزامن كامل مش إضافة سهم واحد بس.",
+  },
+  {
+    icon: PencilLine,
+    label: "إدخال يدوي",
+    text: "لإضافة أو تعديل سهم واحد بسرعة من غير رفع صورة: الكود، الكمية، ومتوسط سعر الشراء.",
+  },
+  {
+    icon: CalendarDays,
+    label: "سجّل إغلاق اليوم",
+    text: 'أهم زرار في الأداة — وده اللي بيبني تاريخ محفظتك. بيحفظ لقطة كاملة من قيمة محفظتك، سعر كل سهم، وقف الخسارة، والتوصية بتاعته في نفس اللحظة دي، كسجل تاريخي ثابت لهذا اليوم بالذات. من غير ما تضغطه، مفيش بيانات تظهر في "التقويم" ولا في رسم أداء المحفظة بمرور الوقت في "الرسوم" — لأن الأسعار الحية بتتغيّر كل ثانية ومفيهاش نسخة محفوظة منها. اضغطه مرة واحدة يوميًا، ويُفضّل قرب إغلاق السوق (حوالي الساعة ٢:٣٠)، عشان يبقى عندك سجل يومي دقيق ترجع له وقت ما تحب تقارن أداءك.',
+  },
+];
+
 const SCREENS = [
   {
     icon: Wallet,
@@ -82,13 +108,13 @@ const SCREENS = [
     icon: CalendarDays,
     to: "/calendar",
     label: "التقويم",
-    text: "سجل يومي لإغلاق محفظتك على مدار الشهر والسنة، عشان تتابع أداءك بمرور الوقت مش بس النهاردة.",
+    text: 'تقويم شهري يعرض كل يوم ضغطت فيه "سجّل إغلاق اليوم". دوس على أي تاريخ عشان تشوف قيمة محفظتك، سعر كل سهم، الوقف والتوصية اللي كانت عليه ساعتها، وتقدر تكتب ملاحظة على اليوم ده.',
   },
   {
     icon: BarChart3,
     to: "/charts",
     label: "الرسوم",
-    text: "رسوم بيانية لتوزيع محفظتك بين الأسهم، ومساهمة كل سهم في الربح أو الخسارة، وتطوّر قيمة المحفظة بشكل عام.",
+    text: 'رسوم بيانية لتوزيع محفظتك بين الأسهم، ومساهمة كل سهم في الربح أو الخسارة، وتطوّر قيمة المحفظة يوم بيوم — مبنية على نفس سجل "سجّل إغلاق اليوم". لو بدأت متأخر، فيه زرار لبناء سجل تقديري لآخر ٩٠ يوم من أسعار السوق الحقيقية.',
   },
   {
     icon: LineChart,
@@ -107,6 +133,21 @@ const SCREENS = [
     to: "/settings",
     label: "الإعدادات",
     text: "تحديد أسلوبك في الاستثمار (مضارب / متوسط المدى / طويل المدى)، وضبط بيانات حسابك.",
+  },
+];
+
+const FAQ = [
+  {
+    q: "ليه لازم أضغط «سجّل إغلاق اليوم» كل يوم؟",
+    a: 'من غيره الأداة معندهاش أي "ذاكرة" — الأسعار والتوصيات بتتحدّث لحظيًا وبتستبدل القديم. الزرار ده وحده اللي بيحوّل لحظة معينة من يومك لسجل دائم تقدر ترجع له في "التقويم" و"الرسوم".',
+  },
+  {
+    q: "في وقت معيّن أفضل أسجّل فيه؟",
+    a: "قرب إغلاق السوق (حوالي الساعة ٢:٣٠) أنسب وقت، عشان السعر المحفوظ يبقى فعليًا سعر إغلاق اليوم مش سعر لحظي في نص التداول.",
+  },
+  {
+    q: "نسيت أسجّل كذا يوم، أعمل إيه؟",
+    a: 'من شاشة "الرسوم" فيه زرار يبني سجل تقديري لآخر ٩٠ يوم من أسعار السوق الحقيقية — لكنه محسوب على عدد الأسهم اللي معاك دلوقتي ("كانت هتساوي كام لو كانت معاك يومها")، مش سجل فعلي لمراكزك وقتها.',
   },
 ];
 
@@ -145,24 +186,50 @@ function HowToUsePage() {
         </ol>
       </section>
 
-      {/* Screens walkthrough */}
+      {/* Toolbar */}
       <section className="border-y bg-surface">
         <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
-          <h2 className="text-2xl font-bold tracking-tight">شاشات لوحة التحكم</h2>
+          <h2 className="text-2xl font-bold tracking-tight">أزرار الشاشة العلوية</h2>
           <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-            بعد ما تعمل حسابك، هتلاقي القائمة دي في لوحة التحكم — كل شاشة وظيفتها إيه:
+            في أعلى لوحة التحكم هتلاقي شريط بيه ٤ أزرار سريعة تستخدمها يوميًا:
           </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            {SCREENS.map(({ icon: Icon, label, text }) => (
-              <article key={label} className="rounded-xl border bg-card p-4 shadow-sm">
-                <span className="grid size-9 place-items-center rounded-lg bg-secondary text-foreground">
-                  <Icon className="size-4.5" />
+          <ol className="mt-8 space-y-4">
+            {TOOLBAR.map((item, index) => (
+              <li key={item.label} className="flex gap-4 rounded-xl border bg-card p-5 shadow-sm">
+                <span className="num grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-[13px] font-semibold text-primary-foreground">
+                  {index + 1}
                 </span>
-                <h3 className="mt-3 text-[14.5px] font-semibold">{label}</h3>
-                <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">{text}</p>
-              </article>
+                <div>
+                  <h3 className="flex items-center gap-2 text-[15px] font-semibold">
+                    <item.icon className="size-4 text-muted-foreground" />
+                    {item.label}
+                  </h3>
+                  <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
+                    {item.text}
+                  </p>
+                </div>
+              </li>
             ))}
-          </div>
+          </ol>
+        </div>
+      </section>
+
+      {/* Screens walkthrough */}
+      <section className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
+        <h2 className="text-2xl font-bold tracking-tight">شاشات لوحة التحكم</h2>
+        <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
+          بعد ما تعمل حسابك، هتلاقي القائمة دي في لوحة التحكم — كل شاشة وظيفتها إيه:
+        </p>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          {SCREENS.map(({ icon: Icon, label, text }) => (
+            <article key={label} className="rounded-xl border bg-card p-4 shadow-sm">
+              <span className="grid size-9 place-items-center rounded-lg bg-secondary text-foreground">
+                <Icon className="size-4.5" />
+              </span>
+              <h3 className="mt-3 text-[14.5px] font-semibold">{label}</h3>
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">{text}</p>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -210,6 +277,26 @@ function HowToUsePage() {
               استخدمها كمساعد، والقرار النهائي مسؤوليتك.
             </p>
           </article>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="border-y bg-surface">
+        <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
+          <h2 className="text-2xl font-bold tracking-tight">أسئلة شائعة عن السجل اليومي</h2>
+          <div className="mt-8 space-y-4">
+            {FAQ.map((item) => (
+              <article key={item.q} className="rounded-xl border bg-card p-5 shadow-sm">
+                <h3 className="flex items-start gap-2 text-[14px] font-semibold">
+                  <HelpCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  {item.q}
+                </h3>
+                <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+                  {item.a}
+                </p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 

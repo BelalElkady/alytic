@@ -114,12 +114,20 @@ export function DeskShell({ children }: { children: ReactNode }) {
           <p className="text-[12px] leading-relaxed text-muted-foreground">
             EGXpert أداة تحليل ومساعدة في القرار — وليست توصية مالية مرخّصة. القرار الأخير مسؤوليتك.
           </p>
-          <Link
-            to="/contact"
-            className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          >
-            تواصل معنا
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/how-to-use"
+              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              طريقة الاستخدام
+            </Link>
+            <Link
+              to="/contact"
+              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              تواصل معنا
+            </Link>
+          </div>
         </div>
       </footer>
       <MobileNav />
