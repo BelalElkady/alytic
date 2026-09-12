@@ -344,10 +344,10 @@ export async function listSupportMessages(userId) {
   return data;
 }
 
-export async function insertSupportMessage({ userId, sender, body, sentBy }) {
+export async function insertSupportMessage({ userId, sender, body, sentBy, imagePath }) {
   const { data, error } = await supabase
     .from('support_messages')
-    .insert({ user_id: userId, sender, body, sent_by: sentBy ?? null })
+    .insert({ user_id: userId, sender, body, sent_by: sentBy ?? null, image_path: imagePath ?? null })
     .select('*')
     .single();
   if (error) throw new Error(`insertSupportMessage: ${error.message}`);

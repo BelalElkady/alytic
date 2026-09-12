@@ -137,15 +137,22 @@ create index if not exists idx_subscription_grants_user on subscription_grants (
 -- read_at is per message and set by whichever side did NOT write it, on
 -- opening the thread: unread-for-the-user is admin messages with a null
 -- read_at, and vice versa.
+-- image_path (nullable) is an object path in the private "support-attachments"
+-- storage bucket, not a URL — the API signs a short-lived URL from it on read
+-- so an attachment (e.g. an InstaPay receipt screenshot) is never a
+-- public/guessable link. body stays not null but can be '' for an image-only
+-- message.
 create table if not exists support_messages (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references users(id) on delete cascade,
   sender text not null check (sender in ('user', 'admin')),
   body text not null,
+  image_path text,
   sent_by text references users(id),
   read_at timestamptz,
   created_at timestamptz not null default now()
 );
+alter table support_messages add column if not exists image_path text;
 create index if not exists idx_support_messages_user on support_messages (user_id, created_at);
 
 -- Admin-uploaded replacements for the built-in index membership lists in

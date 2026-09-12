@@ -162,6 +162,15 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
                   : "me-auto bg-secondary",
               )}
             >
+              {message.imageUrl && (
+                <a href={message.imageUrl} target="_blank" rel="noreferrer">
+                  <img
+                    src={message.imageUrl}
+                    alt="مرفق"
+                    className="max-h-56 rounded-lg object-contain"
+                  />
+                </a>
+              )}
               <p className="whitespace-pre-wrap break-words">{message.body}</p>
               <p
                 className={cn(

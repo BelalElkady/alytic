@@ -39,6 +39,7 @@ import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
+import { uploadSupportImage, signedUrlsFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
 
 // Where the public contact form's messages land. Same default as
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
@@ -372,6 +373,42 @@ const publicMessage = (row) => ({
   readAt: row.read_at,
 });
 
+// Turns each row's private image_path into a short-lived signed URL — one
+// batched storage call rather than one per message — and drops the raw path,
+// which is meaningless (and inaccessible) to the client anyway.
+async function withImageUrls(rows) {
+  const urls = await signedUrlsFor(rows.map((r) => r.image_path));
+  return rows.map((row) => ({
+    ...publicMessage(row),
+    imageUrl: row.image_path ? (urls.get(row.image_path) ?? null) : null,
+  }));
+}
+
+async function withImageUrl(row) {
+  const [message] = await withImageUrls([row]);
+  return message;
+}
+
+// One notification email per burst of activity, shared by the text and image
+// send routes — see the call site below for why a burst is defined the way
+// it is.
+async function notifySupportBurst({ user, existing, preview, wantsHuman }) {
+  const previous = existing[existing.length - 1];
+  const withinBurst =
+    previous?.sender === 'user' && Date.now() - new Date(previous.created_at).getTime() < 10 * 60 * 1000;
+  if (withinBurst) return;
+  await sendEmail({
+    to: CONTACT_EMAIL,
+    subject: wantsHuman ? `طلب مساعدة من ${user?.email}` : `رسالة شات جديدة من ${user?.email}`,
+    html: supportMessageEmailHtml({
+      name: user?.name,
+      email: user?.email,
+      message: preview,
+      appUrl: process.env.APP_URL ?? FRONTEND_URL,
+    }),
+  }).catch((err) => console.error('support notification email failed:', err));
+}
+
 // What the bot answers "عايز أشترك" with. Behind the session on purpose:
 // this is the one place the InstaPay account is disclosed, so it only ever
 // reaches a signed-in account whose transfer we can later match.
@@ -388,7 +425,7 @@ app.get('/api/support/messages', wrap(async (req, res) => {
   if (req.query.read === '1' && messages.some((m) => m.sender === 'admin' && !m.read_at)) {
     await markSupportMessagesRead(req.user.id, 'admin');
   }
-  res.json({ messages: messages.map(publicMessage) });
+  res.json({ messages: await withImageUrls(messages) });
 }));
 
 app.post('/api/support/messages', chatLimiter, wrap(async (req, res) => {
@@ -401,32 +438,42 @@ app.post('/api/support/messages', chatLimiter, wrap(async (req, res) => {
   const existing = await listSupportMessages(req.user.id);
   const message = await insertSupportMessage({ userId: req.user.id, sender: 'user', body });
 
-  // One notification per burst: someone typing three quick lines shouldn't
-  // land as three emails. A gap longer than this, or an admin reply in
-  // between, starts a new burst and notifies again.
-  const previous = existing[existing.length - 1];
-  const withinBurst =
-    previous?.sender === 'user' && Date.now() - new Date(previous.created_at).getTime() < 10 * 60 * 1000;
   // The bot answers the common questions itself, so a message that arrives
   // with intent=help means the user chose "كلّمني مع حد" — worth saying in the
   // subject line so it stands out from a general chat message.
-  const wantsHuman = req.body?.intent === 'help';
-  if (!withinBurst) {
-    await sendEmail({
-      to: CONTACT_EMAIL,
-      subject: wantsHuman
-        ? `طلب مساعدة من ${req.user.email}`
-        : `رسالة شات جديدة من ${req.user.email}`,
-      html: supportMessageEmailHtml({
-        name: req.user.name,
-        email: req.user.email,
-        message: body,
-        appUrl: process.env.APP_URL ?? FRONTEND_URL,
-      }),
-    }).catch((err) => console.error('support notification email failed:', err));
-  }
+  await notifySupportBurst({
+    user: req.user,
+    existing,
+    preview: body,
+    wantsHuman: req.body?.intent === 'help',
+  });
 
-  res.status(201).json({ message: publicMessage(message) });
+  res.status(201).json({ message: await withImageUrl(message) });
+}));
+
+// Same as above but for a screenshot (usually an InstaPay receipt) instead of
+// text — a raw image body, mirroring /api/portfolio/import-screenshot, rather
+// than multipart form data, since it's always exactly one file with no other
+// fields.
+app.post('/api/support/messages/image', chatLimiter, express.raw({ type: SUPPORT_IMAGE_TYPES, limit: '8mb' }), wrap(async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة الأول' });
+
+  const existing = await listSupportMessages(req.user.id);
+  const imagePath = await uploadSupportImage({
+    userId: req.user.id,
+    mediaType: req.headers['content-type'],
+    buffer: req.body,
+  });
+  const message = await insertSupportMessage({ userId: req.user.id, sender: 'user', body: '', imagePath });
+
+  await notifySupportBurst({
+    user: req.user,
+    existing,
+    preview: 'صورة مرفقة',
+    wantsHuman: req.query.intent === 'help',
+  });
+
+  res.status(201).json({ message: await withImageUrl(message) });
 }));
 
 // Google sign-in never collects a phone number, but registration requires
@@ -812,7 +859,7 @@ app.get('/api/admin/support', wrap(async (req, res) => {
         userId: message.user_id,
         email: user?.email ?? message.user_id,
         name: user?.name ?? '',
-        lastMessage: message.body,
+        lastMessage: message.body || (message.image_path ? '📷 صورة' : ''),
         lastSender: message.sender,
         lastAt: message.created_at,
         unread: 0,
@@ -830,7 +877,7 @@ app.get('/api/admin/support/:userId', wrap(async (req, res) => {
   if (messages.some((m) => m.sender === 'user' && !m.read_at)) {
     await markSupportMessagesRead(req.params.userId, 'user');
   }
-  res.json({ messages: messages.map(publicMessage) });
+  res.json({ messages: await withImageUrls(messages) });
 }));
 
 app.post('/api/admin/support/:userId', wrap(async (req, res) => {

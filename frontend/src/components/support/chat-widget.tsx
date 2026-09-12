@@ -1,12 +1,21 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Copy, CreditCard, HelpCircle, MessageCircle, Send, X } from "lucide-react";
+import {
+  ArrowRight,
+  Copy,
+  CreditCard,
+  HelpCircle,
+  MessageCircle,
+  Paperclip,
+  Send,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { api, post } from "@/lib/api";
+import { api, post, postRaw } from "@/lib/api";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +25,14 @@ export type SupportMessage = {
   body: string;
   createdAt: string;
   readAt: string | null;
+  imageUrl?: string | null;
 };
+
+// Mirrors backend/src/supportAttachments.js's SUPPORT_IMAGE_TYPES / 8mb limit
+// — checked here too so a bad pick fails instantly instead of after a slow
+// upload only to be rejected by the server.
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 type Plan = { key: string; label: string; priceEgp: number; months: number };
 type SubscribeInfo = {
@@ -175,9 +191,10 @@ export function ChatWidget() {
     setMode("human");
   };
 
-  // Real messages (the actual thread) stay untouched — this only clears the
-  // bot's own bubbles and returns to the menu, from which the thread still
-  // renders below.
+  // Once a real message reaches support there is an actual thread to keep, so
+  // this (and the button that calls it) only ever shows while it's still the
+  // bot talking — going back to the menu once a real conversation exists
+  // would otherwise plant the menu picker on top of that thread.
   const backToMenu = () => {
     setBot([]);
     setMode("menu");
@@ -205,6 +222,37 @@ export function ChatWidget() {
     }
   };
 
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const sendImage = async (file: File) => {
+    if (sending) return;
+    if (!IMAGE_TYPES.includes(file.type)) {
+      toast.error("لازم تكون صورة JPG أو PNG أو WEBP");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error("الصورة كبيرة أوي (الحد ٨ ميجا)");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      const wasEmpty = messages.length === 0;
+      const { message } = await postRaw(
+        `/api/support/messages/image${wasEmpty ? "?intent=help" : ""}`,
+        file,
+        file.type,
+      );
+      setMessages((previous) => [...previous, message]);
+      if (wasEmpty) say("admin", "وصلتنا صورتك — هنرد عليك في أقرب وقت.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر رفع الصورة");
+    } finally {
+      setSending(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   return (
     <>
       <Button
@@ -227,8 +275,9 @@ export function ChatWidget() {
         >
           <header className="flex items-center gap-2 border-b px-4 py-3">
             {/* Fixed in the header (not the scrolling thread) so it stays
-                reachable once the conversation grows past one screen. */}
-            {user && mode !== "menu" && (
+                reachable once the conversation grows past one screen. Hidden
+                once a real message exists — see backToMenu. */}
+            {user && mode !== "menu" && messages.length === 0 && (
               <button
                 type="button"
                 onClick={backToMenu}
@@ -322,6 +371,15 @@ export function ChatWidget() {
 
               {messages.map((message) => (
                 <Bubble key={message.id} side={message.sender} at={message.createdAt}>
+                  {message.imageUrl && (
+                    <a href={message.imageUrl} target="_blank" rel="noreferrer">
+                      <img
+                        src={message.imageUrl}
+                        alt="مرفق"
+                        className="max-h-48 rounded-lg object-contain"
+                      />
+                    </a>
+                  )}
                   {message.body}
                 </Bubble>
               ))}
@@ -334,6 +392,25 @@ export function ChatWidget() {
               {error && <p className="px-4 pb-2 text-[12px] text-down">{error}</p>}
 
               <div className="flex items-end gap-2 border-t p-3">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept={IMAGE_TYPES.join(",")}
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void sendImage(file);
+                  }}
+                />
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={sending}
+                  aria-label="إرفاق صورة"
+                >
+                  <Paperclip className="size-4" />
+                </Button>
                 <Textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
@@ -343,7 +420,11 @@ export function ChatWidget() {
                       void send();
                     }
                   }}
-                  placeholder="اكتب رسالتك…"
+                  onPaste={(event) => {
+                    const file = [...event.clipboardData.files].find((f) => IMAGE_TYPES.includes(f.type));
+                    if (file) void sendImage(file);
+                  }}
+                  placeholder="اكتب رسالتك… أو الصق/ارفق صورة"
                   rows={2}
                   className="min-h-0 resize-none text-[13px]"
                 />
