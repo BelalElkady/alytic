@@ -386,6 +386,26 @@ export async function setUserAdmin(id, isAdmin) {
   must(await supabase.from('users').update({ is_admin: Boolean(isAdmin) }).eq('id', id), 'setUserAdmin');
 }
 
+/**
+ * Permanently removes a user. Their portfolio, reviews, subscription, grants
+ * and support thread go with them via `on delete cascade`; the columns that
+ * only record *who acted* (granted_by, sent_by, approved_by) don't cascade, so
+ * they're cleared first or the delete would fail on a user who ever acted as
+ * an admin. Returns false if no such user existed.
+ */
+export async function deleteUser(id) {
+  for (const [table, column] of [
+    ['subscriptions', 'granted_by'],
+    ['subscription_grants', 'granted_by'],
+    ['support_messages', 'sent_by'],
+    ['blog_posts', 'approved_by'],
+  ]) {
+    must(await supabase.from(table).update({ [column]: null }).eq(column, id), `deleteUser(${table}.${column})`);
+  }
+  const data = must(await supabase.from('users').delete().eq('id', id).select('id'), 'deleteUser');
+  return data.length > 0;
+}
+
 /** Every registered user, newest first — for the admin users list. Excludes auth secrets (password hash/salt, tokens). */
 export async function getAllUsers() {
   const { data, error } = await supabase

@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
 import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -39,7 +39,7 @@ import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
-import { uploadSupportImage, signedUrlsFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
+import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
 
 // Where the public contact form's messages land. Same default as
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
@@ -841,6 +841,21 @@ app.delete('/api/admin/users/:id/subscription', wrap(async (req, res) => {
     action: 'revoke',
     grantedBy: req.user.id,
   });
+  res.json({ ok: true });
+}));
+
+// Permanently deletes an account and everything hanging off it (see
+// deleteUser in db.js). Admin accounts can't be deleted from here — admin
+// status is granted via ADMIN_EMAILS, so removing one should be deliberate,
+// and it also rules out an admin deleting themselves mid-session.
+app.delete('/api/admin/users/:id', wrap(async (req, res) => {
+  const target = await getUserById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  if (target.is_admin || target.id === req.user.id || target.id === 'local') {
+    return res.status(400).json({ error: 'مينفعش تحذف حساب مشرف' });
+  }
+  await removeSupportImagesFor(target.id);
+  await deleteUser(target.id);
   res.json({ ok: true });
 }));
 

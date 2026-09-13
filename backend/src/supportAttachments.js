@@ -46,6 +46,20 @@ export async function uploadSupportImage({ userId, mediaType, buffer }) {
   return path;
 }
 
+/** Removes every attachment a user uploaded (their `<userId>/` folder) — deleting the user row only cascades the messages, not the files. */
+export async function removeSupportImagesFor(userId) {
+  const bucket = supabase.storage.from(BUCKET);
+  const { data, error } = await bucket.list(userId, { limit: 1000 });
+  if (error) {
+    if (/not found/i.test(error.message)) return 0; // bucket never created — nothing uploaded
+    throw new Error(`removeSupportImagesFor: ${error.message}`);
+  }
+  if (!data?.length) return 0;
+  const { error: removeError } = await bucket.remove(data.map((file) => `${userId}/${file.name}`));
+  if (removeError) throw new Error(`removeSupportImagesFor: ${removeError.message}`);
+  return data.length;
+}
+
 /** Batch-signs every path in one call — used to turn a page of messages into short-lived, viewable URLs. */
 export async function signedUrlsFor(paths) {
   const unique = [...new Set(paths.filter(Boolean))];

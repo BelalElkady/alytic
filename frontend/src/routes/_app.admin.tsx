@@ -1,7 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import {
   EmptyState,
@@ -438,6 +450,9 @@ function UsersTab() {
                   <TableHead className="text-start">الأسلوب</TableHead>
                   <TableHead className="text-start">الاشتراك</TableHead>
                   <TableHead className="text-start">الحالة</TableHead>
+                  <TableHead>
+                    <span className="sr-only">حذف</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -503,7 +518,66 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
           {row.googleLinked && <Badge variant="secondary">Google</Badge>}
         </div>
       </TableCell>
+      <TableCell>{!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}</TableCell>
     </TableRow>
+  );
+}
+
+/** Permanent — takes the portfolio, subscription history and support thread with it. */
+function DeleteUserButton({ row, onDeleted }: { row: AdminUserRow; onDeleted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await del(`/api/admin/users/${row.id}`);
+      toast.success(`تم حذف ${row.email}`);
+      setOpen(false);
+      onDeleted();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر حذف المستخدم");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-down"
+          aria-label={`حذف ${row.email}`}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader className="text-start">
+          <AlertDialogTitle>حذف {row.email}؟</AlertDialogTitle>
+          <AlertDialogDescription className="leading-relaxed">
+            هيتم مسح الحساب نهائيًا مع المحفظة والصفقات وسجل الاشتراك ورسائل الدعم. مش هينفع
+            التراجع بعد الحذف.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2 sm:justify-start">
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              void handleDelete();
+            }}
+            disabled={deleting}
+            className="bg-down text-white hover:bg-down/90"
+          >
+            {deleting ? <Spinner /> : <Trash2 className="size-4" />}
+            نعم، احذف
+          </AlertDialogAction>
+          <AlertDialogCancel disabled={deleting}>إلغاء</AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
