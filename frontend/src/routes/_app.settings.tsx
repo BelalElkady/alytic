@@ -166,7 +166,7 @@ function SettingsPage() {
             `وقف متحرك ${rules.trailing.trailPct}% يتفعّل تلقائيًا لما السهم يعلى ${rules.trailing.activateAtProfitPct}% فوق تكلفتك، ولا ينزل أبدًا.`,
             "الوقف يُحترم على إغلاق الجلسة — إغلاق تحته = توصية بيع كلي.",
             `ربح ${rules.takeProfit.partialAtProfitPct}%+ = توصية بيع جزئي ${rules.takeProfit.partialFraction * 100}% بأمر محدد فوق السعر ${rules.takeProfit.limitAbovePricePct}%.`,
-            "وصول الهدف = بيع ثلث ورفع الوقف للباقي.",
+            `وصول الهدف = بيع ${Math.round(rules.takeProfit.atTargetFraction * 100)}% ورفع الوقف للباقي ${rules.takeProfit.raiseStopAfterTargetPct}% تحت السعر.`,
             "تحسين المتوسط فقط للأسهم القيادية فوق متوسط 200 يوم — لا تعديل على سهم ضعيف.",
             `أقل عائد/مخاطرة مقبول: ${rules.entry.minRiskReward} · المخاطرة للصفقة ${rules.sizing.riskPerTradePct}% · الحد الأقصى للمركز ${rules.sizing.maxPositionPct}%.`,
           ].map((rule) => (

@@ -23,6 +23,79 @@ import RULES from './config/rules.js';
 const r2 = (x) => (x == null ? null : +x.toFixed(2));
 
 /**
+ * The active style's rules (the settings page's "قواعد التوصيات المفعّلة"),
+ * each evaluated against one open position with the exact quantities and
+ * prices its order would use. The analyst quotes these; it never derives them.
+ */
+function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, governingTarget, partialTaken }, rules) {
+  const { shares } = position;
+  const tp = rules.takeProfit;
+  const trailFromPrice = price * (1 - rules.trailing.trailPct / 100);
+
+  const partialQty = Math.round(shares * tp.partialFraction);
+  const targetQty = Math.floor(shares * tp.atTargetFraction);
+  const trendScore = snapshot.trend.score;
+  const priceVsSma200Pct = snapshot.movingAverages.priceVsSma200Pct;
+
+  return {
+    stop: {
+      level: effectiveStop,
+      distancePct: r2(((price - effectiveStop) / price) * 100),
+      honorOn: rules.stop.honorOn,
+      fired: price < effectiveStop,
+      sellQty: shares,
+    },
+    trailing: {
+      trailPct: rules.trailing.trailPct,
+      activateAtProfitPct: rules.trailing.activateAtProfitPct,
+      active: trailing.active,
+      peak: trailing.peak ?? null,
+      moved: trailing.moved,
+      from: trailing.from ?? null,
+    },
+    partialProfit: {
+      thresholdPct: tp.partialAtProfitPct,
+      fractionPct: r2(tp.partialFraction * 100),
+      limitAbovePricePct: tp.limitAbovePricePct,
+      alreadyTaken: partialTaken,
+      fired: plPct >= tp.partialAtProfitPct && !partialTaken && partialQty >= 1,
+      qty: partialQty,
+      limitPrice: r2(price * (1 + tp.limitAbovePricePct / 100)),
+      proceedsEgp: r2(partialQty * price * (1 + tp.limitAbovePricePct / 100)),
+      remainingShares: shares - partialQty,
+      remainingStop: r2(Math.max(effectiveStop, trailFromPrice)),
+    },
+    target: {
+      level: governingTarget?.price ?? null,
+      horizon: rules.targets?.primary === 'long' && governingTarget?.price ? 'long' : 'mid',
+      fired: governingTarget?.price != null && price >= governingTarget.price && targetQty >= 1,
+      fractionPct: r2(tp.atTargetFraction * 100),
+      qty: targetQty,
+      remainingShares: shares - targetQty,
+      raiseStopPct: tp.raiseStopAfterTargetPct,
+      raisedStop: r2(Math.max(effectiveStop, price * (1 - tp.raiseStopAfterTargetPct / 100))),
+    },
+    averagingDown: {
+      allowed: rules.averagingDown.allowed,
+      trendScore,
+      trendScoreMin: rules.averagingDown.onlyIfTrendScoreAbove,
+      priceVsSma200Pct,
+      maxAdds: rules.averagingDown.maxAddsPerPosition,
+      fired:
+        rules.averagingDown.allowed &&
+        plPct < 0 &&
+        trendScore > rules.averagingDown.onlyIfTrendScoreAbove &&
+        (!rules.averagingDown.onlyIfAboveSma200 || (priceVsSma200Pct ?? -1) > 0),
+    },
+    entry: {
+      minRiskReward: rules.entry.minRiskReward,
+      riskPerTradePct: rules.sizing.riskPerTradePct,
+      maxPositionPct: rules.sizing.maxPositionPct,
+    },
+  };
+}
+
+/**
  * Full analysis for one ticker.
  *
  * @param {string} code - EGX ticker, e.g. 'COMI'
@@ -166,6 +239,10 @@ export async function analyzeTicker(code, opts = {}) {
     // stated guidance to judge by the long-horizon target instead. Falls back
     // to mid when the long target isn't projectable (downtrend, no data).
     const governingTarget = rules.targets?.primary === 'long' && targets.long?.price ? targets.long : targets.mid;
+    // Every style activates its trail below its partial threshold, so gating
+    // the partial on `!trailing.active` (as this used to) meant it never fired.
+    const partialTaken = Boolean(position.partialTakenAt);
+    const ruleBook = buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, governingTarget, partialTaken }, rules);
 
     positionState = {
       shares: position.shares,
@@ -199,22 +276,22 @@ export async function analyzeTicker(code, opts = {}) {
         sector: meta.sector,
         sessions: governingTarget?.horizon?.sessions ?? null,
       }, rules),
+      partialTaken,
       // What the desk view shows on this position's card.
       recommendation: positionRecommendation(
-        { snapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: governingTarget?.price ?? null },
+        { snapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: governingTarget?.price ?? null, partialTaken },
         rules,
       ),
       // The rule set, applied. These are the mechanical triggers the AI must respect.
       triggers: {
-        exitOnStop: price < effectiveStop,
-        takePartial: plPct >= rules.takeProfit.partialAtProfitPct && !trailing.active,
-        atTarget: governingTarget?.price != null && price >= governingTarget.price,
-        canAverageDown:
-          rules.averagingDown.allowed &&
-          plPct < 0 &&
-          snapshot.trend.score > rules.averagingDown.onlyIfTrendScoreAbove &&
-          (!rules.averagingDown.onlyIfAboveSma200 || (snapshot.movingAverages.priceVsSma200Pct ?? -1) > 0),
+        exitOnStop: ruleBook.stop.fired,
+        takePartial: ruleBook.partialProfit.fired,
+        atTarget: ruleBook.target.fired,
+        canAverageDown: ruleBook.averagingDown.fired,
       },
+      // Each rule from the settings panel, evaluated with the exact order
+      // numbers the analyst is allowed to quote — see briefFor in analyst.js.
+      ruleBook,
     };
   }
 

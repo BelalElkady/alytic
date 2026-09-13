@@ -195,7 +195,7 @@ export function riskReward(entry, stop, target) {
  * because the one discipline that must never be negotiated is the stop. The AI
  * analyst may add colour on top of this, but it cannot contradict it.
  */
-export function positionRecommendation({ snapshot, position, trailing, midTarget }, rules = RULES) {
+export function positionRecommendation({ snapshot, position, trailing, midTarget, partialTaken = false }, rules = RULES) {
   const price = snapshot.price.close;
   const { avgCost, shares } = position;
   const stop = trailing.stop;
@@ -223,8 +223,8 @@ export function positionRecommendation({ snapshot, position, trailing, midTarget
     };
   }
 
-  // 3. Enough profit to bank some, and the trail hasn't taken over yet.
-  if (profitPct >= rules.takeProfit.partialAtProfitPct && !trailing.active) {
+  // 3. Enough profit to bank some, once per position.
+  if (profitPct >= rules.takeProfit.partialAtProfitPct && !partialTaken) {
     const qty = Math.round(shares * rules.takeProfit.partialFraction);
     const limit = price * (1 + rules.takeProfit.limitAbovePricePct / 100);
     return {

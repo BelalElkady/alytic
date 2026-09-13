@@ -120,7 +120,9 @@ export async function recordTrade(portfolio, { code, side, shares, price, date =
     p.realizedPnl = +((p.realizedPnl ?? 0) + realized).toFixed(2);
     const left = existing.shares - shares;
     if (left === 0) delete p.positions[c];
-    else p.positions[c] = { ...existing, shares: left }; // avgCost intentionally unchanged
+    // avgCost intentionally unchanged. partialTakenAt makes the "profit X%+ =
+    // sell part" rule fire once per position instead of every day after.
+    else p.positions[c] = { ...existing, shares: left, partialTakenAt: when };
     p.cash = +(p.cash + shares * price - commission).toFixed(2);
   } else {
     throw new Error(`نوع الصفقة لازم يكون buy أو sell، مش ${side}`);

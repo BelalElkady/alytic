@@ -116,6 +116,56 @@ function quietVerdict(analysis, weight = null) {
 }
 
 /**
+ * The active style's rules evaluated for one held position (analyze.js
+ * buildRuleBook), in the same order the system prompt applies them. Every
+ * quantity and price the verdict may quote for this position is on these lines.
+ */
+function ruleBookLines(ps, price) {
+  const rb = ps.ruleBook;
+  const mark = (on) => (on ? 'FIRED' : 'not fired');
+  const pp = rb.partialProfit;
+  const tg = rb.target;
+  const ad = rb.averagingDown;
+  // When the existing stop is already above "X% under price", the ratchet keeps
+  // it — say so instead of attributing that level to the percentage.
+  const stopNote = (level, pct) =>
+    level === rb.stop.level ? `stop stays at ${level} (already above ${pct}% under ${price})` : `stop to ${level} (${pct}% under ${price})`;
+  const out = ['  **Rule book (this style, evaluated — quote these numbers, never derive others):**'];
+
+  out.push(
+    `  R1 Stop on ${rb.stop.honorOn}: level ${rb.stop.level}, price ${price} is ${rb.stop.distancePct}% above it → ${mark(rb.stop.fired)}` +
+      (rb.stop.fired ? ` | order: sell all ${rb.stop.sellQty} shares at market next open` : ''),
+  );
+  out.push(
+    `  R2 Trailing stop ${rb.trailing.trailPct}% (activates at +${rb.trailing.activateAtProfitPct}%, never moves down): ` +
+      (rb.trailing.active
+        ? `ACTIVE, peak ${rb.trailing.peak}${rb.trailing.moved ? `, moved today from ${rb.trailing.from} to ${rb.stop.level}` : ''}`
+        : `inactive — profit ${ps.unrealizedPct}% is below +${rb.trailing.activateAtProfitPct}%`),
+  );
+  out.push(
+    `  R3 Target (${tg.horizon}-term) ${tg.level ?? 'n/a'} → ${mark(tg.fired)}` +
+      (tg.level != null
+        ? ` | if fired: sell ${tg.fractionPct}% = ${tg.qty} of ${ps.shares} shares, keep ${tg.remainingShares}, ${stopNote(tg.raisedStop, tg.raiseStopPct)}`
+        : ''),
+  );
+  out.push(
+    `  R4 Partial profit at +${pp.thresholdPct}%: profit ${ps.unrealizedPct}% → ` +
+      (pp.alreadyTaken ? 'already taken on this position — does not fire again' : mark(pp.fired)) +
+      ` | if fired: sell ${pp.fractionPct}% = ${pp.qty} of ${ps.shares} shares, limit ${pp.limitPrice} (+${pp.limitAbovePricePct}% above ${price}), ` +
+      `≈ ${pp.proceedsEgp} EGP, keep ${pp.remainingShares} shares, trailing ${stopNote(pp.remainingStop, rb.trailing.trailPct)}`,
+  );
+  out.push(
+    `  R5 Averaging down (leaders only: loss, trend score > ${ad.trendScoreMin}, above SMA200, max ${ad.maxAdds} add): ` +
+      `trend score ${ad.trendScore}, vs SMA200 ${ad.priceVsSma200Pct ?? 'n/a'}% → ${ad.allowed ? mark(ad.fired) : 'disabled'}`,
+  );
+  out.push(
+    `  R6 Entry/size limits: min reward/risk ${rb.entry.minRiskReward} (from here: ${ps.riskRewardFromHere ?? 'n/a'}) · ` +
+      `risk per trade ${rb.entry.riskPerTradePct}% · max position ${rb.entry.maxPositionPct}%`,
+  );
+  return out.join('\n');
+}
+
+/**
  * Render one analysis as a compact, decision-focused brief.
  *
  * The scaffolding — labels, connectors, fallback words — is English. Values
@@ -221,6 +271,7 @@ export function briefFor(a) {
     }
     const fired = Object.entries(ps.triggers).filter(([, v]) => v).map(([k]) => k);
     lines.push(`  Mechanical triggers: ${fired.length ? fired.join(', ') : 'none — position within its range'}`);
+    if (ps.ruleBook) lines.push(ruleBookLines(ps, s.price.close));
   }
 
   if (a.fundamentals) {
@@ -281,19 +332,17 @@ export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL_CHAIN,
   const held = analyses.filter((a) => a.position);
   const watch = analyses.filter((a) => !a.position);
 
-  // Triage before spending anything. A holding sitting quietly inside its range
-  // has no decision in it — briefing, researching and writing a verdict for it
-  // costs the same as one that needs action and produces "احتفاظ" either way.
-  // Those are answered locally (see quietVerdict) and never reach the model;
-  // they still appear in the portfolio context below so sector concentration
-  // and cash advice stay aware of the whole book.
+  // Every holding gets a real, model-written verdict — the review is limited
+  // to one confirmed use per day in the UI, so a canned "no change" for quiet
+  // holdings saved little and read as no recommendation at all. Triage now
+  // only orders the brief, so research goes to the names with a live rule first.
   const heldNeedingDecision = held.filter(needsDecision);
   const quietHeld = held.filter((a) => !needsDecision(a));
   // A watchlist name is only worth a verdict if it is actually buyable now, or
   // the engine flags it as worth waiting for at a specific level.
   const watchWorthReviewing = watch.filter((a) => a.plan?.actionable || a.plan?.buyingNow?.worthIt);
   const quietWatch = watch.filter((a) => !watchWorthReviewing.includes(a));
-  const reviewed = [...heldNeedingDecision, ...watchWorthReviewing];
+  const reviewed = [...heldNeedingDecision, ...quietHeld, ...watchWorthReviewing];
 
   const totalPositionValue = held.reduce((sum, a) => sum + (a.position?.marketValue ?? 0), 0);
   const cash = ctx.cash ?? 0;
@@ -339,30 +388,18 @@ ${
     : '  No open positions'
 }
 
-## Positions needing a decision today (${heldNeedingDecision.length} of ${held.length})
+## Holdings with a rule firing or close to the stop (${heldNeedingDecision.length} of ${held.length}) — research these first
 ${heldNeedingDecision.map(briefFor).join('\n\n') || 'No position has a trigger or is near its stop today.'}
+
+## Holdings with no rule firing (${quietHeld.length} of ${held.length}) — still a real verdict each
+${quietHeld.map(briefFor).join('\n\n') || 'None.'}
 
 ## Watchlist — actionable opportunities (${watchWorthReviewing.length} of ${watch.length})
 ${watchWorthReviewing.map(briefFor).join('\n\n') || 'No actionable setup on the watchlist.'}
-
-## Rest of the portfolio — context only, no verdict required
-These are quiet positions: no mechanical trigger fired, and price is not near the stop. No full brief was built for them, to save cost, and they already have an automatic "hold" verdict. Use them only for sector concentration and cash reasoning — do not return a verdict for any of these codes.
-${
-  quietHeld.length
-    ? quietHeld
-        .map(
-          (a) =>
-            `- ${a.code} (${a.sectorAr ?? '?'}): ${a.position.shares} shares · ` +
-            `${Math.round(a.position.marketValue ?? 0).toLocaleString('en-US')} EGP · ` +
-            `${a.position.unrealizedPct >= 0 ? '+' : ''}${a.position.unrealizedPct}% · stop ${a.position.stop}`,
-        )
-        .join('\n')
-    : '- none'
-}
-${quietWatch.length ? `\nAlso excluded from the watchlist for now (not actionable): ${quietWatch.map((a) => a.code).join(', ')}` : ''}
+${quietWatch.length ? `\nExcluded from the watchlist for now (not actionable, no verdict): ${quietWatch.map((a) => a.code).join(', ')}` : ''}
 
 ---
-Give me a decision for every stock in the first two sections only, a cash recommendation, and the top priority for tomorrow.
+Give me a decision for every stock in the three sections above, a cash recommendation, and the top priority for tomorrow.
 Remember: these numbers are final — judge them, do not recompute them.`;
 
   // The prompt requires research before any money-moving verdict, so the search
@@ -387,11 +424,10 @@ Remember: these numbers are final — judge them, do not recompute them.`;
     model,
     schema: PortfolioReviewSchema,
     schemaName: 'portfolio_review',
-    // Two real requests happen per review now (research/tool phase, then a
-    // tool-free formatting phase) — see clientOpenRouter.js. 4000 is enough
-    // headroom for either phase's own output; it is not a shared budget the
-    // way Claude's single-call maxTokens was.
-    maxTokens: 4000,
+    // Per phase, not shared (research phase, then formatting phase — see
+    // clientOpenRouter.js). Scales with verdict count: each detailed Arabic
+    // verdict is ~900 tokens, and a flat 4000 truncated the JSON on larger books.
+    maxTokens: Math.min(16000, 2000 + reviewed.length * 900),
     system: analystSystemPrompt(rules, style),
     messages: [{ role: 'user', content: userMessage }],
     // Model-decided, not always-on: the system prompt governs when a search
@@ -402,9 +438,8 @@ Remember: these numbers are final — judge them, do not recompute them.`;
     feature: 'portfolio_review',
   });
 
-  // Consumers still get one verdict per held stock — the quiet ones were just
-  // answered without the model. Tagged with reviewDepth so a caller (or a UI)
-  // can tell a researched judgment from an automatic "no change".
+  // Every holding was sent to the model; quietVerdict only covers one it
+  // skipped, so no card is left without a verdict. reviewDepth tells them apart.
   const aiVerdicts = (data.verdicts ?? []).map((v) => ({ ...v, reviewDepth: v.reviewDepth ?? 'full' }));
   const aiCodes = new Set(aiVerdicts.map((v) => v.code));
   const weightOf = new Map(structure.weights.map((w) => [w.code, w]));

@@ -238,6 +238,7 @@ export function styleRecommendation(
     distanceToStopPct?: number;
     stopBreached?: boolean;
     trailing?: { active?: boolean } | null;
+    partialTaken?: boolean;
     recommendation?: Recommendation | null;
   },
   style: StyleKey,
@@ -276,8 +277,8 @@ export function styleRecommendation(
     };
   }
 
-  // 3. Enough profit to bank some, and the trail hasn't taken over yet.
-  if (profitPct >= rules.takeProfit.partialAtProfitPct && !position.trailing?.active) {
+  // 3. Enough profit to bank some, once per position.
+  if (profitPct >= rules.takeProfit.partialAtProfitPct && !position.partialTaken) {
     const qty = Math.round(shares * rules.takeProfit.partialFraction);
     const limit = price * (1 + rules.takeProfit.limitAbovePricePct / 100);
     return {
