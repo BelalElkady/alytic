@@ -83,6 +83,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </p>
           <div className="flex items-center gap-4">
             <Link
+              to="/blog"
+              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              تابع اخبار البورصة
+            </Link>
+            <Link
               to="/how-to-use"
               className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
