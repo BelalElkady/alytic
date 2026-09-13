@@ -170,8 +170,17 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
 
   return (
     <article
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
       className={cn(
-        "rounded-xl border bg-card p-4 shadow-sm transition-colors",
+        "cursor-pointer rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-foreground/30 hover:bg-accent/40",
         critical && "border-down/50",
         near && "border-warn/50",
       )}
@@ -179,13 +188,7 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={onOpen}
-              className="truncate text-[15px] font-semibold underline-offset-4 hover:underline"
-            >
-              {row.code}
-            </button>
+            <span className="truncate text-[15px] font-semibold">{row.code}</span>
             <Badge variant="outline" className={REC_TONE[rec.action] ?? REC_TONE["hold"]}>
               {rec.label}
             </Badge>
@@ -237,7 +240,10 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
             size="icon"
             className="text-muted-foreground hover:text-down"
             aria-label={`حذف ${row.code}`}
-            onClick={() => setConfirmOpen(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmOpen(true);
+            }}
           >
             <Trash2 className="size-4" />
           </Button>
