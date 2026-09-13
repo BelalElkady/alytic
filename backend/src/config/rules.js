@@ -8,6 +8,14 @@
  */
 
 export const RULES = {
+  targets: {
+    // Which computed target (scoring/targets.js buildTargets) governs an open
+    // position's "reached target" trigger and recommendation — see
+    // config/styles.js OVERRIDES.long, which flips this to 'long'. Everywhere
+    // else that quotes a target continues to show both mid and long as-is.
+    primary: 'mid',
+  },
+
   horizon: {
     // Sessions used when phrasing "when" in recommendations. EGX trades Sun-Thu.
     sessionsPerWeek: 5,

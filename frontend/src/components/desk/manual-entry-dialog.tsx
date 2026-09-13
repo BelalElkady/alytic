@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { EmptyState, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -20,12 +21,14 @@ type Draft = Record<string, { shares: string; avgCost: string; stop: string; tar
 export function ManualEntryDialog() {
   const { manualOpen, setManualOpen, rows, reload } = useDesk();
   const [draft, setDraft] = useState<Draft>({});
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!manualOpen) return;
     const next: Draft = {};
+    const nextSelected: Record<string, boolean> = {};
     for (const row of rows) {
       next[row.code] = {
         shares: String(row.position.shares ?? ""),
@@ -33,12 +36,16 @@ export function ManualEntryDialog() {
         stop: String(row.position.stop ?? ""),
         target: row.midTarget?.price != null ? String(row.midTarget.price) : "",
       };
+      nextSelected[row.code] = true;
     }
     setDraft(next);
+    setSelected(nextSelected);
     setError(null);
   }, [manualOpen, rows]);
 
   const anyEstimated = rows.some((row) => row.position.sharesEstimated);
+  const allSelected = rows.length > 0 && rows.every((row) => selected[row.code]);
+  const noneSelected = rows.every((row) => !selected[row.code]);
 
   const set = (code: string, field: keyof Draft[string], value: string) =>
     setDraft((previous) => {
@@ -46,16 +53,27 @@ export function ManualEntryDialog() {
       return { ...previous, [code]: { ...current, [field]: value } };
     });
 
+  const toggleSelected = (code: string, checked: boolean) =>
+    setSelected((previous) => ({ ...previous, [code]: checked }));
+
+  const toggleAll = (checked: boolean) =>
+    setSelected(() => {
+      const next: Record<string, boolean> = {};
+      for (const row of rows) next[row.code] = checked;
+      return next;
+    });
+
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
       for (const row of rows) {
+        if (!selected[row.code]) continue;
         const entry = draft[row.code];
         if (!entry) continue;
         const sharesChanged = +entry.shares !== row.position.shares;
         const costChanged = +entry.avgCost !== row.position.avgCost;
-        if (sharesChanged || costChanged) {
+        if (sharesChanged || costChanged || row.position.sharesEstimated) {
           await post("/api/portfolio/holding", {
             code: row.code,
             shares: +entry.shares,
@@ -100,12 +118,21 @@ export function ManualEntryDialog() {
           <EmptyState title="مفيش مراكز." hint="سجّل أول صفقة من تبويب الصفقات." />
         ) : (
           <div className="space-y-3">
+            <label className="flex items-center gap-2 text-[12.5px] font-medium">
+              <Checkbox checked={allSelected} onCheckedChange={(v) => toggleAll(v === true)} />
+              تحديد الكل
+            </label>
+
             {rows.map((row) => {
               const entry = draft[row.code];
               if (!entry) return null;
               return (
                 <div key={row.code} className="rounded-lg border bg-surface p-3">
                   <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold">
+                    <Checkbox
+                      checked={selected[row.code] ?? false}
+                      onCheckedChange={(v) => toggleSelected(row.code, v === true)}
+                    />
                     {row.code}
                     {row.position.sharesEstimated && <span title="عدد تقديري">⚠️</span>}
                     <span className="truncate text-[12px] font-normal text-muted-foreground">
@@ -148,7 +175,7 @@ export function ManualEntryDialog() {
 
         {rows.length > 0 && (
           <DialogFooter className="sm:justify-start">
-            <Button onClick={save} disabled={busy}>
+            <Button onClick={save} disabled={busy || noneSelected}>
               {busy && <Spinner />}
               حفظ التعديلات
             </Button>

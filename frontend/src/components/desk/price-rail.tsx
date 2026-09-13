@@ -73,10 +73,21 @@ export function PriceRail({
       dot: "bg-primary",
       text: "text-primary",
     });
-  if (longStop != null)
+  // The tactical stop is the one that actually triggers first (computeLongTermStop
+  // never sets longStop above it), so it always gets its own mark. The long-term
+  // stop only earns a second mark when it sits meaningfully further out — right on
+  // top of the tactical stop it would just be a redundant label at the same pixel.
+  if (stop != null)
+    marks.push({
+      value: stop,
+      label: `وقف ${fmt(stop)}`,
+      dot: "bg-down",
+      text: "text-down",
+    });
+  if (longStop != null && (stop == null || (stop - longStop) / price > 0.005))
     marks.push({
       value: longStop,
-      label: `وقف الخسارة ${fmt(longStop)}`,
+      label: `وقف بعيد ${fmt(longStop)}`,
       dot: "bg-down",
       text: "text-down",
     });
@@ -86,16 +97,27 @@ export function PriceRail({
       ? `linear-gradient(to right, var(--down-soft) 0%, var(--down-soft) ${at(stop)}, var(--surface-2) ${at(stop)}, var(--surface-2) ${at(cost)}, var(--up-soft) ${at(cost)}, var(--up-soft) 100%)`
       : `linear-gradient(to right, var(--down-soft) 0%, var(--down-soft) ${at(stop ?? lo)}, var(--up-soft) ${at(stop ?? lo)}, var(--up-soft) 100%)`;
 
-  // When two legend values are visually close, stagger them vertically so
-  // the rounded pills do not overlap.
-  const positions = marks.map((m) => parseFloat(at(m.value)));
+  // When two legend values are visually close — including a stop that has
+  // trailed up right next to the current price, e.g. a fresh trailing stop
+  // sitting a percent below a live position — stagger them vertically so the
+  // rounded pills (and the current-price dot) do not overlap. The price has
+  // no pill of its own but still needs to take part in the collision check,
+  // otherwise a stop pill can land directly under the price dot and become
+  // unreadable.
   const thresholdPct = 14;
-  const staggered = new Array<boolean>(marks.length).fill(false);
-  for (let i = 1; i < positions.length; i++) {
-    if (Math.abs(positions[i]! - positions[i - 1]!) < thresholdPct) {
-      staggered[i] = !staggered[i - 1]!;
-    }
+  const sortedWithPrice = [
+    ...marks.map((m) => ({ key: m.label, at: parseFloat(at(m.value)) })),
+    { key: "__price__", at: parseFloat(at(price)) },
+  ].sort((a, b) => a.at - b.at);
+  const staggerByKey = new Map<string, boolean>();
+  let prevFlag = false;
+  for (let i = 1; i < sortedWithPrice.length; i++) {
+    const close = Math.abs(sortedWithPrice[i]!.at - sortedWithPrice[i - 1]!.at) < thresholdPct;
+    const flag = close ? !prevFlag : false;
+    if (sortedWithPrice[i]!.key !== "__price__") staggerByKey.set(sortedWithPrice[i]!.key, flag);
+    prevFlag = flag;
   }
+  const staggered = marks.map((m) => staggerByKey.get(m.label) ?? false);
   const needsStagger = staggered.some(Boolean);
 
   const railLine = (
@@ -105,6 +127,10 @@ export function PriceRail({
       role="img"
       aria-label={`السعر ${fmt(price)} بين وقف ${fmt(stop)} وهدف ${fmt(target)}`}
     >
+      <span
+        className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-sm"
+        style={{ left: at(price) }}
+      />
       {marks.map((mark) => (
         <span
           key={mark.label}
@@ -112,10 +138,6 @@ export function PriceRail({
           style={{ left: at(mark.value) }}
         />
       ))}
-      <span
-        className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-sm"
-        style={{ left: at(price) }}
-      />
     </div>
   );
 
@@ -160,6 +182,10 @@ export function PriceRail({
             role="img"
             aria-label={`السعر ${fmt(price)} بين وقف ${fmt(stop)} وهدف ${fmt(target)}`}
           >
+            <span
+              className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-sm"
+              style={{ left: at(price) }}
+            />
             {marks.map((mark) => (
               <span
                 key={`line-${mark.label}`}
@@ -167,10 +193,6 @@ export function PriceRail({
                 style={{ left: at(mark.value) }}
               />
             ))}
-            <span
-              className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-sm"
-              style={{ left: at(price) }}
-            />
           </div>
           {legendPills(true)}
         </div>

@@ -84,6 +84,11 @@ const OVERRIDES = {
     takeProfit: { partialAtProfitPct: 25, partialFraction: 0.25, limitAbovePricePct: 2, atTargetFraction: 0.25, raiseStopAfterTargetPct: 12 },
     entry: { minRiskReward: 2.2 },
     sizing: { riskPerTradePct: 2, maxPositionPct: 20 },
+    // The long-horizon target governs an open position's "reached target"
+    // trigger here — matches this style's own guidance above ("the
+    // long-horizon target... govern[s] the verdict"), which the mechanical
+    // trigger otherwise ignored in favour of the mid target every style got.
+    targets: { primary: 'long' },
   },
 };
 
@@ -101,5 +106,6 @@ export function rulesForStyle(base, styleKey) {
     takeProfit: { ...base.takeProfit, ...overrides.takeProfit },
     entry: { ...base.entry, ...overrides.entry },
     sizing: { ...base.sizing, ...overrides.sizing },
+    targets: { ...base.targets, ...overrides.targets },
   };
 }

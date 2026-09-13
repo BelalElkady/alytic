@@ -229,7 +229,7 @@ export type Recommendation = {
  * server's own verdict is used as-is for cases the rules don't parameterise.
  */
 export function styleRecommendation(
-  row: { price?: number; midTarget?: { price?: number } | null },
+  row: { price?: number; midTarget?: { price?: number } | null; longTarget?: { price?: number } | null },
   position: {
     avgCost?: number;
     shares?: number;
@@ -254,7 +254,10 @@ export function styleRecommendation(
   const shares = position.shares;
   const stop = position.stop;
   const profitPct = position.unrealizedPct;
-  const target = row.midTarget?.price;
+  // Mirrors the server's governingTarget (analyze.js, driven by
+  // config/styles.js OVERRIDES.long) — the long style judges "reached
+  // target" by the long-horizon target, every other style by the mid one.
+  const target = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
   if (price == null || shares == null || !shares || profitPct == null) return fallback;
 
   // 1. Stop breached — nothing else matters.

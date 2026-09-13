@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { post } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
-import { styleRecommendation, useActiveInvestStyle } from "@/lib/invest-style";
+import { STYLE_RULES, styleRecommendation, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk, type Row } from "@/lib/store";
 
 import { cn } from "@/lib/utils";
@@ -62,7 +62,9 @@ const REC_TONE: Record<string, string> = {
 };
 
 function PositionsPage() {
-  const { rows, loading, error, reload, openDetail } = useDesk();
+  const { rows, loading, error, reload, openDetail, pf } = useDesk();
+  const { style } = useActiveInvestStyle(pf?.trades);
+  const nearStopPct = STYLE_RULES[style].nearStopPct;
 
   if (error) {
     return (
@@ -98,16 +100,18 @@ function PositionsPage() {
           tone: "danger" as const,
           text: `${row.code}: أغلق تحت وقف الخسارة ${fmt(p.stop)} — خروج`,
         };
-      if ((p.distanceToStopPct ?? 99) <= 3)
+      if ((p.distanceToStopPct ?? 99) <= nearStopPct)
         return {
           tone: "warn" as const,
           text: `${row.code}: قريب من الوقف (${fmt(p.distanceToStopPct, 1)}%)`,
         };
-      if (p.triggers?.atTarget)
+      if (p.triggers?.atTarget) {
+        const reachedTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
         return {
           tone: "success" as const,
-          text: `${row.code}: وصل الهدف ${fmt(row.midTarget?.price)}`,
+          text: `${row.code}: وصل الهدف ${fmt(reachedTarget)}`,
         };
+      }
       return null;
     })
     .filter(Boolean) as { tone: "danger" | "warn" | "success"; text: string }[];
@@ -142,7 +146,10 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
   const { style } = useActiveInvestStyle(pf?.trades);
   const rec = styleRecommendation(row, p, style);
   const critical = p.stopBreached;
-  const near = !critical && (p.distanceToStopPct ?? 99) <= 3;
+  const near = !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
+  // Mirrors the server's governingTarget (analyze.js) — the long style reads
+  // its target off the long-horizon price, every other style off the mid one.
+  const primaryTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -242,7 +249,7 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
         price={row.price}
         stop={p.stop}
         cost={p.avgCost}
-        target={row.midTarget?.price}
+        target={primaryTarget}
         longStop={p.longTermStop?.stop}
         longTarget={row.longTarget?.price}
       />
@@ -263,11 +270,7 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
         />
         <Stat
           label="للهدف"
-          value={
-            row.midTarget && row.price
-              ? pct(((row.midTarget.price - row.price) / row.price) * 100, 1)
-              : "—"
-          }
+          value={pct(p.distanceToTargetPct, 1)}
         />
       </div>
 
