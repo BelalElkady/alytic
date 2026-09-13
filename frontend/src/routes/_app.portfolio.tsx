@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
@@ -28,7 +28,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { post } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
 import { STYLE_RULES, styleRecommendation, useActiveInvestStyle } from "@/lib/invest-style";
-import { useDesk, type Row } from "@/lib/store";
+import { useDesk, type Row, type Verdict } from "@/lib/store";
 
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -61,10 +61,74 @@ const REC_TONE: Record<string, string> = {
   sell_part: "border-warn/40 bg-warn-soft text-foreground",
 };
 
+// backend/src/agent/schemas.js ACTIONS — the AI analyst's own action enum,
+// distinct from the mechanical engine's (REC_TONE above).
+const AI_ACTION_LABEL: Record<string, string> = {
+  buy: "شراء",
+  accumulate: "زيادة شراء",
+  hold: "احتفاظ",
+  reduce: "تخفيف",
+  take_profit: "جني أرباح",
+  exit: "خروج",
+  avoid: "تجنب",
+  wait: "انتظار",
+};
+const AI_ACTION_TONE: Record<string, string> = {
+  buy: "border-up/40 bg-up-soft text-up",
+  accumulate: "border-up/40 bg-up-soft text-up",
+  hold: "border-border bg-surface-2 text-foreground",
+  reduce: "border-warn/40 bg-warn-soft text-foreground",
+  take_profit: "border-warn/40 bg-warn-soft text-foreground",
+  exit: "border-down/40 bg-down-soft text-down",
+  avoid: "border-down/40 bg-down-soft text-down",
+  wait: "border-border bg-surface-2 text-muted-foreground",
+};
+
+// One AI review is a real, paid model call, so a reader only gets one free
+// "قولي توصية اليوم" per day — this remembers that across reloads (the
+// server itself caches per user/day/style too, see /api/review, but the
+// button must stay disabled even before that state round-trips back here).
+const REVIEW_USED_KEY = "alytic-review-used-date";
+const todayKey = () => new Date().toDateString();
+
 function PositionsPage() {
-  const { rows, loading, error, reload, openDetail, pf } = useDesk();
+  const {
+    rows,
+    loading,
+    error,
+    reload,
+    openDetail,
+    pf,
+    aiAvailable,
+    review,
+    reviewLoading,
+    reviewError,
+    loadReview,
+  } = useDesk();
   const { style } = useActiveInvestStyle(pf?.trades);
   const nearStopPct = STYLE_RULES[style].nearStopPct;
+  const verdictByCode = new Map<string, Verdict>(
+    (review?.review?.verdicts ?? []).map((v: Verdict) => [v.code, v]),
+  );
+
+  const [usedToday, setUsedToday] = useState(
+    () => typeof window !== "undefined" && window.localStorage.getItem(REVIEW_USED_KEY) === todayKey(),
+  );
+  const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
+
+  // Already used today (even after a reload, where `review` itself starts
+  // out empty again) — pull back today's already-generated recommendation
+  // instead of leaving the button disabled with nothing to show for it.
+  useEffect(() => {
+    if (usedToday && !review && !reviewLoading) void loadReview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!review || reviewLoading) return;
+    window.localStorage.setItem(REVIEW_USED_KEY, todayKey());
+    setUsedToday(true);
+  }, [review, reviewLoading]);
 
   if (error) {
     return (
@@ -118,6 +182,48 @@ function PositionsPage() {
 
   return (
     <div className="space-y-4">
+      {aiAvailable && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {review && (
+            <span className="text-[12.5px] text-muted-foreground">
+              توصية اليوم بالذكاء الاصطناعي — استخدمتها بالفعل النهارده
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setConfirmReviewOpen(true)}
+            disabled={reviewLoading || usedToday}
+          >
+            {reviewLoading && <Spinner />}
+            قولي توصية اليوم
+          </Button>
+        </div>
+      )}
+      {reviewError && <Notice tone="danger">{reviewError}</Notice>}
+
+      <AlertDialog open={confirmReviewOpen} onOpenChange={setConfirmReviewOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader className="text-start">
+            <AlertDialogTitle>متأكد إنك عايز تستخدم توصية اليوم دلوقتي؟</AlertDialogTitle>
+            <AlertDialogDescription className="leading-relaxed">
+              بتتحسب مرة واحدة بس في اليوم، وهتقفل تاني لحد بكرة بعد ما تستخدمها الأول.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:justify-start">
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmReviewOpen(false);
+                void loadReview();
+              }}
+            >
+              أيوه، هاتها
+            </AlertDialogAction>
+            <AlertDialogCancel>لسه</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="space-y-2">
         {alerts.length ? (
           alerts.map((alert) => (
@@ -132,14 +238,27 @@ function PositionsPage() {
 
       <div className="flex flex-col gap-3">
         {rows.map((row) => (
-          <PositionCard key={row.code} row={row} onOpen={() => openDetail(row.code)} />
+          <PositionCard
+            key={row.code}
+            row={row}
+            onOpen={() => openDetail(row.code)}
+            verdict={verdictByCode.get(row.code) ?? null}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
+function PositionCard({
+  row,
+  onOpen,
+  verdict,
+}: {
+  row: Row;
+  onOpen: () => void;
+  verdict: Verdict | null;
+}) {
   const { reload, indices, pf } = useDesk();
   const memberOf = indices[row.code] ?? [];
   const p = row.position;
@@ -150,6 +269,12 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
   const primaryTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
+  // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
+  // over the badge and recommendation box when one has been fetched for this
+  // stock; the mechanical rec above stays the fallback (and still drives
+  // critical/near, which are the engine's own triggers, not the AI's opinion).
+  const badgeLabel = verdict ? (AI_ACTION_LABEL[verdict.action] ?? verdict.action) : rec.label;
+  const badgeTone = verdict ? (AI_ACTION_TONE[verdict.action] ?? AI_ACTION_TONE["hold"]) : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -189,9 +314,12 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="truncate text-[15px] font-semibold">{row.code}</span>
-            <Badge variant="outline" className={REC_TONE[rec.action] ?? REC_TONE["hold"]}>
-              {rec.label}
+            <Badge variant="outline" className={badgeTone}>
+              {badgeLabel}
             </Badge>
+            {verdict?.conviction && (
+              <span className="text-[11px] text-muted-foreground">ثقة {verdict.conviction}</span>
+            )}
             {p.sharesEstimated && (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
@@ -279,19 +407,26 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
         />
       </div>
 
-      <div
-        className={cn(
-          "mt-3 rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed",
-          REC_TONE[rec.action] ?? REC_TONE["hold"],
-        )}
-      >
-        <span className="text-muted-foreground">توصية اليوم · </span>
-        {rec.text}
-        {rec.order && (
-          <div className="num mt-1.5 font-medium">
-            الأمر: {rec.order.side === "buy" ? "شراء" : "بيع"} {int(rec.order.qty)} سهم عند{" "}
-            {fmt(rec.order.price)} ≈ {int(rec.order.qty * rec.order.price)} ج
-          </div>
+      <div className={cn("mt-3 rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed", badgeTone)}>
+        {verdict ? (
+          <>
+            <div className="font-medium">{verdict.headline}</div>
+            {verdict.reasoning && <div className="mt-1 text-muted-foreground">{verdict.reasoning}</div>}
+            {verdict.orderInstruction && (
+              <div className="num mt-1.5 font-medium">الأمر: {verdict.orderInstruction}</div>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="text-muted-foreground">توصية اليوم · </span>
+            {rec.text}
+            {rec.order && (
+              <div className="num mt-1.5 font-medium">
+                الأمر: {rec.order.side === "buy" ? "شراء" : "بيع"} {int(rec.order.qty)} سهم عند{" "}
+                {fmt(rec.order.price)} ≈ {int(rec.order.qty * rec.order.price)} ج
+              </div>
+            )}
+          </>
         )}
       </div>
 
