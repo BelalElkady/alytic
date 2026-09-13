@@ -76,17 +76,12 @@ create table if not exists portfolio_reviews (
   primary key (user_id, report_date, style)
 );
 
--- Tracks the one "تحليل الكاش" (cash-allocation scan) a user is allowed per
--- Cairo calendar day — see /api/scan's focus=cash handling in
--- src/api/server.js. usage_date is a plain YYYY-MM-DD string (cairoToday()),
--- not a timestamp, so "today" means the same thing here as everywhere else in
--- the app that keys by trading day.
-create table if not exists cash_scan_usage (
-  user_id text not null references users(id) on delete cascade,
-  usage_date text not null,
-  used_at timestamptz not null default now(),
-  primary key (user_id, usage_date)
-);
+-- The one-per-Cairo-day "تحليل الكاش" limit this table tracked was dropped
+-- (the scan is pure technical scoring, no per-call cost to guard). The
+-- trial-lifetime cap that replaced it (CASH_SCAN_TRIAL_LIMIT in
+-- src/api/server.js) lives in portfolio.cashScans instead, since it needs no
+-- cross-device row — a leftover `cash_scan_usage` table from that era may
+-- still exist in already-migrated databases; it's simply unused now.
 
 -- One row per AI call across every feature (portfolio review, market
 -- research/reframe, fundamentals, blog discovery/article/review) — the

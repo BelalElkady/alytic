@@ -49,7 +49,7 @@ type FavoriteRow = {
 };
 
 function CashPage() {
-  const { pf, totals, reloadPortfolio, openMarket } = useDesk();
+  const { pf, totals, reloadPortfolio, openMarket, user } = useDesk();
   const [cash, setCash] = useState("");
   const [savingCash, setSavingCash] = useState(false);
   const [watchCode, setWatchCode] = useState("");
@@ -62,6 +62,14 @@ function CashPage() {
   useEffect(() => {
     setCash(String(pf?.cash ?? 0));
   }, [pf?.cash]);
+
+  // From GET /api/portfolio (server-enforced) — a subscribed or admin
+  // account is never actually blocked by the trial cap, so the note and the
+  // disabled state only apply to everyone else.
+  const cashScanCapApplies = !user?.subscriptionActive && !user?.isAdmin;
+  const cashScansLeft = typeof pf?.cashScansLeft === "number" ? pf.cashScansLeft : null;
+  const cashScanTrialLimit = typeof pf?.cashScanTrialLimit === "number" ? pf.cashScanTrialLimit : null;
+  const cashScanExhausted = cashScanCapApplies && cashScansLeft !== null && cashScansLeft <= 0;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the portfolio watchlist shape
   const watchlist: [string, any][] = Object.entries(pf?.watchlist ?? {});
@@ -177,9 +185,21 @@ function CashPage() {
 
         <Notice className="mt-4">{advice}</Notice>
 
-        <Button variant="outline" className="mt-4" onClick={() => openMarket("cash")}>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => openMarket("cash")}
+          disabled={cashScanExhausted}
+        >
           حلل استخدام الكاش
         </Button>
+        {cashScanCapApplies && cashScansLeft !== null && (
+          <p className={`mt-2 text-[12px] ${cashScanExhausted ? "text-down" : "text-muted-foreground"}`}>
+            {cashScanExhausted
+              ? "خلصت محاولات تحليل الكاش المتاحة في فترة التجربة — بيبقى بلا حدود بعد الاشتراك."
+              : `باقي ${cashScansLeft}${cashScanTrialLimit ? ` من ${cashScanTrialLimit}` : ""} ${cashScansLeft === 1 ? "محاولة" : "محاولات"} في فترة التجربة.`}
+          </p>
+        )}
       </Panel>
 
       <Panel

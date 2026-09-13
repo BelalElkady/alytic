@@ -40,7 +40,7 @@ const toneClass: Record<string, string> = {
 
 /** Market / cash-allocation scan, same /api/scan payload as before. */
 export function MarketDialog() {
-  const { marketFocus, openMarket, pf } = useDesk();
+  const { marketFocus, openMarket, pf, reloadPortfolio } = useDesk();
   const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState("ALL");
@@ -63,6 +63,9 @@ export function MarketDialog() {
       .then((result) => {
         if (cancelled) return;
         setData(result);
+        // Picks up the updated trial-cap count (cashScansLeft) shown on the
+        // cash page's button without waiting for its own next portfolio load.
+        if (marketFocus === "cash") void reloadPortfolio();
       })
       .catch((caught) => !cancelled && setError(caught?.message ?? "تعذر تحليل السوق"));
     return () => {
@@ -89,7 +92,7 @@ export function MarketDialog() {
           </DialogTitle>
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
             {isCash
-              ? `أسهم مختارة من أقل المخاطر وأعلى الجودة، بتوزيع متساوٍ تقريبًا واحتياطي ${fmt(data?.cashPlan?.reserveCash ?? 0)} ج.`
+              ? `أسهم مختارة من أقل المخاطر وأعلى الجودة، بتوزيع مرجّح حسب قوة كل فرصة واحتياطي ${fmt(data?.cashPlan?.reserveCash ?? 0)} ج.`
               : `ترتيب الأسهم حسب التقييم والفرص القابلة للتنفيذ${index !== "ALL" ? ` — أسهم ${index} بس` : ""}.`}{" "}
             حسب أسلوبك: {INVEST_STYLES.find((s) => s.key === style)?.label ?? "متوسط المدى"}
             {auto ? " (مستنتج من سلوكك في التداول)" : ""}.
@@ -136,7 +139,7 @@ export function MarketDialog() {
                     <b className="num">{int(data.cashPlan?.investableCash ?? 0)} ج</b>
                   </span>
                   <span>
-                    لكل سهم: <b className="num">{int(data.cashPlan?.allocationPerStock ?? 0)} ج</b>
+                    متوسط لكل سهم: <b className="num">{int(data.cashPlan?.allocationPerStock ?? 0)} ج</b>
                   </span>
                 </>
               ) : (

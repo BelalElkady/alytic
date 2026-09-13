@@ -94,7 +94,9 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 - Steps: open `/pricing`.
 - Expect: three cards — تجربة مجانية (مجانًا / ٤ أيام تداول), شهري (١٤٩), سنوي (١٥٩٩ with
   "وفّر ١٨٩ جنيه"). The trial CTA goes to registration; both paid CTAs go to
-  `/subscribe`. The "كل الخطط بتشمل" list and four FAQ cards render.
+  `/subscribe`. The "كل الخطط بتشمل" list and four FAQ cards render, and the
+  first FAQ answer says تحليل الكاش is available twice for the whole trial
+  (see CASH-11 / SCAN-09).
 
 **PUB-05 — Prices are consistent everywhere** · P1
 - Steps: compare the figures on `/pricing`, on `/subscribe`, in the chat bot's
@@ -674,7 +676,8 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 - Expect: "مفيش أسهم مفضلة لسه" with a hint.
 
 **CASH-11 — "حلل استخدام الكاش"** · P1
-- Steps: click it with cash available.
+- Steps: click it with cash available, on a trial (unsubscribed) account that
+  hasn't used it twice yet.
 - Expect: the "أفضل توزيع للكاش" dialog opens — see SCAN-05.
 
 ---
@@ -857,9 +860,15 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 
 **SCAN-05 — Cash allocation plan** · P1
 - Steps: open it from الكاش → "حلل استخدام الكاش".
-- Expect: title "أفضل توزيع للكاش", at most 3 selected stocks diversified across
-  sectors, القابل للتوزيع plus لكل سهم plus the reserve, and per-stock share counts whose
-  total cost never exceeds the investable cash.
+- Expect: title "أفضل توزيع للكاش", a handful of selected stocks (count scales with
+  investable cash — more of it picks more names, up to 6, and a small balance
+  picks just one or two rather than slicing tickets too thin) diversified across
+  sectors, القابل للتوزيع plus متوسط لكل سهم plus the reserve, and per-stock share
+  counts whose total cost never exceeds the investable cash. Allocation is
+  weighted by each stock's score/risk-reward rank, not split evenly — a
+  clearly stronger setup among the selected names gets a visibly larger cut
+  than a weaker one, and a stock whose price would round its share down to
+  zero shares gets skipped in favor of names cash can actually buy.
 
 **SCAN-06 — No cash** · P2
 - Steps: set cash to 0 and run the cash plan.
@@ -872,6 +881,18 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 **SCAN-08 — Closing and re-opening** · P3
 - Expect: Escape and the X both close it, and re-opening re-fetches rather than
   showing stale results.
+
+**SCAN-09 — Cash-scan trial cap** · P1
+- Steps: on an unsubscribed trial account, open "تحليل الكاش" and flip between a
+  couple of index tabs while it's open (still one dialog session), close it,
+  then reopen and run it a second time (a separate session — 10+ minutes
+  apart, or wait out that window), then try a third time.
+- Expect: switching index tabs inside one open dialog never costs an extra
+  use — every index and the full stock universe stay available within it.
+  The first two separate sessions work normally; the third gets a clear "خلصت
+  محاولات تحليل الكاش المتاحة في فترة التجربة" message instead of a plan, and a
+  plain market scan afterward still works. On an admin or subscribed account,
+  running it more than twice never blocks.
 
 **AI-01 — Everything degrades without an AI key** · P1
 - Pre: server running with no `OPENROUTER_API_KEY`
@@ -1165,11 +1186,6 @@ explainer. A user following that copy will hunt for a button that isn't there (C
 deliberately leaves portfolio, trades, log and settings open after the trial ends so
 the data isn't held hostage, but the desk replaces its entire body with the subscribe
 wall, so no screen shows it. Decide whether that is intended (SUB-04 / SUB-06).
-
-**KNOWN-04 — The once-a-day cash-scan limit is gone.** The database schema still
-documents a per-day limit on "تحليل الكاش", and the pricing FAQ still says
-"تحليل الكاش متاح مرة واحدة يوميًا طول التجربة", but no such limit is enforced any more.
-Either the copy or the limit should change (CASH-11, PUB-04).
 
 ---
 

@@ -372,6 +372,9 @@ app.use('/api', async (req, res, next) => {
     console.error('entitlement check failed:', err);
     return res.status(503).json({ error: 'تعذر التحقق من اشتراكك دلوقتي — جرّب تاني بعد شوية.' });
   }
+  // Stashed for handlers downstream (e.g. /api/scan's cash-scan trial cap)
+  // that need to know subscription status without a second accessInfo/DB call.
+  req.access = access;
   if (access.hasAccess) return next();
   const expired = Boolean(access.currentPeriodEnd);
   res.status(402).json({
@@ -1044,8 +1047,61 @@ app.get('/api/quotes', wrap(async (req, res) => {
   res.json({ asOf: new Date().toISOString(), quotes: Object.fromEntries(quotes) });
 }));
 
+// "تحليل الكاش" (focus=cash, see market-dialog.tsx) is capped to this many
+// uses for the life of the free trial — once a subscription is active (or
+// for admin/local accounts) it's unlimited, same as every other /api/scan
+// use. The cap counts how many times the feature is opened, never which
+// index or how many stocks a given scan covers, so every use still analyzes
+// the full universe like any other scan: the market-dialog UI re-issues this
+// same request as the user flips between index tabs or invest styles while
+// the dialog stays open, and all of those belong to the one "time" that
+// opened it. A request within CASH_SCAN_SESSION_WINDOW_MS of the account's
+// last recorded use is treated as such a continuation and never charged —
+// only a request arriving after that gap spends a new use. Recorded as one
+// ISO timestamp per charged use in portfolio.cashScans rather than a DB
+// table, so the check-then-write race is closed by withPortfolio's existing
+// per-user write lock — the same pattern the screenshot-import cap (below)
+// uses.
+const CASH_SCAN_TRIAL_LIMIT = Math.max(0, Math.floor(Number(process.env.CASH_SCAN_TRIAL_LIMIT ?? 2)) || 0);
+const CASH_SCAN_SESSION_WINDOW_MS = 10 * 60 * 1000;
+const CASH_SCAN_LIMIT_MESSAGE = `خلصت محاولات تحليل الكاش المتاحة في فترة التجربة (${CASH_SCAN_TRIAL_LIMIT}) — بيبقى بلا حدود بعد الاشتراك.`;
+function cashScansLeft(portfolio) {
+  return Math.max(0, CASH_SCAN_TRIAL_LIMIT - (portfolio.cashScans ?? []).length);
+}
+function withinCashScanSession(portfolio) {
+  const last = (portfolio.cashScans ?? []).at(-1);
+  return Boolean(last) && Date.now() - Date.parse(last) < CASH_SCAN_SESSION_WINDOW_MS;
+}
+
 app.get('/api/scan', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(req.user.id);
+
+  let cashScansLeftNow = null;
+  if (req.query.focus === 'cash') {
+    const exempt = Boolean(req.user.isAdmin) || req.user.id === 'local' || Boolean(req.access?.subscriptionActive);
+    if (!exempt) {
+      if (withinCashScanSession(portfolio)) {
+        cashScansLeftNow = cashScansLeft(portfolio);
+      } else {
+        // Checked before the (still non-trivial, whole-universe) analysis
+        // runs, so an exhausted allowance costs nothing.
+        if (cashScansLeft(portfolio) <= 0) {
+          return res.status(429).json({ error: CASH_SCAN_LIMIT_MESSAGE, reason: 'cash_scan_limit', cashScansLeft: 0 });
+        }
+        // Re-checked under the lock: parallel requests can all pass the read
+        // above before any of them has recorded a use, and a request that
+        // lands a moment after another one just opened a new session must
+        // join it rather than spend a second one.
+        const updated = await withPortfolio(req.user.id, (p) => {
+          if (withinCashScanSession(p)) return p;
+          if (cashScansLeft(p) <= 0) throw new Error(CASH_SCAN_LIMIT_MESSAGE);
+          return { ...p, cashScans: [...(p.cashScans ?? []), new Date().toISOString()] };
+        });
+        cashScansLeftNow = cashScansLeft(updated);
+      }
+    }
+  }
+
   const indexCodes = req.query.index ? await codesForIndex(req.query.index) : null;
   if (req.query.index && !indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${req.query.index}` });
   const codes = req.query.codes
@@ -1096,7 +1152,22 @@ app.get('/api/scan', wrap(async (req, res) => {
   const actionable = results.filter((r) => r.plan.actionable && r.plan.buyingNow.worthIt && r.technical.score >= 58);
   const cashReserve = Math.max(0, portfolio.cash * (rules.sizing.minCashBufferPct / 100));
   const investableCash = Math.max(0, portfolio.cash - cashReserve);
-  const maxRecommendations = 3;
+  // How many names the cash plan should spread across is a function of how
+  // much there actually is to deploy, not a fixed count: too few stocks for
+  // a large balance leaves most of it idle behind the per-position cap, and
+  // too many for a small balance slices each ticket down to nothing.
+  const MAX_RECOMMENDATIONS = 6;
+  const MIN_TICKET_EGP = 5000;
+  const maxPositionEgp = capital * (rules.sizing.maxPositionPct / 100);
+  const maxRecommendations = investableCash <= 0
+    // Nothing to deploy — still surface a few honest "no cash" reasons below
+    // instead of an empty screen.
+    ? 3
+    : Math.max(1, Math.min(
+      MAX_RECOMMENDATIONS,
+      maxPositionEgp > 0 ? Math.ceil(investableCash / maxPositionEgp) : MAX_RECOMMENDATIONS,
+      Math.max(1, Math.floor(investableCash / MIN_TICKET_EGP)),
+    ));
   const candidates = results
     .filter((r) => !r.position && r.plan.actionable && r.plan.buyingNow.worthIt && r.plan.targets.mid?.price && (r.plan.sizing?.shares ?? 0) > 0)
     .map((r) => ({
@@ -1119,10 +1190,57 @@ app.get('/api/scan', wrap(async (req, res) => {
   }
   const allocationPerStock = selected.length ? investableCash / selected.length : 0;
   const selectedCodes = new Set(selected.map((candidate) => candidate.code));
+
+  // Split the investable cash across the selected names by conviction and
+  // price, not evenly: a stronger setup (rankScore — the same technical
+  // score, risk/reward and stop-risk blend used to rank and pick candidates)
+  // gets proportionally more of the pool, and a name whose own price would
+  // turn its share into less than one share is dropped from this round
+  // rather than funded into a position too small to exist. Both checks
+  // water-fill: cash freed either way goes to the names still standing,
+  // weighted by their own score among what's left, instead of sitting
+  // unallocated.
+  const resultByCode = new Map(results.map((r) => [r.code, r]));
+  const allocationByCode = new Map();
+  {
+    let remainingCash = investableCash;
+    let pool = selected.map((candidate) => {
+      const r = resultByCode.get(candidate.code);
+      const entry = r?.plan.suggestedEntry ?? 0;
+      return {
+        code: candidate.code,
+        weight: Math.max(1, candidate.rankScore),
+        entry,
+        riskCapEgp: entry > 0 ? (r.plan.sizing?.shares ?? 0) * entry : Infinity,
+      };
+    });
+    while (pool.length) {
+      const totalWeight = pool.reduce((sum, c) => sum + c.weight, 0);
+      const withShares = pool.map((c) => ({ ...c, idealShare: totalWeight > 0 ? (remainingCash * c.weight) / totalWeight : 0 }));
+      const capped = withShares.filter((c) => c.riskCapEgp < c.idealShare);
+      const tooSmall = withShares.filter((c) => c.riskCapEgp >= c.idealShare && c.entry > 0 && c.idealShare < c.entry);
+      if (!capped.length && !tooSmall.length) {
+        for (const c of withShares) allocationByCode.set(c.code, c.idealShare);
+        break;
+      }
+      for (const c of capped) {
+        allocationByCode.set(c.code, c.riskCapEgp);
+        remainingCash -= c.riskCapEgp;
+      }
+      for (const c of tooSmall) allocationByCode.set(c.code, 0);
+      const settled = new Set([...capped, ...tooSmall].map((c) => c.code));
+      pool = pool.filter((c) => !settled.has(c.code));
+    }
+  }
+  let investedTotal = 0;
   res.json({
     asOf: results[0]?.asOf ?? null,
     count: results.length,
     cash: portfolio.cash,
+    // Only set for focus=cash on a non-exempt account — null means either
+    // this wasn't a cash scan, or the account has unlimited use.
+    cashScansLeft: cashScansLeftNow,
+    cashScanTrialLimit: CASH_SCAN_TRIAL_LIMIT,
     // A compact row per stock — the full analysis is one request away and far
     // too large to send 43 of.
     results: results.map((r) => {
@@ -1132,22 +1250,24 @@ app.get('/api/scan', wrap(async (req, res) => {
       const riskShares = r.plan.sizing?.shares ?? 0;
       const cashShares = entry > 0 ? Math.floor(Math.max(0, portfolio.cash) / entry) : 0;
       const cashPlanSelected = selectedCodes.has(r.code);
-      const allocationShares = entry > 0 ? Math.floor(allocationPerStock / entry) : 0;
+      const stockAllocation = allocationByCode.get(r.code) ?? 0;
+      const allocationShares = entry > 0 ? Math.floor(stockAllocation / entry) : 0;
       const recommendedShares = cashPlanSelected ? Math.min(riskShares, allocationShares, cashShares) : 0;
+      if (cashPlanSelected) investedTotal += recommendedShares * entry;
       const buyPlan = entry > 0 ? {
         entry,
         stop: r.plan.stop.stop,
         target: r.plan.targets.mid?.price ?? null,
         shares: recommendedShares,
         cost: +(recommendedShares * entry).toFixed(2),
-        allocation: cashPlanSelected ? +allocationPerStock.toFixed(2) : 0,
+        allocation: cashPlanSelected ? +stockAllocation.toFixed(2) : 0,
         cashAfter: +(portfolio.cash - recommendedShares * entry).toFixed(2),
         risk: +(recommendedShares * Math.max(0, entry - r.plan.stop.stop)).toFixed(2),
         riskLimitShares: riskShares,
         cashLimitShares: cashShares,
         reason: recommendedShares === 0
           ? (portfolio.cash <= 0 ? 'لا يوجد كاش متاح' : r.plan.sizing?.reason ?? 'لا يوجد حجم مناسب حسب قواعد المخاطرة')
-          : `شراء ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع متساوٍ تقريبًا بين أفضل ${selected.length} أسهم مع احتياطي كاش ${rules.sizing.minCashBufferPct}%`,
+          : `شراء ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع مرجّح حسب قوة الفرصة بين أفضل ${selected.length} أسهم مع احتياطي كاش ${rules.sizing.minCashBufferPct}%`,
       } : null;
       const position = r.position && live
         ? { ...r.position, marketValue: +(r.position.shares * livePrice).toFixed(2), unrealizedEgp: +(r.position.shares * (livePrice - r.position.avgCost)).toFixed(2) }
@@ -1187,11 +1307,7 @@ app.get('/api/scan', wrap(async (req, res) => {
       investableCash: +investableCash.toFixed(2),
       reserveCash: +cashReserve.toFixed(2),
       allocationPerStock: +allocationPerStock.toFixed(2),
-      unallocatedCash: +(investableCash - results.filter((r) => selectedCodes.has(r.code)).reduce((sum, r) => {
-        const entry = r.plan.suggestedEntry;
-        const riskShares = r.plan.sizing?.shares ?? 0;
-        return sum + Math.min(riskShares, entry > 0 ? Math.floor(allocationPerStock / entry) : 0) * entry;
-      }, 0)).toFixed(2),
+      unallocatedCash: +(investableCash - investedTotal).toFixed(2),
     },
     errors,
   });
@@ -1207,6 +1323,12 @@ app.get('/api/portfolio', wrap(async (req, res) => {
     tracked: trackedCodes(p),
     screenshotImportsLeft: screenshotImportsLeft(p),
     screenshotImportsPerDay: SCREENSHOT_IMPORTS_PER_DAY,
+    // Raw count against the trial cap — ignores subscription status (the
+    // frontend already has user.subscriptionActive from /api/auth/me and
+    // hides this once that's true, since a subscribed account is never
+    // actually blocked by it).
+    cashScansLeft: cashScansLeft(p),
+    cashScanTrialLimit: CASH_SCAN_TRIAL_LIMIT,
   });
 }));
 
@@ -1507,9 +1629,10 @@ app.post('/api/reset', wrap(async (req, res) => {
   const scope = req.body?.scope ?? 'log';
   await withPortfolio(req.user.id, (portfolio) =>
     scope === 'all'
-      // imports survives the wipe: it's what the daily screenshot cap counts,
-      // so dropping it would hand out a fresh allowance on every reset.
-      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports }
+      // imports and cashScans survive the wipe: they're what the daily
+      // screenshot cap and the trial cash-scan cap count, so dropping either
+      // would hand out a fresh allowance on every reset.
+      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports, cashScans: portfolio.cashScans }
       : { ...portfolio, log: {}, trades: [], realizedPnl: 0 },
   );
   res.json({ ok: true, scope });
