@@ -49,6 +49,7 @@ import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, inferInvestStyle, type StyleKey, type Trade } from "@/lib/invest-style";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +60,9 @@ export const Route = createFileRoute("/_app/admin")({
     meta: [
       { title: BASE_TITLE },
       { name: "description", content: "إدارة قوائم المؤشرات والمستخدمين المسجّلين." },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:title", content: BASE_TITLE },
+      { property: "og:url", content: `${SITE_URL}/admin` },
     ],
   }),
   component: AdminPage,

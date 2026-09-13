@@ -4,6 +4,7 @@ import { SubscribePanel } from "@/components/billing/subscribe-panel";
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/subscribe")({
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/subscribe")({
         property: "og:description",
         content: "كلّمنا في الشات وهنبعتلك بيانات الدفع وكل التفاصيل.",
       },
+      { property: "og:url", content: `${SITE_URL}/subscribe` },
     ],
   }),
   component: SubscribePage,

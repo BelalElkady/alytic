@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { fmt, pct, tone } from "@/lib/format";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,8 @@ export const Route = createFileRoute("/_app/targets")({
         property: "og:description",
         content: "أهداف كل سهم مرتبة من الأقرب للأبعد، مع المسافة والتقدير الزمني ومستويات الوقف.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:url", content: `${SITE_URL}/targets` },
     ],
   }),
   component: TargetsPage,

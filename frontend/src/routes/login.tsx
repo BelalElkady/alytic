@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { AuthScreen } from "@/components/desk/auth-screen";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 type LoginSearch = { mode: "login" | "register" };
@@ -23,6 +24,8 @@ export const Route = createFileRoute("/login")({
         property: "og:description",
         content: "دخول سريع لـ EGXpert، أو إنشاء حساب جديد بتجربة مجانية ٤ أيام تداول.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:url", content: `${SITE_URL}/login` },
     ],
   }),
   component: LoginPage,

@@ -7,12 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { post } from "@/lib/api";
+import { SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/admin/login")({
   head: () => ({
     meta: [
       { title: "دخول المشرف — EGXpert" },
       { name: "description", content: "تسجيل دخول مخصص لمشرفي EGXpert." },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:title", content: "دخول المشرف — EGXpert" },
+      { property: "og:url", content: `${SITE_URL}/admin/login` },
     ],
   }),
   component: AdminLoginPage,

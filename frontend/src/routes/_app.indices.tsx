@@ -5,6 +5,7 @@ import { ErrorState, LoadingBlock, Panel } from "@/components/desk/state-blocks"
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { fmt, pct, signed, tone } from "@/lib/format";
+import { SITE_URL } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/indices")({
@@ -15,6 +16,9 @@ export const Route = createFileRoute("/_app/indices")({
         name: "description",
         content: "الأداء اليومي لمؤشرات البورصة المصرية، وأفضل وأسوأ سهم في كل مؤشر.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:title", content: "المؤشرات — EGXpert" },
+      { property: "og:url", content: `${SITE_URL}/indices` },
     ],
   }),
   component: IndicesPage,

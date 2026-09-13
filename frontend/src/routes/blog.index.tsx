@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { EmptyState, ErrorState, LoadingBlock } from "@/components/desk/state-blocks";
 import { BlogCard, type BlogPostSummary } from "@/components/marketing/blog-card";
 import { api } from "@/lib/api";
+import { SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/")({
   head: () => ({
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/blog/")({
         property: "og:description",
         content: "آخر أخبار البورصة المصرية والشركات الكبرى وتحليل فني يومي.",
       },
+      { property: "og:url", content: `${SITE_URL}/blog` },
     ],
   }),
   component: BlogIndexPage,

@@ -10,6 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
+import { OG_LOGO_URL, SITE_URL } from "@/lib/seo";
 import { DeskProvider } from "@/lib/store";
 
 import appCss from "../styles.css?url";
@@ -86,6 +87,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "مكتب تحليل وإدارة محفظة البورصة المصرية: مراكزك، وقف الخسارة، الأهداف والتوصيات اليومية.",
       },
+      { name: "robots", content: "index, follow" },
       { property: "og:title", content: "Alytic — EGXpert" },
       {
         property: "og:description",
@@ -93,6 +95,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "مكتب تحليل وإدارة محفظة البورصة المصرية: مراكزك، وقف الخسارة، الأهداف والتوصيات اليومية.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:url", content: SITE_URL },
+      { property: "og:image", content: OG_LOGO_URL },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
     ],

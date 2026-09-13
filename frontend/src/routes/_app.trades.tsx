@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { post } from "@/lib/api";
 import { fmt, int, signed, tone } from "@/lib/format";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,8 @@ export const Route = createFileRoute("/_app/trades")({
         property: "og:description",
         content: "تسجيل عمليات الشراء والبيع المنفذة ومتابعة الربح المحقق وسجل الصفقات كامل.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:url", content: `${SITE_URL}/trades` },
     ],
   }),
   component: TradesPage,

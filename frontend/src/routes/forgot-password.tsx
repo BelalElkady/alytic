@@ -7,10 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { post } from "@/lib/api";
+import { SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/forgot-password")({
   head: () => ({
-    meta: [{ title: "نسيت كلمة السر — EGXpert" }],
+    meta: [
+      { title: "نسيت كلمة السر — EGXpert" },
+      {
+        name: "description",
+        content: "اكتب بريدك الإلكتروني وهنبعتلك رابط لإعادة تعيين كلمة السر في EGXpert.",
+      },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:title", content: "نسيت كلمة السر — EGXpert" },
+      { property: "og:url", content: `${SITE_URL}/forgot-password` },
+    ],
   }),
   component: ForgotPasswordPage,
 });

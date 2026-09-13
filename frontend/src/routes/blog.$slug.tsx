@@ -4,10 +4,15 @@ import { useEffect, useState } from "react";
 import { ErrorState, LoadingBlock } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
+import { SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/$slug")({
-  head: () => ({
-    meta: [{ title: "مقالة — EGXpert" }],
+  head: ({ params }) => ({
+    meta: [
+      { title: "مقالة — EGXpert" },
+      { property: "og:title", content: "مقالة — EGXpert" },
+      { property: "og:url", content: `${SITE_URL}/blog/${params.slug}` },
+    ],
   }),
   component: BlogPostPage,
 });

@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { post } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
 import { STYLE_RULES, styleRecommendation, useActiveInvestStyle } from "@/lib/invest-style";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk, type Row, type Verdict } from "@/lib/store";
 
 import { cn } from "@/lib/utils";
@@ -48,6 +49,8 @@ export const Route = createFileRoute("/_app/portfolio")({
         content:
           "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:url", content: `${SITE_URL}/portfolio` },
     ],
   }),
   component: PositionsPage,
@@ -104,7 +107,11 @@ function PositionsPage() {
     reviewLoading,
     reviewError,
     loadReview,
+    user,
   } = useDesk();
+  // Admins aren't held to the one-per-day limit: each click regenerates a
+  // fresh review (the server only honors `force` for admins).
+  const isAdmin = Boolean(user?.isAdmin);
   const { style } = useActiveInvestStyle(pf?.trades);
   const nearStopPct = STYLE_RULES[style].nearStopPct;
   const verdictByCode = new Map<string, Verdict>(
@@ -184,7 +191,7 @@ function PositionsPage() {
     <div className="space-y-4">
       {aiAvailable && (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {review && (
+          {review && !isAdmin && (
             <span className="text-[12.5px] text-muted-foreground">
               توصية اليوم بالذكاء الاصطناعي — استخدمتها بالفعل النهارده
             </span>
@@ -193,10 +200,10 @@ function PositionsPage() {
             variant="outline"
             size="sm"
             onClick={() => setConfirmReviewOpen(true)}
-            disabled={reviewLoading || usedToday}
+            disabled={reviewLoading || (usedToday && !isAdmin)}
           >
             {reviewLoading && <Spinner />}
-            قولي توصية اليوم
+            {isAdmin && review ? "توصية جديدة" : "قولي توصية اليوم"}
           </Button>
         </div>
       )}
@@ -207,14 +214,16 @@ function PositionsPage() {
           <AlertDialogHeader className="text-start">
             <AlertDialogTitle>متأكد إنك عايز تستخدم توصية اليوم دلوقتي؟</AlertDialogTitle>
             <AlertDialogDescription className="leading-relaxed">
-              بتتحسب مرة واحدة بس في اليوم، وهتقفل تاني لحد بكرة بعد ما تستخدمها الأول.
+              {isAdmin
+                ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد بالذكاء الاصطناعي."
+                : "بتتحسب مرة واحدة بس في اليوم، وهتقفل تاني لحد بكرة بعد ما تستخدمها الأول."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">
             <AlertDialogAction
               onClick={() => {
                 setConfirmReviewOpen(false);
-                void loadReview();
+                void loadReview({ force: isAdmin });
               }}
             >
               أيوه، هاتها

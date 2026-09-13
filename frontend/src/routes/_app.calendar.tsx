@@ -23,6 +23,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { post } from "@/lib/api";
 import { fmt, int, isoDay, pct, signed, tone } from "@/lib/format";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +40,8 @@ export const Route = createFileRoute("/_app/calendar")({
         property: "og:description",
         content: "سجل يومي لقيمة المحفظة: إغلاق كل يوم، تعديلات الوقف والهدف، وملاحظاتك.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:url", content: `${SITE_URL}/calendar` },
     ],
   }),
   component: CalendarPage,

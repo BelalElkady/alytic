@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { api, post } from "@/lib/api";
 import { fmt, int, pct, tone } from "@/lib/format";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/cash")({
@@ -33,6 +34,8 @@ export const Route = createFileRoute("/_app/cash")({
         property: "og:description",
         content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:url", content: `${SITE_URL}/cash` },
     ],
   }),
   component: CashPage,

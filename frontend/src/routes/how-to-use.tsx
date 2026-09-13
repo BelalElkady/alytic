@@ -19,6 +19,7 @@ import {
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/how-to-use")({
   head: () => ({
@@ -34,6 +35,7 @@ export const Route = createFileRoute("/how-to-use")({
         property: "og:description",
         content: "شرح مبسّط لكل خطوة، من عمل الحساب لحد فهم التوصية اليومية لكل سهم.",
       },
+      { property: "og:url", content: `${SITE_URL}/how-to-use` },
     ],
   }),
   component: HowToUsePage,

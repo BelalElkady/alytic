@@ -13,6 +13,7 @@ import {
   useActiveInvestStyle,
   type StyleKey,
 } from "@/lib/invest-style";
+import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/settings")({
@@ -28,6 +29,8 @@ export const Route = createFileRoute("/_app/settings")({
         property: "og:description",
         content: "قواعد التوصيات المفعّلة وإعادة تعيين السجل والصفقات.",
       },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:url", content: `${SITE_URL}/settings` },
     ],
   }),
   component: SettingsPage,

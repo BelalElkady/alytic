@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { post } from "@/lib/api";
+import { SITE_URL } from "@/lib/seo";
 
 type ResetSearch = { token: string | undefined };
 
@@ -15,7 +16,13 @@ export const Route = createFileRoute("/reset-password")({
     token: typeof search["token"] === "string" ? search["token"] : undefined,
   }),
   head: () => ({
-    meta: [{ title: "إعادة تعيين كلمة السر — EGXpert" }],
+    meta: [
+      { title: "إعادة تعيين كلمة السر — EGXpert" },
+      { name: "description", content: "اكتب كلمة سر جديدة لحسابك في EGXpert." },
+      { name: "robots", content: "noindex, nofollow" },
+      { property: "og:title", content: "إعادة تعيين كلمة السر — EGXpert" },
+      { property: "og:url", content: `${SITE_URL}/reset-password` },
+    ],
   }),
   component: ResetPasswordPage,
 });
