@@ -52,8 +52,8 @@ async function scanMarket() {
  * A cheap, calendar-only guess at today's asOf — no network call — used
  * purely as a fast-path cache probe (see getOrGenerateMarketAnalysis). It
  * mirrors src/data/cache.js's isFresh() reasoning (session closes 14:30
- * Cairo, Yahoo lags, so no new bar is expected before ~16:00) but does not
- * know about actual EGX holidays, only weekends — so a wrong guess is
+ * Cairo, Yahoo lags, so no new bar is expected before ~16:00) but only knows
+ * weekends and the hand-kept holiday list, not surprise closures — so a wrong guess is
  * expected occasionally and must never be trusted as the real asOf. It is
  * only ever used to check the cache; generation always falls back to
  * scanMarket()'s real, authoritative asOf.

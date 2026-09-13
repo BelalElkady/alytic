@@ -10,15 +10,23 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EGX_HOLIDAYS } from '../config/holidays.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // ALYTIC_BARS_DIR redirects the whole bar cache — used by the test suites to
 // run every endpoint against synthetic fixtures instead of live market data.
 const BARS_DIR = process.env.ALYTIC_BARS_DIR ?? path.join(ROOT, 'data', 'bars');
 
+const cairoDateFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' });
+
+/** Cairo calendar date of a moment (Date or epoch ms), as YYYY-MM-DD. */
+export function cairoDateOf(moment) {
+  return cairoDateFormat.format(moment);
+}
+
 /** Current date in Cairo, as YYYY-MM-DD. */
 export function cairoToday() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  return cairoDateOf(new Date());
 }
 
 /** Cairo wall-clock hour, used to decide whether today's close should exist yet. */
@@ -28,10 +36,10 @@ export function cairoHour() {
   }).format(new Date());
 }
 
-/** EGX trades Sunday-Thursday. */
+/** EGX trades Sunday-Thursday, except bank holidays (see config/holidays.js). */
 export function isTradingDay(isoDate) {
   const dow = new Date(`${isoDate}T12:00:00Z`).getUTCDay(); // 0=Sun .. 6=Sat
-  return dow !== 5 && dow !== 6;
+  return dow !== 5 && dow !== 6 && !EGX_HOLIDAYS.has(isoDate);
 }
 
 async function ensureDir() {

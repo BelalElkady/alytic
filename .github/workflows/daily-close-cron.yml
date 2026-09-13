@@ -6,9 +6,11 @@ on:
   # across the year, so this fires at both candidate times; the endpoint
   # itself checks the real Cairo clock and no-ops on whichever run is wrong
   # for the current season — see /api/cron/daily-close in server.js.
+  # Sunday-Thursday only (EGX's trading week; both UTC times are still the
+  # same calendar day in Cairo). Bank holidays are skipped by the endpoint.
   schedule:
-    - cron: '30 11 * * *'
-    - cron: '30 12 * * *'
+    - cron: '30 11 * * 0-4'
+    - cron: '30 12 * * 0-4'
   workflow_dispatch: {}
 
 env:

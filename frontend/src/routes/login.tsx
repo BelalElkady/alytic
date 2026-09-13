@@ -16,12 +16,12 @@ export const Route = createFileRoute("/login")({
       {
         name: "description",
         content:
-          "ادخل على حسابك في EGXpert لمتابعة محفظتك في البورصة المصرية، أو ابدأ تجربة مجانية ٤ أيام.",
+          "ادخل على حسابك في EGXpert لمتابعة محفظتك في البورصة المصرية، أو ابدأ تجربة مجانية ٤ أيام تداول.",
       },
       { property: "og:title", content: "دخول أو إنشاء حساب — EGXpert" },
       {
         property: "og:description",
-        content: "دخول سريع لـ EGXpert، أو إنشاء حساب جديد بتجربة مجانية ٤ أيام.",
+        content: "دخول سريع لـ EGXpert، أو إنشاء حساب جديد بتجربة مجانية ٤ أيام تداول.",
       },
     ],
   }),

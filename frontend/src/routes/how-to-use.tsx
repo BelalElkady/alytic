@@ -43,7 +43,7 @@ const START_STEPS = [
   {
     n: "١",
     title: "اعمل حساب",
-    text: "سجّل ببريدك الإلكتروني في دقيقة واحدة. هتاخد تجربة مجانية ٤ أيام بكل المزايا، بدون بطاقة ائتمان.",
+    text: "سجّل ببريدك الإلكتروني في دقيقة واحدة. هتاخد تجربة مجانية ٤ أيام تداول بكل المزايا، بدون بطاقة ائتمان.",
   },
   {
     n: "٢",
@@ -306,7 +306,7 @@ function HowToUsePage() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight">جاهز تجرّب؟</h2>
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
-              ٤ أيام مجانًا بكل المزايا، وتقدر تبدأ من غير أي تعقيد.
+              ٤ أيام تداول مجانًا بكل المزايا، وتقدر تبدأ من غير أي تعقيد.
             </p>
           </div>
           <Button asChild size="lg">

@@ -191,7 +191,7 @@ function SubscriptionWall() {
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
         {expired
           ? `اشتراكك انتهى${user?.currentPeriodEnd ? ` يوم ${arDay(user.currentPeriodEnd.slice(0, 10))}` : ""}. `
-          : "جرّبت EGXpert ٤ أيام كاملة بكل المزايا. "}
+          : "جرّبت EGXpert ٤ أيام تداول كاملة بكل المزايا. "}
         محفظتك وصفقاتك وكل بياناتك زي ما هي ومحدش هيمسّها — التحليل والأسعار اللحظية بس اللي واقفة
         لحد ما تشترك.
       </p>
@@ -427,7 +427,7 @@ function DeskHeader() {
                     className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
                   >
                     {trialActive
-                      ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم" : "أيام"}`
+                      ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم تداول" : "أيام تداول"}`
                       : "انتهت التجربة المجانية"}
                   </Badge>
                 </Link>

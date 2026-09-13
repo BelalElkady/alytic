@@ -34,7 +34,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars, cairoToday, isTradingDay } from '../data/cache.js';
+import { readBars, cairoToday, cairoDateOf, isTradingDay } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
@@ -45,19 +45,31 @@ import { uploadSupportImage, signedUrlsFor, SUPPORT_IMAGE_TYPES } from '../suppo
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'belal.elkady4@gmail.com';
 
-// Every account is on a 4-day free trial from the moment it's created — the
-// window is derived from users.created_at rather than stored, so there is
-// nothing to reset or backfill.
+// Every account is on a 4-trading-day free trial from the moment it's created
+// — the window is derived from users.created_at rather than stored, so there
+// is nothing to reset or backfill. The trial runs in 24-hour slices from the
+// signup moment; a slice that starts on a Friday, Saturday or EGX bank holiday
+// (isTradingDay) doesn't count and just pushes the end out by a day, so
+// signing up before a weekend doesn't burn trial days on a closed market.
 const TRIAL_DAYS = 4;
 const DAY_MS = 24 * 60 * 60 * 1000;
 function trialInfo(user) {
-  const startedAt = new Date(user.createdAt ?? user.created_at).getTime();
-  const daysElapsed = Math.floor((Date.now() - startedAt) / DAY_MS);
+  const now = Date.now();
+  let sliceStart = new Date(user.createdAt ?? user.created_at).getTime();
+  let counted = 0;
+  let daysLeft = 0;
+  while (counted < TRIAL_DAYS) {
+    if (isTradingDay(cairoDateOf(sliceStart))) {
+      counted += 1;
+      if (sliceStart + DAY_MS > now) daysLeft += 1;
+    }
+    sliceStart += DAY_MS;
+  }
   return {
     trialDaysTotal: TRIAL_DAYS,
-    trialDaysLeft: Math.max(0, TRIAL_DAYS - daysElapsed),
-    trialActive: daysElapsed < TRIAL_DAYS,
-    trialEndsAt: new Date(startedAt + TRIAL_DAYS * DAY_MS),
+    trialDaysLeft: daysLeft,
+    trialActive: sliceStart > now,
+    trialEndsAt: new Date(sliceStart),
   };
 }
 
@@ -1311,12 +1323,17 @@ app.post('/api/snapshot', wrap(async (req, res) => {
  * to 14:30 in Cairo right now — that keeps the trigger correct across DST
  * without the workflow's cron schedule needing manual updates twice a year.
  * Snapshots every user with open positions, the same as each of them
- * clicking "سجّل إغلاق اليوم" used to.
+ * clicking "سجّل إغلاق اليوم" used to. Skipped on Fridays, Saturdays and
+ * EGX bank holidays — there's no session, so no close to record.
  */
 const DAILY_CLOSE_CRON_SECRET = process.env.DAILY_CLOSE_CRON_SECRET;
 app.post('/api/cron/daily-close', wrap(async (req, res) => {
   if (!DAILY_CLOSE_CRON_SECRET || req.get('X-Cron-Secret') !== DAILY_CLOSE_CRON_SECRET) {
     return res.status(403).json({ error: 'forbidden' });
+  }
+  const today = cairoToday();
+  if (!isTradingDay(today)) {
+    return res.json({ ok: true, skipped: 'not_a_trading_day', date: today });
   }
   const cairoNow = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Africa/Cairo',
