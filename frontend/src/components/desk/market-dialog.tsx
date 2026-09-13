@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { ErrorState, LoadingBlock, Notice } from "@/components/desk/state-blocks";
+import { ErrorState, LoadingBlock, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -110,7 +110,18 @@ export function MarketDialog() {
         </ToggleGroup>
 
         {error && <ErrorState message={error} />}
-        {!data && !error && <LoadingBlock rows={4} />}
+        {!data && !error && (
+          <div className="space-y-3">
+            <p
+              role="status"
+              className="flex items-center gap-2 text-[13px] text-muted-foreground"
+            >
+              <Spinner />
+              {isCash ? "جاري تحليل استخدام الكاش…" : "جاري تحليل السوق…"}
+            </p>
+            <LoadingBlock rows={4} />
+          </div>
+        )}
 
         {data && (
           <>
