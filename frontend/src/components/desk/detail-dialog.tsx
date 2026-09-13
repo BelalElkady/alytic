@@ -8,6 +8,23 @@ import { fmt, pct, tone } from "@/lib/format";
 import { useDesk } from "@/lib/store";
 import { mergedTarget } from "@/lib/targets";
 
+/** Mirrors backend/src/config/classification.js's CLASSIFICATION_TYPES. */
+type ClassificationType = "INVESTMENT" | "SPECULATIVE" | "HYBRID" | "NEUTRAL";
+
+const CLASSIFICATION_LABEL: Record<ClassificationType, string> = {
+  INVESTMENT: "استثماري",
+  SPECULATIVE: "مضاربي",
+  HYBRID: "هجين",
+  NEUTRAL: "غير محدد",
+};
+
+const CLASSIFICATION_TONE_CLASS: Record<ClassificationType, string> = {
+  INVESTMENT: "border-up/40 bg-up-soft text-up",
+  HYBRID: "border-warn/40 bg-warn-soft text-foreground",
+  SPECULATIVE: "border-down/40 bg-down-soft text-down",
+  NEUTRAL: "border-border bg-surface text-muted-foreground",
+};
+
 /** Per-stock analysis, same /api/analyze/:code payload as before. */
 export function DetailDialog() {
   const { detailCode, openDetail } = useDesk();
@@ -74,6 +91,67 @@ export function DetailDialog() {
               <Notice tone="info">
                 <b>الأساسيات:</b> {data.fundamentals.valuation ?? "—"}
               </Notice>
+            )}
+
+            {data.classification?.investmentScore != null && (
+              <div className="rounded-lg border">
+                <div className="flex items-center justify-between gap-2 border-b bg-surface px-4 py-2.5">
+                  <span className="text-[13px] font-semibold">التصنيف الاستثماري</span>
+                  <Badge
+                    variant="outline"
+                    className={
+                      CLASSIFICATION_TONE_CLASS[data.classification.type as ClassificationType]
+                    }
+                  >
+                    {CLASSIFICATION_LABEL[data.classification.type as ClassificationType] ??
+                      data.classification.type}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-3 gap-3 p-4">
+                  <Stat
+                    label="نقاط الاستثمار"
+                    value={`${data.classification.investmentScore}/100`}
+                  />
+                  <Stat
+                    label="نقاط المضاربة"
+                    value={`${data.classification.speculationScore}/100`}
+                  />
+                  <Stat label="الثقة في التصنيف" value={`${data.classification.confidence}%`} />
+                </div>
+                {(data.classification.reasons?.investment?.length > 0 ||
+                  data.classification.reasons?.speculation?.length > 0) && (
+                  <div className="grid gap-4 border-t p-4 sm:grid-cols-2">
+                    {data.classification.reasons.investment?.length > 0 && (
+                      <ReasonList
+                        title="دوافع الاستثمار"
+                        items={data.classification.reasons.investment}
+                        tone="up"
+                      />
+                    )}
+                    {data.classification.reasons.speculation?.length > 0 && (
+                      <ReasonList
+                        title="دوافع المضاربة"
+                        items={data.classification.reasons.speculation}
+                        tone="warn"
+                      />
+                    )}
+                  </div>
+                )}
+                {data.classification.reasons?.risks?.length > 0 && (
+                  <div className="border-t px-4 py-3">
+                    <p className="text-[12px] font-semibold text-muted-foreground">مخاطر التصنيف</p>
+                    <ul className="mt-1.5 space-y-1.5 text-[12.5px] leading-relaxed">
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the /api/analyze response shape */}
+                      {data.classification.reasons.risks.map((riskText: any) => (
+                        <li key={riskText} className="flex gap-2">
+                          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warn" />
+                          <span>{riskText}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="rounded-lg border">
@@ -222,6 +300,12 @@ function LevelList({
   );
 }
 
+const REASON_TONE_CLASS: Record<"up" | "down" | "warn", string> = {
+  up: "border-up/40 text-up",
+  down: "border-down/40 text-down",
+  warn: "border-warn/40 text-warn",
+};
+
 function ReasonList({
   title,
   items,
@@ -229,14 +313,11 @@ function ReasonList({
 }: {
   title: string;
   items: string[];
-  tone: "up" | "down";
+  tone: "up" | "down" | "warn";
 }) {
   return (
     <div>
-      <Badge
-        variant="outline"
-        className={variant === "up" ? "border-up/40 text-up" : "border-down/40 text-down"}
-      >
+      <Badge variant="outline" className={REASON_TONE_CLASS[variant]}>
         {title}
       </Badge>
       <ul className="mt-2 space-y-1.5 text-[13px] leading-relaxed">

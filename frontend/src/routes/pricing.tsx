@@ -76,8 +76,8 @@ function PricingPage() {
           <Badge variant="outline">باقة واحدة — بدون مستويات مربكة</Badge>
           <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">أسعار بسيطة وواضحة</h1>
           <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            نفس المزايا كاملة في كل الخطط. الفرق بس في مدة الاشتراك. ابدأ بـ ٤ أيام تداول مجانًا وقرّر بعد
-            كده.
+            نفس المزايا كاملة في كل الخطط. الفرق بس في مدة الاشتراك. ابدأ بـ ٤ أيام تداول مجانًا
+            وقرّر بعد كده.
           </p>
         </div>
 

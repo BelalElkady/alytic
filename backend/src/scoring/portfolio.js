@@ -10,6 +10,7 @@
  */
 
 import RULES from '../config/rules.js';
+import { CLASSIFICATION_TYPES } from '../config/classification.js';
 
 const r1 = (x) => (x == null ? null : +x.toFixed(1));
 
@@ -101,5 +102,61 @@ function healthScore(s, rules) {
   return {
     score: Math.max(0, Math.min(100, Math.round(score))),
     reasons,
+  };
+}
+
+/**
+ * Portfolio-level read of investment-vs-speculation classification (see
+ * scoring/classification.js) — the difference between "a good stock" and "a
+ * good stock for this portfolio" the analyst is asked to keep separate
+ * (prompts/system.js) needs the book's *composition* by classification, not
+ * just each holding's own scores. Weighted by market value, like every other
+ * concentration figure in this file.
+ *
+ * @param {object[]} analyses - analyzeTicker results; only held ones (.position) count
+ */
+export function portfolioClassificationSummary(analyses) {
+  const held = analyses.filter((a) => a.position && a.classification);
+  const totalValue = held.reduce((sum, a) => sum + (a.position.marketValue ?? 0), 0) || 1;
+
+  const valueByType = Object.fromEntries(CLASSIFICATION_TYPES.map((t) => [t, 0]));
+  let investmentSum = 0;
+  let speculationSum = 0;
+  let scoredCount = 0;
+
+  for (const a of held) {
+    const c = a.classification;
+    const value = a.position.marketValue ?? 0;
+    valueByType[c.type] = (valueByType[c.type] ?? 0) + value;
+    if (c.investmentScore != null && c.speculationScore != null) {
+      investmentSum += c.investmentScore;
+      speculationSum += c.speculationScore;
+      scoredCount++;
+    }
+  }
+
+  const pctByType = Object.fromEntries(
+    Object.entries(valueByType).map(([type, value]) => [type, r1((value / totalValue) * 100)]),
+  );
+
+  // HYBRID names carry real speculative character alongside their investment
+  // case (that is the whole point of the label), so they count toward
+  // exposure here — a book that is half HYBRID is not "half safe".
+  const speculativeExposurePct = r1((pctByType.SPECULATIVE ?? 0) + (pctByType.HYBRID ?? 0));
+
+  const speculativeHoldings = held
+    .filter((a) => a.classification.type === 'SPECULATIVE' || a.classification.type === 'HYBRID')
+    .map((a) => ({ code: a.code, type: a.classification.type, pctOfCapital: r1(((a.position.marketValue ?? 0) / totalValue) * 100) }))
+    .sort((a, b) => b.pctOfCapital - a.pctOfCapital);
+
+  return {
+    holdings: held.length,
+    pctByType,
+    avgInvestmentScore: scoredCount ? r1(investmentSum / scoredCount) : null,
+    avgSpeculationScore: scoredCount ? r1(speculationSum / scoredCount) : null,
+    speculativeExposurePct,
+    speculativePositionsCount: speculativeHoldings.length,
+    largestSpeculativePositionPct: speculativeHoldings[0]?.pctOfCapital ?? 0,
+    speculativeHoldings,
   };
 }

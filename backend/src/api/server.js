@@ -1296,6 +1296,14 @@ app.get('/api/scan', wrap(async (req, res) => {
       worthBuyingNow: r.plan.buyingNow.worthIt,
       buyPlan,
       cashPlanSelected,
+      // Compact form — the full breakdown and reasons are one /api/analyze/:code
+      // request away (see the DetailDialog), same tradeoff as the rest of this row.
+      classification: r.classification && {
+        type: r.classification.type,
+        investmentScore: r.classification.investmentScore,
+        speculationScore: r.classification.speculationScore,
+        confidence: r.classification.confidence,
+      },
       position,
     });
     }),

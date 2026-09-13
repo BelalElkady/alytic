@@ -46,6 +46,14 @@ test('GET /api/analyze/:code returns the full deterministic verdict', async () =
   assert.ok(a.plan.targets.mid === null || a.plan.targets.mid.price > a.plan.suggestedEntry);
   assert.equal(a.position, null);
   assert.ok(a.quality.ok);
+  // Investment-vs-speculation classification (see scoring/classification.js)
+  // reaches the API unchanged — computed inside analyzeTicker, never recomputed here.
+  assert.ok(['INVESTMENT', 'SPECULATIVE', 'HYBRID', 'NEUTRAL'].includes(a.classification.type));
+  assert.ok(a.classification.investmentScore >= 0 && a.classification.investmentScore <= 100);
+  assert.ok(a.classification.speculationScore >= 0 && a.classification.speculationScore <= 100);
+  assert.ok(a.classification.confidence >= 0 && a.classification.confidence <= 100);
+  assert.ok(Array.isArray(a.classification.reasons.investment));
+  assert.ok(Array.isArray(a.classification.dataQuality.missingMetrics));
 });
 
 test('same bars → same numbers: the reproducibility guarantee', async () => {
@@ -81,6 +89,10 @@ test('GET /api/scan plans the cash allocation across the requested codes', async
     assert.ok(row.signal);
     assert.ok(row.price > 0);
     assert.ok(row.sector, 'rows carry the Arabic sector label');
+    // Compact classification (see scoring/classification.js) — the full
+    // breakdown/reasons stay behind /api/analyze/:code to keep this row small.
+    assert.ok(['INVESTMENT', 'SPECULATIVE', 'HYBRID', 'NEUTRAL'].includes(row.classification.type));
+    assert.ok(row.classification.investmentScore >= 0 && row.classification.investmentScore <= 100);
     if (row.buyPlan) {
       assert.ok(row.buyPlan.entry > 0);
       assert.ok(row.buyPlan.stop > 0);

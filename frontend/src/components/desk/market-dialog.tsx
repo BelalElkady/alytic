@@ -115,10 +115,7 @@ export function MarketDialog() {
         {error && <ErrorState message={error} />}
         {!data && !error && (
           <div className="space-y-3">
-            <p
-              role="status"
-              className="flex items-center gap-2 text-[13px] text-muted-foreground"
-            >
+            <p role="status" className="flex items-center gap-2 text-[13px] text-muted-foreground">
               <Spinner />
               {isCash ? "جاري تحليل استخدام الكاش…" : "جاري تحليل السوق…"}
             </p>
@@ -139,7 +136,8 @@ export function MarketDialog() {
                     <b className="num">{int(data.cashPlan?.investableCash ?? 0)} ج</b>
                   </span>
                   <span>
-                    متوسط لكل سهم: <b className="num">{int(data.cashPlan?.allocationPerStock ?? 0)} ج</b>
+                    متوسط لكل سهم:{" "}
+                    <b className="num">{int(data.cashPlan?.allocationPerStock ?? 0)} ج</b>
                   </span>
                 </>
               ) : (
@@ -216,7 +214,7 @@ export function MarketDialog() {
                       );
                     })()}
 
-                    {!row.position && row.buyPlan && (
+                    {isCash && !row.position && row.buyPlan && (
                       <Notice tone="info" className="mt-3">
                         {row.buyPlan.shares > 0 ? (
                           <>

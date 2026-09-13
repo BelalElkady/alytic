@@ -129,6 +129,12 @@ export async function fetchFundamentals(codes = null) {
   const want = codes ? new Set(codes.map((c) => c.toUpperCase())) : null;
   const out = new Map();
 
+  // Computed across every row `fetchScreener()` returned, before the `want`
+  // filter below narrows it to what was asked for — see scoring/
+  // classification.js, which prefers this cross-sectional rank over an
+  // absolute threshold wherever one is available (percentileOf above).
+  const sortedByField = Object.fromEntries(PERCENTILE_FIELDS.map((f) => [f, sortedFinite(rows, f)]));
+
   for (const r of rows) {
     if (want && !want.has(r.code)) continue;
     // A row with no numeric fundamentals at all is noise, not data.
@@ -151,6 +157,12 @@ export async function fetchFundamentals(codes = null) {
       revenueEgp: r.revenueEgp,
       currentRatio: round(r.currentRatio, 2),
       industry: r.industry,
+      // 0-100 rank of the *raw* number against the whole EGX universe on
+      // this call — null wherever the universe itself had too few values to
+      // rank against. See PERCENTILE_FIELDS/percentileOf above.
+      percentiles: Object.fromEntries(
+        PERCENTILE_FIELDS.map((f) => [f, percentileOf(r[f], sortedByField[f])]),
+      ),
       // A plain-language read of the numbers, so the brief carries a judgment
       // and not just a row of ratios.
       valuation: describeValuation(r),
@@ -160,6 +172,33 @@ export async function fetchFundamentals(codes = null) {
 }
 
 const round = (x, d) => (x == null || !Number.isFinite(x) ? null : +x.toFixed(d));
+
+/** Ascending, finite-only values of `key` across every screener row. */
+function sortedFinite(rows, key) {
+  return rows.map((r) => r[key]).filter((v) => v != null && Number.isFinite(v)).sort((a, b) => a - b);
+}
+
+/**
+ * Where `value` ranks (0-100) among `sortedAsc` — "this stock's raw number is
+ * higher than N% of the EGX universe on this metric". A plain rank on the raw
+ * value, not a judgment of whether higher is good; scoring/classification.js
+ * decides that per metric (e.g. it reads this inverted for P/E and
+ * debt/equity, where a *lower* raw number is the better one).
+ */
+function percentileOf(value, sortedAsc) {
+  if (value == null || !Number.isFinite(value) || !sortedAsc.length) return null;
+  let lo = 0;
+  let hi = sortedAsc.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sortedAsc[mid] <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  return Math.round((lo / sortedAsc.length) * 1000) / 10;
+}
+
+/** Fields ranked across the universe — see percentiles on each fundamentals row below. */
+const PERCENTILE_FIELDS = ['peRatio', 'priceToBook', 'returnOnEquityPct', 'debtToEquity', 'dividendYieldPct', 'currentRatio'];
 
 /** Short Arabic characterisation of the valuation, or null when too little is known. */
 function describeValuation(r) {

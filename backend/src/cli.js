@@ -103,6 +103,10 @@ async function cmdAnalyze(code) {
   console.log(`الزخم        RSI ${s.momentum.rsi14} (${s.momentum.rsiState}) · MACD ${s.momentum.macdCross}`);
   console.log(`الحجم        ${s.volume.relativeVolume}× المتوسط · OBV ${s.volume.obvTrend}`);
   console.log(`التقييم      ${scoreColor(a.technical.score)}/100 → ${c.bold(a.technical.signal.ar)}`);
+  if (a.classification?.investmentScore != null) {
+    const cl = a.classification;
+    console.log(`التصنيف      ${c.bold(cl.type)} — استثمار ${cl.investmentScore}/100 · مضاربة ${cl.speculationScore}/100 (ثقة ${cl.confidence}%)`);
+  }
 
   console.log(`\n${c.bold('الخطة')}`);
   console.log(`  الدخول     ${p.entryNote}`);

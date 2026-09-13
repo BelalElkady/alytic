@@ -16,7 +16,7 @@ import { PortfolioReviewSchema } from './schemas.js';
 import { analystSystemPrompt } from './prompts/system.js';
 import { crossCheckIndicators } from './crosscheck.js';
 import RULES from '../config/rules.js';
-import { portfolioStructure } from '../scoring/portfolio.js';
+import { portfolioStructure, portfolioClassificationSummary } from '../scoring/portfolio.js';
 import { DEFAULT_STYLE } from '../config/styles.js';
 import { portfolioHash } from '../portfolio.js';
 import { getPortfolioReview, putPortfolioReview } from '../db.js';
@@ -247,6 +247,19 @@ export function briefFor(a) {
     lines.push('**Fundamentals:** unavailable for this stock — judge on technicals only.');
   }
 
+  // Engine-computed, not model-authored (scoring/classification.js) — quote
+  // these as given; see "Investment vs. speculative character" in the system
+  // prompt for how to use them. Never recompute or override the type.
+  if (a.classification?.investmentScore != null) {
+    const c = a.classification;
+    lines.push(
+      `**Classification:** ${c.type} — investment ${c.investmentScore}/100, speculation ${c.speculationScore}/100 (confidence ${c.confidence}%)`,
+    );
+    if (c.reasons.investment.length) lines.push(`  Investment case: ${c.reasons.investment.join(' · ')}`);
+    if (c.reasons.speculation.length) lines.push(`  Speculative character: ${c.reasons.speculation.join(' · ')}`);
+    if (c.reasons.risks.length) lines.push(`  Classification risks: ${c.reasons.risks.join(' · ')}`);
+  }
+
   if (a.shariah && a.shariah !== 'compliant') {
     lines.push(`  Note: Shariah compliance — ${a.shariah === 'non_compliant' ? 'non-compliant' : 'needs review'}`);
   }
@@ -290,6 +303,7 @@ export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL_CHAIN,
   // per-stock brief can show — and the analyst must judge them, not derive
   // them, so they are computed here and handed over ready-made.
   const structure = portfolioStructure(analyses, { cash, capital }, rules);
+  const classificationSummary = portfolioClassificationSummary(analyses);
   const sectorLines = structure.sectors
     .map((s) => `  ${s.sector}: ${Math.round(s.value).toLocaleString('en-US')} EGP (${s.pctOfCapital}%)`)
     .join('\n');
@@ -315,6 +329,15 @@ ${weightLines || '  No open positions'}
 
 ### Sector distribution
 ${sectorLines || '  No open positions'}
+
+### Investment vs. speculative composition (computed — see each stock's own Classification line for detail)
+${
+  classificationSummary.holdings
+    ? `  ${Object.entries(classificationSummary.pctByType).map(([type, pct]) => `${type} ${pct}%`).join(' · ')} | ` +
+      `avg investment score ${classificationSummary.avgInvestmentScore ?? 'n/a'} · avg speculation score ${classificationSummary.avgSpeculationScore ?? 'n/a'} | ` +
+      `speculative exposure (SPECULATIVE+HYBRID) ${classificationSummary.speculativeExposurePct}% of capital, largest single one ${classificationSummary.largestSpeculativePositionPct}%`
+    : '  No open positions'
+}
 
 ## Positions needing a decision today (${heldNeedingDecision.length} of ${held.length})
 ${heldNeedingDecision.map(briefFor).join('\n\n') || 'No position has a trigger or is near its stop today.'}
@@ -388,6 +411,7 @@ Remember: these numbers are final — judge them, do not recompute them.`;
     // Engine-computed, not model-authored: the concentration figures and the
     // health score the analyst was asked to interpret rather than invent.
     portfolioHealth: structure.health,
+    portfolioClassification: classificationSummary,
     portfolioStructure: {
       holdings: structure.holdings,
       largestPct: structure.largestPct,

@@ -17,6 +17,7 @@ import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
 import { computeStop, computeTrailingStop, computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
 import { buildTargets, targetEstimate } from './scoring/targets.js';
+import { classifyStock } from './scoring/classification.js';
 import RULES from './config/rules.js';
 
 const r2 = (x) => (x == null ? null : +x.toFixed(2));
@@ -160,6 +161,11 @@ export async function analyzeTicker(code, opts = {}) {
     // A second, wider stop for the long-horizon thesis — see computeLongTermStop
     // for why it shares its invalidation level with the long-term target.
     const longTermStop = computeLongTermStop(snapshot, effectiveStop, rules);
+    // Which computed target governs "reached target" for this position — mid
+    // for every style except long (config/styles.js), which follows its own
+    // stated guidance to judge by the long-horizon target instead. Falls back
+    // to mid when the long target isn't projectable (downtrend, no data).
+    const governingTarget = rules.targets?.primary === 'long' && targets.long?.price ? targets.long : targets.mid;
 
     positionState = {
       shares: position.shares,
@@ -183,26 +189,26 @@ export async function analyzeTicker(code, opts = {}) {
       longTermStop,
       stopBreached: price < effectiveStop,
       distanceToStopPct: r2(((price - effectiveStop) / price) * 100),
-      distanceToTargetPct: targets.mid?.price ? r2(((targets.mid.price - price) / price) * 100) : null,
-      riskRewardFromHere: targets.mid?.price ? riskReward(price, effectiveStop, targets.mid.price) : null,
+      distanceToTargetPct: governingTarget?.price ? r2(((governingTarget.price - price) / price) * 100) : null,
+      riskRewardFromHere: governingTarget?.price ? riskReward(price, effectiveStop, governingTarget.price) : null,
       // The targets-table badge: a week range plus a momentum marker.
       estimate: targetEstimate({
         price,
-        target: targets.mid?.price ?? null,
+        target: governingTarget?.price ?? null,
         dayChangePct: snapshot.price.changePct ?? 0,
         sector: meta.sector,
-        sessions: targets.mid?.horizon?.sessions ?? null,
+        sessions: governingTarget?.horizon?.sessions ?? null,
       }, rules),
       // What the desk view shows on this position's card.
       recommendation: positionRecommendation(
-        { snapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: targets.mid?.price ?? null },
+        { snapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: governingTarget?.price ?? null },
         rules,
       ),
       // The rule set, applied. These are the mechanical triggers the AI must respect.
       triggers: {
         exitOnStop: price < effectiveStop,
         takePartial: plPct >= rules.takeProfit.partialAtProfitPct && !trailing.active,
-        atTarget: targets.mid?.price != null && price >= targets.mid.price,
+        atTarget: governingTarget?.price != null && price >= governingTarget.price,
         canAverageDown:
           rules.averagingDown.allowed &&
           plPct < 0 &&
@@ -211,6 +217,18 @@ export async function analyzeTicker(code, opts = {}) {
       },
     };
   }
+
+  // Investment-vs-speculation classification (see scoring/classification.js)
+  // — purely arithmetic over what was just computed above, same "the model
+  // never calculates a number" boundary as everything else in this file.
+  const classification = classifyStock({
+    usable: true,
+    sector: meta.sector,
+    snapshot,
+    technical,
+    fundamentals: fundamentals ?? null,
+    quality,
+  });
 
   return {
     code: meta.code ?? code,
@@ -230,6 +248,7 @@ export async function analyzeTicker(code, opts = {}) {
     snapshot,
     technical,
     liquidity,
+    classification,
 
     plan: {
       suggestedEntry,
