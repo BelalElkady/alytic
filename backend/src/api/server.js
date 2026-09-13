@@ -328,6 +328,7 @@ app.use('/api', async (req, res, next) => {
     req.path === '/health' ||
     req.path === '/universe' ||
     req.path === '/indices' ||
+    req.path === '/market-status' ||
     req.path === '/contact' ||
     req.path === '/blog' ||
     req.path.startsWith('/blog/') ||
@@ -521,6 +522,19 @@ const capitalOf = (p) =>
 
 app.get('/api/universe', (_req, res) => {
   res.json({ stocks: UNIVERSE, rules: RULES, aiAvailable: aiAvailable() });
+});
+
+// EGX trades 10:00-14:30 Cairo time, Sunday-Thursday, minus bank holidays —
+// isTradingDay already carries that (see src/config/holidays.js), so this
+// just adds the intraday clock check on top of it.
+app.get('/api/market-status', (_req, res) => {
+  const today = cairoToday();
+  const [hour, minute] = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date()).split(':').map(Number);
+  const minutesNow = hour * 60 + minute;
+  const open = isTradingDay(today) && minutesNow >= 10 * 60 && minutesNow < 14 * 60 + 30;
+  res.json({ open, asOf: today });
 });
 
 // Membership lists for EGX's four headline indices, so the market scan can be

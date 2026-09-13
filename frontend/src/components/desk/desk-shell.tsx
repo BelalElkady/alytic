@@ -311,6 +311,28 @@ function RequirePhoneDialog() {
   );
 }
 
+/** Polls EGX's open/closed status (10:00-14:30 Cairo, Sun-Thu, minus holidays). */
+function useMarketStatus() {
+  const [open, setOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      api<{ open: boolean }>("/market-status")
+        .then((data) => {
+          if (!cancelled) setOpen(Boolean(data?.open));
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+  return open;
+}
+
 function DeskHeader() {
   const {
     user,
@@ -323,6 +345,7 @@ function DeskHeader() {
     pf,
   } = useDesk();
   const { dark, toggle } = useTheme();
+  const marketOpen = useMarketStatus();
   const { style: investStyle, auto: investStyleAuto } = useActiveInvestStyle(pf?.trades);
   const investStyleLabel = INVEST_STYLES.find((style) => style.key === investStyle)?.label;
   const fileRef = useRef<HTMLInputElement>(null);
@@ -415,6 +438,17 @@ function DeskHeader() {
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            {marketOpen !== null && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "whitespace-nowrap",
+                  marketOpen ? "border-up/40 text-up" : "text-muted-foreground",
+                )}
+              >
+                {marketOpen ? "السوق مفتوح" : "السوق مغلق"}
+              </Badge>
+            )}
             {subscriptionActive ? (
               <Link to="/subscribe" aria-label="حالة الاشتراك">
                 <Badge variant="secondary" className="whitespace-nowrap">
