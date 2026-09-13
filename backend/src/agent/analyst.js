@@ -376,6 +376,12 @@ Remember: these numbers are final — judge them, do not recompute them.`;
     rules.webSearch?.maxUsesPerReview ?? 30,
     Math.max(perStock, reviewed.length * perStock),
   );
+  // One cross-check tool round trip per reviewed stock, plus room for the
+  // model's own research turns and a final no-tool turn — a fixed budget was
+  // exhausted by portfolios with several actionable names in one review,
+  // throwing a generic "too many tool calls" error before any verdict came
+  // back. Capped so a single stuck stock can't spin forever.
+  const maxTurns = Math.min(20, reviewed.length + 4);
 
   const { data, raw } = await requestStructuredOR({
     model,
@@ -392,6 +398,7 @@ Remember: these numbers are final — judge them, do not recompute them.`;
     // is warranted, same as before. Resolves server-side within one turn.
     webSearch: { engine: 'auto', max_results: 4, max_uses: searchBudget },
     clientTools: [crossCheckTool],
+    maxTurns,
     feature: 'portfolio_review',
   });
 

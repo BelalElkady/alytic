@@ -202,7 +202,7 @@ const STRUCTURED_UNSUPPORTED_RE = /response_format|json_schema|structured.output
  * {enabled:false}` or tool calling outright, the offending parameter is
  * dropped and the same turn retried — see the file header.
  */
-async function runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch }, { maxTurns = 6 } = {}) {
+async function runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch, maxTurns = 6 }) {
   const toolHandlers = Object.fromEntries(clientTools.map((t) => [t.name, t.handler]));
   const baseTools = [
     ...(webSearch ? [{ type: 'openrouter:web_search', parameters: webSearch }] : []),
@@ -287,10 +287,11 @@ async function requestStructuredORWithModel({
   maxTokens,
   clientTools,
   webSearch,
+  maxTurns,
 }) {
   const client = getOpenRouterClient();
 
-  const { convo, reasoningOff: reasoningOffFromTools } = await runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch });
+  const { convo, reasoningOff: reasoningOffFromTools } = await runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch, maxTurns });
 
   const { z } = await import('zod');
   const jsonSchema = z.toJSONSchema(schema, { io: 'output' });
@@ -378,6 +379,11 @@ export async function requestStructuredOR({
   maxTokens = 4000,
   clientTools = [],
   webSearch = null,
+  // Client-tool round trips allowed before giving up (see runToolPhase).
+  // Defaults to 6; a caller whose tool usage scales with input size (e.g. one
+  // cross-check per stock in a portfolio review) should size this to match
+  // rather than let a large review exhaust a fixed budget.
+  maxTurns,
   // Tags every call for ai_spend (see db.js's logAiSpend) — e.g.
   // 'portfolio_review', 'market_research', 'blog_article'. Optional: a call
   // site that doesn't pass one just isn't tracked, nothing else changes.
@@ -387,7 +393,7 @@ export async function requestStructuredOR({
   let lastErr;
   for (let i = 0; i < chain.length; i++) {
     try {
-      const result = await requestStructuredORWithModel({ model: chain[i], system, messages, schema, schemaName, maxTokens, clientTools, webSearch });
+      const result = await requestStructuredORWithModel({ model: chain[i], system, messages, schema, schemaName, maxTokens, clientTools, webSearch, maxTurns });
       // Fire-and-forget: logging spend must never add latency to, or ever be
       // able to fail, the actual call it's describing.
       if (feature) {
