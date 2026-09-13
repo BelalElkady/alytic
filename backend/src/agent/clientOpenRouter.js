@@ -201,8 +201,18 @@ const STRUCTURED_UNSUPPORTED_RE = /response_format|json_schema|structured.output
  * Adapts to whatever model is configured: if it rejects `reasoning:
  * {enabled:false}` or tool calling outright, the offending parameter is
  * dropped and the same turn retried — see the file header.
+ *
+ * Bounded two ways, and either one just forces a final tools-free turn
+ * rather than failing the whole review: `maxTurns` caps round trips, and
+ * `budgetMs` caps wall-clock time regardless of how many turns that leaves
+ * unused. The time budget matters independently of the turn count — a
+ * portfolio review scales `maxTurns` with how many stocks need a verdict
+ * (see analyst.js), but each turn's own latency (a tool call, a slow model)
+ * is unbounded, so a large review could otherwise run long enough to be cut
+ * off by a proxy/gateway in front of this server with an opaque 504 instead
+ * of the clear error this function used to throw.
  */
-async function runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch, maxTurns = 6 }) {
+async function runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch, maxTurns = 6, budgetMs = 30_000 }) {
   const toolHandlers = Object.fromEntries(clientTools.map((t) => [t.name, t.handler]));
   const baseTools = [
     ...(webSearch ? [{ type: 'openrouter:web_search', parameters: webSearch }] : []),
@@ -211,9 +221,13 @@ async function runToolPhase(client, { model, system, messages, clientTools, maxT
   let convo = [{ role: 'system', content: system }, ...messages];
   let toolsEnabled = baseTools.length > 0;
   let reasoningOff = true;
+  const deadline = Date.now() + budgetMs;
 
-  for (let turn = 0; turn < maxTurns; ) {
-    const tools = toolsEnabled ? baseTools : [];
+  // <= maxTurns, not <: the last allowed iteration is reserved for a forced
+  // tools-free turn (see withinBudget below) instead of one more tool round trip.
+  for (let turn = 0; turn <= maxTurns; ) {
+    const withinBudget = turn < maxTurns && Date.now() < deadline;
+    const tools = toolsEnabled && withinBudget ? baseTools : [];
     let res;
     try {
       res = await callWithRetry(() =>
@@ -265,6 +279,9 @@ async function runToolPhase(client, { model, system, messages, clientTools, maxT
     }
     return { finalMessage: message, convo: [...convo, message], reasoningOff };
   }
+  // Unreachable in practice: the final iteration always sends `tools: []`,
+  // so a compliant model has nothing to call and returns above. Kept only in
+  // case a model emits tool_calls anyway with none offered.
   throw new Error('استدعاءات أدوات متكررة من غير حل — قلّل عدد الأدوات المتاحة');
 }
 
