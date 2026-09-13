@@ -9,8 +9,8 @@ import {
   LineChart,
   LogOut,
   Mail,
-  Menu,
   Moon,
+  MoreHorizontal,
   PencilLine,
   Radar,
   RefreshCw,
@@ -415,8 +415,8 @@ function DeskHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/75">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-3 py-3 sm:px-5">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <Link to="/" aria-label="EGXpert" className="shrink-0">
               <LogoMark className="size-9" />
             </Link>
@@ -437,7 +437,54 @@ function DeskHeader() {
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="order-3 flex w-full flex-wrap items-center gap-1.5 sm:order-2 sm:w-auto">
+            {marketOpen !== null && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "whitespace-nowrap",
+                  marketOpen ? "border-up/40 text-up" : "text-muted-foreground",
+                )}
+              >
+                {marketOpen ? "السوق مفتوح" : "السوق مغلق"}
+              </Badge>
+            )}
+            {subscriptionActive ? (
+              <Link to="/subscribe" aria-label="حالة الاشتراك">
+                <Badge variant="secondary" className="whitespace-nowrap">
+                  {user?.plan === "yearly"
+                    ? "اشتراك سنوي"
+                    : user?.plan === "monthly"
+                      ? "اشتراك شهري"
+                      : "اشتراك"}
+                  {periodEnd ? ` حتى ${arDay(periodEnd.slice(0, 10))}` : ""}
+                </Badge>
+              </Link>
+            ) : (
+              trialDaysLeft !== null && (
+                <Link to="/subscribe" aria-label="حالة التجربة المجانية">
+                  <Badge
+                    variant="outline"
+                    className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
+                  >
+                    {trialActive
+                      ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم تداول" : "أيام تداول"}`
+                      : "انتهت التجربة المجانية"}
+                  </Badge>
+                </Link>
+              )
+            )}
+            {investStyleLabel && (
+              <Link to="/settings" aria-label="سلوكك الاستثماري">
+                <Badge variant="secondary" className="whitespace-nowrap">
+                  سلوكك الاستثماري: {investStyleLabel}
+                  {investStyleAuto ? " (تلقائي)" : ""}
+                </Badge>
+              </Link>
+            )}
+          </div>
+
+          <div className="order-2 flex shrink-0 items-center gap-1.5 sm:order-3">
             <span className="hidden max-w-32 truncate text-[12.5px] text-muted-foreground sm:inline">
               {user?.name || user?.email}
             </span>
@@ -448,53 +495,6 @@ function DeskHeader() {
               <LogOut className="size-4" />
             </Button>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          {marketOpen !== null && (
-            <Badge
-              variant="outline"
-              className={cn(
-                "whitespace-nowrap",
-                marketOpen ? "border-up/40 text-up" : "text-muted-foreground",
-              )}
-            >
-              {marketOpen ? "السوق مفتوح" : "السوق مغلق"}
-            </Badge>
-          )}
-          {subscriptionActive ? (
-            <Link to="/subscribe" aria-label="حالة الاشتراك">
-              <Badge variant="secondary" className="whitespace-nowrap">
-                {user?.plan === "yearly"
-                  ? "اشتراك سنوي"
-                  : user?.plan === "monthly"
-                    ? "اشتراك شهري"
-                    : "اشتراك"}
-                {periodEnd ? ` حتى ${arDay(periodEnd.slice(0, 10))}` : ""}
-              </Badge>
-            </Link>
-          ) : (
-            trialDaysLeft !== null && (
-              <Link to="/subscribe" aria-label="حالة التجربة المجانية">
-                <Badge
-                  variant="outline"
-                  className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
-                >
-                  {trialActive
-                    ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم تداول" : "أيام تداول"}`
-                    : "انتهت التجربة المجانية"}
-                </Badge>
-              </Link>
-            )
-          )}
-          {investStyleLabel && (
-            <Link to="/settings" aria-label="سلوكك الاستثماري">
-              <Badge variant="secondary" className="whitespace-nowrap">
-                سلوكك الاستثماري: {investStyleLabel}
-                {investStyleAuto ? " (تلقائي)" : ""}
-              </Badge>
-            </Link>
-          )}
         </div>
 
         <div
@@ -624,13 +624,21 @@ function DesktopNav() {
   );
 }
 
+// Beyond this many destinations, the tab bar can't fit them all as icon
+// tabs on a phone screen — the extras collapse behind a trailing "المزيد"
+// tab that opens the same sheet the old design used for every destination.
+const MAX_MOBILE_TABS = 5;
+
 function MobileNav() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { user } = useDesk();
   const [open, setOpen] = useState(false);
 
   const items = NAV.filter((item) => !item.adminOnly || user?.isAdmin);
-  const active = items.find((item) => pathname.startsWith(item.to));
+  const overflow = items.length > MAX_MOBILE_TABS;
+  const primary = overflow ? items.slice(0, MAX_MOBILE_TABS - 1) : items;
+  const more = overflow ? items.slice(MAX_MOBILE_TABS - 1) : [];
+  const activeInMore = more.some((item) => pathname.startsWith(item.to));
 
   useEffect(() => {
     setOpen(false);
@@ -639,22 +647,48 @@ function MobileNav() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-3 py-2 backdrop-blur md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden"
         aria-label="التبويبات"
       >
-        <SheetTrigger asChild>
-          <Button variant="outline" className="w-full justify-center gap-2">
-            <Menu className="size-4" />
-            {active?.label ?? "التبويبات"}
-          </Button>
-        </SheetTrigger>
+        <div className="flex justify-between gap-0.5 px-1 py-1.5">
+          {primary.map(({ to, label, icon: Icon }) => {
+            const active = pathname.startsWith(to);
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  "flex min-w-16 flex-1 flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[10.5px] font-medium transition-colors",
+                  active ? "bg-secondary text-foreground" : "text-muted-foreground",
+                )}
+              >
+                <Icon className="size-4.5" />
+                {label}
+              </Link>
+            );
+          })}
+          {overflow && (
+            <SheetTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex min-w-16 flex-1 flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[10.5px] font-medium transition-colors",
+                  activeInMore ? "bg-secondary text-foreground" : "text-muted-foreground",
+                )}
+              >
+                <MoreHorizontal className="size-4.5" />
+                المزيد
+              </button>
+            </SheetTrigger>
+          )}
+        </div>
       </nav>
       <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto rounded-t-2xl">
         <SheetHeader>
-          <SheetTitle>التبويبات</SheetTitle>
+          <SheetTitle>المزيد</SheetTitle>
         </SheetHeader>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          {items.map(({ to, label, icon: Icon }) => {
+          {more.map(({ to, label, icon: Icon }) => {
             const isActive = pathname.startsWith(to);
             return (
               <Link
