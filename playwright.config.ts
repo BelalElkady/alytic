@@ -33,7 +33,7 @@ export default defineConfig({
   webServer: [
     {
       command: `node tests/e2e/backend-server.mjs`,
-      env: { PORT: String(BACKEND_PORT) },
+      env: { PORT: String(BACKEND_PORT), E2E_SKIP_RATE_LIMITS: "1" },
       url: `http://127.0.0.1:${BACKEND_PORT}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,

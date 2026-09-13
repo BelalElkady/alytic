@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import '../helpers/env.js';
 
 import { startServer, request, sessionFrom, registerUser, uniqueEmail } from '../helpers/server.js';
-import { supabase } from '../../src/supabaseClient.js';
+import { getUserByEmail } from '../../src/db.js';
 import { writeBars, synthBars } from '../helpers/bars.js';
 
 // Fixture bars so POST /api/snapshot never needs to fetch real market data.
@@ -60,16 +60,14 @@ test('every protected endpoint answers 401 in Arabic without a session', async (
   assert.equal(post.status, 401);
 });
 
-test('register issues a session cookie and a public user object', async () => {
+test('register confirms quietly: no session, no account state in the response', async () => {
   const res = await request(baseUrl, 'POST', '/api/auth/register', {
     body: { email: uniqueEmail(), password: 'Passw0rd!123', name: 'حساب', phone: '01012345678' },
   });
   assert.equal(res.status, 201);
-  assert.equal(res.body.user.emailVerified, false);
-  assert.equal(res.body.user.passwordHash, undefined);
-  const rawCookie = res.setCookies.find((c) => c.startsWith('alytic_session='));
-  assert.ok(rawCookie, 'a session cookie must be set');
-  assert.match(rawCookie, /HttpOnly/);
+  assert.deepEqual(res.body, { ok: true });
+  assert.equal(res.setCookies.find((c) => c.startsWith('alytic_session=')), undefined,
+    'registration must not sign anyone in');
 });
 
 test('register rejects a bad email with the engine\'s Arabic message', async () => {
@@ -80,12 +78,28 @@ test('register rejects a bad email with the engine\'s Arabic message', async () 
   assert.ok(res.body.error.includes('بريد'));
 });
 
-test('registering the same email twice reports the known conflict', async () => {
+test('registering the same email twice answers identically — no enumeration', async () => {
   const email = uniqueEmail();
-  await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: '01012345678' } });
+  const first = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: '01012345678' } });
   const again = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: '01012345678' } });
-  assert.equal(again.status, 500);
-  assert.equal(again.body.error, 'البريد الإلكتروني مسجل بالفعل');
+  assert.equal(first.status, 201);
+  assert.equal(again.status, 201);
+  assert.deepEqual(again.body, first.body, 'an existing email must get the exact same response');
+});
+
+test('mass registration from one IP is throttled with the shared 429 message', async () => {
+  // One fixed X-Forwarded-For = one limiter bucket (see 'trust proxy 1').
+  const ip = '203.0.113.77';
+  const register = () => request(baseUrl, 'POST', '/api/auth/register', {
+    body: { email: uniqueEmail(), password: 'Passw0rd!123', phone: '01012345678' },
+    headers: { 'x-forwarded-for': ip },
+  });
+  for (let i = 0; i < 8; i++) {
+    assert.equal((await register()).status, 201, `attempt ${i + 1} is inside the limit`);
+  }
+  const throttled = await register();
+  assert.equal(throttled.status, 429);
+  assert.equal(throttled.body.error, 'محاولات كتير في وقت قصير — استنى شوية وجرّب تاني');
 });
 
 test('register rejects a missing phone number with its own Arabic message', async () => {
@@ -98,7 +112,8 @@ test('register rejects a missing phone number with its own Arabic message', asyn
 
 test('login sets the cookie; a wrong password fails with the Arabic message', async () => {
   const { email, cookie, raw } = await registerUser(baseUrl);
-  assert.equal(raw.status, 201);
+  assert.equal(raw.status, 200, 'the helper returns the login response');
+  assert.ok(cookie, 'login must set the session cookie');
 
   const bad = await request(baseUrl, 'POST', '/api/auth/login', { body: { email, password: 'Nope12345' } });
   assert.equal(bad.status, 500);
@@ -286,9 +301,10 @@ test('email verification completes over HTTP', async () => {
   const reg = await request(baseUrl, 'POST', '/api/auth/register', {
     body: { email, password: 'Passw0rd!123', name: 'ف', phone: '01012345678' },
   });
-  const { data: row } = await supabase.from('users').select('verification_token').eq('id', reg.body.user.id).single();
-  const token = row.verification_token;
+  assert.equal(reg.status, 201);
+  const token = (await getUserByEmail(email)).verification_token;
+  assert.ok(token, 'the created row carries a verification token');
   const res = await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } });
   assert.equal(res.status, 200);
-  assert.equal(res.body.user.emailVerified, true);
+  assert.equal(res.body.user.emailVerified ?? res.body.user.email_verified, true);
 });

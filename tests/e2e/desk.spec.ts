@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { goto, expectToast, loginViaUi, pickStock, registerViaUi, signOutViaUi } from "./helpers";
+import { goto, expectToast, loginViaUi, newDeskUser, pickStock, signOutViaUi } from "./helpers";
 
 test.describe("desk flows", () => {
   test("recording a trade shows up in the trades log and the portfolio", async ({ page }) => {
-    await registerViaUi(page);
+    await newDeskUser(page);
 
     await goto(page, "/trades");
     await pickStock(page, "ABUK");
@@ -22,7 +22,7 @@ test.describe("desk flows", () => {
   });
 
   test("cash management and the favorites round-trip", async ({ page }) => {
-    await registerViaUi(page);
+    await newDeskUser(page);
 
     await goto(page, "/cash");
     await page.locator("#cash-in").fill("75000");
@@ -46,7 +46,7 @@ test.describe("desk flows", () => {
     // time. This exercises the same per-user snapshot path (/api/snapshot)
     // that the cron calls for each portfolio, via the frontend's API proxy,
     // using the browser context's session cookie.
-    await registerViaUi(page);
+    await newDeskUser(page);
     await goto(page, "/trades");
     await pickStock(page, "ABUK");
     await page.getByLabel("العدد").fill("50");
@@ -63,7 +63,7 @@ test.describe("desk flows", () => {
   });
 
   test("the manual-entry dialog corrects a holding", async ({ page }) => {
-    await registerViaUi(page);
+    await newDeskUser(page);
     await goto(page, "/trades");
     await pickStock(page, "ABUK");
     await page.getByLabel("العدد").fill("100");
@@ -87,7 +87,7 @@ test.describe("desk flows", () => {
   });
 
   test("state survives a logout and a fresh login", async ({ page }) => {
-    const email = await registerViaUi(page);
+    const email = await newDeskUser(page);
     await goto(page, "/trades");
     await pickStock(page, "SWDY");
     await page.getByLabel("العدد").fill("10");

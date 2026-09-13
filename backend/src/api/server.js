@@ -127,13 +127,20 @@ app.use(express.json());
 // want to hammer: password guessing, mass account creation, and using the
 // app's own outgoing email as a spam relay. Keyed by IP (see 'trust proxy'
 // above); a shared 429 body avoids leaking which limiter tripped.
-const rateLimited = (max, windowMinutes) => rateLimit({
-  windowMs: windowMinutes * 60 * 1000,
-  max,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'محاولات كتير في وقت قصير — استنى شوية وجرّب تاني' },
-});
+// The E2E suite drives this exact HTTP surface with many rapid registrations
+// and logins from a single browser origin, so it opts out via env — the
+// limiters themselves stay covered by the API tests, which pin a fixed
+// X-Forwarded-For and assert the 429.
+const skipLimits = process.env.E2E_SKIP_RATE_LIMITS === '1';
+const rateLimited = (max, windowMinutes) => (skipLimits
+  ? (_req, _res, next) => next()
+  : rateLimit({
+    windowMs: windowMinutes * 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'محاولات كتير في وقت قصير — استنى شوية وجرّب تاني' },
+  }));
 const loginLimiter = rateLimited(10, 15);
 const registerLimiter = rateLimited(8, 60);
 const emailActionLimiter = rateLimited(6, 60); // forgot-password, resend-verification, contact
