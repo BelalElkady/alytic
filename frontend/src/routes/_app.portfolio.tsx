@@ -256,7 +256,6 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
         stop={p.stop}
         cost={p.avgCost}
         target={primaryTarget}
-        longStop={p.longTermStop?.stop}
         longTarget={row.longTarget?.price}
       />
 

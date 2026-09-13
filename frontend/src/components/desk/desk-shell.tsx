@@ -437,51 +437,7 @@ function DeskHeader() {
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-            {marketOpen !== null && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "whitespace-nowrap",
-                  marketOpen ? "border-up/40 text-up" : "text-muted-foreground",
-                )}
-              >
-                {marketOpen ? "السوق مفتوح" : "السوق مغلق"}
-              </Badge>
-            )}
-            {subscriptionActive ? (
-              <Link to="/subscribe" aria-label="حالة الاشتراك">
-                <Badge variant="secondary" className="whitespace-nowrap">
-                  {user?.plan === "yearly"
-                    ? "اشتراك سنوي"
-                    : user?.plan === "monthly"
-                      ? "اشتراك شهري"
-                      : "اشتراك"}
-                  {periodEnd ? ` حتى ${arDay(periodEnd.slice(0, 10))}` : ""}
-                </Badge>
-              </Link>
-            ) : (
-              trialDaysLeft !== null && (
-                <Link to="/subscribe" aria-label="حالة التجربة المجانية">
-                  <Badge
-                    variant="outline"
-                    className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
-                  >
-                    {trialActive
-                      ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم تداول" : "أيام تداول"}`
-                      : "انتهت التجربة المجانية"}
-                  </Badge>
-                </Link>
-              )
-            )}
-            {investStyleLabel && (
-              <Link to="/settings" aria-label="سلوكك الاستثماري">
-                <Badge variant="secondary" className="whitespace-nowrap">
-                  سلوكك الاستثماري: {investStyleLabel}
-                  {investStyleAuto ? " (تلقائي)" : ""}
-                </Badge>
-              </Link>
-            )}
+          <div className="flex shrink-0 items-center gap-1.5">
             <span className="hidden max-w-32 truncate text-[12.5px] text-muted-foreground sm:inline">
               {user?.name || user?.email}
             </span>
@@ -494,9 +450,56 @@ function DeskHeader() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-1.5">
+          {marketOpen !== null && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "whitespace-nowrap",
+                marketOpen ? "border-up/40 text-up" : "text-muted-foreground",
+              )}
+            >
+              {marketOpen ? "السوق مفتوح" : "السوق مغلق"}
+            </Badge>
+          )}
+          {subscriptionActive ? (
+            <Link to="/subscribe" aria-label="حالة الاشتراك">
+              <Badge variant="secondary" className="whitespace-nowrap">
+                {user?.plan === "yearly"
+                  ? "اشتراك سنوي"
+                  : user?.plan === "monthly"
+                    ? "اشتراك شهري"
+                    : "اشتراك"}
+                {periodEnd ? ` حتى ${arDay(periodEnd.slice(0, 10))}` : ""}
+              </Badge>
+            </Link>
+          ) : (
+            trialDaysLeft !== null && (
+              <Link to="/subscribe" aria-label="حالة التجربة المجانية">
+                <Badge
+                  variant="outline"
+                  className={cn("whitespace-nowrap", !trialActive && "border-down/40 text-down")}
+                >
+                  {trialActive
+                    ? `تجربة مجانية: باقي ${trialDaysLeft} ${trialDaysLeft === 1 ? "يوم تداول" : "أيام تداول"}`
+                    : "انتهت التجربة المجانية"}
+                </Badge>
+              </Link>
+            )
+          )}
+          {investStyleLabel && (
+            <Link to="/settings" aria-label="سلوكك الاستثماري">
+              <Badge variant="secondary" className="whitespace-nowrap">
+                سلوكك الاستثماري: {investStyleLabel}
+                {investStyleAuto ? " (تلقائي)" : ""}
+              </Badge>
+            </Link>
+          )}
+        </div>
+
         <div
           className={cn(
-            "scrollbar-slim -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5",
+            "flex flex-wrap items-center gap-2",
             // Every action here hits an endpoint the paywall answers with 402.
             locked && "hidden",
           )}

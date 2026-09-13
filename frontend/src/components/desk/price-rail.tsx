@@ -7,7 +7,6 @@ type RailProps = {
   stop?: number | null | undefined;
   cost?: number | null | undefined;
   target?: number | null | undefined;
-  longStop?: number | null | undefined;
   longTarget?: number | null | undefined;
   className?: string | undefined;
   compact?: boolean | undefined;
@@ -19,18 +18,24 @@ type Mark = { value: number; label: string; dot: string; text: string };
  * Price vs stop / cost / targets, on one line.
  * Same four levels the previous rail showed; the labels moved into a legend
  * underneath so nothing overlaps on narrow screens.
+ *
+ * `stop` is deliberately the only stop shown: it is the one the active
+ * style's mechanical rules actually enforce (session-close trailing stop —
+ * see config/styles.js), so it is the only stop those rules ever name. A
+ * second, wider level (the SMA200-based long-term stop analyze.js also
+ * computes) is informational only and never appears here, so the spectrum
+ * never shows two competing "the stop" points for one position.
  */
 export function PriceRail({
   price,
   stop,
   cost,
   target,
-  longStop,
   longTarget,
   className,
   compact = false,
 }: RailProps) {
-  const lows = [stop, cost, price, longStop].filter((v): v is number => v != null);
+  const lows = [stop, cost, price].filter((v): v is number => v != null);
   const highs = [target, longTarget, price].filter((v): v is number => v != null);
   if (!lows.length || !highs.length || price == null) return null;
 
@@ -73,21 +78,10 @@ export function PriceRail({
       dot: "bg-primary",
       text: "text-primary",
     });
-  // The tactical stop is the one that actually triggers first (computeLongTermStop
-  // never sets longStop above it), so it always gets its own mark. The long-term
-  // stop only earns a second mark when it sits meaningfully further out — right on
-  // top of the tactical stop it would just be a redundant label at the same pixel.
   if (stop != null)
     marks.push({
       value: stop,
       label: `وقف ${fmt(stop)}`,
-      dot: "bg-down",
-      text: "text-down",
-    });
-  if (longStop != null && (stop == null || (stop - longStop) / price > 0.005))
-    marks.push({
-      value: longStop,
-      label: `وقف بعيد ${fmt(longStop)}`,
       dot: "bg-down",
       text: "text-down",
     });

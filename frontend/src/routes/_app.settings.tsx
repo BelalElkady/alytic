@@ -8,6 +8,7 @@ import { api, post } from "@/lib/api";
 import {
   clearInvestStyle,
   INVEST_STYLES,
+  STYLE_RULES,
   setInvestStyle,
   useActiveInvestStyle,
   type StyleKey,
@@ -96,6 +97,17 @@ function SettingsPage() {
     );
   if (!data) return <LoadingBlock rows={3} />;
 
+  const base = data.rules;
+  const override = STYLE_RULES[style];
+  const rules = {
+    ...base,
+    trailing: { ...base.trailing, ...override.trailing },
+    takeProfit: { ...base.takeProfit, ...override.takeProfit },
+    entry: { ...base.entry, ...override.entry },
+    sizing: { ...base.sizing, ...override.sizing },
+  };
+  const activeStyle = INVEST_STYLES.find((item) => item.key === style)!;
+
   return (
     <div className="space-y-4">
       <Panel
@@ -143,6 +155,24 @@ function SettingsPage() {
             );
           })}
         </div>
+      </Panel>
+
+      <Panel title="قواعد التوصيات المفعّلة" description={activeStyle.description}>
+        <ul className="space-y-2 text-[13px] leading-relaxed">
+          {[
+            `وقف متحرك ${rules.trailing.trailPct}% يتفعّل تلقائيًا لما السهم يعلى ${rules.trailing.activateAtProfitPct}% فوق تكلفتك، ولا ينزل أبدًا.`,
+            "الوقف يُحترم على إغلاق الجلسة — إغلاق تحته = توصية بيع كلي.",
+            `ربح ${rules.takeProfit.partialAtProfitPct}%+ = توصية بيع جزئي ${rules.takeProfit.partialFraction * 100}% بأمر محدد فوق السعر ${rules.takeProfit.limitAbovePricePct}%.`,
+            "وصول الهدف = بيع ثلث ورفع الوقف للباقي.",
+            "تحسين المتوسط فقط للأسهم القيادية فوق متوسط 200 يوم — لا تعديل على سهم ضعيف.",
+            `أقل عائد/مخاطرة مقبول: ${rules.entry.minRiskReward} · المخاطرة للصفقة ${rules.sizing.riskPerTradePct}% · الحد الأقصى للمركز ${rules.sizing.maxPositionPct}%.`,
+          ].map((rule) => (
+            <li key={rule} className="flex gap-2.5">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" />
+              <span>{rule}</span>
+            </li>
+          ))}
+        </ul>
       </Panel>
 
       <Panel
