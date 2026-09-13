@@ -40,7 +40,7 @@ const toneClass: Record<string, string> = {
 
 /** Market / cash-allocation scan, same /api/scan payload as before. */
 export function MarketDialog() {
-  const { marketFocus, openMarket, pf, cashScanAvailableToday, markCashScanUsed } = useDesk();
+  const { marketFocus, openMarket, pf } = useDesk();
   const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState("ALL");
@@ -48,13 +48,6 @@ export function MarketDialog() {
 
   useEffect(() => {
     if (!marketFocus) return;
-    // The daily تحليل الكاش credit is already spent — don't burn another
-    // request just to get the same 429 back from the backend.
-    if (marketFocus === "cash" && !cashScanAvailableToday) {
-      setData(null);
-      setError("استخدمت تحليل الكاش النهارده بالفعل — متاح تاني بكرة.");
-      return;
-    }
     let cancelled = false;
     setData(null);
     setError(null);
@@ -70,7 +63,6 @@ export function MarketDialog() {
       .then((result) => {
         if (cancelled) return;
         setData(result);
-        if (marketFocus === "cash") markCashScanUsed();
       })
       .catch((caught) => !cancelled && setError(caught?.message ?? "تعذر تحليل السوق"));
     return () => {

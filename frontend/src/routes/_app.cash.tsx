@@ -49,7 +49,7 @@ type FavoriteRow = {
 };
 
 function CashPage() {
-  const { pf, totals, reloadPortfolio, openMarket, cashScanAvailableToday } = useDesk();
+  const { pf, totals, reloadPortfolio, openMarket } = useDesk();
   const [cash, setCash] = useState("");
   const [savingCash, setSavingCash] = useState(false);
   const [watchCode, setWatchCode] = useState("");
@@ -177,14 +177,8 @@ function CashPage() {
 
         <Notice className="mt-4">{advice}</Notice>
 
-        <Button
-          variant="outline"
-          className="mt-4"
-          disabled={!cashScanAvailableToday}
-          title={cashScanAvailableToday ? undefined : "استخدمت تحليل الكاش النهارده بالفعل — متاح تاني بكرة"}
-          onClick={() => openMarket("cash")}
-        >
-          {cashScanAvailableToday ? "حلل استخدام الكاش" : "تحليل الكاش (مستخدم النهارده)"}
+        <Button variant="outline" className="mt-4" onClick={() => openMarket("cash")}>
+          حلل استخدام الكاش
         </Button>
       </Panel>
 

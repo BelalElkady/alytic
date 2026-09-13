@@ -45,7 +45,6 @@ export type User = {
   subscriptionActive?: boolean;
   currentPeriodEnd?: string | null;
   hasAccess?: boolean;
-  cashScanAvailableToday?: boolean;
   [key: string]: any;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -93,8 +92,6 @@ type DeskValue = {
   openMarket: (focus: "market" | "cash" | null) => void;
   manualOpen: boolean;
   setManualOpen: (open: boolean) => void;
-  cashScanAvailableToday: boolean;
-  markCashScanUsed: () => void;
 };
 
 const DeskContext = createContext<DeskValue | null>(null);
@@ -122,8 +119,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [marketFocus, setMarketFocus] = useState<"market" | "cash" | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
-  const [cashScanAvailableToday, setCashScanAvailableToday] = useState(true);
-  const markCashScanUsed = useCallback(() => setCashScanAvailableToday(false), []);
 
   const rowsRef = useRef<Row[]>([]);
   rowsRef.current = rows;
@@ -141,7 +136,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     const { user: me } = await api("/api/auth/me");
     setUser(me ?? null);
-    if (me) setCashScanAvailableToday(me.cashScanAvailableToday ?? true);
     return me ?? null;
   }, []);
 
@@ -271,7 +265,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         const { user: me } = await api("/api/auth/me");
         if (!cancelled && me) {
           setUser(me);
-          setCashScanAvailableToday(me.cashScanAvailableToday ?? true);
         }
       } catch {
         /* offline or unauthenticated — the auth screen handles both */
@@ -308,6 +301,25 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [user, hasAccess, refreshPrices]);
+
+  // Activation is a manual admin action from a separate session, so a tab
+  // that's been open since before the grant never learns about it on its
+  // own — trialActive/subscriptionActive were only read once at mount. Catch
+  // up whenever the tab regains focus, the same trigger refreshPrices above
+  // already uses, so the header badge and paywall reflect a grant without
+  // requiring a full reload or logout/login.
+  useEffect(() => {
+    if (!user) return;
+    const onVisible = () => {
+      if (!document.hidden) void refreshUser();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [user, refreshUser]);
 
   // Registration no longer logs the caller in directly (the backend never
   // reveals whether the email was already taken, so it can't hand back a
@@ -390,8 +402,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     openMarket: setMarketFocus,
     manualOpen,
     setManualOpen,
-    cashScanAvailableToday,
-    markCashScanUsed,
   };
 
   return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;
