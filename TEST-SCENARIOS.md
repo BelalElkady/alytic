@@ -39,8 +39,7 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
   hitting the API port directly is not an end-user path.
 - Needed for full coverage: a working `OPENROUTER_API_KEY` (AI features), SMTP
   (verification / reset / contact emails), the Supabase storage bucket
-  `support-attachments` (chat image upload), `GOOGLE_CLIENT_ID` (Google sign-in),
-  `UNSPLASH_ACCESS_KEY` (blog images).
+  `support-attachments` (chat image upload), `GOOGLE_CLIENT_ID` (Google sign-in).
 - Without an AI key: screenshot import, market analysis, per-stock analysis and
   fundamentals must degrade with a clear Arabic message (`503`), never a blank
   screen. That is itself a scenario — see AI-01.

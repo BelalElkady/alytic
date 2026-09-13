@@ -1,7 +1,7 @@
 /**
- * Auto-generated blog posts: ten Arabic articles about the Egyptian Exchange
- * (EGX) written one at a time, spaced a couple of hours apart across the day
- * (see /api/cron/blog-generate in server.js, triggered every 2 hours by
+ * Auto-generated blog posts: two Arabic articles about the Egyptian Exchange
+ * (EGX) written one at a time, spaced across the trading day (see
+ * /api/cron/blog-generate in server.js, triggered by
  * .github/workflows/blog-cron.yml). Published immediately on generation, no
  * admin click required — the review model's verdict/notes still land on the
  * row either way, so a flagged post is still visible for an admin to
@@ -9,12 +9,15 @@
  *
  * Two-stage daily workflow:
  *  1. discoverTopics() researches EGX news once a day and clusters it into
- *     10 distinct (primary keyword, news angle) pairs — one per article, no
- *     overlap. The result is persisted (blog_daily_topics) so the several
- *     cron runs that follow across the day don't each re-run — and re-pay
- *     for — discovery.
+ *     ARTICLES_PER_DAY distinct (primary keyword, news angle) pairs — one
+ *     per article, no overlap. The result is persisted (blog_daily_topics)
+ *     so the several cron runs that follow across the day don't each
+ *     re-run — and re-pay for — discovery.
  *  2. Each cron run writes, reviews, and stores exactly one article: the
  *     next not-yet-generated topic in that day's plan.
+ *
+ * No feature image: the writer model is text-only, so an image would have
+ * needed a separate stock-photo lookup — dropped as unnecessary cost.
  *
  * Mirrors marketAnalysis.js's cache-or-generate shape: one generation per
  * (post_date, batch_index), read afterward by every visitor rather than
@@ -24,7 +27,6 @@
 
 import { z } from 'zod';
 import { requestStructuredOR } from './clientOpenRouter.js';
-import { searchStockImage } from './stockImage.js';
 import {
   getBlogPostByBatch,
   getBlogPostsForDate,
@@ -44,11 +46,10 @@ const BLOG_MODEL = process.env.BLOG_MODEL ?? 'nvidia/nemotron-3-ultra-550b-a55b:
 // admin approval queue — see reviewBlogPost.
 const BLOG_REVIEW_MODEL = process.env.BLOG_REVIEW_MODEL ?? 'google/gemma-4-31b-it:free';
 
-// Lowered from 10: at 10/day the cron's search budget (discovery + up to 2
-// generations per article) ran ~90-100 web searches/day regardless of actual
-// readership, and content was already accumulating faster than it was being
-// approved/published. Raise it back if publishing cadence needs it.
-const ARTICLES_PER_DAY = 4;
+// Lowered from 4: content was accumulating faster than it was being
+// approved/published, and the search/generation budget scales with this
+// number. Raise it back if publishing cadence needs it.
+const ARTICLES_PER_DAY = 2;
 const MIN_WORDS = 500;
 const MAX_WORDS = 1000;
 
@@ -109,15 +110,6 @@ export const BlogPostSchema = z.object({
   sources: z
     .array(z.object({ title: z.string(), url: z.string() }))
     .describe('Real sources actually found via web search — never invented'),
-  image: z.object({
-    concept: z.string().describe('Arabic description of the feature image: subject, framing, and mood'),
-    alt: z.string().describe('Arabic alt text for the feature image'),
-    caption: z.string().describe('Arabic caption for the feature image'),
-    ratioAndFilename: z.string().describe('Recommended aspect ratio and a suggested filename, e.g. "16:9 — comi-q3-earnings-egx30.jpg"'),
-    searchQuery: z
-      .string()
-      .describe('2-4 ENGLISH keywords (never Arabic) for a stock-photo search matching the concept, e.g. "stock market chart finance" or "bank building egypt"'),
-  }),
 });
 
 const ReviewSchema = z.object({
@@ -296,10 +288,6 @@ async function generateReviewAndStore({ postDate, batchIndex, topic }) {
     review = { ...review, verdict: 'flag', notes: note };
   }
 
-  // Best-effort — never throws (see stockImage.js), so a search hiccup only
-  // means this one post publishes without a photo, not that generation fails.
-  const stockImage = await searchStockImage(post.image?.searchQuery);
-
   const slug = `${post.slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'egx-update'}-${postDate}-${batchIndex}`;
 
   const inserted = await insertBlogPostDraft({
@@ -314,12 +302,12 @@ async function generateReviewAndStore({ postDate, batchIndex, topic }) {
     content: withCta(post.content),
     tags: post.tags,
     sources: post.sources,
-    image: post.image,
-    imageUrl: stockImage?.url ?? null,
-    imageThumbUrl: stockImage?.thumbUrl ?? null,
-    imageSourceUrl: stockImage?.sourceUrl ?? null,
-    imageCreditName: stockImage?.creditName ?? null,
-    imageCreditUrl: stockImage?.creditUrl ?? null,
+    image: null,
+    imageUrl: null,
+    imageThumbUrl: null,
+    imageSourceUrl: null,
+    imageCreditName: null,
+    imageCreditUrl: null,
     generationModel: genRaw.model,
     generationUsage: genRaw.usage,
     reviewModel,
@@ -357,9 +345,10 @@ const inFlight = new Map();
  * generated: null — once ARTICLES_PER_DAY is already reached.
  *
  * Deliberately one article per call rather than the whole day's batch: this
- * is meant to be triggered every couple of hours (see blog-cron.yml)
- * instead of all at once, so the ten articles land spread across the day.
- * Topic discovery still runs only once a day — see getOrCreateTopicsForDay.
+ * is meant to be triggered a couple of times a day (see blog-cron.yml)
+ * instead of all at once, so the ARTICLES_PER_DAY articles land spread
+ * across the day. Topic discovery still runs only once a day — see
+ * getOrCreateTopicsForDay.
  */
 export async function getOrGenerateNextBlogArticle({ postDate = new Date().toISOString().slice(0, 10) } = {}) {
   const existing = await getBlogPostsForDate(postDate);

@@ -281,12 +281,12 @@ app.get('/api/sitemap-urls', wrap(async (req, res) => {
   res.json({ posts: posts.map((p) => ({ slug: p.slug, publishedAt: p.published_at })) });
 }));
 
-// Triggered every 2 hours by .github/workflows/blog-cron.yml over the VPS's
+// Triggered twice a day by .github/workflows/blog-cron.yml over the VPS's
 // loopback interface (never exposed publicly) — see that workflow for why a
 // shared secret rather than a session cookie gates this instead of
 // /api/admin. Each trigger generates exactly one article (the next missing
-// slot in today's 10-article plan) so the day's batch lands spread out
-// rather than all at once; once 10 exist for the day this is a fast no-op.
+// slot in today's 2-article plan) so the day's batch lands spread out
+// rather than all at once; once 2 exist for the day this is a fast no-op.
 const BLOG_CRON_SECRET = process.env.BLOG_CRON_SECRET;
 app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   if (!BLOG_CRON_SECRET || req.get('X-Cron-Secret') !== BLOG_CRON_SECRET) {

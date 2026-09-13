@@ -168,7 +168,7 @@ export function BlogDraftsTab() {
                 </Badge>
               ))}
             </div>
-            {row.imageUrl ? (
+            {row.imageUrl && (
               <div className="mt-3">
                 <img
                   src={row.imageUrl}
@@ -189,17 +189,6 @@ export function BlogDraftsTab() {
                   </p>
                 )}
               </div>
-            ) : (
-              row.image && (
-                <div className="mt-3 rounded-lg border bg-down-soft p-3 text-[12px] leading-relaxed text-down">
-                  <p className="font-semibold">
-                    مفيش صورة حقيقية اتلاقت (تأكد من UNSPLASH_ACCESS_KEY) — دي مواصفات الصورة المطلوبة بس:
-                  </p>
-                  <p className="mt-1">{row.image.concept}</p>
-                  <p className="mt-1">Alt: {row.image.alt}</p>
-                  <p>تعليق: {row.image.caption}</p>
-                </div>
-              )
             )}
             <div className="mt-4 space-y-2 text-[13px] leading-relaxed">
               {row.content.map((block, index) =>

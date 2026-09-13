@@ -1,11 +1,12 @@
 name: Generate blog post
 
 on:
-  # Every 2 hours. Each run writes at most one article — the next missing
-  # slot in today's 10-article plan — so ten runs a day fill the whole batch
-  # and any run past the 10th is a fast no-op. See getOrGenerateNextBlogArticle.
+  # Twice a day, spread across the EGX trading session (Cairo is UTC+2
+  # year-round). Each run writes at most one article — the next missing slot
+  # in today's 2-article plan — so two runs a day fill the whole batch and
+  # any run past the 2nd is a fast no-op. See getOrGenerateNextBlogArticle.
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 9,13 * * *'
   workflow_dispatch: {}
 
 env:

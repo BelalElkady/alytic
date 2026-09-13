@@ -488,8 +488,8 @@ export async function getBlogPostsForDate(postDate) {
 
 /**
  * The day's topic plan (one discoverTopics() call's worth of keyword/angle
- * pairs), so spreading the ten articles across several cron runs a couple
- * hours apart doesn't re-run — and re-pay for — discovery on every run.
+ * pairs), so spreading the day's articles across the several cron runs
+ * that follow doesn't re-run — and re-pay for — discovery on every run.
  * @returns {object|null} the stored row, or null if today's plan hasn't been generated yet.
  */
 export async function getDailyBlogTopics(postDate) {
