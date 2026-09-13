@@ -44,8 +44,11 @@ const BLOG_MODEL = process.env.BLOG_MODEL ?? 'nvidia/nemotron-3-ultra-550b-a55b:
 // admin approval queue — see reviewBlogPost.
 const BLOG_REVIEW_MODEL = process.env.BLOG_REVIEW_MODEL ?? 'google/gemma-4-31b-it:free';
 
-// Exactly 10 articles/day, per the editorial brief this generator follows.
-const ARTICLES_PER_DAY = 10;
+// Lowered from 10: at 10/day the cron's search budget (discovery + up to 2
+// generations per article) ran ~90-100 web searches/day regardless of actual
+// readership, and content was already accumulating faster than it was being
+// approved/published. Raise it back if publishing cadence needs it.
+const ARTICLES_PER_DAY = 4;
 const MIN_WORDS = 500;
 const MAX_WORDS = 1000;
 
@@ -66,6 +69,12 @@ const TopicSchema = z.object({
   newsAngle: z
     .string()
     .describe('One or two Arabic sentences on the specific, current, verifiable EGX story this article will cover (a company disclosure, index move, FRA decision, IPO news, dividend, etc.) — not a generic topic'),
+  researchNotes: z
+    .string()
+    .describe(
+      'Arabic — the actual facts already found via web search for this exact angle: numbers, dates, named parties, and which source each came from (3-5 sentences). ' +
+        'This is handed directly to the writer of the full article later so it does not have to re-search the same story from scratch — be specific, not a restatement of newsAngle.',
+    ),
 });
 
 const TopicPlanSchema = z.object({
@@ -123,7 +132,8 @@ function buildDiscoverySystemPrompt(postDate) {
 - استخدم أداة البحث على الإنترنت للوصول لآخر أخبار البورصة المصرية فعليًا — ما تخترعش أخبار أو أرقام.
 - قبل ما تدرج أي خبر في الخطة، تأكد من تاريخ نشره الفعلي (مش مجرد ظهوره في نتيجة البحث النهاردة). اقبل بس أخبار مؤرخة في نفس يوم ${postDate} أو الـ48 ساعة اللي قبله — أي خبر أقدم من كده، أو نتيجة بحث تاريخها مش واضح، ارفضها واختار زاوية تانية بدلها.
 - اختار ${ARTICLES_PER_DAY} زوايا إخبارية مختلفة تمامًا (مؤشرات، إفصاحات شركات، توزيعات أرباح، زيادات رأس مال، قرارات الرقابة المالية، طروحات وإدراجات، أداء قطاعات، محركات اقتصادية كلية) — من غير أي تداخل بين الزوايا.
-- كل زاوية لازم تتربط بكلمة مفتاحية عربية مختلفة عالية البحث، وما يتكررش نفس المفتاح في أكتر من زاوية.`;
+- كل زاوية لازم تتربط بكلمة مفتاحية عربية مختلفة عالية البحث، وما يتكررش نفس المفتاح في أكتر من زاوية.
+- لكل زاوية، سجّل في researchNotes الحقائق الفعلية اللي لقيتها فعلاً بالبحث (أرقام، تواريخ، أسماء، ومصدر كل معلومة) — الكاتب اللي هيكتب المقالة الكاملة بعد كده هيعتمد على الملاحظات دي بدل ما يبحث من الأول، فلازم تكون محددة ومفيدة مش مجرد إعادة صياغة للزاوية.`;
 }
 
 /**
@@ -142,6 +152,7 @@ export async function discoverTopics({ postDate }) {
     system: buildDiscoverySystemPrompt(postDate),
     messages: [{ role: 'user', content: userMessage }],
     webSearch: { engine: 'auto', max_results: 8, max_uses: 10 },
+    feature: 'blog_discovery',
   });
 
   return { topics: data.topics, raw };
@@ -167,7 +178,11 @@ async function generateArticle({ postDate, topic }) {
 الكلمة المفتاحية الأساسية: ${topic.primaryKeyword}
 الكلمات المفتاحية الثانوية: ${topic.secondaryKeywords.join('، ')}
 الزاوية الإخبارية المطلوبة: ${topic.newsAngle}
-ابحث عن التفاصيل الفعلية لهذه القصة تحديدًا (أرقام، تواريخ، تصريحات، مصادر) قبل الكتابة.`;
+
+الحقائق اللي اتلقت فعلاً وقت البحث عن الزوايا اليوم (اعتمد عليها، ما تبحثش من الأول):
+${topic.researchNotes}
+
+لو الملاحظات دي كافية للمقالة، اكتب منها مباشرة. استخدم أداة البحث بس لو محتاج تتأكد من تفصيلة معينة ناقصة (رقم دقيق، تاريخ، اقتباس) — مش لإعادة اكتشاف نفس القصة تاني.`;
 
   const { data, raw } = await requestStructuredOR({
     model: BLOG_MODEL,
@@ -176,7 +191,11 @@ async function generateArticle({ postDate, topic }) {
     maxTokens: 6000,
     system: buildArticleSystemPrompt(postDate),
     messages: [{ role: 'user', content: userMessage }],
-    webSearch: { engine: 'auto', max_results: 6, max_uses: 8 },
+    // Cut from 8: discovery already researched this exact angle and handed
+    // its findings down via researchNotes above — this budget is now only
+    // for filling a specific gap, not rediscovering the whole story.
+    webSearch: { engine: 'auto', max_results: 6, max_uses: 3 },
+    feature: 'blog_article',
   });
 
   return { post: data, raw };
@@ -213,7 +232,10 @@ async function generateArticleWithinWordCount({ postDate, topic }) {
         { role: 'assistant', content: JSON.stringify(post) },
         { role: 'user', content: retryMessage },
       ],
-      webSearch: { engine: 'auto', max_results: 4, max_uses: 4 },
+      // No webSearch: this retry only fixes length using facts the first pass
+      // already found (it's handed the full draft above) — searching again
+      // here would pay for research this call has no use for.
+      feature: 'blog_article_retry',
     });
     post = retry.data;
     raw = retry.raw;
@@ -239,6 +261,7 @@ export async function reviewBlogPost(post) {
     maxTokens: 1000,
     system: 'أنت مراجع محتوى مالي دقيق. مهمتك تقييم مسودة مقالة قبل نشرها — لاحظ أي مشكلة في الدقة أو المصادر أو الجودة.',
     messages: [{ role: 'user', content: userMessage }],
+    feature: 'blog_review',
   });
 
   return { review: data, raw };

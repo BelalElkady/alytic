@@ -165,6 +165,33 @@ export async function putMarketReport(reportDate, style, report, model, usage) {
 }
 
 /**
+ * Records one AI call's cost, tagged by which feature made it — see ai_spend
+ * in schema.sql. Called fire-and-forget from clientOpenRouter.js; errors are
+ * the caller's problem to log, never this function's to throw, since a spend
+ * row is telemetry, not something any feature should fail over.
+ */
+export async function logAiSpend(feature, model, usage) {
+  const { error } = await supabase.from('ai_spend').insert({ feature, model: model ?? null, usage_json: usage ?? null });
+  if (error) throw new Error(`logAiSpend: ${error.message}`);
+}
+
+/** @returns {object|null} cached fundamentals for one ticker, or null if never fetched. */
+export async function getFundamentalsCache(code) {
+  const { data, error } = await supabase.from('fundamentals_cache').select('*').eq('code', code).maybeSingle();
+  if (error) throw new Error(`getFundamentalsCache: ${error.message}`);
+  if (!data) return null;
+  return { ...data.data_json, _fetchedAt: data.fetched_at };
+}
+
+/** Overwrites the cached fundamentals for one ticker. */
+export async function putFundamentalsCache(code, data) {
+  const { error } = await supabase
+    .from('fundamentals_cache')
+    .upsert({ code, data_json: data, fetched_at: new Date().toISOString() }, { onConflict: 'code' });
+  if (error) throw new Error(`putFundamentalsCache: ${error.message}`);
+}
+
+/**
  * @returns {object|null} the stored review for that user/day/style, or null
  *   if none is stored, or if one is stored but for a different portfolio
  *   (the caller must compare portfolioHash itself — this just returns
@@ -208,34 +235,6 @@ export async function putPortfolioReview(userId, reportDate, style, portfolioHas
     { onConflict: 'user_id,report_date,style' },
   );
   if (error) throw new Error(`putPortfolioReview: ${error.message}`);
-}
-
-/** Whether this user has already used today's one cash-scan credit. */
-export async function hasCashScanUsage(userId, usageDate) {
-  const { data, error } = await supabase
-    .from('cash_scan_usage')
-    .select('user_id')
-    .eq('user_id', userId)
-    .eq('usage_date', usageDate)
-    .maybeSingle();
-  if (error) throw new Error(`hasCashScanUsage: ${error.message}`);
-  return Boolean(data);
-}
-
-/**
- * Atomically spends today's cash-scan credit, the same insert-if-absent
- * pattern as putMarketReport: two requests racing for the same user/day must
- * not both succeed.
- * @returns {boolean} true if this call was the one that spent the credit,
- *   false if it was already spent for that user/day.
- */
-export async function recordCashScanUsage(userId, usageDate) {
-  const { data, error } = await supabase
-    .from('cash_scan_usage')
-    .upsert({ user_id: userId, usage_date: usageDate }, { onConflict: 'user_id,usage_date', ignoreDuplicates: true })
-    .select('user_id');
-  if (error) throw new Error(`recordCashScanUsage: ${error.message}`);
-  return data.length > 0;
 }
 
 /**

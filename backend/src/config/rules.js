@@ -77,12 +77,13 @@ export const RULES = {
     // this many searches per stock under review, capped so one large portfolio
     // can't run away with it.
     //
-    // Cost is real and worth knowing before raising these: ~$0.03-0.05 per
-    // search plus the tokens each result adds to the context. At the numbers
-    // below a 10-stock review runs ~20 searches (~$0.60-1.00 of search, more
-    // once the extra context tokens are counted), against ~$0.20-0.30 for the
-    // old search-only-on-anomaly policy. Lower `perStock` to 1 to halve it.
-    perStock: 2,
+    // Cost is real and worth knowing before raising this: live OpenRouter/Exa
+    // pricing (checked 2026-09) runs ~$0.007-0.015 per search request (auto
+    // mode, up to 10 results), plus the tokens each result adds to the
+    // context. At perStock=1, a 10-stock review tops out at ~10 searches
+    // (~$0.07-0.15 of search). Raise it back to 2 to double the research
+    // depth per stock at roughly double this cost.
+    perStock: 1,
     maxUsesPerReview: 30,
   },
 };

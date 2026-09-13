@@ -4,48 +4,39 @@
  * Yahoo has no fundamentals for EGX — `quoteSummary` returns "No fundamentals
  * data found for symbol: COMI.CA" for every Cairo listing, verified against the
  * live endpoint. So this agent gathers them from the open web instead, using
- * the server-side web search tool, and writes them to a local cache.
+ * the server-side web search tool, and writes them to a shared cache in
+ * Supabase (fundamentals_cache) — not local disk, so the research survives a
+ * redeploy and is shared across every app instance rather than re-paid for
+ * per machine.
  *
  * EGX companies report quarterly, so a cached entry is good for ~45 days;
  * re-running this daily would burn tokens for data that has not changed.
  */
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { MODEL, requestStructuredOR } from './clientOpenRouter.js';
+import { MODEL_CHAIN, requestStructuredOR } from './clientOpenRouter.js';
 import { FundamentalsSchema } from './schemas.js';
 import { fundamentalsSystemPrompt } from './prompts/system.js';
 import { lookup } from '../config/universe.js';
+import { getFundamentalsCache, putFundamentalsCache } from '../db.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const DIR = path.join(ROOT, 'data', 'fundamentals');
 const MAX_AGE_DAYS = 45;
 
 async function readCached(code) {
-  try {
-    const raw = JSON.parse(await fs.readFile(path.join(DIR, `${code}.json`), 'utf8'));
-    const ageDays = (Date.now() - new Date(raw._fetchedAt).getTime()) / 86_400_000;
-    return ageDays <= MAX_AGE_DAYS ? { ...raw, _ageDays: Math.round(ageDays) } : null;
-  } catch {
-    return null;
-  }
+  const raw = await getFundamentalsCache(code);
+  if (!raw) return null;
+  const ageDays = (Date.now() - new Date(raw._fetchedAt).getTime()) / 86_400_000;
+  return ageDays <= MAX_AGE_DAYS ? { ...raw, _ageDays: Math.round(ageDays) } : null;
 }
 
 async function writeCached(code, data) {
-  await fs.mkdir(DIR, { recursive: true });
-  await fs.writeFile(
-    path.join(DIR, `${code}.json`),
-    JSON.stringify({ ...data, _fetchedAt: new Date().toISOString() }, null, 2),
-    'utf8',
-  );
+  await putFundamentalsCache(code, data);
 }
 
 /**
  * Gather fundamentals for one ticker.
  * @returns {Promise<object|null>} null when nothing trustworthy was found.
  */
-export async function getFundamentals(code, { force = false, model = MODEL } = {}) {
+export async function getFundamentals(code, { force = false, model = MODEL_CHAIN } = {}) {
   const upper = code.toUpperCase();
   if (!force) {
     const cached = await readCached(upper);
@@ -81,6 +72,7 @@ Return the result in the required format. If you cannot find a reliable number, 
       system: fundamentalsSystemPrompt(),
       messages: [{ role: 'user', content: prompt }],
       webSearch: { engine: 'auto', max_results: 4, max_uses: 8 },
+      feature: 'fundamentals',
     });
     parsed = data;
   } catch {

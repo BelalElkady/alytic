@@ -34,7 +34,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars } from '../data/cache.js';
+import { readBars, cairoToday, isTradingDay } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
@@ -275,6 +275,14 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   }
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
   const postDate = typeof req.body?.postDate === 'string' ? req.body.postDate : undefined;
+  // The cron fires all 7 days a week (blog-cron.yml has no day-of-week filter
+  // of its own), but there is no EGX news to research on a day the exchange
+  // never opened — Friday/Saturday. Skip rather than spend a discovery +
+  // article generation pass researching nothing. `force: true` bypasses this
+  // for deliberate backfill/testing against a specific past postDate.
+  if (!req.body?.force && !isTradingDay(postDate ?? cairoToday())) {
+    return res.json({ ok: true, skipped: 'not_a_trading_day', postDate: postDate ?? cairoToday() });
+  }
   const { getOrGenerateNextBlogArticle } = await import('../agent/blogGenerator.js');
   // Awaited on purpose: the GitHub Actions workflow that calls this should
   // only go green once this run's article (if any) is actually stored, not

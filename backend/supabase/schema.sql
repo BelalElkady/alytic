@@ -88,6 +88,40 @@ create table if not exists cash_scan_usage (
   primary key (user_id, usage_date)
 );
 
+-- One row per AI call across every feature (portfolio review, market
+-- research/reframe, fundamentals, blog discovery/article/review) — the
+-- single place to answer "where did the OpenRouter bill actually go" without
+-- reading each feature's own storage table by hand. Written best-effort and
+-- fire-and-forget by requestStructuredOR() in src/agent/clientOpenRouter.js:
+-- a logging failure here must never break the AI call it's describing.
+-- usage_json is exactly what OpenRouter returned for that call (cost,
+-- prompt/completion tokens) — note it excludes the web_search plugin's own
+-- charge, which is billed separately and not reflected in any usage object
+-- this app has observed. model is whichever one actually served the request
+-- (the last entry tried in a fallback chain — see MODEL_CHAIN), not
+-- necessarily what was configured first.
+create table if not exists ai_spend (
+  id bigint generated always as identity primary key,
+  feature text not null,
+  model text,
+  usage_json jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists ai_spend_feature_created_idx on ai_spend (feature, created_at);
+
+-- One researched fundamentals lookup per ticker, reused across every user for
+-- up to MAX_AGE_DAYS (see src/agent/fundamentals.js) instead of re-paying for
+-- web search per request. Previously a local JSON file under
+-- backend/data/fundamentals/ — moved here because a VPS deploy that doesn't
+-- persist that directory silently re-pays for research a Supabase row would
+-- have survived, and because a local file also can't be shared across
+-- multiple app instances.
+create table if not exists fundamentals_cache (
+  code text primary key,
+  data_json jsonb not null,
+  fetched_at timestamptz not null default now()
+);
+
 -- A user's paid access. There is no payment gateway: the user sends the fee
 -- over InstaPay and an admin activates the account from the admin panel, so
 -- this row is written by a human action, never by a callback. One row per

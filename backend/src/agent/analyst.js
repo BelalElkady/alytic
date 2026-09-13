@@ -11,7 +11,7 @@
  * audit trail: whatever the analyst says, it was working from exactly this.
  */
 
-import { MODEL, requestStructuredOR } from './clientOpenRouter.js';
+import { MODEL_CHAIN, requestStructuredOR } from './clientOpenRouter.js';
 import { PortfolioReviewSchema } from './schemas.js';
 import { analystSystemPrompt } from './prompts/system.js';
 import { crossCheckIndicators } from './crosscheck.js';
@@ -264,7 +264,7 @@ export function briefFor(a) {
  *   both the horizon the analyst reasons in and the rule numbers it quotes.
  *   Pass `rules` already adjusted for it — see config/styles.js.
  */
-export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL, rules = RULES, style = DEFAULT_STYLE } = {}) {
+export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = {}) {
   const held = analyses.filter((a) => a.position);
   const watch = analyses.filter((a) => !a.position);
 
@@ -369,6 +369,7 @@ Remember: these numbers are final — judge them, do not recompute them.`;
     // is warranted, same as before. Resolves server-side within one turn.
     webSearch: { engine: 'auto', max_results: 4, max_uses: searchBudget },
     clientTools: [crossCheckTool],
+    feature: 'portfolio_review',
   });
 
   // Consumers still get one verdict per held stock — the quiet ones were just
@@ -429,7 +430,7 @@ Remember: these numbers are final — judge them, do not recompute them.`;
  * @returns {Promise<{review: object, source: 'cached'|'ai'}>}
  */
 export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = {}) {
-  const { userId = 'local', force = false, model = MODEL, rules = RULES, style = DEFAULT_STYLE } = opts;
+  const { userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = opts;
   const asOf = analyses[0]?.asOf ?? new Date().toISOString().slice(0, 10);
   const hash = portfolioHash(portfolio);
 

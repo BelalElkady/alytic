@@ -180,9 +180,35 @@ export const MarketOpportunitySchema = z.object({
     .describe('The research behind this pick. Required and non-empty — an unresearched name has no place in a deep report.'),
 });
 
+/** Shared by MarketAnalysisSchema and MarketReframeSchema — see the latter for why they diverge. */
+const CashDeploymentGuideSchema = z
+  .object({
+    philosophy: z
+      .string()
+      .describe(
+        'In Egyptian Arabic — how someone starting from cash today, with no existing positions, should think about deploying it ' +
+          'given the current market regime. 3-5 sentences: aggressive or cautious, concentrated or spread, why.',
+      ),
+    allocations: z
+      .array(
+        z.object({
+          code: z.string().describe('Must be one of the codes in topOpportunities — never invent a code not listed there'),
+          pctOfInvestableCash: z
+            .string()
+            .describe('Suggested share of investable cash as a range, e.g. "15-20%" — a range, never a single number'),
+          reason: z.string().describe('In Egyptian Arabic — why this allocation, one sentence'),
+        }),
+      )
+      .describe('A model deployment plan in percentages, so it applies to any cash amount without being recomputed per user'),
+    reserveCashPct: z.number().describe('Suggested % to keep as an uninvested reserve, given today\'s regime'),
+    note: z.string().describe('In Egyptian Arabic — anything a fresh-cash reader specifically needs to know today'),
+  })
+  .describe('The generic, portfolio-agnostic answer to "I have cash and nothing else — what do I do with it today?"');
+
 /**
- * The daily, market-wide deep report — one per (trading day, investor style),
- * generated once and read by every user that day. See marketAnalysis.js.
+ * The daily, market-wide deep report — one per trading day, generated once
+ * with real research (see marketAnalysis.js's RESEARCH_STYLE) and then
+ * cheaply reframed per investor style — see MarketReframeSchema.
  *
  * Deliberately larger and slower than a portfolio review: nobody pays for it
  * per request, so it can afford to actually be thorough.
@@ -216,33 +242,33 @@ export const MarketAnalysisSchema = z.object({
         'Quality over quantity — a shorter list where every entry is genuinely researched beats a long one padded with weak names.',
     ),
 
-  cashDeploymentGuide: z
-    .object({
-      philosophy: z
-        .string()
-        .describe(
-          'In Egyptian Arabic — how someone starting from cash today, with no existing positions, should think about deploying it ' +
-            'given the current market regime. 3-5 sentences: aggressive or cautious, concentrated or spread, why.',
-        ),
-      allocations: z
-        .array(
-          z.object({
-            code: z.string().describe('Must be one of the codes in topOpportunities — never invent a code not listed there'),
-            pctOfInvestableCash: z
-              .string()
-              .describe('Suggested share of investable cash as a range, e.g. "15-20%" — a range, never a single number'),
-            reason: z.string().describe('In Egyptian Arabic — why this allocation, one sentence'),
-          }),
-        )
-        .describe('A model deployment plan in percentages, so it applies to any cash amount without being recomputed per user'),
-      reserveCashPct: z.number().describe('Suggested % to keep as an uninvested reserve, given today\'s regime'),
-      note: z.string().describe('In Egyptian Arabic — anything a fresh-cash reader specifically needs to know today'),
-    })
-    .describe('The generic, portfolio-agnostic answer to "I have cash and nothing else — what do I do with it today?"'),
+  cashDeploymentGuide: CashDeploymentGuideSchema,
 
   risksToWatch: z.array(z.string()).describe('In Egyptian Arabic — market-wide risks that apply regardless of which stock a reader picks'),
 
   topPriority: z.string().describe('In Egyptian Arabic — the single most important thing for a reader to know or do today, one sentence'),
+});
+
+/**
+ * The cheap, no-research follow-up that turns one day's already-researched
+ * base report (see MarketAnalysisSchema, generated once per day with real web
+ * search) into a horizon-specific version for 'trader' or 'long' — see
+ * reframeMarketAnalysis() in marketAnalysis.js. Only the framing changes;
+ * topOpportunities, sectorViews and risksToWatch are carried over unchanged
+ * from the base report rather than re-asked of the model, since the
+ * underlying research does not depend on investor horizon (see suitableFor
+ * on MarketOpportunitySchema) — only which of them get surfaced and how the
+ * cash guide is written does.
+ */
+export const MarketReframeSchema = z.object({
+  marketOverview: z
+    .string()
+    .describe(
+      'In Egyptian Arabic — the same researched facts as the base report, re-angled for this horizon. ' +
+        'Not a repeat of the original wording. 2-3 sentences.',
+    ),
+  cashDeploymentGuide: CashDeploymentGuideSchema,
+  topPriority: z.string().describe('In Egyptian Arabic — the single most important thing for this horizon\'s reader today, one sentence'),
 });
 
 /** Fundamentals gathered from the web for one company. */

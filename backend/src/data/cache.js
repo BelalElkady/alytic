@@ -22,7 +22,7 @@ export function cairoToday() {
 }
 
 /** Cairo wall-clock hour, used to decide whether today's close should exist yet. */
-function cairoHour() {
+export function cairoHour() {
   return +new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Africa/Cairo', hour: '2-digit', hour12: false,
   }).format(new Date());

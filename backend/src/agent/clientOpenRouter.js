@@ -50,12 +50,28 @@
 
 import OpenAI from 'openai';
 import '../loadEnv.js';
+import { logAiSpend } from '../db.js';
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 
 /** The one model knob for every analysis feature. Set ALYTIC_MODEL in .env
  * to any OpenRouter model id to change what every feature runs on. */
 export const MODEL = process.env.ALYTIC_MODEL ?? 'qwen/qwen3.5-9b';
+
+/** Optional free-tier model tried before MODEL on every call. Set
+ * ALYTIC_MODEL_FREE to an OpenRouter `:free` slug to use it; leave unset and
+ * nothing changes — MODEL is used directly, same as before this existed.
+ * Falls through to MODEL only for failures that mean "this tier is
+ * unavailable right now" (saturated free capacity, a rate limit that
+ * survived callWithRetry's own retries) — see `fallbackToNextModel` in
+ * callWithRetry. Anything else (bad request, invalid schema, auth) fails the
+ * same way it always did, since a different model would fail it too. */
+export const FREE_MODEL = process.env.ALYTIC_MODEL_FREE || null;
+
+/** What requestStructuredOR's callers should default `model` to. A caller
+ * that passes its own explicit model bypasses this — and the fallback —
+ * entirely. */
+export const MODEL_CHAIN = FREE_MODEL ? [FREE_MODEL, MODEL] : MODEL;
 
 let client = null;
 
@@ -113,7 +129,14 @@ export async function callWithRetry(fn, { retries = 2 } = {}) {
   }
 
   if (lastErr instanceof OpenAI.AuthenticationError) throw new Error('مفتاح API غير صالح');
-  if (lastErr instanceof OpenAI.RateLimitError) throw new Error('تجاوزت حد الطلبات — جرّب بعد شوية');
+  if (lastErr instanceof OpenAI.RateLimitError) {
+    // Survived callWithRetry's own backoff and is still rate-limited — a free
+    // tier's shared quota is the common real-world cause, so this is worth
+    // trying the next model in the chain over, not just failing outright.
+    const err = new Error('تجاوزت حد الطلبات — جرّب بعد شوية');
+    err.fallbackToNextModel = true;
+    throw err;
+  }
   // Billing failure from OpenRouter: either the balance is gone, or a previous
   // request is still in flight holding a reservation. Both need a human or a
   // wait — checked by message content, not just `.status`, since a live
@@ -122,6 +145,17 @@ export async function callWithRetry(fn, { retries = 2 } = {}) {
   const billingFailure =
     lastErr?.status === 402 || /billing_error|payment_required|exceed your available credits/i.test(lastErr?.message ?? '');
   if (billingFailure) throw new Error('الرصيد مش كفاية على OpenRouter — اشحن رصيد أو استنى الطلبات الجارية تخلص');
+  // A `:free` model variant (e.g. the screenshot-import vision model) can get
+  // saturated and start rejecting requests with a 404 that names the paid
+  // slug instead — not a real "not found", just today's free capacity being
+  // gone. Surface a plain retry-later message instead of leaking OpenRouter's
+  // internal slug-swap suggestion straight to the user.
+  const modelUnavailableFree = lastErr?.status === 404 && /unavailable for free/i.test(lastErr?.message ?? '');
+  if (modelUnavailableFree) {
+    const err = new Error('الخدمة المجانية مش متاحة دلوقتي بسبب الضغط عليها — جرّب تاني بعد شوية.');
+    err.fallbackToNextModel = true;
+    throw err;
+  }
   if (lastErr instanceof OpenAI.BadRequestError) throw new Error(`طلب غير صالح: ${lastErr.message}`);
   if (lastErr instanceof OpenAI.APIError) throw new Error(`خطأ في الـ API (${lastErr.status}): ${lastErr.message}`);
   throw lastErr;
@@ -244,15 +278,15 @@ async function runToolPhase(client, { model, system, messages, clientTools, maxT
  * input_schema, handler }`, where `handler` is called with the model's input
  * and its return value goes back as the tool result.
  */
-export async function requestStructuredOR({
-  model = MODEL,
+async function requestStructuredORWithModel({
+  model,
   system,
   messages,
   schema,
-  schemaName = 'response',
-  maxTokens = 4000,
-  clientTools = [],
-  webSearch = null,
+  schemaName,
+  maxTokens,
+  clientTools,
+  webSearch,
 }) {
   const client = getOpenRouterClient();
 
@@ -322,6 +356,57 @@ export async function requestStructuredOR({
     }
   }
   throw new Error(`النموذج ما رجّعش JSON صالح بعد 3 محاولات: ${String(lastError?.message ?? '').slice(0, 200)}`);
+}
+
+/**
+ * Ask for a structured response — see requestStructuredORWithModel for the
+ * actual request logic. This wrapper only adds one thing: `model` may be a
+ * single id (as always) or a chain (as MODEL_CHAIN is, once ALYTIC_MODEL_FREE
+ * is set), in which case each id is tried in order and a failure only moves
+ * to the next one when it was tagged `fallbackToNextModel` — a saturated free
+ * tier or a rate limit that survived retries, not a bad request or an
+ * unrelated bug that the next model would hit too. Every other failure mode
+ * (unsupported reasoning param, no tool support, no structured output) is
+ * still handled per-model exactly as before, inside the call being retried.
+ */
+export async function requestStructuredOR({
+  model = MODEL_CHAIN,
+  system,
+  messages,
+  schema,
+  schemaName = 'response',
+  maxTokens = 4000,
+  clientTools = [],
+  webSearch = null,
+  // Tags every call for ai_spend (see db.js's logAiSpend) — e.g.
+  // 'portfolio_review', 'market_research', 'blog_article'. Optional: a call
+  // site that doesn't pass one just isn't tracked, nothing else changes.
+  feature = null,
+}) {
+  const chain = Array.isArray(model) ? model : [model];
+  let lastErr;
+  for (let i = 0; i < chain.length; i++) {
+    try {
+      const result = await requestStructuredORWithModel({ model: chain[i], system, messages, schema, schemaName, maxTokens, clientTools, webSearch });
+      // Fire-and-forget: logging spend must never add latency to, or ever be
+      // able to fail, the actual call it's describing.
+      if (feature) {
+        logAiSpend(feature, result.raw?.model, result.raw?.usage).catch((err) => {
+          console.error(`[ai-spend] failed to log ${feature}:`, err.message);
+        });
+      }
+      return result;
+    } catch (err) {
+      const hasNext = i < chain.length - 1;
+      if (hasNext && err.fallbackToNextModel) {
+        console.warn(`[ai] ${chain[i]} unavailable (${err.message}) — falling back to ${chain[i + 1]}`);
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 export { OpenAI };

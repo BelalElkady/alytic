@@ -16,24 +16,56 @@
 
 import { analyzeMany } from '../analyze.js';
 import { ALL_CODES } from '../config/universe.js';
-import { MODEL, requestStructuredOR } from './clientOpenRouter.js';
-import { MarketAnalysisSchema } from './schemas.js';
+import { cairoToday, cairoHour, isTradingDay } from '../data/cache.js';
+import { MODEL_CHAIN, requestStructuredOR } from './clientOpenRouter.js';
+import { MarketAnalysisSchema, MarketReframeSchema } from './schemas.js';
 import { briefFor, crossCheckTool } from './analyst.js';
-import { marketAnalysisSystemPrompt } from './prompts/system.js';
+import { marketAnalysisSystemPrompt, marketReframeSystemPrompt } from './prompts/system.js';
 import RULES from '../config/rules.js';
 import { DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import { getMarketReport, putMarketReport } from '../db.js';
 
 // Names actually given a deep, researched writeup. A scan filter, not the
 // final list — the model still chooses which of these earn a place in
-// topOpportunities, and is free to include fewer.
-const CANDIDATE_LIMIT = 24;
+// topOpportunities, and is free to include fewer. Lowered from 24: the
+// prompt already asks for "fewer, genuinely well-researched" over a padded
+// list, so researching more candidates than typically survive into
+// topOpportunities was mostly paying for names that get discarded anyway.
+const CANDIDATE_LIMIT = 15;
+
+// The one style that pays for real web research each day. The other styles
+// (see STYLE_KEYS in config/styles.js) get a cheap, search-free reframe of
+// this style's report instead of their own full research pass — the
+// underlying facts (news, disclosures, numbers) don't depend on investor
+// horizon, only which opportunities surface and how the cash guide reads do.
+// See reframeMarketAnalysis() and MarketOpportunitySchema's `suitableFor`.
+const RESEARCH_STYLE = DEFAULT_STYLE;
 
 /** Deterministic, no AI — the same work /api/scan already does. Safe to run
  * unconditionally to learn today's asOf before deciding whether to spend. */
 async function scanMarket() {
   const { results, errors } = await analyzeMany(ALL_CODES, { capital: 1_000_000, concurrency: 6 });
   return { results, errors };
+}
+
+/**
+ * A cheap, calendar-only guess at today's asOf — no network call — used
+ * purely as a fast-path cache probe (see getOrGenerateMarketAnalysis). It
+ * mirrors src/data/cache.js's isFresh() reasoning (session closes 14:30
+ * Cairo, Yahoo lags, so no new bar is expected before ~16:00) but does not
+ * know about actual EGX holidays, only weekends — so a wrong guess is
+ * expected occasionally and must never be trusted as the real asOf. It is
+ * only ever used to check the cache; generation always falls back to
+ * scanMarket()'s real, authoritative asOf.
+ */
+function likelyAsOf() {
+  const today = cairoToday();
+  if (isTradingDay(today) && cairoHour() >= 16) return today;
+  let d = new Date(`${today}T12:00:00Z`);
+  do {
+    d.setUTCDate(d.getUTCDate() - 1);
+  } while (!isTradingDay(d.toISOString().slice(0, 10)));
+  return d.toISOString().slice(0, 10);
 }
 
 function rankCandidates(results) {
@@ -63,7 +95,7 @@ function sectorBreadthLines(results) {
  * should use getOrGenerateMarketAnalysis instead, which checks storage first
  * and prevents two concurrent requests from paying for this twice.
  */
-export async function generateMarketAnalysis({ model = MODEL, rules = RULES, style = DEFAULT_STYLE } = {}) {
+export async function generateMarketAnalysis({ model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = {}) {
   const { results } = await scanMarket();
   const asOf = results[0]?.asOf ?? new Date().toISOString().slice(0, 10);
   const effectiveRules = rulesForStyle(rules, style);
@@ -101,6 +133,7 @@ Remember: every price, stop, target and risk/reward you refer to must come from 
     messages: [{ role: 'user', content: userMessage }],
     webSearch: { engine: 'auto', max_results: 4, max_uses: searchBudget },
     clientTools: [crossCheckTool],
+    feature: 'market_research',
   });
 
   // The model picked codes and wrote the narrative; every number an
@@ -144,6 +177,71 @@ Remember: every price, stop, target and risk/reward you refer to must come from 
   return { report, raw };
 }
 
+/** Opportunities from the base report actually tagged for this style — or,
+ * failing that (a quiet day where nothing was tagged for it), all of them
+ * rather than forcing an empty report. */
+function pickOpportunitiesForStyle(base, style) {
+  const matched = (base.topOpportunities ?? []).filter((op) => op.suitableFor?.includes(style));
+  return matched.length ? matched : (base.topOpportunities ?? []);
+}
+
+/**
+ * Turns the day's already-researched RESEARCH_STYLE report into a
+ * `style`-specific one without paying for a second research pass: no web
+ * search, no cross-check tool, a small maxTokens — this call only rewrites
+ * framing (overview emphasis, cash guide, top priority), never facts.
+ * sectorViews and risksToWatch carry over unchanged since neither is
+ * horizon-specific; topOpportunities is filtered by `suitableFor` rather
+ * than re-asked of the model.
+ */
+async function reframeMarketAnalysis({ model, rules, style, base }) {
+  const effectiveRules = rulesForStyle(rules, style);
+  const opportunities = pickOpportunitiesForStyle(base, style);
+
+  const userMessage = `# Reframing today's already-researched EGX market report for a different horizon
+
+## Market overview as researched today
+${base.marketOverview}
+
+## Opportunities suited to this horizon (already researched — codes, numbers and catalysts are final; do not re-research or invent)
+${
+  opportunities.length
+    ? opportunities.map((op) => `- ${op.code} (${op.action}, ${op.conviction}): ${op.headline}`).join('\n')
+    : 'No opportunities were researched today at all — say so and recommend holding cash.'
+}
+
+## Market-wide risks already identified today
+${(base.risksToWatch ?? []).join(' | ') || 'none noted'}
+
+---
+Write: (1) a short reframed market overview for this horizon (2-3 sentences — same facts as above, different emphasis, not a copy of the wording), (2) the cash deployment guide for this horizon using only the codes listed above, (3) today's top priority for this horizon.`;
+
+  const { data, raw } = await requestStructuredOR({
+    model,
+    schema: MarketReframeSchema,
+    schemaName: 'market_reframe',
+    maxTokens: 2000,
+    system: marketReframeSystemPrompt(effectiveRules, style),
+    messages: [{ role: 'user', content: userMessage }],
+    feature: 'market_reframe',
+  });
+
+  const report = {
+    asOf: base.asOf,
+    style,
+    marketOverview: data.marketOverview,
+    sectorViews: base.sectorViews,
+    topOpportunities: opportunities,
+    cashDeploymentGuide: data.cashDeploymentGuide,
+    risksToWatch: base.risksToWatch,
+    topPriority: data.topPriority,
+    stocksScanned: base.stocksScanned,
+    candidatesResearched: base.candidatesResearched,
+  };
+
+  return { report, raw };
+}
+
 // One in-flight generation per (day, style) within this process, so two
 // requests landing before the first finishes await the same run instead of
 // each starting their own — the DB's ON CONFLICT DO NOTHING stops a double
@@ -161,7 +259,19 @@ const inFlight = new Map();
  *   stored. For manual/admin use; never set this from a per-user request path,
  *   or the whole point of caching is defeated.
  */
-export async function getOrGenerateMarketAnalysis({ model = MODEL, rules = RULES, style = DEFAULT_STYLE, force = false } = {}) {
+export async function getOrGenerateMarketAnalysis({ model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE, force = false } = {}) {
+  if (!force) {
+    // Fast path, no network scan: the overwhelmingly common call is someone
+    // re-reading a report that was already generated earlier today, and
+    // scanMarket() below exists only to *learn* asOf — when the trading
+    // calendar alone can guess it correctly (the normal case), there is
+    // nothing left for the scan to tell us. A wrong guess (an EGX holiday
+    // this calendar doesn't know about) just falls through to the real scan
+    // below exactly as before — this can only skip work, never skip correctness.
+    const guessed = await getMarketReport(likelyAsOf(), style);
+    if (guessed) return guessed;
+  }
+
   const { results } = await scanMarket();
   const asOf = results[0]?.asOf ?? new Date().toISOString().slice(0, 10);
 
@@ -174,7 +284,17 @@ export async function getOrGenerateMarketAnalysis({ model = MODEL, rules = RULES
   if (inFlight.has(key)) return inFlight.get(key);
 
   const task = (async () => {
-    const { report, raw } = await generateMarketAnalysis({ model, rules, style });
+    let report, raw;
+    if (style === RESEARCH_STYLE) {
+      ({ report, raw } = await generateMarketAnalysis({ model, rules, style }));
+    } else {
+      // Not forcing the base research here even when `force` is set for this
+      // style — regenerating a stale 'trader' framing shouldn't also force a
+      // brand-new (paid, searched) 'medium' report unless that's what was
+      // actually asked for.
+      const base = await getOrGenerateMarketAnalysis({ model, rules, style: RESEARCH_STYLE });
+      ({ report, raw } = await reframeMarketAnalysis({ model, rules, style, base }));
+    }
     await putMarketReport(report.asOf, style, report, raw.model, raw.usage);
     // Re-read so every caller — including this one, if a concurrent request
     // won the insert first — sees exactly what ended up stored.
