@@ -49,7 +49,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, post } from "@/lib/api";
+import { api } from "@/lib/api";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
@@ -320,11 +320,9 @@ function DeskHeader() {
     openMarket,
     setManualOpen,
     reload,
-    reloadLog,
     lastPriceSync,
     priceError,
     pf,
-    cashScanAvailableToday,
   } = useDesk();
   const { dark, toggle } = useTheme();
   const { style: investStyle, auto: investStyleAuto } = useActiveInvestStyle(pf?.trades);
@@ -332,7 +330,6 @@ function DeskHeader() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [snapshotting, setSnapshotting] = useState(false);
 
   const today = new Date().toLocaleDateString("ar-EG", {
     weekday: "long",
@@ -382,19 +379,6 @@ function DeskHeader() {
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
-    }
-  };
-
-  const saveSnapshot = async () => {
-    setSnapshotting(true);
-    try {
-      const result = await post("/api/snapshot");
-      await reloadLog();
-      toast.success(`تم حفظ إغلاق ${result.saved}`);
-    } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "تعذر حفظ الإغلاق");
-    } finally {
-      setSnapshotting(false);
     }
   };
 
@@ -449,13 +433,6 @@ function DeskHeader() {
                 </Link>
               )
             )}
-            <Badge
-              variant={cashScanAvailableToday ? "secondary" : "outline"}
-              className="whitespace-nowrap"
-              title="تحليل الكاش متاح مرة واحدة يوميًا"
-            >
-              تحليل الكاش: باقي {cashScanAvailableToday ? 1 : 0} محاولة
-            </Badge>
             {investStyleLabel && (
               <Link to="/settings" aria-label="سلوكك الاستثماري">
                 <Badge variant="secondary" className="whitespace-nowrap">
@@ -499,15 +476,6 @@ function DeskHeader() {
           <Button size="sm" variant="outline" onClick={() => setManualOpen(true)}>
             <PencilLine className="size-4" />
             إدخال يدوي
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void saveSnapshot()}
-            disabled={snapshotting}
-          >
-            {snapshotting ? <Spinner /> : <CalendarDays className="size-4" />}
-            سجّل إغلاق اليوم
           </Button>
           <input
             ref={fileRef}

@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, hasCashScanUsage, recordCashScanUsage, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
 import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -34,7 +34,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars, cairoToday } from '../data/cache.js';
+import { readBars } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
@@ -196,8 +196,7 @@ app.post('/api/auth/logout', (_req, res) => {
 app.get('/api/auth/me', wrap(async (req, res) => {
   const user = await userFromRequest(req);
   if (!user) return res.json({ user: null });
-  const cashScanAvailableToday = user.isAdmin ? true : !(await hasCashScanUsage(user.id, cairoToday()));
-  res.json({ user: { ...user, ...(await accessInfo(user)), cashScanAvailableToday } });
+  res.json({ user: { ...user, ...(await accessInfo(user)) } });
 }));
 
 // Public "تواصل معنا" form — no login required, and never blocked by a
@@ -1013,21 +1012,6 @@ app.get('/api/scan', wrap(async (req, res) => {
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
 
-  // "تحليل الكاش" (focus=cash, see market-dialog.tsx) is limited to one use
-  // per user per Cairo day — everything else /api/scan powers (market scan,
-  // per-position refresh) stays unlimited. Admins are exempt so testing this
-  // doesn't burn the one real credit the product has. Checked with an
-  // atomic insert-if-absent (recordCashScanUsage) rather than a read-then-act
-  // check, so two racing requests can't both slip through.
-  if (req.query.focus === 'cash' && !req.user.isAdmin) {
-    const spent = await recordCashScanUsage(req.user.id, cairoToday());
-    if (!spent) {
-      return res.status(429).json({
-        error: 'استخدمت تحليل الكاش النهارده بالفعل — متاح تاني بكرة.',
-        limitReached: true,
-      });
-    }
-  }
   // A style changes which rule numbers the engine sizes and gates setups
   // with — same deterministic engine, different risk/reward and sizing
   // inputs, exactly like every other `rules` param it already accepts.
@@ -1263,18 +1247,16 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
   res.json(updated);
 }));
 
-/** Save today's close into the daily log — the calendar and charts read this. */
-app.post('/api/snapshot', wrap(async (req, res) => {
-  // Fast, unlocked check for the common "nothing to snapshot" case, so it
-  // still returns 400 immediately rather than paying for a lock acquisition.
-  const precheck = await loadPortfolio(req.user.id);
-  if (!Object.keys(precheck.positions).length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة تتسجّل' });
-
-  const updated = await withPortfolio(req.user.id, async (portfolio) => {
+/**
+ * Snapshot one user's open positions into today's (or `date`'s) log entry.
+ * Shared by the manual /api/snapshot endpoint and the daily-close cron below.
+ */
+async function snapshotForUser(userId, date = null) {
+  return withPortfolio(userId, async (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     const { results } = await analyzeMany(codes, { capital: capitalOf(portfolio), positions: portfolio.positions, concurrency: 5 });
     // analyzeMany's price comes from the last data *sync*, not from now — a
-    // click mid-session (before that day's sync has run) would otherwise save
+    // run mid-session (before that day's sync has run) would otherwise save
     // yesterday's cached close mislabeled as today's, disagreeing with the
     // live price the desk is showing at that exact moment. Patch in live
     // quotes the same way /api/scan and /api/analyze already do.
@@ -1296,10 +1278,64 @@ app.post('/api/snapshot', wrap(async (req, res) => {
         },
       };
     });
-    return recordSnapshot(portfolio, withLivePrices, req.body?.date ?? null);
+    return recordSnapshot(portfolio, withLivePrices, date);
   });
+}
+
+/** Save today's close into the daily log — the calendar and charts read this. */
+app.post('/api/snapshot', wrap(async (req, res) => {
+  // Fast, unlocked check for the common "nothing to snapshot" case, so it
+  // still returns 400 immediately rather than paying for a lock acquisition.
+  const precheck = await loadPortfolio(req.user.id);
+  if (!Object.keys(precheck.positions).length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة تتسجّل' });
+
+  const updated = await snapshotForUser(req.user.id, req.body?.date ?? null);
   const day = Object.keys(updated.log).sort().pop();
   res.json({ saved: day, entry: updated.log[day], days: Object.keys(updated.log).length });
+}));
+
+/**
+ * Triggered daily by .github/workflows/daily-close-cron.yml over the VPS's
+ * loopback interface — same pattern as /api/cron/blog-generate. GitHub
+ * Actions cron is UTC-only and Cairo alternates between EET (UTC+2) and
+ * EEST (UTC+3) across the year, so the workflow fires at both possible UTC
+ * times for 14:30 Cairo and this endpoint no-ops unless it's actually close
+ * to 14:30 in Cairo right now — that keeps the trigger correct across DST
+ * without the workflow's cron schedule needing manual updates twice a year.
+ * Snapshots every user with open positions, the same as each of them
+ * clicking "سجّل إغلاق اليوم" used to.
+ */
+const DAILY_CLOSE_CRON_SECRET = process.env.DAILY_CLOSE_CRON_SECRET;
+app.post('/api/cron/daily-close', wrap(async (req, res) => {
+  if (!DAILY_CLOSE_CRON_SECRET || req.get('X-Cron-Secret') !== DAILY_CLOSE_CRON_SECRET) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const cairoNow = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Cairo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date());
+  if (cairoNow < '14:20' || cairoNow > '14:40') {
+    return res.json({ ok: true, skipped: true, cairoNow });
+  }
+
+  const portfolios = await getAllPortfolios();
+  const userIds = portfolios
+    .filter((row) => Object.keys(row.state_json?.positions ?? {}).length > 0)
+    .map((row) => row.user_id);
+
+  let saved = 0;
+  let failed = 0;
+  for (const userId of userIds) {
+    try {
+      await snapshotForUser(userId);
+      saved += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  res.json({ ok: true, cairoNow, total: userIds.length, saved, failed });
 }));
 
 /**

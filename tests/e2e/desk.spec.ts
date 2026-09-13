@@ -41,6 +41,11 @@ test.describe("desk flows", () => {
   });
 
   test("saving the daily close writes today's entry into the calendar", async ({ page }) => {
+    // The daily close is no longer a manual button — a cron job (see
+    // /api/cron/daily-close in server.js) snapshots every user at 14:30 Cairo
+    // time. This exercises the same per-user snapshot path (/api/snapshot)
+    // that the cron calls for each portfolio, via the frontend's API proxy,
+    // using the browser context's session cookie.
     await registerViaUi(page);
     await goto(page, "/trades");
     await pickStock(page, "ABUK");
@@ -49,8 +54,8 @@ test.describe("desk flows", () => {
     await page.getByRole("button", { name: "تسجيل", exact: true }).click();
     await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
 
-    await page.getByRole("button", { name: "سجّل إغلاق اليوم" }).click();
-    await expectToast(page, /تم حفظ إغلاق/);
+    const snapshot = await page.request.post("/api/public/api/snapshot");
+    expect(snapshot.ok()).toBeTruthy();
 
     await goto(page, "/calendar");
     await expect(page.getByText("قيمة المحفظة")).toBeVisible({ timeout: 30_000 });
