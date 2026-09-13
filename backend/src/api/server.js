@@ -1903,7 +1903,9 @@ app.post('/api/review', wrap(async (req, res) => {
     rules,
   });
 
-  const force = req.body?.force === true || req.query.force === '1';
+  // Regenerating skips the per-day cache and pays for a fresh model call, so
+  // only admins may force it — everyone else gets today's cached review.
+  const force = Boolean(req.user.isAdmin) && (req.body?.force === true || req.query.force === '1');
   const { getOrGenerateReview } = await import('../agent/analyst.js');
   const { review, source } = await getOrGenerateReview(
     portfolio,
