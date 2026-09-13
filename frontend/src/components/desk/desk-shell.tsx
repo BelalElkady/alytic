@@ -346,12 +346,19 @@ function DeskHeader() {
   const subscriptionActive = Boolean(user?.subscriptionActive);
   const periodEnd = user?.currentPeriodEnd ?? null;
   const locked = user?.hasAccess === false;
+  // Daily allowance from GET /api/portfolio — the server enforces it; this
+  // only explains it and disables the button once it's used up.
+  const screenshotsLeft =
+    typeof pf?.screenshotImportsLeft === "number" ? pf.screenshotImportsLeft : null;
+  const screenshotsPerDay =
+    typeof pf?.screenshotImportsPerDay === "number" ? pf.screenshotImportsPerDay : null;
+  const screenshotsExhausted = screenshotsLeft !== null && screenshotsLeft <= 0;
 
   const importFiles = async (files: File[], replaceAll: boolean) => {
     setUploading(true);
+    let imported = 0;
     try {
       let derived = 0;
-      let imported = 0;
       for (const [index, file] of files.entries()) {
         const mode = replaceAll && index === 0 ? "replace=1" : "merge=1";
         const result = await api(`/api/portfolio/import-screenshot?${mode}`, {
@@ -376,6 +383,8 @@ function DeskHeader() {
       }
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "تعذر قراءة الصور");
+      // Earlier images in the batch may already be saved (and counted).
+      if (imported) void reload();
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -468,11 +477,23 @@ function DeskHeader() {
             size="sm"
             variant="outline"
             onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            disabled={uploading || screenshotsExhausted}
           >
             {uploading ? <Spinner /> : <Upload className="size-4" />}
             رفع صور المحفظة
           </Button>
+          {screenshotsLeft !== null && (
+            <span
+              className={cn(
+                "whitespace-nowrap text-[11.5px]",
+                screenshotsExhausted ? "text-down" : "text-muted-foreground",
+              )}
+            >
+              {screenshotsExhausted
+                ? "خلصت صور النهارده — تتجدد بكرة"
+                : `باقي ${screenshotsLeft}${screenshotsPerDay ? ` من ${screenshotsPerDay}` : ""} ${screenshotsLeft === 1 ? "صورة" : "صور"} النهارده`}
+            </span>
+          )}
           <Button size="sm" variant="outline" onClick={() => setManualOpen(true)}>
             <PencilLine className="size-4" />
             إدخال يدوي
@@ -484,8 +505,15 @@ function DeskHeader() {
             multiple
             hidden
             onChange={(event) => {
-              const files = [...(event.target.files ?? [])];
+              let files = [...(event.target.files ?? [])];
+              if (screenshotsLeft !== null && files.length > screenshotsLeft) {
+                toast.warning(
+                  `باقي ${screenshotsLeft} ${screenshotsLeft === 1 ? "صورة" : "صور"} بس النهارده — هيترفع أول ${screenshotsLeft} بس.`,
+                );
+                files = files.slice(0, screenshotsLeft);
+              }
               if (files.length) setPendingFiles(files);
+              else event.target.value = "";
             }}
           />
         </div>

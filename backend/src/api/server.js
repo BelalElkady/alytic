@@ -1194,7 +1194,13 @@ app.get('/api/scan', wrap(async (req, res) => {
 
 app.get('/api/portfolio', wrap(async (req, res) => {
   const p = await loadPortfolio(req.user.id);
-  res.json({ ...p, capital: capitalOf(p), tracked: trackedCodes(p) });
+  res.json({
+    ...p,
+    capital: capitalOf(p),
+    tracked: trackedCodes(p),
+    screenshotImportsLeft: screenshotImportsLeft(p),
+    screenshotImportsPerDay: SCREENSHOT_IMPORTS_PER_DAY,
+  });
 }));
 
 app.post('/api/portfolio/trade', wrap(async (req, res) => {
@@ -1494,7 +1500,9 @@ app.post('/api/reset', wrap(async (req, res) => {
   const scope = req.body?.scope ?? 'log';
   await withPortfolio(req.user.id, (portfolio) =>
     scope === 'all'
-      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0 }
+      // imports survives the wipe: it's what the daily screenshot cap counts,
+      // so dropping it would hand out a fresh allowance on every reset.
+      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports }
       : { ...portfolio, log: {}, trades: [], realizedPnl: 0 },
   );
   res.json({ ok: true, scope });
@@ -1541,9 +1549,28 @@ function resolveScreenshotCode(item) {
   return match?.code ?? null;
 }
 
+// Every image is a vision-model call, so each account gets a daily allowance
+// of successful imports, counted per Cairo day off portfolio.imports. That log
+// keeps only its last 20 entries, which is why the cap can't exceed 20.
+const SCREENSHOT_IMPORTS_PER_DAY = Math.min(20, Math.max(0, Math.floor(Number(process.env.SCREENSHOT_IMPORTS_PER_DAY ?? 5)) || 0));
+const SCREENSHOT_LIMIT_MESSAGE = 'خلصت عدد صور المحفظة المسموح بيه النهارده — تقدر ترفع تاني بكرة، أو عدّل من «إدخال يدوي».';
+
+function screenshotImportsLeft(portfolio) {
+  const today = cairoToday();
+  const used = (portfolio.imports ?? []).filter((entry) => {
+    const at = Date.parse(entry?.importedAt);
+    return entry?.source === 'screenshot' && Number.isFinite(at) && cairoDateOf(at) === today;
+  }).length;
+  return Math.max(0, SCREENSHOT_IMPORTS_PER_DAY - used);
+}
+
 app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'استيراد الصورة محتاج OPENROUTER_API_KEY في .env' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة لمحفظتك أولاً' });
+  // Checked before the model call so an exhausted allowance costs nothing.
+  if (screenshotImportsLeft(await loadPortfolio(req.user.id)) <= 0) {
+    return res.status(429).json({ error: SCREENSHOT_LIMIT_MESSAGE, reason: 'screenshot_limit', screenshotImportsLeft: 0 });
+  }
 
   const mediaType = req.headers['content-type'];
   const response = await callWithRetry(() => getOpenRouterClient().chat.completions.create({
@@ -1664,13 +1691,25 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   // several seconds; holding the per-user write lock for that whole span
   // would block ordinary trades/cash edits for no reason, since none of it
   // touches portfolio state until this point.
-  const updated = await withPortfolio(req.user.id, (portfolio) => ({
-    ...portfolio,
-    positions: merge ? { ...portfolio.positions, ...positions } : positions,
-    ...(Number.isFinite(cashFromScreenshot) && cashFromScreenshot >= 0 ? { cash: cashFromScreenshot } : {}),
-    imports: [...(portfolio.imports ?? []), { importedAt, positions: Object.keys(positions), source: 'screenshot' }].slice(-20),
-  }));
-  res.json({ ok: true, importedAt, positions: Object.keys(positions).length, derivedPositions, portfolio: { ...updated, capital: capitalOf(updated) } });
+  const updated = await withPortfolio(req.user.id, (portfolio) => {
+    // Re-checked under the lock: parallel requests all pass the early check
+    // while none of them has been recorded yet.
+    if (screenshotImportsLeft(portfolio) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
+    return {
+      ...portfolio,
+      positions: merge ? { ...portfolio.positions, ...positions } : positions,
+      ...(Number.isFinite(cashFromScreenshot) && cashFromScreenshot >= 0 ? { cash: cashFromScreenshot } : {}),
+      imports: [...(portfolio.imports ?? []), { importedAt, positions: Object.keys(positions), source: 'screenshot' }].slice(-20),
+    };
+  });
+  res.json({
+    ok: true,
+    importedAt,
+    positions: Object.keys(positions).length,
+    derivedPositions,
+    screenshotImportsLeft: screenshotImportsLeft(updated),
+    portfolio: { ...updated, capital: capitalOf(updated) },
+  });
 }));
 
 // ---- AI endpoints ----------------------------------------------------------
