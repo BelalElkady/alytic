@@ -334,7 +334,8 @@ app.use('/api', async (req, res, next) => {
     req.path.startsWith('/blog/') ||
     req.path === '/sitemap-urls' ||
     req.path === '/billing/plans' ||
-    req.path === '/cron/blog-generate'
+    req.path === '/cron/blog-generate' ||
+    req.path === '/cron/daily-close'
   ) return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
@@ -1491,9 +1492,13 @@ app.post('/api/snapshot', wrap(async (req, res) => {
  * loopback interface — same pattern as /api/cron/blog-generate. GitHub
  * Actions cron is UTC-only and Cairo alternates between EET (UTC+2) and
  * EEST (UTC+3) across the year, so the workflow fires at both possible UTC
- * times for 14:30 Cairo and this endpoint no-ops unless it's actually close
- * to 14:30 in Cairo right now — that keeps the trigger correct across DST
- * without the workflow's cron schedule needing manual updates twice a year.
+ * times for 14:30 Cairo and this endpoint no-ops if the session hasn't closed
+ * yet in Cairo — that keeps the trigger correct across DST without the
+ * workflow's cron schedule needing manual updates twice a year. There's no
+ * upper bound: GitHub routinely starts scheduled runs 30-60+ minutes late, and
+ * a narrow window around 14:30 turned those late runs into silent no-ops.
+ * Re-running later the same day just overwrites today's entry with the same
+ * closing prices.
  * Snapshots every user with open positions, the same as each of them
  * clicking "سجّل إغلاق اليوم" used to. Skipped on Fridays, Saturdays and
  * EGX bank holidays — there's no session, so no close to record.
@@ -1513,7 +1518,7 @@ app.post('/api/cron/daily-close', wrap(async (req, res) => {
     minute: '2-digit',
     hourCycle: 'h23',
   }).format(new Date());
-  if (cairoNow < '14:20' || cairoNow > '14:40') {
+  if (cairoNow < '14:30') {
     return res.json({ ok: true, skipped: true, cairoNow });
   }
 
