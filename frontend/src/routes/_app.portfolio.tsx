@@ -397,13 +397,20 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
 
       <div className={cn("mt-3 rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed", badgeTone)}>
         {verdict ? (
-          <>
-            <div className="font-medium">{verdict.headline}</div>
-            {verdict.reasoning && <div className="mt-1 text-muted-foreground">{verdict.reasoning}</div>}
-            {verdict.orderInstruction && (
-              <div className="num mt-1.5 font-medium">الأمر: {verdict.orderInstruction}</div>
+          // Two lines, always: the decision, then the order (or the level to
+          // watch on a hold). The clamp is a backstop if the model runs long.
+          <p
+            className="num line-clamp-2"
+            title={[verdict.headline, verdict.orderInstruction ?? verdict.invalidation].filter(Boolean).join(" — ")}
+          >
+            <span className="font-medium">{verdict.headline}</span>
+            {(verdict.orderInstruction ?? verdict.invalidation) && (
+              <>
+                <br />
+                <span className="text-muted-foreground">{verdict.orderInstruction ?? verdict.invalidation}</span>
+              </>
             )}
-          </>
+          </p>
         ) : (
           <>
             <span className="text-muted-foreground">توصية اليوم · </span>

@@ -542,6 +542,12 @@ export async function reviewStock(analyses, code, ctx = {}, { model = MODEL_CHAI
 
 This request covers ONE holding only: return a single verdict for ${code}. Instructions about marketRead, cashAdvice, topPriority, portfolioAssessment, portfolioRisks or verdicts for other stocks do not apply here. The portfolio sections below are context for portfolioView, positionSizing and betterAlternative only.
 
+The reader sees this verdict on the stock's card as exactly two lines, so write it to the point. This overrides the length guidance in the system prompt:
+- headline (line 1): the action and the one number that decides it, at most 8 words — e.g. "بيع جزئي — عدّى +15% ربح" or "احتفاظ — لسه بعيد عن الوقف والهدف".
+- orderInstruction (line 2 when there is an action): the exact rule-book order in at most 15 words — e.g. "بيع 57 سهم بأمر محدد عند 91.95، والباقي وقفه 82.94". null for hold, wait or avoid.
+- invalidation (line 2 for hold, wait or avoid): the one level to watch in at most 12 words — e.g. "خروج كامل لو قفل تحت 38.50".
+- Every other field: one short sentence. At most 2 riskFlags and 2 externalContext entries. Never list the portfolio's weights or sectors back.
+
 ${contextText}
 
 ## ${code} — full brief
@@ -554,7 +560,9 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
     model,
     schema: StockVerdictSchema,
     schemaName: 'stock_verdict',
-    maxTokens: 3000,
+    // Arabic prose runs ~2 characters per token, so a full verdict needs more
+    // room than it looks; 3000 cut valid answers off mid-string.
+    maxTokens: 5000,
     system: analystSystemPrompt(rules, style),
     messages: [{ role: 'user', content: userMessage }],
     webSearch: { engine: 'auto', max_results: 4, max_uses: rules.webSearch?.perStock ?? 1 },

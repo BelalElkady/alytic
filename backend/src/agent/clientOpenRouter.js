@@ -56,7 +56,7 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 
 /** The one model knob for every analysis feature. Set ALYTIC_MODEL in .env
  * to any OpenRouter model id to change what every feature runs on. */
-export const MODEL = process.env.ALYTIC_MODEL ?? 'qwen/qwen3.5-9b';
+export const MODEL = process.env.ALYTIC_MODEL || 'deepseek/deepseek-v4-flash';
 
 /** Optional free-tier model tried before MODEL on every call. Set
  * ALYTIC_MODEL_FREE to an OpenRouter `:free` slug to use it; leave unset and
@@ -325,13 +325,15 @@ async function requestStructuredORWithModel({
   ];
 
   let lastError = null;
+  let lastTruncated = false;
+  let tokens = maxTokens;
   for (let attempt = 0; attempt < 3; ) {
     let res;
     try {
       res = await callWithRetry(() =>
         client.chat.completions.create({
           model,
-          max_tokens: maxTokens,
+          max_tokens: tokens,
           temperature: 0.2,
           ...(reasoningOff ? { reasoning: { enabled: false } } : {}),
           ...(structuredSupported
@@ -360,21 +362,46 @@ async function requestStructuredORWithModel({
       throw err;
     }
     const text = res.choices?.[0]?.message?.content ?? '';
+    const truncated = res.choices?.[0]?.finish_reason === 'length';
     try {
       const data = schema.parse(JSON.parse(structuredSupported ? text : extractJson(text)));
       return { data, raw: res };
     } catch (err) {
       lastError = err;
+      lastTruncated = truncated;
       attempt++;
-      formatConvo = [
-        ...formatConvo,
-        { role: 'assistant', content: text.slice(0, 4000) },
-        { role: 'user', content: `That was not valid per the schema: ${String(err.message).slice(0, 500)}. Return corrected JSON only.` },
-      ];
+      console.warn(`[ai] ${schemaName} attempt ${attempt} invalid (${truncated ? `cut off at ${tokens} tokens` : 'bad JSON'}): ${String(err.message).slice(0, 200)}`);
+      if (truncated) {
+        // Echoing a cut-off answer back only burns input and gets cut off
+        // again at the same limit — give more room and ask for a shorter answer.
+        tokens = Math.max(tokens, Math.min(tokens * 2, MAX_FORMAT_TOKENS));
+        formatConvo = [
+          ...formatConvo,
+          {
+            role: 'user',
+            content:
+              'Your previous answer was cut off because it was too long. Write every text field much shorter — one or two sentences each, ' +
+              'no lists of other holdings, never repeat yourself — and return the complete JSON object only.',
+          },
+        ];
+      } else {
+        formatConvo = [
+          ...formatConvo,
+          { role: 'assistant', content: text.slice(0, 4000) },
+          { role: 'user', content: `That was not valid per the schema: ${String(err.message).slice(0, 500)}. Return corrected JSON only.` },
+        ];
+      }
     }
   }
-  throw new Error(`النموذج ما رجّعش JSON صالح بعد 3 محاولات: ${String(lastError?.message ?? '').slice(0, 200)}`);
+  console.error(`[ai] ${schemaName} failed after 3 attempts:`, lastError?.message);
+  throw new Error(
+    lastTruncated
+      ? 'رد الذكاء الاصطناعي طلع طويل أوي واتقطع قبل ما يكمل — جرّب تاني بعد شوية.'
+      : 'رد الذكاء الاصطناعي رجع بشكل مش مفهوم — جرّب تاني بعد شوية.',
+  );
 }
+
+const MAX_FORMAT_TOKENS = 12000;
 
 /**
  * Ask for a structured response — see requestStructuredORWithModel for the
