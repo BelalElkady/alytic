@@ -463,7 +463,7 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
                 void requestReview(isAdmin);
               }}
             >
-              أيوه، هاتها
+              أيوة
             </AlertDialogAction>
             <AlertDialogCancel>لسه</AlertDialogCancel>
           </AlertDialogFooter>
