@@ -1,14 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import { ErrorState, LoadingBlock, Notice, Panel, Spinner } from "@/components/desk/state-blocks";
+import { Notice, Panel, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
-import { api, post } from "@/lib/api";
+import { post } from "@/lib/api";
 import {
   clearInvestStyle,
   INVEST_STYLES,
-  STYLE_RULES,
   setInvestStyle,
   useActiveInvestStyle,
   type StyleKey,
@@ -22,12 +21,12 @@ export const Route = createFileRoute("/_app/settings")({
       { title: "الإعدادات — EGXpert" },
       {
         name: "description",
-        content: "قواعد التوصيات المفعّلة وإعادة تعيين السجل والصفقات.",
+        content: "سلوكك الاستثماري وإعادة تعيين السجل والصفقات.",
       },
       { property: "og:title", content: "الإعدادات — EGXpert" },
       {
         property: "og:description",
-        content: "قواعد التوصيات المفعّلة وإعادة تعيين السجل والصفقات.",
+        content: "سلوكك الاستثماري وإعادة تعيين السجل والصفقات.",
       },
       { name: "robots", content: "noindex, nofollow" },
       { property: "og:url", content: `${SITE_URL}/settings` },
@@ -38,9 +37,6 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsPage() {
   const { reload, pf } = useDesk();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the settings API response shape
-  const [data, setData] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
   const [armed, setArmed] = useState(false);
   const [resetting, setResetting] = useState(false);
   const { style, auto, inferred } = useActiveInvestStyle(pf?.trades);
@@ -57,19 +53,6 @@ function SettingsPage() {
     toast.success("رجّعنا الأسلوب لسلوكك التلقائي في التداول");
   };
 
-  const load = () => {
-    api("/api/settings")
-      .then((result) => {
-        setData(result);
-        setError(null);
-      })
-      .catch((caught) =>
-        setError(caught instanceof Error ? caught.message : "تعذر تحميل الإعدادات"),
-      );
-  };
-
-  useEffect(load, []);
-
   const resetLog = async () => {
     if (!armed) {
       setArmed(true);
@@ -79,7 +62,6 @@ function SettingsPage() {
     try {
       await post("/api/reset", { scope: "log" });
       await reload();
-      load();
       setArmed(false);
       toast.success("تم مسح السجل والصفقات");
     } catch (caught) {
@@ -88,30 +70,6 @@ function SettingsPage() {
       setResetting(false);
     }
   };
-
-  if (error)
-    return (
-      <ErrorState
-        message={error}
-        action={
-          <Button variant="outline" size="sm" onClick={load}>
-            حاول تاني
-          </Button>
-        }
-      />
-    );
-  if (!data) return <LoadingBlock rows={3} />;
-
-  const base = data.rules;
-  const override = STYLE_RULES[style];
-  const rules = {
-    ...base,
-    trailing: { ...base.trailing, ...override.trailing },
-    takeProfit: { ...base.takeProfit, ...override.takeProfit },
-    entry: { ...base.entry, ...override.entry },
-    sizing: { ...base.sizing, ...override.sizing },
-  };
-  const activeStyle = INVEST_STYLES.find((item) => item.key === style)!;
 
   return (
     <div className="space-y-4">
@@ -160,24 +118,6 @@ function SettingsPage() {
             );
           })}
         </div>
-      </Panel>
-
-      <Panel title="قواعد التوصيات المفعّلة" description={activeStyle.description}>
-        <ul className="space-y-2 text-[13px] leading-relaxed">
-          {[
-            `وقف متحرك ${rules.trailing.trailPct}% يتفعّل تلقائيًا لما السهم يعلى ${rules.trailing.activateAtProfitPct}% فوق تكلفتك، ولا ينزل أبدًا.`,
-            "الوقف يُحترم على إغلاق الجلسة — إغلاق تحته = توصية بيع كلي.",
-            `ربح ${rules.takeProfit.partialAtProfitPct}%+ = توصية بيع جزئي ${rules.takeProfit.partialFraction * 100}% بأمر محدد فوق السعر ${rules.takeProfit.limitAbovePricePct}%.`,
-            `وصول الهدف = بيع ${Math.round(rules.takeProfit.atTargetFraction * 100)}% ورفع الوقف للباقي ${rules.takeProfit.raiseStopAfterTargetPct}% تحت السعر.`,
-            "تحسين المتوسط فقط للأسهم القيادية فوق متوسط 200 يوم — لا تعديل على سهم ضعيف.",
-            `أقل عائد/مخاطرة مقبول: ${rules.entry.minRiskReward} · المخاطرة للصفقة ${rules.sizing.riskPerTradePct}% · الحد الأقصى للمركز ${rules.sizing.maxPositionPct}%.`,
-          ].map((rule) => (
-            <li key={rule} className="flex gap-2.5">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" />
-              <span>{rule}</span>
-            </li>
-          ))}
-        </ul>
       </Panel>
 
       <Panel

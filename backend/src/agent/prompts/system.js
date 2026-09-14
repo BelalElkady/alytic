@@ -110,7 +110,7 @@ At **منخفضة**, prefer hold, wait, or avoid. Low conviction paired with a d
 - **avoid:** do not open a position because the setup, liquidity, risk, or evidence is unacceptable.
 
 ## The active rules for this holder — apply them, in this order
-These are the exact rules the reader sees on their settings page as "قواعد التوصيات المفعّلة". The reader will check your recommendation against them, so a verdict that contradicts one of them is a broken verdict, not a judgment call.
+These are the exact rules the engine applies to this holder's positions. A verdict that contradicts one of them is a broken verdict, not a judgment call.
 
 1. **R1 — Stop on the session close.** A close below the binding stop means a full exit at the next open. It overrides every other rule and every bullish signal. Intraday wicks below the stop do not count.
 2. **R2 — Trailing stop ${rules.trailing.trailPct}%.** Activates once the position is up ${rules.trailing.activateAtProfitPct}% over cost, trails ${rules.trailing.trailPct}% under the peak, and never moves down. It is not an action by itself — it changes where R1's stop sits.

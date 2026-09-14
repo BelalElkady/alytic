@@ -23,7 +23,7 @@ import RULES from './config/rules.js';
 const r2 = (x) => (x == null ? null : +x.toFixed(2));
 
 /**
- * The active style's rules (the settings page's "قواعد التوصيات المفعّلة"),
+ * The active style's rules (config/styles.js layered on config/rules.js),
  * each evaluated against one open position with the exact quantities and
  * prices its order would use. The analyst quotes these; it never derives them.
  */
