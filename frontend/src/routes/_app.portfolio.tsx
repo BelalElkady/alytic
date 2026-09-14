@@ -294,16 +294,17 @@ function PositionsPage() {
       </div>
 
       {aiAvailable && rows.length > 1 && (
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        // The page is RTL, so justify-start (and the button coming first) puts it on the right.
+        <div className="flex flex-wrap items-center justify-start gap-2">
+          <Button className="font-semibold shadow-sm" disabled={batchPending.size > 0} onClick={openBatchConfirm}>
+            {batchPending.size > 0 ? <Spinner /> : <Sparkles className="size-4" />}
+            توصية اليوم لكل الأسهم
+          </Button>
           {batchPending.size > 0 && (
             <span className="text-[12px] text-muted-foreground">
               باقي {int(batchPending.size)} من {int(batch.codes.size)} — كل كارت بيظهر أول ما يخلص
             </span>
           )}
-          <Button variant="outline" size="sm" disabled={batchPending.size > 0} onClick={openBatchConfirm}>
-            {batchPending.size > 0 && <Spinner />}
-            توصية اليوم لكل الأسهم
-          </Button>
         </div>
       )}
 
