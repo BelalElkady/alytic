@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import {
   ArrowRight,
-  ChevronDown,
   Copy,
   CreditCard,
   HelpCircle,
+  History,
   MessageCircle,
   Paperclip,
   Send,
@@ -129,10 +129,9 @@ export function ChatWidget() {
   // message yet" check below from a global count to a per-session one, so
   // going back after a real thread already exists behaves exactly like a
   // first-time visit instead of being compared against the whole thread's
-  // history. Everything before this index renders in its own collapsed box
-  // (see showPrevious) instead of alongside the new session.
+  // history. Everything before this index stays hidden behind the menu's
+  // "المحادثة السابقة" choice instead of sharing the view with the new session.
   const [branchAt, setBranchAt] = useState(0);
-  const [showPrevious, setShowPrevious] = useState(false);
 
   const load = useCallback(async ({ markRead }: { markRead: boolean }) => {
     try {
@@ -216,24 +215,19 @@ export function ChatWidget() {
   // Always available, and always starts a clean, separate chat rather than
   // reopening the menu on top of whatever's already on screen: clears the
   // bot's own bubbles and moves branchAt to the end of the real thread so
-  // far. Nothing is deleted — everything up to that point folds into its own
-  // collapsed "previous conversation" box (see the render below) instead of
-  // sharing the view with the new session.
+  // far. Nothing is deleted — the menu offers everything up to that point
+  // back as "المحادثة السابقة" (see resumePrevious).
   const backToMenu = () => {
     setBot([]);
     setBranchAt(messages.length);
-    setShowPrevious(false);
     setMode("menu");
   };
 
-  // Expanding the folded previous conversation from the menu is a way back
-  // into it, so the composer shows there too and a reply sent from it simply
-  // resumes that thread instead of opening a new help request.
-  const replyingToPrevious = showPrevious && mode !== "human";
+  // Reopens the whole thread as the live conversation, composer included, so
+  // a reply continues it rather than opening a new help request.
   const resumePrevious = () => {
     setBot([]);
     setBranchAt(0);
-    setShowPrevious(false);
     setMode("human");
   };
 
@@ -245,14 +239,13 @@ export function ChatWidget() {
     try {
       // First message of a session (the whole thread, or since the last "new
       // topic") is flagged as a help request so the notification email says so.
-      const isFirstOfSession = !replyingToPrevious && messages.length === branchAt;
+      const isFirstOfSession = messages.length === branchAt;
       const { message } = await post("/api/support/messages", {
         body,
         intent: isFirstOfSession ? "help" : undefined,
       });
       setMessages((previous) => [...previous, message]);
       setDraft("");
-      if (replyingToPrevious) resumePrevious();
       if (isFirstOfSession) say("admin", "وصلتنا رسالتك — هنرد عليك في أقرب وقت.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر إرسال الرسالة");
@@ -276,14 +269,13 @@ export function ChatWidget() {
     setSending(true);
     setError(null);
     try {
-      const isFirstOfSession = !replyingToPrevious && messages.length === branchAt;
+      const isFirstOfSession = messages.length === branchAt;
       const { message } = await postRaw(
         `/api/support/messages/image${isFirstOfSession ? "?intent=help" : ""}`,
         file,
         file.type,
       );
       setMessages((previous) => [...previous, message]);
-      if (replyingToPrevious) resumePrevious();
       if (isFirstOfSession) say("admin", "وصلتنا صورتك — هنرد عليك في أقرب وقت.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر رفع الصورة");
@@ -367,28 +359,6 @@ export function ChatWidget() {
             </div>
           ) : (
             <div className="scrollbar-slim flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
-              {branchAt > 0 && (
-                <div className="rounded-lg border bg-secondary/40">
-                  <button
-                    type="button"
-                    onClick={() => setShowPrevious((previous) => !previous)}
-                    className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-[12px] font-medium text-muted-foreground"
-                  >
-                    المحادثة السابقة
-                    <ChevronDown
-                      className={cn("size-3.5 transition-transform", showPrevious && "rotate-180")}
-                    />
-                  </button>
-                  {showPrevious && (
-                    <div className="space-y-2.5 border-t px-2.5 py-2.5">
-                      {messages.slice(0, branchAt).map((message) => (
-                        <MessageBubble key={message.id} message={message} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
               <Bubble side="admin">أهلًا! تحب أساعدك في إيه؟</Bubble>
 
               {bot.map((bubble) => (
@@ -400,6 +370,11 @@ export function ChatWidget() {
 
               {mode === "menu" && (
                 <div className="space-y-2 pt-1">
+                  {branchAt > 0 && (
+                    <Choice icon={History} onClick={resumePrevious}>
+                      المحادثة السابقة
+                    </Choice>
+                  )}
                   <Choice icon={CreditCard} onClick={() => void chooseSubscribe()}>
                     عايز أشترك
                   </Choice>
@@ -449,7 +424,7 @@ export function ChatWidget() {
             </div>
           )}
 
-          {user && (mode === "human" || replyingToPrevious) && (
+          {user && mode === "human" && (
             <>
               {error && <p className="px-4 pb-2 text-[12px] text-down">{error}</p>}
 
@@ -486,11 +461,7 @@ export function ChatWidget() {
                     const file = [...event.clipboardData.files].find((f) => IMAGE_TYPES.includes(f.type));
                     if (file) void sendImage(file);
                   }}
-                  placeholder={
-                    replyingToPrevious
-                      ? "رد على المحادثة السابقة…"
-                      : "اكتب رسالتك… أو الصق/ارفق صورة"
-                  }
+                  placeholder="اكتب رسالتك… أو الصق/ارفق صورة"
                   rows={2}
                   className="min-h-0 resize-none text-[13px]"
                 />
