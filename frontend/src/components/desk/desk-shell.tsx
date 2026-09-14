@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
@@ -372,6 +373,12 @@ function DeskHeader() {
   const screenshotsPerDay =
     typeof pf?.screenshotImportsPerDay === "number" ? pf.screenshotImportsPerDay : null;
   const screenshotsExhausted = screenshotsLeft !== null && screenshotsLeft <= 0;
+  const screenshotsHint =
+    screenshotsLeft === null
+      ? null
+      : screenshotsExhausted
+        ? "خلصت صور النهارده — تتجدد بكرة"
+        : `باقي ${screenshotsLeft}${screenshotsPerDay && !pf?.credits?.screenshots ? ` من ${screenshotsPerDay}` : ""} ${screenshotsLeft === 1 ? "صورة" : "صور"} النهارده`;
 
   const importFiles = async (files: File[], replaceAll: boolean) => {
     setUploading(true);
@@ -506,27 +513,42 @@ function DeskHeader() {
             <Radar className="size-4" />
             تحليل السوق
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading || screenshotsExhausted}
-          >
-            {uploading ? <Spinner /> : <Upload className="size-4" />}
-            رفع صور المحفظة
-          </Button>
-          {screenshotsLeft !== null && (
-            <span
-              className={cn(
-                "whitespace-nowrap text-[11.5px]",
-                screenshotsExhausted ? "text-down" : "text-muted-foreground",
-              )}
-            >
-              {screenshotsExhausted
-                ? "خلصت صور النهارده — تتجدد بكرة"
-                : `باقي ${screenshotsLeft}${screenshotsPerDay && !pf?.credits?.screenshots ? ` من ${screenshotsPerDay}` : ""} ${screenshotsLeft === 1 ? "صورة" : "صور"} النهارده`}
-            </span>
-          )}
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              {/* The wrapper takes the hover: a disabled button gets no pointer events. */}
+              <TooltipTrigger asChild>
+                <span className="relative inline-flex">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading || screenshotsExhausted}
+                    aria-describedby={screenshotsHint ? "screenshots-left-hint" : undefined}
+                  >
+                    {uploading ? <Spinner /> : <Upload className="size-4" />}
+                    رفع صور المحفظة
+                  </Button>
+                  {screenshotsLeft !== null && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "num pointer-events-none absolute -top-2 -end-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10.5px] font-semibold leading-none ring-2 ring-background",
+                        screenshotsExhausted ? "bg-down text-white" : "bg-primary text-primary-foreground",
+                      )}
+                    >
+                      {screenshotsLeft}
+                    </span>
+                  )}
+                  {screenshotsHint && (
+                    <span id="screenshots-left-hint" className="sr-only">
+                      {screenshotsHint}
+                    </span>
+                  )}
+                </span>
+              </TooltipTrigger>
+              {screenshotsHint && <TooltipContent>{screenshotsHint}</TooltipContent>}
+            </Tooltip>
+          </TooltipProvider>
           <Button size="sm" variant="outline" onClick={() => setManualOpen(true)}>
             <PencilLine className="size-4" />
             إدخال يدوي
