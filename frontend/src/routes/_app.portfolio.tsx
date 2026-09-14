@@ -400,7 +400,8 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
           // Two lines, always: the decision, then the order (or the level to
           // watch on a hold). The clamp is a backstop if the model runs long.
           <p
-            className="num line-clamp-2"
+            dir="rtl"
+            className="line-clamp-2 text-right"
             title={[verdict.headline, verdict.orderInstruction ?? verdict.invalidation].filter(Boolean).join(" — ")}
           >
             <span className="font-medium">{verdict.headline}</span>
@@ -416,7 +417,7 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
             <span className="text-muted-foreground">توصية اليوم · </span>
             {rec.text}
             {rec.order && (
-              <div className="num mt-1.5 font-medium">
+              <div dir="rtl" className="mt-1.5 text-right font-medium">
                 الأمر: {rec.order.side === "buy" ? "شراء" : "بيع"} {int(rec.order.qty)} سهم عند{" "}
                 {fmt(rec.order.price)} ≈ {int(rec.order.qty * rec.order.price)} ج
               </div>
