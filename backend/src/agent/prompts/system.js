@@ -342,7 +342,8 @@ Their trading record is evidence about what they will actually do with this advi
 - **Overtrading** (many trades in the last 30 days) — favor the fewest, strongest picks and fewer orders.
 - **Ticket size** — when the plan's orders are much larger than their usual ticket, suggest splitting into tranches.
 - **Usual cash level** — if they normally keep much more (or much less) cash than this plan leaves, address that directly in reserveAdvice.
-- With little or no trade history, say so briefly and advise as for a disciplined first deployment. Never invent a habit the numbers do not show.
+- **The style in use is part of their behavior.** When they picked it manually, it is their own stated behavior: frame behaviorRead around it (its horizon, and how it should pace this cash) even when the trade log is empty.
+- **An empty trade log is not an unknown investor.** Base behaviorRead on the chosen style and on what the open positions show (how long they have been held, their P/L, concentration); mention the missing trade record in one short clause at most. Never call this a first deployment when the investor already holds positions, and never invent a habit the numbers do not show.
 
 ## Using the market report
 When today's market report is provided, it is the researched context: its overview, risks and any opportunity writeups covering a pick. Let it shape the stance (a hostile regime justifies gradual deployment or holding cash) and cite it where relevant. When it is absent, judge on the briefs alone and do not claim news you were not given.

@@ -10,6 +10,7 @@
  */
 
 import { lookup, sectorLabel } from '../config/universe.js';
+import { styleProfile } from '../config/styles.js';
 
 // Mirrors frontend/src/lib/invest-style.ts — keep the two in step.
 const MIN_CLOSED_TRADES = 3;
@@ -108,6 +109,12 @@ export function behaviorProfile(portfolio, { capital = 0, today = new Date().toI
     .slice(-60);
   const cashShares = logEntries.map((e) => (e.cash / e.total) * 100);
 
+  // What the book itself shows, for an investor whose trades were never
+  // logged here (e.g. positions imported from a broker screenshot): how long
+  // the current positions have been open is still real behavior.
+  const openPositions = Object.values(portfolio.positions ?? {});
+  const openDays = openPositions.map((pos) => (pos.openedAt ? daysBetween(pos.openedAt, today) : null)).filter((d) => d != null);
+
   return {
     tradesCount: trades.length,
     buys,
@@ -134,6 +141,9 @@ export function behaviorProfile(portfolio, { capital = 0, today = new Date().toI
     sectorPreference,
     avgCashPct: cashShares.length ? r1(cashShares.reduce((a, b) => a + b, 0) / cashShares.length) : null,
     loggedDays: logEntries.length,
+    openPositions: openPositions.length,
+    avgOpenPositionDays: openDays.length ? r1(openDays.reduce((a, b) => a + b, 0) / openDays.length) : null,
+    importedPositions: (portfolio.imports ?? []).length > 0 || openPositions.some((pos) => pos.derivedFromScreenshot || pos.reportedValue != null),
   };
 }
 
@@ -141,21 +151,43 @@ const n = (x, unit = '') => (x == null ? 'n/a' : `${x}${unit}`);
 
 /** The profile as prompt lines — English scaffolding, engine figures as given. */
 export function behaviorLines(profile, { style, styleAuto } = {}) {
+  // The style is part of the investor's behavior whether or not any trades
+  // were logged — a manual pick in settings is their own stated behavior.
+  const source = !styleAuto
+    ? 'picked manually by the investor in settings — this is their stated investment behavior, apply it'
+    : profile.inferredStyle
+      ? 'inferred automatically from their own holding periods'
+      : 'the app default — no manual pick, and too few closed trades to infer one';
+  const styleLine =
+    `- Investment style in use: ${style} (${styleProfile(style).horizon}) — ${source}` +
+    (profile.inferredStyle && profile.inferredStyle !== style
+      ? ` ⚠️ their actual holding periods look like ${profile.inferredStyle}, not the style they picked`
+      : '');
+  const bookLine = profile.openPositions
+    ? `- Open positions: ${profile.openPositions}, open for ${n(profile.avgOpenPositionDays, ' days')} on average`
+    : '- Open positions: none — the book is all cash';
+  const cashLine = profile.loggedDays
+    ? `- Usual cash level over the last ${profile.loggedDays} saved closes: ${n(profile.avgCashPct, '% of capital')}`
+    : null;
+
   if (!profile.tradesCount) {
-    return '- No trades recorded yet — there is no behavior history to read. Do not invent one; advise as for a first-time deployment.';
+    return [
+      styleLine,
+      bookLine,
+      `- Trade log: empty${profile.importedPositions ? ' — the positions were imported (e.g. from a broker screenshot), so their past trades were never recorded here' : ''}. There is no win rate, holding-period or averaging-down record; do not invent one.`,
+      cashLine,
+    ].filter(Boolean).join('\n');
   }
-  const styleLine = profile.inferredStyle
-    ? `- Style inferred from actual holding periods: ${profile.inferredStyle} | style this review uses: ${style} (${styleAuto ? 'auto — taken from that behavior' : 'picked manually by the investor'})` +
-      (profile.inferredStyle !== style ? ' ⚠️ the investor\'s actual behavior does not match the style they picked' : '')
-    : `- Too few closed trades (${profile.sells}) to infer a style from behavior | style this review uses: ${style} (${styleAuto ? 'default' : 'picked manually'})`;
+
   return [
-    `- Trades: ${profile.tradesCount} (${profile.buys} buys, ${profile.sells} sells) across ${profile.distinctStocks} stocks, ${profile.firstTradeDate} → ${profile.lastTradeDate} | last 30 days: ${profile.tradesLast30d} · last 90 days: ${profile.tradesLast90d}`,
     styleLine,
+    bookLine,
+    `- Trades: ${profile.tradesCount} (${profile.buys} buys, ${profile.sells} sells) across ${profile.distinctStocks} stocks, ${profile.firstTradeDate} → ${profile.lastTradeDate} | last 30 days: ${profile.tradesLast30d} · last 90 days: ${profile.tradesLast90d}`,
     `- Average holding period: ${n(profile.avgHoldDays, ' days')} | winners held ${n(profile.avgHoldDaysWinners, ' days')} · losers held ${n(profile.avgHoldDaysLosers, ' days')}`,
     `- Closed trades: win rate ${n(profile.winRatePct, '%')} | avg win ${n(profile.avgWinEgp, ' EGP')} · avg loss ${n(profile.avgLossEgp, ' EGP')} | profit factor ${n(profile.profitFactor)} | realized P/L ${profile.realizedPnl} EGP`,
     `- Buys into an existing position below its average cost (averaging down): ${profile.averagingDownBuys} | above it (adding to a winner): ${profile.addingToWinnerBuys}`,
     `- Buy ticket size: avg ${n(profile.avgBuyTicketEgp, ' EGP')} (${n(profile.avgBuyTicketPctOfCapital, '% of current capital')}) · largest ${n(profile.largestBuyTicketEgp, ' EGP')}`,
     `- Sectors bought most (by value): ${profile.sectorPreference.map((s) => `${s.sector} ${s.pctOfBuys}%`).join(' · ') || 'n/a'}`,
-    `- Usual cash level over the last ${profile.loggedDays} saved closes: ${n(profile.avgCashPct, '% of capital')}`,
-  ].join('\n');
+    cashLine,
+  ].filter(Boolean).join('\n');
 }

@@ -195,7 +195,9 @@ export async function getOrGenerateCashReview(portfolio, {
   const cacheStyle = `cash:${style}:${index}`;
   // The behavior half of the review changes with every logged trade, not
   // only with positions and cash, so the trade count is part of the key too.
-  const hash = `${portfolioHash({ positions: portfolio.positions, watchlist: {}, cash: portfolio.cash })}:${(portfolio.trades ?? []).length}:${styleAuto ? 'auto' : 'manual'}`;
+  // `v2`: bumped when the prompt's inputs change, so a review cached under the
+  // old prompt isn't served for the rest of the day.
+  const hash = `v2:${portfolioHash({ positions: portfolio.positions, watchlist: {}, cash: portfolio.cash })}:${(portfolio.trades ?? []).length}:${styleAuto ? 'auto' : 'manual'}`;
 
   if (!force) {
     const cached = await getPortfolioReview(userId, asOf, cacheStyle);
