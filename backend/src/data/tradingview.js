@@ -114,6 +114,23 @@ export async function fetchScreener({ limit = 600, timeoutMs = 20000 } = {}) {
   }
 }
 
+/** Fundamentals move at most once a session, but every analyzeMany call used
+ * to re-download the whole screener (up to its 20s timeout) — so the rows are
+ * kept in memory for this long. The in-flight promise is what gets cached, so
+ * concurrent requests share one fetch; a failed fetch is never cached. */
+const SCREENER_TTL_MS = 60 * 60_000;
+let screenerCache = null; // { promise, at }
+
+function cachedScreener() {
+  if (screenerCache && Date.now() - screenerCache.at < SCREENER_TTL_MS) return screenerCache.promise;
+  const entry = { at: Date.now(), promise: fetchScreener() };
+  entry.promise.catch(() => {
+    if (screenerCache === entry) screenerCache = null;
+  });
+  screenerCache = entry;
+  return entry.promise;
+}
+
 /**
  * Fundamentals keyed by ticker, for the codes requested.
  * Returns an empty Map if the endpoint is unreachable — callers must treat
@@ -122,7 +139,7 @@ export async function fetchScreener({ limit = 600, timeoutMs = 20000 } = {}) {
 export async function fetchFundamentals(codes = null) {
   let rows;
   try {
-    rows = await fetchScreener();
+    rows = await cachedScreener();
   } catch {
     return new Map();
   }

@@ -308,7 +308,9 @@ async function requestStructuredORWithModel({
 }) {
   const client = getOpenRouterClient();
 
+  const startedAt = Date.now();
   const { convo, reasoningOff: reasoningOffFromTools } = await runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch, maxTurns });
+  const researchMs = Date.now() - startedAt;
 
   const { z } = await import('zod');
   const jsonSchema = z.toJSONSchema(schema, { io: 'output' });
@@ -365,6 +367,7 @@ async function requestStructuredORWithModel({
     const truncated = res.choices?.[0]?.finish_reason === 'length';
     try {
       const data = schema.parse(JSON.parse(structuredSupported ? text : extractJson(text)));
+      console.log(`[ai] ${schemaName} (${model}): research ${researchMs}ms, format ${Date.now() - startedAt - researchMs}ms`);
       return { data, raw: res };
     } catch (err) {
       lastError = err;

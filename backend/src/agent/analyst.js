@@ -548,6 +548,9 @@ The reader sees this verdict on the stock's card as exactly two lines, so write 
 - invalidation (line 2 for hold, wait or avoid): the one level to watch in at most 12 words — e.g. "خروج كامل لو قفل تحت 38.50".
 - Every other field: one short sentence. At most 2 riskFlags and 2 externalContext entries. Never list the portfolio's weights or sectors back.
 
+The cross_check_indicators tool is not available in this request — take the brief's indicator numbers as given.
+Answer this message with terse working notes only (the action, the rule-book numbers that decide it, anything your research found — under 120 words); you will be asked to format them into the verdict right after, so do not write the verdict out in full here.
+
 ${contextText}
 
 ## ${code} — full brief
@@ -566,8 +569,11 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
     system: analystSystemPrompt(rules, style),
     messages: [{ role: 'user', content: userMessage }],
     webSearch: { engine: 'auto', max_results: 4, max_uses: rules.webSearch?.perStock ?? 1 },
-    clientTools: [crossCheckTool],
-    maxTurns: 3,
+    // No cross-check tool here: its Python/yfinance subprocess plus the extra
+    // model turn it forces was the slowest part of a single-stock verdict, and
+    // the engine's numbers govern the verdict either way. Web search resolves
+    // server-side inside one turn, so no client tool loop is needed at all.
+    clientTools: [],
     feature: 'stock_review',
   });
 
@@ -586,10 +592,18 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
  *   generated the first time — regardless of date or a since-changed position
  *   — rather than paying for a new model call. Subscribers and admins never
  *   set this, so they keep the normal one-per-day-per-stock cache.
+ * @param {() => Promise<object[]>} opts.loadAnalyses - every held position's
+ *   analysis; called only on a cache miss, so a cached verdict never pays for
+ *   analysing the whole book.
+ * @param {() => Promise<string|null>} [opts.resolveAsOf] - the stock's last
+ *   bar date, for the daily cache lookup — cheaper than loadAnalyses.
  */
-export async function getOrGenerateStockReview(portfolio, analyses, code, ctx = {}, opts = {}) {
-  const { userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE, lifetimeCache = false } = opts;
-  const asOf = analyses.find((a) => a.code === code)?.asOf ?? new Date().toISOString().slice(0, 10);
+export async function getOrGenerateStockReview(portfolio, code, ctx = {}, opts = {}) {
+  const {
+    userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE, lifetimeCache = false,
+    loadAnalyses, resolveAsOf,
+  } = opts;
+  const today = new Date().toISOString().slice(0, 10);
   const cacheStyle = `${style}:${code}`;
   const hash = portfolioHash({ positions: { [code]: portfolio.positions[code] }, watchlist: {}, cash: portfolio.cash });
 
@@ -600,13 +614,15 @@ export async function getOrGenerateStockReview(portfolio, analyses, code, ctx = 
       return { verdict, source: 'cached' };
     }
   } else if (!force) {
-    const cached = await getPortfolioReview(userId, asOf, cacheStyle);
+    const cached = await getPortfolioReview(userId, (await resolveAsOf?.()) ?? today, cacheStyle);
     if (cached && cached.portfolioHash === hash) {
       const { portfolioHash: _hash, ...verdict } = cached;
       return { verdict, source: 'cached' };
     }
   }
 
+  const analyses = await loadAnalyses();
+  const asOf = analyses.find((a) => a.code === code)?.asOf ?? today;
   const verdict = await reviewStock(analyses, code, ctx, { model, rules, style });
   await putPortfolioReview(userId, asOf, cacheStyle, hash, verdict, verdict._meta.model, verdict._meta.usage);
   return { verdict, source: 'ai' };

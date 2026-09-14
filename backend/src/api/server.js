@@ -1918,6 +1918,7 @@ async function runReview({ userId, style, force }) {
 // restart just means the client is told to try again.
 const reviewJobs = new Map(); // `${userId}:${style}[:${code}]` -> { status, startedAt, result?, error? }
 const REVIEW_INLINE_WAIT_MS = 20_000;
+const REVIEW_STATUS_WAIT_MS = 15_000;
 const REVIEW_JOB_TTL_MS = 30 * 60_000;
 
 function reviewJobKey(userId, style, code = null) {
@@ -1994,23 +1995,35 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   // same as every other paid feature — no separate flag to track or reset.
   const lifetimeCache = !req.user.isAdmin && userId !== 'local' && !req.access?.subscriptionActive;
   await startReviewJob(res, reviewJobKey(userId, pre.style, code), async () => {
+    const startedAt = Date.now();
     const rules = pre.style ? rulesForStyle(RULES, pre.style) : RULES;
     const capital = capitalOf(portfolio);
-    // Every holding, not just this one: weights and sector mix need the whole book.
-    const { results } = await analyzeMany(Object.keys(portfolio.positions), {
-      capital,
-      positions: portfolio.positions,
-      concurrency: 5,
-      rules,
-    });
     const { getOrGenerateStockReview } = await import('../agent/analyst.js');
     const { verdict, source } = await getOrGenerateStockReview(
       portfolio,
-      results,
       code,
       { cash: portfolio.cash, capital },
-      { userId, rules, style: pre.style ?? 'medium', force: pre.force, lifetimeCache },
+      {
+        userId, rules, style: pre.style ?? 'medium', force: pre.force, lifetimeCache,
+        // Just this stock's bars, no fundamentals — enough to date the cache lookup.
+        resolveAsOf: async () =>
+          (await analyzeTicker(code, { position: portfolio.positions[code], capital, rules, withFundamentals: false })).asOf,
+        // Every holding, not just this one: weights and sector mix need the whole book.
+        // Only runs on a cache miss.
+        loadAnalyses: async () => {
+          const t = Date.now();
+          const { results } = await analyzeMany(Object.keys(portfolio.positions), {
+            capital,
+            positions: portfolio.positions,
+            concurrency: 5,
+            rules,
+          });
+          console.log(`[review] ${code} analyzeMany ${Object.keys(portfolio.positions).length} holdings in ${Date.now() - t}ms`);
+          return results;
+        },
+      },
     );
+    console.log(`[review] ${code} ${source} in ${Date.now() - startedAt}ms`);
     return { verdict, source, code, lifetimeCache };
   });
 }));
@@ -2021,6 +2034,11 @@ app.get('/api/review/status', wrap(async (req, res) => {
   const job = reviewJobs.get(key);
   if (!job) {
     return res.status(404).json({ error: 'التحليل اتقطع (غالبًا السيرفر اتعمل له ريستارت) — جرّب تاني.' });
+  }
+  // Long-poll: hold the request until the job settles (or a short cap), so the
+  // client hears about a finished verdict immediately instead of on its next tick.
+  if (job.status === 'running') {
+    await Promise.race([job.promise, new Promise((r) => setTimeout(r, REVIEW_STATUS_WAIT_MS))]);
   }
   sendReviewJob(res, job);
   if (job.status === 'error') reviewJobs.delete(key);
