@@ -520,6 +520,22 @@ app.post('/api/account/phone', wrap(async (req, res) => {
 const capitalOf = (p) =>
   Object.values(p.positions).reduce((a, pos) => a + pos.shares * pos.avgCost, 0) + p.cash;
 
+// Extra uses an admin grants from the users table, one balance per capped
+// feature: cash-scan trial uses, fresh stock recommendations past the
+// one-per-stock limit, and screenshot imports past the daily allowance. Kept
+// in portfolio.credits so spending one rides the same withPortfolio lock as
+// the usage it pays for. A credit is only spent once the base allowance is gone.
+const CREDIT_KINDS = ['cashScans', 'recommendations', 'screenshots'];
+function creditsOf(portfolio) {
+  const stored = portfolio?.credits ?? {};
+  return Object.fromEntries(CREDIT_KINDS.map((kind) => [kind, Math.max(0, Math.floor(Number(stored[kind])) || 0)]));
+}
+function addCredits(portfolio, deltas) {
+  const credits = creditsOf(portfolio);
+  for (const kind of CREDIT_KINDS) credits[kind] = Math.max(0, credits[kind] + (deltas[kind] ?? 0));
+  return { ...portfolio, credits };
+}
+
 // ---- Reference data --------------------------------------------------------
 
 app.get('/api/universe', (_req, res) => {
@@ -813,9 +829,33 @@ app.get('/api/admin/users', wrap(async (req, res) => {
         avgOpenPositionDays: profile.avgOpenPositionDays,
         importedPositions: profile.importedPositions,
       },
+      // What's left of each capped allowance right now (base + credits), and
+      // the granted credits within it. Cash scans are only capped in the trial.
+      usage: {
+        cashScansLeft: cashScansLeft(pf ?? {}),
+        screenshotsLeftToday: screenshotImportsLeft(pf ?? {}),
+        credits: creditsOf(pf),
+      },
     };
   });
   res.json({ users: rows });
+}));
+
+// Adds (or, with a negative number, takes back) credits on top of a user's
+// capped allowances — see creditsOf(). Body: { cashScans, recommendations,
+// screenshots }, each a whole-number change; a balance never drops below 0.
+app.post('/api/admin/users/:id/credits', wrap(async (req, res) => {
+  if (!(await getUserById(req.params.id))) return res.status(404).json({ error: 'المستخدم مش موجود' });
+  const deltas = {};
+  for (const kind of CREDIT_KINDS) {
+    const value = Number(req.body?.[kind] ?? 0);
+    if (!Number.isInteger(value) || Math.abs(value) > 1000) {
+      return res.status(400).json({ error: 'الرصيد لازم يكون رقم صحيح بين -1000 و 1000' });
+    }
+    deltas[kind] = value;
+  }
+  const updated = await withPortfolio(req.params.id, (portfolio) => addCredits(portfolio, deltas));
+  res.json({ ok: true, credits: creditsOf(updated) });
 }));
 
 // Turns a user premium after their InstaPay transfer lands. This is the only
@@ -1096,8 +1136,11 @@ app.get('/api/quotes', wrap(async (req, res) => {
 const CASH_SCAN_TRIAL_LIMIT = Math.max(0, Math.floor(Number(process.env.CASH_SCAN_TRIAL_LIMIT ?? 2)) || 0);
 const CASH_SCAN_SESSION_WINDOW_MS = 10 * 60 * 1000;
 const CASH_SCAN_LIMIT_MESSAGE = `خلصت محاولات تحليل الكاش المتاحة في فترة التجربة (${CASH_SCAN_TRIAL_LIMIT}) — بيبقى بلا حدود بعد الاشتراك.`;
-function cashScansLeft(portfolio) {
+function baseCashScansLeft(portfolio) {
   return Math.max(0, CASH_SCAN_TRIAL_LIMIT - (portfolio.cashScans ?? []).length);
+}
+function cashScansLeft(portfolio) {
+  return baseCashScansLeft(portfolio) + creditsOf(portfolio).cashScans;
 }
 function withinCashScanSession(portfolio) {
   const last = (portfolio.cashScans ?? []).at(-1);
@@ -1126,7 +1169,8 @@ app.get('/api/scan', wrap(async (req, res) => {
         const updated = await withPortfolio(req.user.id, (p) => {
           if (withinCashScanSession(p)) return p;
           if (cashScansLeft(p) <= 0) throw new Error(CASH_SCAN_LIMIT_MESSAGE);
-          return { ...p, cashScans: [...(p.cashScans ?? []), new Date().toISOString()] };
+          const next = { ...p, cashScans: [...(p.cashScans ?? []), new Date().toISOString()] };
+          return baseCashScansLeft(p) > 0 ? next : addCredits(next, { cashScans: -1 });
         });
         cashScansLeftNow = cashScansLeft(updated);
       }
@@ -1391,6 +1435,7 @@ app.get('/api/portfolio', wrap(async (req, res) => {
     // actually blocked by it).
     cashScansLeft: cashScansLeft(p),
     cashScanTrialLimit: CASH_SCAN_TRIAL_LIMIT,
+    credits: creditsOf(p),
   });
 }));
 
@@ -1713,8 +1758,9 @@ app.post('/api/reset', wrap(async (req, res) => {
     scope === 'all'
       // imports and cashScans survive the wipe: they're what the daily
       // screenshot cap and the trial cash-scan cap count, so dropping either
-      // would hand out a fresh allowance on every reset.
-      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports, cashScans: portfolio.cashScans }
+      // would hand out a fresh allowance on every reset. Admin-granted credits
+      // are kept too.
+      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports, cashScans: portfolio.cashScans, credits: portfolio.credits }
       : { ...portfolio, log: {}, trades: [], realizedPnl: 0 },
   );
   res.json({ ok: true, scope });
@@ -1767,13 +1813,16 @@ function resolveScreenshotCode(item) {
 const SCREENSHOT_IMPORTS_PER_DAY = Math.min(20, Math.max(0, Math.floor(Number(process.env.SCREENSHOT_IMPORTS_PER_DAY ?? 5)) || 0));
 const SCREENSHOT_LIMIT_MESSAGE = 'خلصت عدد صور المحفظة المسموح بيه النهارده — تقدر ترفع تاني بكرة، أو عدّل من «إدخال يدوي».';
 
-function screenshotImportsLeft(portfolio) {
+function baseScreenshotImportsLeft(portfolio) {
   const today = cairoToday();
   const used = (portfolio.imports ?? []).filter((entry) => {
     const at = Date.parse(entry?.importedAt);
     return entry?.source === 'screenshot' && Number.isFinite(at) && cairoDateOf(at) === today;
   }).length;
   return Math.max(0, SCREENSHOT_IMPORTS_PER_DAY - used);
+}
+function screenshotImportsLeft(portfolio) {
+  return baseScreenshotImportsLeft(portfolio) + creditsOf(portfolio).screenshots;
 }
 
 app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), wrap(async (req, res) => {
@@ -1907,12 +1956,13 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
     // Re-checked under the lock: parallel requests all pass the early check
     // while none of them has been recorded yet.
     if (screenshotImportsLeft(portfolio) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
-    return {
+    const next = {
       ...portfolio,
       positions: merge ? { ...portfolio.positions, ...positions } : positions,
       ...(Number.isFinite(cashFromScreenshot) && cashFromScreenshot >= 0 ? { cash: cashFromScreenshot } : {}),
       imports: [...(portfolio.imports ?? []), { importedAt, positions: Object.keys(positions), source: 'screenshot' }].slice(-20),
     };
+    return baseScreenshotImportsLeft(portfolio) > 0 ? next : addCredits(next, { screenshots: -1 });
   });
   res.json({
     ok: true,
@@ -2048,17 +2098,37 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   // trial limit elsewhere in this file. A subscription lifts it permanently,
   // same as every other paid feature — no separate flag to track or reset.
   const lifetimeCache = !req.user.isAdmin && userId !== 'local' && !req.access?.subscriptionActive;
-  await startReviewJob(res, reviewJobKey(userId, pre.style, code), async () => {
+  const jobKey = reviewJobKey(userId, pre.style, code);
+
+  // Past that limit (the trial's one per stock, or a subscriber's one per
+  // stock per day), asking to regenerate spends a recommendation credit an
+  // admin granted. Joining a review that's already running spends nothing.
+  let force = pre.force;
+  let spentCredit = false;
+  if (!req.user.isAdmin && userId !== 'local' && req.body?.force === true && reviewJobs.get(jobKey)?.status !== 'running') {
+    await withPortfolio(userId, (p) => {
+      if (creditsOf(p).recommendations <= 0) return p;
+      spentCredit = true;
+      return addCredits(p, { recommendations: -1 });
+    });
+    if (!spentCredit) {
+      return res.status(429).json({ error: 'خلص رصيد التوصيات الإضافية.', reason: 'recommendation_credit_limit' });
+    }
+    force = true;
+  }
+
+  await startReviewJob(res, jobKey, async () => {
     const startedAt = Date.now();
     const rules = pre.style ? rulesForStyle(RULES, pre.style) : RULES;
     const capital = capitalOf(portfolio);
     const { getOrGenerateStockReview } = await import('../agent/analyst.js');
+    // A failed model call gives the credit back — it bought nothing.
     const { verdict, source } = await getOrGenerateStockReview(
       portfolio,
       code,
       { cash: portfolio.cash, capital },
       {
-        userId, rules, style: pre.style ?? 'medium', force: pre.force, lifetimeCache,
+        userId, rules, style: pre.style ?? 'medium', force, lifetimeCache,
         // Just this stock's bars, no fundamentals — enough to date the cache lookup.
         resolveAsOf: async () =>
           (await analyzeTicker(code, { position: portfolio.positions[code], capital, rules, withFundamentals: false })).asOf,
@@ -2076,7 +2146,10 @@ app.post('/api/review/stock', wrap(async (req, res) => {
           return results;
         },
       },
-    );
+    ).catch(async (err) => {
+      if (spentCredit) await withPortfolio(userId, (p) => addCredits(p, { recommendations: 1 })).catch(() => {});
+      throw err;
+    });
     console.log(`[review] ${code} ${source} in ${Date.now() - startedAt}ms`);
     return { verdict, source, code, lifetimeCache };
   });

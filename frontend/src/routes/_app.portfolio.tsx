@@ -138,7 +138,7 @@ function readStoredVerdict(code: string, style: StyleKey, positionKey: string, l
 }
 
 function useStockReview(code: string, style: StyleKey, positionKey: string, lifetime: boolean) {
-  const { refreshUser } = useDesk();
+  const { refreshUser, reloadPortfolio } = useDesk();
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +173,8 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, life
         } catch {
           /* storage unavailable — the verdict still shows for this session */
         }
+        // A forced review may have spent a recommendation credit.
+        if (force) void reloadPortfolio().catch(() => {});
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 402) {
           await refreshUser();
@@ -183,7 +185,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, life
         setLoading(false);
       }
     },
-    [code, style, positionKey, refreshUser],
+    [code, style, positionKey, refreshUser, reloadPortfolio],
   );
 
   return { verdict, loading, error, request };
@@ -380,6 +382,10 @@ function PositionCard({
     isTrial,
   );
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
+  // Admin-granted credits buy a fresh verdict once this stock's own limit is
+  // used — the server spends one per forced request (/api/review/stock).
+  const recommendationCredits = Number(pf?.credits?.recommendations ?? 0);
+  const canSpendCredit = !isAdmin && Boolean(verdict) && recommendationCredits > 0;
 
   // Run this card's review once per page batch it's part of. Already has a
   // verdict, or a single-card request is already running: nothing to add, so
@@ -571,13 +577,15 @@ function PositionCard({
           {reviewError && <span className="text-[12px] text-down">{reviewError}</span>}
           {!isAdmin && (
             <span className="text-[11.5px] text-muted-foreground">
-              {isTrial
-                ? verdict
-                  ? "استخدمت توصيتك المجانية للسهم ده — اشترك عشان تحصل على توصية جديدة كل يوم"
-                  : "توصية واحدة مجانية لكل سهم — تتجدد يوميًا بعد الاشتراك"
-                : verdict
-                  ? "استخدمت توصيتك النهارده للسهم ده"
-                  : "توصية واحدة بس لكل سهم في اليوم"}
+              {canSpendCredit
+                ? `عندك ${recommendationCredits} توصية إضافية — تقدر تطلب توصية جديدة للسهم ده`
+                : isTrial
+                  ? verdict
+                    ? "استخدمت توصيتك المجانية للسهم ده — اشترك عشان تحصل على توصية جديدة كل يوم"
+                    : "توصية واحدة مجانية لكل سهم — تتجدد يوميًا بعد الاشتراك"
+                  : verdict
+                    ? "استخدمت توصيتك النهارده للسهم ده"
+                    : "توصية واحدة بس لكل سهم في اليوم"}
             </span>
           )}
           <Button
@@ -586,14 +594,14 @@ function PositionCard({
             variant={verdict ? "outline" : "default"}
             size="sm"
             className={cn(!verdict && "font-semibold shadow-sm")}
-            disabled={reviewLoading || (Boolean(verdict) && !isAdmin)}
+            disabled={reviewLoading || (Boolean(verdict) && !isAdmin && !canSpendCredit)}
             onClick={(e) => {
               e.stopPropagation();
               setConfirmReviewOpen(true);
             }}
           >
             {reviewLoading ? <Spinner /> : !verdict && <Sparkles className="size-4" />}
-            {verdict && isAdmin ? "توصية جديدة" : "قولي توصية اليوم"}
+            {verdict && (isAdmin || canSpendCredit) ? "توصية جديدة" : "قولي توصية اليوم"}
           </Button>
         </div>
       )}
@@ -607,16 +615,18 @@ function PositionCard({
             <AlertDialogDescription className="leading-relaxed">
               {isAdmin
                 ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد بالذكاء الاصطناعي."
-                : isTrial
-                  ? "دي توصيتك المجانية الوحيدة للسهم ده — مش هتتجدد تاني إلا بعد الاشتراك."
-                  : "بتتحسب مرة واحدة بس في اليوم لكل سهم، والزرار هيتقفل لحد بكرة بعد ما تستخدمه."}
+                : canSpendCredit
+                  ? `هتستخدم توصية واحدة من رصيدك الإضافي (عندك ${recommendationCredits}) لتحليل جديد بالذكاء الاصطناعي.`
+                  : isTrial
+                    ? "دي توصيتك المجانية الوحيدة للسهم ده — مش هتتجدد تاني إلا بعد الاشتراك."
+                    : "بتتحسب مرة واحدة بس في اليوم لكل سهم، والزرار هيتقفل لحد بكرة بعد ما تستخدمه."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">
             <AlertDialogAction
               onClick={() => {
                 setConfirmReviewOpen(false);
-                void requestReview(isAdmin);
+                void requestReview(isAdmin || canSpendCredit);
               }}
             >
               أيوة

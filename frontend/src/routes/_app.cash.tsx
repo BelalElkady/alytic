@@ -203,7 +203,7 @@ function CashPage() {
           >
             {cashScanExhausted
               ? "خلصت محاولات تحليل الكاش المتاحة في فترة التجربة — بيبقى بلا حدود بعد الاشتراك."
-              : `باقي ${cashScansLeft}${cashScanTrialLimit ? ` من ${cashScanTrialLimit}` : ""} ${cashScansLeft === 1 ? "محاولة" : "محاولات"} في فترة التجربة.`}
+              : `باقي ${cashScansLeft}${cashScanTrialLimit && !pf?.credits?.cashScans ? ` من ${cashScanTrialLimit}` : ""} ${cashScansLeft === 1 ? "محاولة" : "محاولات"} في فترة التجربة.`}
           </p>
         )}
       </Panel>

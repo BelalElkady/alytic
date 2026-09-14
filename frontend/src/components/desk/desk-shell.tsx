@@ -524,7 +524,7 @@ function DeskHeader() {
             >
               {screenshotsExhausted
                 ? "خلصت صور النهارده — تتجدد بكرة"
-                : `باقي ${screenshotsLeft}${screenshotsPerDay ? ` من ${screenshotsPerDay}` : ""} ${screenshotsLeft === 1 ? "صورة" : "صور"} النهارده`}
+                : `باقي ${screenshotsLeft}${screenshotsPerDay && !pf?.credits?.screenshots ? ` من ${screenshotsPerDay}` : ""} ${screenshotsLeft === 1 ? "صورة" : "صور"} النهارده`}
             </span>
           )}
           <Button size="sm" variant="outline" onClick={() => setManualOpen(true)}>

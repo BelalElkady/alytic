@@ -592,7 +592,8 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
  *   every later request for the same stock is answered from whatever was
  *   generated the first time — regardless of date or a since-changed position
  *   — rather than paying for a new model call. Subscribers and admins never
- *   set this, so they keep the normal one-per-day-per-stock cache.
+ *   set this, so they keep the normal one-per-day-per-stock cache. `force`
+ *   (a spent recommendation credit) still skips it for one fresh verdict.
  * @param {() => Promise<object[]>} opts.loadAnalyses - every held position's
  *   analysis; called only on a cache miss, so a cached verdict never pays for
  *   analysing the whole book.
@@ -608,7 +609,7 @@ export async function getOrGenerateStockReview(portfolio, code, ctx = {}, opts =
   const cacheStyle = `${style}:${code}`;
   const hash = portfolioHash({ positions: { [code]: portfolio.positions[code] }, watchlist: {}, cash: portfolio.cash });
 
-  if (lifetimeCache) {
+  if (lifetimeCache && !force) {
     const cached = await getLatestPortfolioReview(userId, cacheStyle);
     if (cached) {
       const { portfolioHash: _hash, ...verdict } = cached;

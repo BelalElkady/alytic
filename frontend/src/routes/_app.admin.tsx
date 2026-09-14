@@ -390,6 +390,16 @@ type AdminUserRow = {
   subscription: AdminSubscription | null;
   portfolio: AdminUserPortfolio | null;
   behavior: AdminUserBehavior | null;
+  usage: AdminUserUsage;
+};
+
+type CreditKind = "cashScans" | "recommendations" | "screenshots";
+
+/** What's left of each capped allowance (base + credits), and the admin-granted credits within it. */
+type AdminUserUsage = {
+  cashScansLeft: number;
+  screenshotsLeftToday: number;
+  credits: Record<CreditKind, number>;
 };
 
 const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
@@ -467,6 +477,7 @@ function UsersTab() {
                   <TableHead className="text-start">ربح محقق</TableHead>
                   <TableHead className="text-start">النشاط الاستثماري</TableHead>
                   <TableHead className="text-start">السلوك الاستثماري</TableHead>
+                  <TableHead className="text-start">الرصيد</TableHead>
                   <TableHead className="text-start">الاشتراك</TableHead>
                   <TableHead className="text-start">الحالة</TableHead>
                   <TableHead>
@@ -527,6 +538,9 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
       </TableCell>
       <TableCell className="min-w-[220px]">
         {row.behavior ? <BehaviorCell behavior={row.behavior} /> : "—"}
+      </TableCell>
+      <TableCell className="min-w-[170px]">
+        <CreditsCell row={row} onChanged={onChanged} />
       </TableCell>
       <TableCell>
         <SubscriptionCell row={row} onChanged={onChanged} />
@@ -662,6 +676,111 @@ function DeleteUserButton({ row, onDeleted }: { row: AdminUserRow; onDeleted: ()
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+const CREDIT_FIELDS: { kind: CreditKind; label: string; hint: string }[] = [
+  { kind: "cashScans", label: "تحليل الكاش", hint: "محاولات زيادة على حد التجربة" },
+  { kind: "recommendations", label: "توصيات الأسهم", hint: "توصية جديدة بعد ما يستخدم توصية السهم" },
+  { kind: "screenshots", label: "صور المحفظة", hint: "صور زيادة بعد ما يخلص حد اليوم" },
+];
+
+const NO_CREDITS: Record<CreditKind, string> = { cashScans: "", recommendations: "", screenshots: "" };
+
+/**
+ * Extra uses on top of the capped allowances (backend creditsOf()). Each
+ * credit is spent only after the user's normal allowance for it runs out.
+ */
+function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [amounts, setAmounts] = useState(NO_CREDITS);
+  const { cashScansLeft, screenshotsLeftToday, credits } = row.usage;
+  // Subscribers and admins aren't held to the trial's cash-scan cap.
+  const cashUnlimited = row.isAdmin || Boolean(row.subscription?.active);
+
+  const deltas = Object.fromEntries(
+    CREDIT_FIELDS.map(({ kind }) => [kind, Number(amounts[kind] || 0)]),
+  ) as Record<CreditKind, number>;
+  const valid = Object.values(deltas).every((value) => Number.isInteger(value));
+  const changed = Object.values(deltas).some((value) => value !== 0);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await post(`/api/admin/users/${row.id}/credits`, deltas);
+      toast.success(`تم تحديث رصيد ${row.email}`);
+      setOpen(false);
+      setAmounts(NO_CREDITS);
+      onChanged();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تحديث الرصيد");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const withCredits = (text: string, extra: number) => (extra ? `${text} (+${extra} رصيد)` : text);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="space-y-0.5 text-[12px] text-muted-foreground">
+        <div>
+          تحليل الكاش:{" "}
+          {cashUnlimited ? "بلا حدود" : withCredits(`باقي ${cashScansLeft}`, credits.cashScans)}
+        </div>
+        <div>توصيات إضافية: {credits.recommendations}</div>
+        <div>
+          صور النهارده: {withCredits(`باقي ${screenshotsLeftToday}`, credits.screenshots)}
+        </div>
+      </div>
+
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setAmounts(NO_CREDITS);
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]">
+            إضافة رصيد
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-start">
+            <DialogTitle>رصيد {row.email}</DialogTitle>
+            <DialogDescription className="leading-relaxed">
+              الرصيد بيتخصم بس بعد ما الحد العادي يخلص. اكتب رقم سالب لو عايز تشيل رصيد.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {CREDIT_FIELDS.map(({ kind, label, hint }) => (
+              <div key={kind} className="space-y-1">
+                <Label htmlFor={`credit-${kind}-${row.id}`}>
+                  {label} <span className="text-muted-foreground">(الحالي: {credits[kind]})</span>
+                </Label>
+                <Input
+                  id={`credit-${kind}-${row.id}`}
+                  type="number"
+                  step={1}
+                  inputMode="numeric"
+                  value={amounts[kind]}
+                  onChange={(event) => setAmounts((prev) => ({ ...prev, [kind]: event.target.value }))}
+                  placeholder="0"
+                />
+                <p className="text-[11.5px] text-muted-foreground">{hint}</p>
+              </div>
+            ))}
+            <Button onClick={() => void save()} disabled={busy || !valid || !changed}>
+              {busy && <Spinner />}
+              حفظ
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
