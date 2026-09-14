@@ -87,37 +87,42 @@ const AI_ACTION_TONE: Record<string, string> = {
   wait: "border-border bg-surface-2 text-muted-foreground",
 };
 
-// A per-stock AI review is a real, paid model call, so each stock gets one
-// "قولي توصية اليوم" per day (admins unlimited). The verdict is kept in
-// localStorage for the day, so a reload shows it without another request;
-// the server caches it per user/day/style/stock too (see /api/review/stock).
+// A per-stock AI review is a real, paid model call. A subscribed account (or
+// admin) gets one "قولي توصية اليوم" per stock per day; a free-trial account
+// gets exactly one per stock, ever (mirrors CASH_SCAN_TRIAL_LIMIT elsewhere
+// in the app) — the server enforces this (getOrGenerateStockReview's
+// `lifetimeCache`, see /api/review/stock), this only mirrors it client-side
+// so a reload shows the cached verdict without another request.
 const todayKey = () => new Date().toDateString();
 const reviewStorageKey = (code: string) => `alytic-stock-review:${code}`;
 const REVIEW_POLL_MS = 5 * 1000;
 const REVIEW_MAX_WAIT_MS = 15 * 60 * 1000;
 
-// A trade on the position (e.g. acting on the verdict) makes it stale, so the
-// stored verdict is only reused for the same day, style and position.
-function readStoredVerdict(code: string, style: StyleKey, positionKey: string): Verdict | null {
+// For the daily cache, a trade on the position (e.g. acting on the verdict)
+// makes it stale, so it's only reused for the same day, style and position.
+// For the trial's lifetime cache, none of that matters — it's the one and
+// only verdict this stock will ever get, so it's kept regardless of date or
+// later trades, matching what the server will keep returning either way.
+function readStoredVerdict(code: string, style: StyleKey, positionKey: string, lifetime: boolean): Verdict | null {
   try {
     const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
-    return stored?.day === todayKey() && stored?.style === style && stored?.positionKey === positionKey
-      ? stored.verdict
-      : null;
+    if (!stored || stored.style !== style) return null;
+    if (lifetime) return stored.verdict;
+    return stored.day === todayKey() && stored.positionKey === positionKey ? stored.verdict : null;
   } catch {
     return null;
   }
 }
 
-function useStockReview(code: string, style: StyleKey, positionKey: string) {
+function useStockReview(code: string, style: StyleKey, positionKey: string, lifetime: boolean) {
   const { refreshUser } = useDesk();
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setVerdict(readStoredVerdict(code, style, positionKey));
-  }, [code, style, positionKey]);
+    setVerdict(readStoredVerdict(code, style, positionKey, lifetime));
+  }, [code, style, positionKey, lifetime]);
 
   const request = useCallback(
     async (force: boolean) => {
@@ -248,14 +253,18 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
   const primaryTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
+  // Admins aren't held to any limit: each confirmed click regenerates (the
+  // server only honors `force` for admins). Everyone else who isn't
+  // subscribed gets one recommendation per stock, ever, not per day — see
+  // `lifetimeCache` in useStockReview above and on the server.
+  const isAdmin = Boolean(user?.isAdmin);
+  const isTrial = !isAdmin && !user?.subscriptionActive;
   const { verdict, loading: reviewLoading, error: reviewError, request: requestReview } = useStockReview(
     row.code,
     style,
     `${p.shares}@${p.avgCost}`,
+    isTrial,
   );
-  // Admins aren't held to one per day: each confirmed click regenerates
-  // (the server only honors `force` for admins).
-  const isAdmin = Boolean(user?.isAdmin);
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
   // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
   // over the badge and recommendation box when one has been fetched for this
@@ -431,7 +440,13 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
           {reviewError && <span className="text-[12px] text-down">{reviewError}</span>}
           {!isAdmin && (
             <span className="text-[11.5px] text-muted-foreground">
-              {verdict ? "استخدمت توصيتك النهارده للسهم ده" : "توصية واحدة بس لكل سهم في اليوم"}
+              {isTrial
+                ? verdict
+                  ? "استخدمت توصيتك المجانية للسهم ده — اشترك عشان تحصل على توصية جديدة كل يوم"
+                  : "توصية واحدة مجانية لكل سهم — تتجدد يوميًا بعد الاشتراك"
+                : verdict
+                  ? "استخدمت توصيتك النهارده للسهم ده"
+                  : "توصية واحدة بس لكل سهم في اليوم"}
             </span>
           )}
           <Button
@@ -458,7 +473,9 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
             <AlertDialogDescription className="leading-relaxed">
               {isAdmin
                 ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد بالذكاء الاصطناعي."
-                : "بتتحسب مرة واحدة بس في اليوم لكل سهم، والزرار هيتقفل لحد بكرة بعد ما تستخدمه."}
+                : isTrial
+                  ? "دي توصيتك المجانية الوحيدة للسهم ده — مش هتتجدد تاني إلا بعد الاشتراك."
+                  : "بتتحسب مرة واحدة بس في اليوم لكل سهم، والزرار هيتقفل لحد بكرة بعد ما تستخدمه."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">

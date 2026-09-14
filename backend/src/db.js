@@ -215,6 +215,31 @@ export async function getPortfolioReview(userId, reportDate, style) {
 }
 
 /**
+ * The most recent stored review for this user/style, regardless of date —
+ * used to give a free-trial user their one lifetime per-stock recommendation
+ * back on every later click instead of paying for a new one. See
+ * getOrGenerateStockReview's `lifetimeCache` in analyst.js.
+ * @returns {object|null} same shape as getPortfolioReview, or null if none exists.
+ */
+export async function getLatestPortfolioReview(userId, style) {
+  const { data, error } = await supabase
+    .from('portfolio_reviews')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('style', style)
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`getLatestPortfolioReview: ${error.message}`);
+  if (!data) return null;
+  return {
+    ...data.review_json,
+    portfolioHash: data.portfolio_hash,
+    _meta: { ...data.review_json._meta, model: data.model, generatedAt: data.generated_at, usage: data.usage_json ?? null },
+  };
+}
+
+/**
  * Stores today's review for this user/style, replacing whatever was there —
  * unlike putMarketReport this is a per-user row, so there is no cross-request
  * race to protect against with insert-if-absent; the latest generation for a

@@ -1982,6 +1982,11 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   if (!portfolio.positions[code]) return res.status(400).json({ error: `مفيش مركز مفتوح في ${code || 'السهم ده'}` });
 
   const userId = req.user.id;
+  // A free-trial account (not admin, not the local CLI user, not subscribed)
+  // gets exactly one AI recommendation per stock, ever — mirrors the cash-scan
+  // trial limit elsewhere in this file. A subscription lifts it permanently,
+  // same as every other paid feature — no separate flag to track or reset.
+  const lifetimeCache = !req.user.isAdmin && userId !== 'local' && !req.access?.subscriptionActive;
   await startReviewJob(res, reviewJobKey(userId, pre.style, code), async () => {
     const rules = pre.style ? rulesForStyle(RULES, pre.style) : RULES;
     const capital = capitalOf(portfolio);
@@ -1998,9 +2003,9 @@ app.post('/api/review/stock', wrap(async (req, res) => {
       results,
       code,
       { cash: portfolio.cash, capital },
-      { userId, rules, style: pre.style ?? 'medium', force: pre.force },
+      { userId, rules, style: pre.style ?? 'medium', force: pre.force, lifetimeCache },
     );
-    return { verdict, source, code };
+    return { verdict, source, code, lifetimeCache };
   });
 }));
 
