@@ -1572,8 +1572,9 @@ app.post('/api/snapshot', wrap(async (req, res) => {
 }));
 
 /**
- * Triggered daily by .github/workflows/daily-close-cron.yml over the VPS's
- * loopback interface — same pattern as /api/cron/blog-generate. GitHub
+ * Run at 14:30 Cairo by startDailyCloseScheduler() below, and as a backup by
+ * .github/workflows/daily-close-cron.yml over the VPS's loopback interface —
+ * same pattern as /api/cron/blog-generate. GitHub
  * Actions cron is UTC-only and Cairo alternates between EET (UTC+2) and
  * EEST (UTC+3) across the year, so the workflow fires at both possible UTC
  * times for 14:30 Cairo and this endpoint no-ops if the session hasn't closed
@@ -1588,22 +1589,29 @@ app.post('/api/snapshot', wrap(async (req, res) => {
  * EGX bank holidays — there's no session, so no close to record.
  */
 const DAILY_CLOSE_CRON_SECRET = process.env.DAILY_CLOSE_CRON_SECRET;
+const DAILY_CLOSE_AT = '14:30';
+const cairoClock = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Africa/Cairo',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
 app.post('/api/cron/daily-close', wrap(async (req, res) => {
   if (!DAILY_CLOSE_CRON_SECRET || req.get('X-Cron-Secret') !== DAILY_CLOSE_CRON_SECRET) {
     return res.status(403).json({ error: 'forbidden' });
   }
+  res.json(await runDailyClose());
+}));
+
+async function runDailyClose() {
   const today = cairoToday();
   if (!isTradingDay(today)) {
-    return res.json({ ok: true, skipped: 'not_a_trading_day', date: today });
+    return { ok: true, skipped: 'not_a_trading_day', date: today };
   }
-  const cairoNow = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Africa/Cairo',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(new Date());
-  if (cairoNow < '14:30') {
-    return res.json({ ok: true, skipped: true, cairoNow });
+  const cairoNow = cairoClock.format(new Date());
+  if (cairoNow < DAILY_CLOSE_AT) {
+    return { ok: true, skipped: true, cairoNow };
   }
 
   const portfolios = await getAllPortfolios();
@@ -1621,8 +1629,33 @@ app.post('/api/cron/daily-close', wrap(async (req, res) => {
       failed += 1;
     }
   }
-  res.json({ ok: true, cairoNow, total: userIds.length, saved, failed });
-}));
+  return { ok: true, cairoNow, total: userIds.length, saved, failed };
+}
+
+/**
+ * The primary 14:30 trigger, running inside this long-lived process. GitHub's
+ * scheduled runs can't be trusted with the time: on 2026-09-14 both 14:30 runs
+ * were dropped and the first backup started at 20:00 Cairo. The workflow stays
+ * as a backup — a later run just overwrites today's entry with the same
+ * closing prices. Checks the Cairo clock every 30 seconds, so it's DST-proof
+ * the same way the endpoint is. Only the in-memory date guards against a
+ * second run, so a restart after 14:30 on a trading day records once more;
+ * that is the same harmless overwrite as a backup run.
+ */
+let dailyCloseRanFor = null;
+function startDailyCloseScheduler() {
+  setInterval(async () => {
+    const today = cairoToday();
+    if (dailyCloseRanFor === today || cairoClock.format(new Date()) < DAILY_CLOSE_AT) return;
+    dailyCloseRanFor = today;
+    try {
+      console.log('[daily-close]', JSON.stringify(await runDailyClose()));
+    } catch (err) {
+      dailyCloseRanFor = null; // retry on the next tick
+      console.error('[daily-close] failed:', err.message);
+    }
+  }, 30_000);
+}
 
 /**
  * Backfill the daily log from real historical closes.
@@ -2274,6 +2307,7 @@ const isDirectRun = Boolean(process.argv[1])
   && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (isDirectRun) {
+  startDailyCloseScheduler();
   const PORT = process.env.PORT ?? 3000;
   app.listen(PORT, () => {
     console.log(`Alytic على http://localhost:${PORT}`);
