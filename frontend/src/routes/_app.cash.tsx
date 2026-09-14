@@ -24,12 +24,12 @@ import { useDesk } from "@/lib/store";
 export const Route = createFileRoute("/_app/cash")({
   head: () => ({
     meta: [
-      { title: "الكاش والأسهم المفضلة — EGXpert" },
+      { title: "تحليل الكاش والأسهم المفضلة — EGXpert" },
       {
         name: "description",
         content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
-      { property: "og:title", content: "الكاش والأسهم المفضلة — EGXpert" },
+      { property: "og:title", content: "تحليل الكاش والأسهم المفضلة — EGXpert" },
       {
         property: "og:description",
         content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
