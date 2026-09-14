@@ -21,12 +21,12 @@ export const Route = createFileRoute("/_app/settings")({
       { title: "الإعدادات — EGXpert" },
       {
         name: "description",
-        content: "سلوكك الاستثماري وإعادة تعيين السجل والصفقات.",
+        content: "سلوكك الاستثماري ومسح بيانات المحفظة.",
       },
       { property: "og:title", content: "الإعدادات — EGXpert" },
       {
         property: "og:description",
-        content: "سلوكك الاستثماري وإعادة تعيين السجل والصفقات.",
+        content: "سلوكك الاستثماري ومسح بيانات المحفظة.",
       },
       { name: "robots", content: "noindex, nofollow" },
       { property: "og:url", content: `${SITE_URL}/settings` },
@@ -53,17 +53,17 @@ function SettingsPage() {
     toast.success("رجّعنا الأسلوب لسلوكك التلقائي في التداول");
   };
 
-  const resetLog = async () => {
+  const resetAll = async () => {
     if (!armed) {
       setArmed(true);
       return;
     }
     setResetting(true);
     try {
-      await post("/api/reset", { scope: "log" });
+      await post("/api/reset", { scope: "all" });
       await reload();
       setArmed(false);
-      toast.success("تم مسح السجل والصفقات");
+      toast.success("تم مسح كل البيانات");
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "تعذر المسح");
     } finally {
@@ -122,14 +122,18 @@ function SettingsPage() {
 
       <Panel
         title="إعادة تعيين"
-        description="يمسح السجل اليومي والصفقات. المراكز بتفضل زي ما هي. لا يمكن التراجع."
+        description="يمسح كل بيانات محفظتك: المراكز، والكاش، والصفقات، والسجل اليومي، وقائمة المتابعة. لا يمكن التراجع."
       >
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="destructive" onClick={() => void resetLog()} disabled={resetting}>
+          <Button variant="destructive" onClick={() => void resetAll()} disabled={resetting}>
             {resetting && <Spinner />}
-            {armed ? "تأكيد المسح" : "مسح السجل والصفقات"}
+            {armed ? "تأكيد مسح كل البيانات" : "مسح كل البيانات"}
           </Button>
-          {armed && <span className="text-[12.5px] text-muted-foreground">اضغط تاني للتأكيد</span>}
+          {armed && (
+            <span className="text-[12.5px] text-muted-foreground">
+              اضغط تاني للتأكيد — هيتمسح كل حاجة
+            </span>
+          )}
         </div>
       </Panel>
     </div>

@@ -829,17 +829,15 @@ of that dialog.
 - Expect: a pinned style is still pinned after a refresh.
 
 **SET-05 — Reset requires two clicks** · P1
-- Steps: click "مسح السجل والصفقات" once.
-- Expect: it becomes "تأكيد المسح" with "اضغط تاني للتأكيد" — the first click must not
-  delete anything.
+- Steps: click "مسح كل البيانات" once.
+- Expect: it becomes "تأكيد مسح كل البيانات" with "اضغط تاني للتأكيد — هيتمسح كل حاجة" —
+  the first click must not delete anything.
 
 **SET-06 — Reset does exactly what it says** · P1
 - Steps: confirm the reset.
-- Expect: toast "تم مسح السجل والصفقات"; trades, realised P&L and the daily log are gone;
-  **positions and cash remain**.
-
-**SET-07 — Settings load failure** · P3
-- Expect: an error state with a retry button.
+- Expect: toast "تم مسح كل البيانات"; positions, cash, trades, realised P&L, the daily log
+  and the watchlist are all gone. The invest style, today's screenshot count, the trial
+  cash-scan count and admin-granted credits **remain**.
 
 ---
 
