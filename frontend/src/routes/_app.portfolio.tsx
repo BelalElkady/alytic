@@ -429,6 +429,11 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
       {aiAvailable && (
         <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">
           {reviewError && <span className="text-[12px] text-down">{reviewError}</span>}
+          {!isAdmin && (
+            <span className="text-[11.5px] text-muted-foreground">
+              {verdict ? "استخدمت توصيتك النهارده للسهم ده" : "توصية واحدة بس لكل سهم في اليوم"}
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"
