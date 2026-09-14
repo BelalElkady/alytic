@@ -239,7 +239,7 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
   `/portfolio`, does not restore the desk.
 
 **AUTH-18 — The desk requires a session** · P1
-- Steps: as `VISITOR`, open `/portfolio`, `/trades`, `/cash`, `/calendar`, `/charts`,
+- Steps: as `VISITOR`, open `/portfolio`, `/cash`, `/calendar`, `/charts`,
   `/targets`, `/indices`, `/settings` and `/admin` directly.
 - Expect: each redirects to `/login`.
 
@@ -482,7 +482,7 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 - Expect: no polling while hidden and an immediate refresh on return.
 
 **DESK-06 — Desktop navigation** · P2
-- Steps: visit every tab — الأسهم, المؤشرات, الأهداف, التقويم, الرسوم, الكاش, الصفقات,
+- Steps: visit every tab — الأسهم, المؤشرات, الأهداف, التقويم, الرسوم, الكاش,
   الإعدادات, تابع اخبار البورصة, طريقة الاستخدام.
 - Expect: each loads, the active tab is highlighted, and the strip scrolls
   horizontally on a narrow window.
@@ -514,7 +514,7 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 ## 8. Portfolio (الأسهم)
 
 **POS-01 — Empty state** · P2
-- Expect: "مفيش مراكز مفتوحة" with a hint pointing at الصفقات or the screenshot upload.
+- Expect: "مفيش مراكز مفتوحة" with a hint pointing at إدخال يدوي → إدخال صفقة جديدة or the screenshot upload.
 
 **POS-02 — A position renders completely** · P1
 - Expect: code, company name, share count at average cost, live price, day change %,
@@ -583,11 +583,16 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 
 ---
 
-## 9. Trades (الصفقات)
+## 9. Trades (إدخال يدوي → إدخال صفقة جديدة)
+
+There is no trades tab: trades are entered from the "إدخال صفقة جديدة" button inside
+the إدخال يدوي dialog, and the history is the collapsible "سجل الصفقات" at the bottom
+of that dialog.
 
 **TRD-01 — Record a buy** · P1
-- Steps: pick a stock, النوع = شراء, shares, price, optional date → تسجيل.
-- Expect: toast "تم تسجيل الصفقة وتحديث المحفظة", the form clears, the trade tops the
+- Steps: إدخال يدوي → إدخال صفقة جديدة; pick a stock, النوع = شراء, shares, price,
+  optional date → تسجيل الصفقة.
+- Expect: toast "تم تسجيل الصفقة وتحديث المحفظة", the popup closes, the trade tops the
   history, the position appears or grows in الأسهم, and cash falls by cost plus
   commission.
 
@@ -1005,7 +1010,7 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 
 **ADM-09 — Custom stocks become tradeable** · P2
 - Steps: upload an index file containing an unknown code, then open the stock picker
-  in الصفقات.
+  in إدخال صفقة جديدة.
 - Expect: the new code is selectable straight away, with no server restart.
 
 **ADM-10 — Users table** · P2

@@ -161,7 +161,7 @@ function CashPage() {
     <div className="space-y-4">
       <Panel
         title="الكاش المتاح"
-        description="حدّثه لما تحوّل فلوس أو تسحب. البيع والشراء من تبويب الصفقات بيعدّلوه أوتوماتيك."
+        description="حدّثه لما تحوّل فلوس أو تسحب. الصفقات اللي بتسجّلها من «إدخال يدوي» بتعدّله أوتوماتيك."
       >
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1 space-y-1.5">

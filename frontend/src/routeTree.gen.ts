@@ -29,7 +29,6 @@ import { Route as AppIndicesRouteImport } from './routes/_app.indices'
 import { Route as AppPortfolioRouteImport } from './routes/_app.portfolio'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppTargetsRouteImport } from './routes/_app.targets'
-import { Route as AppTradesRouteImport } from './routes/_app.trades'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as BlogIndexRouteImport } from './routes/blog.index'
 import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
@@ -134,11 +133,6 @@ const AppTargetsRoute = AppTargetsRouteImport.update({
   path: '/targets',
   getParentRoute: () => AppRoute,
 } as any)
-const AppTradesRoute = AppTradesRouteImport.update({
-  id: '/trades',
-  path: '/trades',
-  getParentRoute: () => AppRoute,
-} as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
   id: '/admin/login',
   path: '/admin/login',
@@ -180,7 +174,6 @@ export interface FileRoutesByFullPath {
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
-  '/trades': typeof AppTradesRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/': typeof BlogIndexRoute
@@ -205,7 +198,6 @@ export interface FileRoutesByTo {
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
-  '/trades': typeof AppTradesRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog': typeof BlogIndexRoute
@@ -233,7 +225,6 @@ export interface FileRoutesById {
   '/_app/portfolio': typeof AppPortfolioRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/targets': typeof AppTargetsRoute
-  '/_app/trades': typeof AppTradesRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/': typeof BlogIndexRoute
@@ -261,7 +252,6 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/settings'
     | '/targets'
-    | '/trades'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog/'
@@ -286,7 +276,6 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/settings'
     | '/targets'
-    | '/trades'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog'
@@ -313,7 +302,6 @@ export interface FileRouteTypes {
     | '/_app/portfolio'
     | '/_app/settings'
     | '/_app/targets'
-    | '/_app/trades'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog/'
@@ -479,13 +467,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTargetsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/trades': {
-      id: '/_app/trades'
-      path: '/trades'
-      fullPath: '/trades'
-      preLoaderRoute: typeof AppTradesRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/admin/login': {
       id: '/admin/login'
       path: '/admin/login'
@@ -526,7 +507,6 @@ interface AppRouteChildren {
   AppPortfolioRoute: typeof AppPortfolioRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTargetsRoute: typeof AppTargetsRoute
-  AppTradesRoute: typeof AppTradesRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -538,7 +518,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppPortfolioRoute: AppPortfolioRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTargetsRoute: AppTargetsRoute,
-  AppTradesRoute: AppTradesRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

@@ -23,18 +23,21 @@ export function StockPicker({
   onChange,
   className,
   placeholder = "اختار السهم…",
+  modal = false,
 }: {
   value: string;
   onChange: (code: string) => void;
   className?: string;
   placeholder?: string;
+  /** Set inside a Dialog: the portaled list is otherwise outside its scroll lock. */
+  modal?: boolean;
 }) {
   const { universe } = useDesk();
   const [open, setOpen] = useState(false);
   const selected = universe.find((stock) => stock.code === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"

@@ -84,3 +84,21 @@ export async function pickStock(page: Page, code: string) {
   await page.getByPlaceholder("ابحث بالكود أو الاسم…").fill(code);
   await page.locator("[cmdk-item]").filter({ hasText: code }).first().click();
 }
+
+/**
+ * Record an executed trade through إدخال يدوي → إدخال صفقة جديدة. Leaves the
+ * manual-entry dialog open (the trade popup closes on success).
+ */
+export async function recordTrade(page: Page, code: string, shares: string, price: string) {
+  await goto(page, "/portfolio");
+  await page.getByRole("button", { name: "إدخال يدوي" }).click();
+  await page.getByRole("button", { name: "إدخال صفقة جديدة" }).click();
+  const dialog = page.getByRole("dialog", { name: "إدخال صفقة جديدة" });
+  await expect(dialog).toBeVisible();
+  await pickStock(page, code);
+  await dialog.getByLabel("العدد").fill(shares);
+  await dialog.getByLabel("سعر التنفيذ").fill(price);
+  await dialog.getByRole("button", { name: "تسجيل الصفقة" }).click();
+  await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
+  await expect(dialog).toBeHidden();
+}

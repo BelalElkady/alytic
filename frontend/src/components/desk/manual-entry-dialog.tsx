@@ -1,9 +1,12 @@
+import { ChevronDown, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { NewTradeDialog } from "@/components/desk/new-trade-dialog";
 import { EmptyState, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -12,14 +15,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { post } from "@/lib/api";
+import { fmt, int, signed, tone } from "@/lib/format";
 import { useDesk } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 type Draft = Record<string, { shares: string; avgCost: string; stop: string; target: string }>;
 
 /** Correct share counts, average cost, stop and target — same endpoints. */
 export function ManualEntryDialog() {
-  const { manualOpen, setManualOpen, rows, reload } = useDesk();
+  const { manualOpen, setManualOpen, rows, reload, pf } = useDesk();
+  const [tradeOpen, setTradeOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -103,8 +117,12 @@ export function ManualEntryDialog() {
           <DialogTitle className="text-base">إدخال يدوي</DialogTitle>
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
             الأسعار بتتحدث تلقائيًا من السوق. استعمل ده لو عايز تصحّح عدد الأسهم أو متوسط الشراء، أو
-            تعدّل وقف وهدف بنفسك.
+            تعدّل وقف وهدف بنفسك. ولو نفّذت بيع أو شراء، سجّله كصفقة جديدة.
           </p>
+          <Button size="sm" className="mt-1 w-fit" onClick={() => setTradeOpen(true)}>
+            <Plus className="size-4" />
+            إدخال صفقة جديدة
+          </Button>
         </DialogHeader>
 
         {anyEstimated && (
@@ -115,7 +133,7 @@ export function ManualEntryDialog() {
         )}
 
         {rows.length === 0 ? (
-          <EmptyState title="مفيش مراكز." hint="سجّل أول صفقة من تبويب الصفقات." />
+          <EmptyState title="مفيش مراكز." hint="سجّل أول صفقة من زرار «إدخال صفقة جديدة»." />
         ) : (
           <div className="space-y-3">
             <label className="flex items-center gap-2 text-[12.5px] font-medium">
@@ -181,8 +199,72 @@ export function ManualEntryDialog() {
             </Button>
           </DialogFooter>
         )}
+
+        <TradeLog trades={pf?.trades ?? []} realized={pf?.realizedPnl ?? 0} />
+        <NewTradeDialog open={tradeOpen} onOpenChange={setTradeOpen} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+type Trade = {
+  date: string;
+  code: string;
+  side: string;
+  shares: number;
+  price: number;
+  commission: number;
+  realized?: number | null;
+};
+
+function TradeLog({ trades, realized }: { trades: Trade[]; realized: number }) {
+  if (trades.length === 0) return null;
+  return (
+    <Collapsible className="rounded-lg border">
+      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-3 py-2.5 text-[13px] font-semibold">
+        <span className="flex items-center gap-1.5">
+          <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+          سجل الصفقات ({int(trades.length)})
+        </span>
+        <span className={cn("num text-[12.5px]", tone(realized))}>
+          ربح محقق: {signed(realized)} ج
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="scrollbar-slim overflow-x-auto border-t">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-start">التاريخ</TableHead>
+              <TableHead className="text-start">الكود</TableHead>
+              <TableHead className="text-start">النوع</TableHead>
+              <TableHead className="text-start">العدد</TableHead>
+              <TableHead className="text-start">السعر</TableHead>
+              <TableHead className="text-start">عمولة</TableHead>
+              <TableHead className="text-start">محقق</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {[...trades].reverse().map((trade, index) => (
+              <TableRow key={`${trade.date}-${trade.code}-${index}`}>
+                <TableCell className="num text-right">{trade.date}</TableCell>
+                <TableCell className="font-medium">{trade.code}</TableCell>
+                <TableCell className={trade.side === "buy" ? "text-up" : "text-down"}>
+                  {trade.side === "buy" ? "شراء" : "بيع"}
+                </TableCell>
+                <TableCell className="num text-right">{int(trade.shares)}</TableCell>
+                <TableCell className="num text-right">{fmt(trade.price)}</TableCell>
+                <TableCell className="num text-right text-muted-foreground">
+                  {fmt(trade.commission)}
+                </TableCell>
+                <TableCell className={cn("num text-right", tone(trade.realized))}>
+                  {trade.realized != null ? signed(trade.realized) : "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

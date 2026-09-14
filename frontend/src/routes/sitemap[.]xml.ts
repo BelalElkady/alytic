@@ -10,7 +10,7 @@ const SITE_URL = "https://egxpert.com";
 
 // Mirrors the public marketing nav in components/marketing/site-shell.tsx —
 // update both if a marketing page is added or removed. The authenticated app
-// routes (/portfolio, /trades, /admin, ...) are deliberately absent: a search
+// routes (/portfolio, /cash, /admin, ...) are deliberately absent: a search
 // engine can't sign in to see them.
 const STATIC_PATHS = ["/", "/blog", "/how-to-use", "/pricing", "/contact"];
 

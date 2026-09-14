@@ -1,20 +1,26 @@
 import { expect, test } from "@playwright/test";
 
-import { goto, expectToast, loginViaUi, newDeskUser, pickStock, signOutViaUi } from "./helpers";
+import {
+  goto,
+  expectToast,
+  loginViaUi,
+  newDeskUser,
+  pickStock,
+  recordTrade,
+  signOutViaUi,
+} from "./helpers";
 
 test.describe("desk flows", () => {
   test("recording a trade shows up in the trades log and the portfolio", async ({ page }) => {
     await newDeskUser(page);
 
-    await goto(page, "/trades");
-    await pickStock(page, "ABUK");
-    await page.getByLabel("العدد").fill("100");
-    await page.getByLabel("سعر التنفيذ").fill("45");
-    await page.getByRole("button", { name: "تسجيل", exact: true }).click();
+    await recordTrade(page, "ABUK", "100", "45");
 
-    await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
-    await expect(page.getByRole("row").filter({ hasText: "ABUK" }).first()).toBeVisible();
-    await expect(page.getByText("ربح محقق")).toBeVisible();
+    // The trade log lives, collapsed, at the bottom of the manual-entry dialog.
+    const manual = page.getByRole("dialog");
+    await expect(manual.getByText("ربح محقق")).toBeVisible();
+    await manual.getByRole("button", { name: /سجل الصفقات/ }).click();
+    await expect(manual.getByRole("row").filter({ hasText: "ABUK" }).first()).toBeVisible();
 
     // The portfolio tab now carries the holding.
     await goto(page, "/portfolio");
@@ -47,12 +53,7 @@ test.describe("desk flows", () => {
     // that the cron calls for each portfolio, via the frontend's API proxy,
     // using the browser context's session cookie.
     await newDeskUser(page);
-    await goto(page, "/trades");
-    await pickStock(page, "ABUK");
-    await page.getByLabel("العدد").fill("50");
-    await page.getByLabel("سعر التنفيذ").fill("100");
-    await page.getByRole("button", { name: "تسجيل", exact: true }).click();
-    await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
+    await recordTrade(page, "ABUK", "50", "100");
 
     const snapshot = await page.request.post("/api/public/api/snapshot");
     expect(snapshot.ok()).toBeTruthy();
@@ -64,14 +65,8 @@ test.describe("desk flows", () => {
 
   test("the manual-entry dialog corrects a holding", async ({ page }) => {
     await newDeskUser(page);
-    await goto(page, "/trades");
-    await pickStock(page, "ABUK");
-    await page.getByLabel("العدد").fill("100");
-    await page.getByLabel("سعر التنفيذ").fill("45");
-    await page.getByRole("button", { name: "تسجيل", exact: true }).click();
-    await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
+    await recordTrade(page, "ABUK", "100", "45");
 
-    await page.getByRole("button", { name: "إدخال يدوي" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("ABUK")).toBeVisible();
@@ -88,12 +83,7 @@ test.describe("desk flows", () => {
 
   test("state survives a logout and a fresh login", async ({ page }) => {
     const email = await newDeskUser(page);
-    await goto(page, "/trades");
-    await pickStock(page, "SWDY");
-    await page.getByLabel("العدد").fill("10");
-    await page.getByLabel("سعر التنفيذ").fill("20");
-    await page.getByRole("button", { name: "تسجيل", exact: true }).click();
-    await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
+    await recordTrade(page, "SWDY", "10", "20");
 
     await signOutViaUi(page);
     await loginViaUi(page, email);
