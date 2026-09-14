@@ -22,6 +22,8 @@ export type Row = {
   sector?: string;
   price?: number;
   changePct?: number | null;
+  /** Close date (YYYY-MM-DD) the row's analysis is based on. */
+  asOf?: string | null;
   midTarget?: any;
   longTarget?: any;
   position: Position;

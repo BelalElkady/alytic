@@ -26,7 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApiError, api, post } from "@/lib/api";
-import { fmt, int, pct, signed, tone } from "@/lib/format";
+import { arDay, fmt, int, pct, signed, tone } from "@/lib/format";
 import { STYLE_RULES, styleRecommendation, useActiveInvestStyle, type StyleKey } from "@/lib/invest-style";
 import { SITE_URL } from "@/lib/seo";
 import { useDesk, type Row, type Verdict } from "@/lib/store";
@@ -423,7 +423,9 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
           </p>
         ) : (
           <>
-            <span className="text-muted-foreground">توصية اليوم · </span>
+            <span className="text-muted-foreground">
+              توصية اليوم{row.asOf && ` (${arDay(row.asOf)})`} ·{" "}
+            </span>
             {rec.text}
             {rec.order && (
               <div dir="rtl" className="mt-1.5 text-right font-medium">

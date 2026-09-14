@@ -1292,6 +1292,7 @@ app.get('/api/scan', wrap(async (req, res) => {
       name: r.name,
       sector: r.sectorAr,
       shariah: r.shariah,
+      asOf: r.asOf,
       price: livePrice,
       lastTradePrice: live?.price ?? null,
       lastTradeTime: live?.time ?? null,
