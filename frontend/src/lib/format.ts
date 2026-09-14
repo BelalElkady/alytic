@@ -28,7 +28,11 @@ export const tone = (value: unknown) => {
   return n > 0 ? "text-up" : "text-down";
 };
 
-export const isoDay = (date = new Date()) => date.toISOString().slice(0, 10);
+// Local calendar date, not toISOString(): that converts to UTC first, so in
+// Cairo (UTC+2/+3) local midnight became the previous day and every calendar
+// cell was labeled one day early, sliding the whole month a weekday off.
+export const isoDay = (date = new Date()) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 export const arDay = (iso?: string | null) => {
   if (!iso) return "—";
