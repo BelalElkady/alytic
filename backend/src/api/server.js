@@ -24,6 +24,7 @@ import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCusto
 import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
+import { behaviorProfile } from '../scoring/behavior.js';
 import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/clientOpenRouter.js';
 
@@ -751,9 +752,9 @@ app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
 }));
 
 // Every registered user plus a summary of their portfolio (cash, positions,
-// watchlist, trades) for the admin users list. Trades are trimmed to the
-// fields frontend/src/lib/invest-style.ts's inferInvestStyle() needs, rather
-// than duplicating that FIFO-matching logic on the server.
+// watchlist, trades) for the admin users list. `behavior` is the same
+// behaviorProfile() the AI cash review reads, cut down to what the table
+// shows, next to the style the user picked in settings (if any).
 app.get('/api/admin/users', wrap(async (req, res) => {
   const [users, portfolios, subscriptions] = await Promise.all([
     getAllUsers(),
@@ -766,6 +767,9 @@ app.get('/api/admin/users', wrap(async (req, res) => {
   const rows = users.map((u) => {
     const pf = portfolioByUser.get(u.id);
     const positions = pf ? Object.values(pf.positions ?? {}) : [];
+    const positionsValue = positions.reduce((sum, p) => sum + (p.shares ?? 0) * (p.avgCost ?? 0), 0);
+    const profile = pf ? behaviorProfile(pf, { capital: (pf.cash ?? 0) + positionsValue }) : null;
+    const chosenStyle = STYLE_KEYS.includes(pf?.settings?.investStyle) ? pf.settings.investStyle : null;
     const subscription = subscriptionByUser.get(u.id);
     const trial = trialInfo({ createdAt: u.created_at });
     return {
@@ -790,12 +794,24 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       portfolio: pf && {
         cash: pf.cash ?? 0,
         positionsCount: positions.length,
-        positionsValue: positions.reduce((sum, p) => sum + (p.shares ?? 0) * (p.avgCost ?? 0), 0),
+        positionsValue,
         watchlistCount: Object.keys(pf.watchlist ?? {}).length,
         tradesCount: (pf.trades ?? []).length,
         realizedPnl: pf.realizedPnl ?? 0,
         updatedAt: pf.updatedAt ?? null,
-        trades: (pf.trades ?? []).map((t) => ({ date: t.date, code: t.code, side: t.side, shares: t.shares })),
+      },
+      behavior: profile && {
+        chosenStyle,
+        inferredStyle: profile.inferredStyle,
+        buys: profile.buys,
+        sells: profile.sells,
+        avgHoldDays: profile.avgHoldDays,
+        winRatePct: profile.winRatePct,
+        tradesLast30d: profile.tradesLast30d,
+        lastTradeDate: profile.lastTradeDate,
+        averagingDownBuys: profile.averagingDownBuys,
+        avgOpenPositionDays: profile.avgOpenPositionDays,
+        importedPositions: profile.importedPositions,
       },
     };
   });
@@ -1671,6 +1687,22 @@ app.post('/api/settings', wrap(async (req, res) => {
     ...portfolio,
     settings: { ...(portfolio.settings ?? {}), commissionPct },
   }));
+  res.json({ ok: true, settings: updated.settings });
+}));
+
+// The investment style picked in settings. The browser keeps the working copy
+// (lib/invest-style.ts); this mirror lets it follow the user across devices and
+// lets the admin users list tell a manual pick from an inferred one.
+// `null` clears it — back to inferring the style from the trade history.
+app.post('/api/settings/style', wrap(async (req, res) => {
+  const style = req.body?.style ?? null;
+  if (style !== null && !STYLE_KEYS.includes(style)) {
+    return res.status(400).json({ error: 'أسلوب غير معروف' });
+  }
+  const updated = await withPortfolio(req.user.id, (portfolio) => {
+    const { investStyle: _previous, ...settings } = portfolio.settings ?? {};
+    return { ...portfolio, settings: style ? { ...settings, investStyle: style } : settings };
+  });
   res.json({ ok: true, settings: updated.settings });
 }));
 

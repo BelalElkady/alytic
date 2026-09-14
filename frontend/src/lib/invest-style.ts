@@ -87,10 +87,18 @@ export const STYLE_RULES: Record<StyleKey, StyleRules> = {
   },
 };
 
-function read(): StyleKey {
-  if (typeof window === "undefined") return "medium";
+export const isStyleKey = (value: unknown): value is StyleKey =>
+  value === "trader" || value === "medium" || value === "long";
+
+/** The style picked by hand on this device, or null in auto mode. */
+export function explicitInvestStyle(): StyleKey | null {
+  if (typeof window === "undefined") return null;
   const saved = window.localStorage.getItem(STYLE_STORAGE_KEY);
-  return saved === "trader" || saved === "medium" || saved === "long" ? saved : "medium";
+  return isStyleKey(saved) ? saved : null;
+}
+
+function read(): StyleKey {
+  return explicitInvestStyle() ?? "medium";
 }
 
 export function setInvestStyle(next: StyleKey) {
@@ -106,9 +114,7 @@ export function clearInvestStyle() {
 
 /** True once the user has picked a style by hand — as opposed to it defaulting from behaviour or "medium". */
 export function hasExplicitInvestStyle(): boolean {
-  if (typeof window === "undefined") return false;
-  const saved = window.localStorage.getItem(STYLE_STORAGE_KEY);
-  return saved === "trader" || saved === "medium" || saved === "long";
+  return explicitInvestStyle() !== null;
 }
 
 /** Reactive read of the chosen behaviour, synced across pages/tabs. */
@@ -132,7 +138,7 @@ export type Trade = { date: string; code: string; side: "buy" | "sell"; shares: 
 // Fewer completed round trips than this and there isn't enough history to
 // read behaviour from — stick with the manual/default style instead of
 // guessing off one or two trades.
-const MIN_CLOSED_TRADES = 3;
+export const MIN_CLOSED_TRADES = 3;
 const TRADER_MAX_AVG_DAYS = 10;
 const MEDIUM_MAX_AVG_DAYS = 60;
 

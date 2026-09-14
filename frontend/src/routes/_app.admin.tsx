@@ -48,7 +48,7 @@ import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
-import { INVEST_STYLES, inferInvestStyle, type StyleKey, type Trade } from "@/lib/invest-style";
+import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
 import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -350,7 +350,21 @@ type AdminUserPortfolio = {
   tradesCount: number;
   realizedPnl: number;
   updatedAt: string | null;
-  trades: Trade[];
+};
+
+/** Cut-down behaviorProfile() (backend/src/scoring/behavior.js) plus the style picked in settings. */
+type AdminUserBehavior = {
+  chosenStyle: StyleKey | null;
+  inferredStyle: StyleKey | null;
+  buys: number;
+  sells: number;
+  avgHoldDays: number | null;
+  winRatePct: number | null;
+  tradesLast30d: number;
+  lastTradeDate: string | null;
+  averagingDownBuys: number;
+  avgOpenPositionDays: number | null;
+  importedPositions: boolean;
 };
 
 type AdminSubscription = {
@@ -375,6 +389,7 @@ type AdminUserRow = {
   trialEndsAt: string;
   subscription: AdminSubscription | null;
   portfolio: AdminUserPortfolio | null;
+  behavior: AdminUserBehavior | null;
 };
 
 const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
@@ -451,7 +466,7 @@ function UsersTab() {
                   <TableHead className="text-start">رأس المال</TableHead>
                   <TableHead className="text-start">ربح محقق</TableHead>
                   <TableHead className="text-start">النشاط الاستثماري</TableHead>
-                  <TableHead className="text-start">الأسلوب</TableHead>
+                  <TableHead className="text-start">السلوك الاستثماري</TableHead>
                   <TableHead className="text-start">الاشتراك</TableHead>
                   <TableHead className="text-start">الحالة</TableHead>
                   <TableHead>
@@ -474,7 +489,6 @@ function UsersTab() {
 
 function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void }) {
   const pf = row.portfolio;
-  const inferredStyle = pf ? inferInvestStyle(pf.trades) : null;
   const capital = pf ? pf.cash + pf.positionsValue : null;
 
   return (
@@ -511,7 +525,9 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
           ? `${pf.tradesCount} صفقة · ${pf.positionsCount} مركز · ${pf.watchlistCount} متابعة`
           : "لا توجد محفظة"}
       </TableCell>
-      <TableCell>{inferredStyle ? STYLE_LABEL[inferredStyle] : "—"}</TableCell>
+      <TableCell className="min-w-[220px]">
+        {row.behavior ? <BehaviorCell behavior={row.behavior} /> : "—"}
+      </TableCell>
       <TableCell>
         <SubscriptionCell row={row} onChanged={onChanged} />
       </TableCell>
@@ -524,6 +540,70 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
       </TableCell>
       <TableCell>{!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}</TableCell>
     </TableRow>
+  );
+}
+
+/**
+ * What kind of investor this is and why we think so: the style driving their
+ * recommendations and where it came from, then the trading numbers behind it.
+ */
+function BehaviorCell({ behavior: b }: { behavior: AdminUserBehavior }) {
+  const style = b.chosenStyle ?? b.inferredStyle;
+  const source = b.chosenStyle ? "اختيار يدوي" : b.inferredStyle ? "مستنتج من صفقاته" : null;
+  const mismatch = b.chosenStyle && b.inferredStyle && b.chosenStyle !== b.inferredStyle;
+  const tradesCount = b.buys + b.sells;
+
+  const unknownReason = !tradesCount
+    ? b.importedPositions
+      ? "مراكز مستوردة من غير صفقات مسجلة"
+      : "مفيش صفقات مسجلة"
+    : b.sells < MIN_CLOSED_TRADES
+      ? `${b.sells} صفقة بيع بس — محتاج ${MIN_CLOSED_TRADES} على الأقل للاستنتاج`
+      : "صفقات البيع مش مقابلها شراء مسجل";
+
+  const facts: string[] = [];
+  if (tradesCount) {
+    facts.push(`${b.buys} شراء · ${b.sells} بيع`);
+    if (b.avgHoldDays != null) facts.push(`متوسط الاحتفاظ ${Math.round(b.avgHoldDays)} يوم`);
+    if (b.winRatePct != null) facts.push(`${Math.round(b.winRatePct)}% صفقات رابحة`);
+    if (b.averagingDownBuys) facts.push(`متوسّط لتحت ${b.averagingDownBuys} مرة`);
+    facts.push(
+      b.tradesLast30d
+        ? `${b.tradesLast30d} صفقة آخر ٣٠ يوم`
+        : `آخر صفقة ${arDay(b.lastTradeDate)}`,
+    );
+  } else if (b.avgOpenPositionDays != null) {
+    facts.push(`مراكزه مفتوحة من ${Math.round(b.avgOpenPositionDays)} يوم في المتوسط`);
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {style ? (
+          <span className="font-medium">{STYLE_LABEL[style]}</span>
+        ) : (
+          <span className="text-muted-foreground">غير محدد</span>
+        )}
+        {source && (
+          <Badge variant="outline" className="text-[11px] font-normal">
+            {source}
+          </Badge>
+        )}
+      </div>
+      {mismatch && (
+        <div className="text-[12px] text-amber-500">
+          صفقاته الفعلية أقرب لـ {STYLE_LABEL[b.inferredStyle!]}
+        </div>
+      )}
+      {!style && (
+        <div className="text-[12px] text-muted-foreground">
+          {unknownReason} — شغال على متوسط المدى افتراضيًا
+        </div>
+      )}
+      {facts.length > 0 && (
+        <div className="text-[12px] leading-relaxed text-muted-foreground">{facts.join(" · ")}</div>
+      )}
+    </div>
   );
 }
 

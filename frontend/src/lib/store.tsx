@@ -10,7 +10,12 @@ import {
 } from "react";
 
 import { ApiError, api, post } from "./api";
-import { useActiveInvestStyle } from "./invest-style";
+import {
+  explicitInvestStyle,
+  isStyleKey,
+  setInvestStyle,
+  useActiveInvestStyle,
+} from "./invest-style";
 
 /* Types kept intentionally loose: they mirror the existing API responses
  * and must not constrain fields the engine may add. */
@@ -133,6 +138,21 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   // dependency array below so a style change (manual or newly inferred)
   // re-fetches positions with the matching stop/target/recommendation.
   const { style } = useActiveInvestStyle(pf?.trades);
+
+  // Keeps the manual style pick and its server copy in step once the
+  // portfolio loads: a pick made on this device (including ones from before
+  // the server kept a copy) is pushed up, and a pick made on another device
+  // is adopted here when this one is still in auto mode.
+  const serverStyle = pf ? (pf.settings?.investStyle ?? null) : undefined;
+  useEffect(() => {
+    if (serverStyle === undefined) return;
+    const local = explicitInvestStyle();
+    if (local && local !== serverStyle) {
+      void post("/api/settings/style", { style: local }).catch(() => {});
+    } else if (!local && isStyleKey(serverStyle)) {
+      setInvestStyle(serverStyle);
+    }
+  }, [serverStyle]);
 
   // Re-reads entitlements without a sign-out. Activation is manual, so a user
   // who has sent their InstaPay transfer needs a way to pick up the unlock the

@@ -47,11 +47,13 @@ function SettingsPage() {
 
   const chooseStyle = (next: StyleKey) => {
     setInvestStyle(next);
+    void post("/api/settings/style", { style: next }).catch(() => {});
     toast.success(`تم تفعيل قواعد ${INVEST_STYLES.find((item) => item.key === next)!.label}`);
   };
 
   const resetToAuto = () => {
     clearInvestStyle();
+    void post("/api/settings/style", { style: null }).catch(() => {});
     toast.success("رجّعنا الأسلوب لسلوكك التلقائي في التداول");
   };
 
