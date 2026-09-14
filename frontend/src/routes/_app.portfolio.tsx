@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
@@ -25,9 +25,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { post } from "@/lib/api";
+import { ApiError, api, post } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
-import { STYLE_RULES, styleRecommendation, useActiveInvestStyle } from "@/lib/invest-style";
+import { STYLE_RULES, styleRecommendation, useActiveInvestStyle, type StyleKey } from "@/lib/invest-style";
 import { SITE_URL } from "@/lib/seo";
 import { useDesk, type Row, type Verdict } from "@/lib/store";
 
@@ -87,55 +87,81 @@ const AI_ACTION_TONE: Record<string, string> = {
   wait: "border-border bg-surface-2 text-muted-foreground",
 };
 
-// One AI review is a real, paid model call, so a reader only gets one free
-// "قولي توصية اليوم" per day — this remembers that across reloads (the
-// server itself caches per user/day/style too, see /api/review, but the
-// button must stay disabled even before that state round-trips back here).
-const REVIEW_USED_KEY = "alytic-review-used-date";
+// A per-stock AI review is a real, paid model call, so each stock gets one
+// "قولي توصية اليوم" per day (admins unlimited). The verdict is kept in
+// localStorage for the day, so a reload shows it without another request;
+// the server caches it per user/day/style/stock too (see /api/review/stock).
 const todayKey = () => new Date().toDateString();
+const reviewStorageKey = (code: string) => `alytic-stock-review:${code}`;
+const REVIEW_POLL_MS = 5 * 1000;
+const REVIEW_MAX_WAIT_MS = 15 * 60 * 1000;
+
+// A trade on the position (e.g. acting on the verdict) makes it stale, so the
+// stored verdict is only reused for the same day, style and position.
+function readStoredVerdict(code: string, style: StyleKey, positionKey: string): Verdict | null {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
+    return stored?.day === todayKey() && stored?.style === style && stored?.positionKey === positionKey
+      ? stored.verdict
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function useStockReview(code: string, style: StyleKey, positionKey: string) {
+  const { refreshUser } = useDesk();
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setVerdict(readStoredVerdict(code, style, positionKey));
+  }, [code, style, positionKey]);
+
+  const request = useCallback(
+    async (force: boolean) => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Usually answered inline; a slow model call becomes a server-side
+        // job that this polls, so no request outlives nginx's 180s timeout.
+        let result = await post("/api/review/stock", { code, style, force });
+        const giveUpAt = Date.now() + REVIEW_MAX_WAIT_MS;
+        while (result?.status === "running") {
+          if (Date.now() > giveUpAt) throw new Error("التحليل أخد وقت أطول من المتوقع — جرّب تاني بعد شوية.");
+          await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_MS));
+          result = await api(`/api/review/status?style=${style}&code=${encodeURIComponent(code)}`);
+        }
+        setVerdict(result.verdict);
+        try {
+          window.localStorage.setItem(
+            reviewStorageKey(code),
+            JSON.stringify({ day: todayKey(), style, positionKey, verdict: result.verdict }),
+          );
+        } catch {
+          /* storage unavailable — the verdict still shows for this session */
+        }
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.status === 402) {
+          await refreshUser();
+          return;
+        }
+        setError(caught instanceof Error ? caught.message : "تعذر تحليل السهم");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [code, style, positionKey, refreshUser],
+  );
+
+  return { verdict, loading, error, request };
+}
 
 function PositionsPage() {
-  const {
-    rows,
-    loading,
-    error,
-    reload,
-    openDetail,
-    pf,
-    aiAvailable,
-    review,
-    reviewLoading,
-    reviewError,
-    loadReview,
-    user,
-  } = useDesk();
-  // Admins aren't held to the one-per-day limit: each click regenerates a
-  // fresh review (the server only honors `force` for admins).
-  const isAdmin = Boolean(user?.isAdmin);
+  const { rows, loading, error, reload, openDetail, pf } = useDesk();
   const { style } = useActiveInvestStyle(pf?.trades);
   const nearStopPct = STYLE_RULES[style].nearStopPct;
-  const verdictByCode = new Map<string, Verdict>(
-    (review?.review?.verdicts ?? []).map((v: Verdict) => [v.code, v]),
-  );
-
-  const [usedToday, setUsedToday] = useState(
-    () => typeof window !== "undefined" && window.localStorage.getItem(REVIEW_USED_KEY) === todayKey(),
-  );
-  const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
-
-  // Already used today (even after a reload, where `review` itself starts
-  // out empty again) — pull back today's already-generated recommendation
-  // instead of leaving the button disabled with nothing to show for it.
-  useEffect(() => {
-    if (usedToday && !review && !reviewLoading) void loadReview();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!review || reviewLoading) return;
-    window.localStorage.setItem(REVIEW_USED_KEY, todayKey());
-    setUsedToday(true);
-  }, [review, reviewLoading]);
 
   if (error) {
     return (
@@ -189,50 +215,6 @@ function PositionsPage() {
 
   return (
     <div className="space-y-4">
-      {aiAvailable && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {review && !isAdmin && (
-            <span className="text-[12.5px] text-muted-foreground">
-              توصية اليوم بالذكاء الاصطناعي — استخدمتها بالفعل النهارده
-            </span>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setConfirmReviewOpen(true)}
-            disabled={reviewLoading || (usedToday && !isAdmin)}
-          >
-            {reviewLoading && <Spinner />}
-            {isAdmin && review ? "توصية جديدة" : "قولي توصية اليوم"}
-          </Button>
-        </div>
-      )}
-      {reviewError && <Notice tone="danger">{reviewError}</Notice>}
-
-      <AlertDialog open={confirmReviewOpen} onOpenChange={setConfirmReviewOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader className="text-start">
-            <AlertDialogTitle>متأكد إنك عايز تستخدم توصية اليوم دلوقتي؟</AlertDialogTitle>
-            <AlertDialogDescription className="leading-relaxed">
-              {isAdmin
-                ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد بالذكاء الاصطناعي."
-                : "بتتحسب مرة واحدة بس في اليوم، وهتقفل تاني لحد بكرة بعد ما تستخدمها الأول."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:justify-start">
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmReviewOpen(false);
-                void loadReview({ force: isAdmin });
-              }}
-            >
-              أيوه، هاتها
-            </AlertDialogAction>
-            <AlertDialogCancel>لسه</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       <div className="space-y-2">
         {alerts.length ? (
           alerts.map((alert) => (
@@ -245,30 +227,18 @@ function PositionsPage() {
         )}
       </div>
 
+
       <div className="flex flex-col gap-3">
         {rows.map((row) => (
-          <PositionCard
-            key={row.code}
-            row={row}
-            onOpen={() => openDetail(row.code)}
-            verdict={verdictByCode.get(row.code) ?? null}
-          />
+          <PositionCard key={row.code} row={row} onOpen={() => openDetail(row.code)} />
         ))}
       </div>
     </div>
   );
 }
 
-function PositionCard({
-  row,
-  onOpen,
-  verdict,
-}: {
-  row: Row;
-  onOpen: () => void;
-  verdict: Verdict | null;
-}) {
-  const { reload, indices, pf } = useDesk();
+function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
+  const { reload, indices, pf, aiAvailable, user } = useDesk();
   const memberOf = indices[row.code] ?? [];
   const p = row.position;
   const { style } = useActiveInvestStyle(pf?.trades);
@@ -278,6 +248,15 @@ function PositionCard({
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
   const primaryTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
+  const { verdict, loading: reviewLoading, error: reviewError, request: requestReview } = useStockReview(
+    row.code,
+    style,
+    `${p.shares}@${p.avgCost}`,
+  );
+  // Admins aren't held to one per day: each confirmed click regenerates
+  // (the server only honors `force` for admins).
+  const isAdmin = Boolean(user?.isAdmin);
+  const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
   // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
   // over the badge and recommendation box when one has been fetched for this
   // stock; the mechanical rec above stays the fallback (and still drives
@@ -438,6 +417,50 @@ function PositionCard({
           </>
         )}
       </div>
+
+      {aiAvailable && (
+        <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">
+          {reviewError && <span className="text-[12px] text-down">{reviewError}</span>}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={reviewLoading || (Boolean(verdict) && !isAdmin)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmReviewOpen(true);
+            }}
+          >
+            {reviewLoading && <Spinner />}
+            {verdict && isAdmin ? "توصية جديدة" : "قولي توصية اليوم"}
+          </Button>
+        </div>
+      )}
+
+      <AlertDialog open={confirmReviewOpen} onOpenChange={setConfirmReviewOpen}>
+        {/* The dialog renders in a portal, but React events still bubble to the
+            clickable card — stop them so confirming doesn't also open details. */}
+        <AlertDialogContent onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <AlertDialogHeader className="text-start">
+            <AlertDialogTitle>متأكد إنك عايز توصية اليوم لسهم {row.code} دلوقتي؟</AlertDialogTitle>
+            <AlertDialogDescription className="leading-relaxed">
+              {isAdmin
+                ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد بالذكاء الاصطناعي."
+                : "بتتحسب مرة واحدة بس في اليوم لكل سهم، والزرار هيتقفل لحد بكرة بعد ما تستخدمه."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:justify-start">
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmReviewOpen(false);
+                void requestReview(isAdmin);
+              }}
+            >
+              أيوه، هاتها
+            </AlertDialogAction>
+            <AlertDialogCancel>لسه</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

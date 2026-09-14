@@ -12,7 +12,7 @@
  */
 
 import { MODEL_CHAIN, requestStructuredOR } from './clientOpenRouter.js';
-import { PortfolioReviewSchema } from './schemas.js';
+import { PortfolioReviewSchema, StockVerdictSchema } from './schemas.js';
 import { analystSystemPrompt } from './prompts/system.js';
 import { crossCheckIndicators } from './crosscheck.js';
 import RULES from '../config/rules.js';
@@ -319,6 +319,55 @@ export function briefFor(a) {
 }
 
 /**
+ * The book-level facts every review needs — cash, capital, weights, sectors,
+ * health score, classification mix — computed here so the analyst judges them
+ * rather than derives them. Shared by the full and single-stock reviews.
+ */
+function portfolioContext(analyses, ctx, rules) {
+  const held = analyses.filter((a) => a.position);
+  const totalPositionValue = held.reduce((sum, a) => sum + (a.position?.marketValue ?? 0), 0);
+  const cash = ctx.cash ?? 0;
+  const capital = ctx.capital ?? totalPositionValue + cash;
+
+  const structure = portfolioStructure(analyses, { cash, capital }, rules);
+  const classificationSummary = portfolioClassificationSummary(analyses);
+  const sectorLines = structure.sectors
+    .map((s) => `  ${s.sector}: ${Math.round(s.value).toLocaleString('en-US')} EGP (${s.pctOfCapital}%)`)
+    .join('\n');
+  const weightLines = structure.weights
+    .map((w) => `  ${w.code}: ${w.pctOfCapital}% of capital (${Math.round(w.value).toLocaleString('en-US')} EGP) · ${w.sector}`)
+    .join('\n');
+
+  const text = `## Financial position
+- Positions value: ${Math.round(totalPositionValue).toLocaleString('en-US')} EGP
+- Cash available: ${Math.round(cash).toLocaleString('en-US')} EGP (${((cash / capital) * 100).toFixed(1)}% of capital)
+- Total capital: ${Math.round(capital).toLocaleString('en-US')} EGP
+- Brokerage commission: ${rules.commissionPct}% per trade
+
+## Portfolio structure (computed — judge it, do not recompute it)
+- Portfolio health score: ${structure.health.score}/100${structure.health.reasons.length ? ` — deductions: ${structure.health.reasons.join('; ')}` : ' — no structural violations'}
+- Holdings: ${structure.holdings} | largest position: ${structure.largestPct}% | top 3: ${structure.top3Pct}% | top 5: ${structure.top5Pct}%
+- Limits: max single position ${rules.sizing.maxPositionPct}% · max sector ${rules.sizing.maxSectorPct}% · min cash reserve ${rules.sizing.minCashBufferPct}%
+
+### Weight of each position
+${weightLines || '  No open positions'}
+
+### Sector distribution
+${sectorLines || '  No open positions'}
+
+### Investment vs. speculative composition (computed — see each stock's own Classification line for detail)
+${
+  classificationSummary.holdings
+    ? `  ${Object.entries(classificationSummary.pctByType).map(([type, pct]) => `${type} ${pct}%`).join(' · ')} | ` +
+      `avg investment score ${classificationSummary.avgInvestmentScore ?? 'n/a'} · avg speculation score ${classificationSummary.avgSpeculationScore ?? 'n/a'} | ` +
+      `speculative exposure (SPECULATIVE+HYBRID) ${classificationSummary.speculativeExposurePct}% of capital, largest single one ${classificationSummary.largestSpeculativePositionPct}%`
+    : '  No open positions'
+}`;
+
+  return { text, structure, classificationSummary };
+}
+
+/**
  * Full portfolio review.
  *
  * @param {object[]} analyses - results from analyzeTicker (positions + watchlist)
@@ -344,49 +393,11 @@ export async function reviewPortfolio(analyses, ctx = {}, { model = MODEL_CHAIN,
   const quietWatch = watch.filter((a) => !watchWorthReviewing.includes(a));
   const reviewed = [...heldNeedingDecision, ...quietHeld, ...watchWorthReviewing];
 
-  const totalPositionValue = held.reduce((sum, a) => sum + (a.position?.marketValue ?? 0), 0);
-  const cash = ctx.cash ?? 0;
-  const capital = ctx.capital ?? totalPositionValue + cash;
-
-  // Concentration, weights and the health score are portfolio-level facts no
-  // per-stock brief can show — and the analyst must judge them, not derive
-  // them, so they are computed here and handed over ready-made.
-  const structure = portfolioStructure(analyses, { cash, capital }, rules);
-  const classificationSummary = portfolioClassificationSummary(analyses);
-  const sectorLines = structure.sectors
-    .map((s) => `  ${s.sector}: ${Math.round(s.value).toLocaleString('en-US')} EGP (${s.pctOfCapital}%)`)
-    .join('\n');
-  const weightLines = structure.weights
-    .map((w) => `  ${w.code}: ${w.pctOfCapital}% of capital (${Math.round(w.value).toLocaleString('en-US')} EGP) · ${w.sector}`)
-    .join('\n');
+  const { text: contextText, structure, classificationSummary } = portfolioContext(analyses, ctx, rules);
 
   const userMessage = `# Portfolio review — close of ${analyses[0]?.asOf ?? 'today'}
 
-## Financial position
-- Positions value: ${Math.round(totalPositionValue).toLocaleString('en-US')} EGP
-- Cash available: ${Math.round(cash).toLocaleString('en-US')} EGP (${((cash / capital) * 100).toFixed(1)}% of capital)
-- Total capital: ${Math.round(capital).toLocaleString('en-US')} EGP
-- Brokerage commission: ${rules.commissionPct}% per trade
-
-## Portfolio structure (computed — judge it, do not recompute it)
-- Portfolio health score: ${structure.health.score}/100${structure.health.reasons.length ? ` — deductions: ${structure.health.reasons.join('; ')}` : ' — no structural violations'}
-- Holdings: ${structure.holdings} | largest position: ${structure.largestPct}% | top 3: ${structure.top3Pct}% | top 5: ${structure.top5Pct}%
-- Limits: max single position ${rules.sizing.maxPositionPct}% · max sector ${rules.sizing.maxSectorPct}% · min cash reserve ${rules.sizing.minCashBufferPct}%
-
-### Weight of each position
-${weightLines || '  No open positions'}
-
-### Sector distribution
-${sectorLines || '  No open positions'}
-
-### Investment vs. speculative composition (computed — see each stock's own Classification line for detail)
-${
-  classificationSummary.holdings
-    ? `  ${Object.entries(classificationSummary.pctByType).map(([type, pct]) => `${type} ${pct}%`).join(' · ')} | ` +
-      `avg investment score ${classificationSummary.avgInvestmentScore ?? 'n/a'} · avg speculation score ${classificationSummary.avgSpeculationScore ?? 'n/a'} | ` +
-      `speculative exposure (SPECULATIVE+HYBRID) ${classificationSummary.speculativeExposurePct}% of capital, largest single one ${classificationSummary.largestSpeculativePositionPct}%`
-    : '  No open positions'
-}
+${contextText}
 
 ## Holdings with a rule firing or close to the stop (${heldNeedingDecision.length} of ${held.length}) — research these first
 ${heldNeedingDecision.map(briefFor).join('\n\n') || 'No position has a trigger or is near its stop today.'}
@@ -511,4 +522,71 @@ export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = 
   const review = await reviewPortfolio(analyses, ctx, { model, rules, style });
   await putPortfolioReview(userId, asOf, style, hash, review, review._meta.model, review._meta.usage);
   return { review, source: 'ai' };
+}
+
+/**
+ * One holding's verdict, asked on its own from the position card. Much less
+ * output and one stock's worth of research, so it returns in well under a
+ * minute. The system prompt is identical to the full review's (keeps any
+ * provider prompt cache warm); the single-stock scope is set in the message.
+ *
+ * @param {object[]} analyses - every held position's analysis (for weights/sectors)
+ * @param {string} code - the held position to review
+ */
+export async function reviewStock(analyses, code, ctx = {}, { model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = {}) {
+  const target = analyses.find((a) => a.code === code && a.position);
+  if (!target) throw new Error(`مفيش مركز مفتوح في ${code}`);
+  const { text: contextText } = portfolioContext(analyses, ctx, rules);
+
+  const userMessage = `# Single-stock review — ${code}, close of ${target.asOf ?? 'today'}
+
+This request covers ONE holding only: return a single verdict for ${code}. Instructions about marketRead, cashAdvice, topPriority, portfolioAssessment, portfolioRisks or verdicts for other stocks do not apply here. The portfolio sections below are context for portfolioView, positionSizing and betterAlternative only.
+
+${contextText}
+
+## ${code} — full brief
+${briefFor(target)}
+
+---
+Give me the verdict for ${code}. Remember: these numbers are final — judge them, do not recompute them.`;
+
+  const { data, raw } = await requestStructuredOR({
+    model,
+    schema: StockVerdictSchema,
+    schemaName: 'stock_verdict',
+    maxTokens: 3000,
+    system: analystSystemPrompt(rules, style),
+    messages: [{ role: 'user', content: userMessage }],
+    webSearch: { engine: 'auto', max_results: 4, max_uses: rules.webSearch?.perStock ?? 1 },
+    clientTools: [crossCheckTool],
+    maxTurns: 3,
+    feature: 'stock_review',
+  });
+
+  return { ...data, code, reviewDepth: 'full', _meta: { model: raw.model, asOf: target.asOf ?? null, usage: raw.usage } };
+}
+
+/**
+ * Cache-or-generate for reviewStock, same contract as getOrGenerateReview.
+ * Stored in portfolio_reviews under a `style:CODE` style key (the column is
+ * free text), and hashed on this position plus cash only, so a trade in a
+ * different stock doesn't throw away this one's verdict.
+ */
+export async function getOrGenerateStockReview(portfolio, analyses, code, ctx = {}, opts = {}) {
+  const { userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = opts;
+  const asOf = analyses.find((a) => a.code === code)?.asOf ?? new Date().toISOString().slice(0, 10);
+  const cacheStyle = `${style}:${code}`;
+  const hash = portfolioHash({ positions: { [code]: portfolio.positions[code] }, watchlist: {}, cash: portfolio.cash });
+
+  if (!force) {
+    const cached = await getPortfolioReview(userId, asOf, cacheStyle);
+    if (cached && cached.portfolioHash === hash) {
+      const { portfolioHash: _hash, ...verdict } = cached;
+      return { verdict, source: 'cached' };
+    }
+  }
+
+  const verdict = await reviewStock(analyses, code, ctx, { model, rules, style });
+  await putPortfolioReview(userId, asOf, cacheStyle, hash, verdict, verdict._meta.model, verdict._meta.usage);
+  return { verdict, source: 'ai' };
 }

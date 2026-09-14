@@ -1866,22 +1866,14 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
 
 // ---- AI endpoints ----------------------------------------------------------
 
-app.post('/api/review', wrap(async (req, res) => {
-  if (!aiAvailable()) {
-    return res.status(503).json({
-      error: 'مفيش مفتاح API. حط OPENROUTER_API_KEY في .env — التحليل الفني شغال من غيره.',
-      aiAvailable: false,
-    });
-  }
-  const style = req.body?.style ?? req.query.style;
-  if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
+async function runReview({ userId, style, force }) {
   // The style sets both halves: the rule numbers the engine sizes with and
   // the horizon the analyst reasons in. Both must come from the same choice,
   // or the prose will argue against the numbers underneath it.
   const rules = style ? rulesForStyle(RULES, style) : RULES;
   const effectiveStyle = style ?? 'medium';
 
-  const portfolio = await loadPortfolio(req.user.id);
+  const portfolio = await loadPortfolio(userId);
   const capital = capitalOf(portfolio);
 
   // An empty book has no personal fit to judge — the honest answer to "what
@@ -1892,7 +1884,7 @@ app.post('/api/review', wrap(async (req, res) => {
     const { getOrGenerateMarketAnalysis, reviewFromMarketReport } = await import('../agent/marketAnalysis.js');
     const report = await getOrGenerateMarketAnalysis({ rules, style: effectiveStyle });
     const review = reviewFromMarketReport(report, { cash: portfolio.cash }, trackedCodes(portfolio));
-    return res.json({ review, analyses: [], errors: [], style: effectiveStyle, source: 'daily_market_report', marketAnalysisAsOf: report.asOf });
+    return { review, analyses: [], errors: [], style: effectiveStyle, source: 'daily_market_report', marketAnalysisAsOf: report.asOf };
   }
 
   const codes = trackedCodes(portfolio);
@@ -1903,17 +1895,124 @@ app.post('/api/review', wrap(async (req, res) => {
     rules,
   });
 
-  // Regenerating skips the per-day cache and pays for a fresh model call, so
-  // only admins may force it — everyone else gets today's cached review.
-  const force = Boolean(req.user.isAdmin) && (req.body?.force === true || req.query.force === '1');
   const { getOrGenerateReview } = await import('../agent/analyst.js');
   const { review, source } = await getOrGenerateReview(
     portfolio,
     results,
     { cash: portfolio.cash, capital },
-    { userId: req.user.id, rules, style: effectiveStyle, force },
+    { userId, rules, style: effectiveStyle, force },
   );
-  res.json({ review, analyses: results, errors, style: effectiveStyle, source });
+  return { review, analyses: results, errors, style: effectiveStyle, source };
+}
+
+// A full review runs for minutes — well past nginx's 180s proxy_read_timeout
+// (deploy/nginx/egxpert.conf) — so it runs as an in-process background job and
+// the client polls /api/review/status instead of holding one request open.
+// In-memory is enough: a single backend process serves every request, and a
+// restart just means the client is told to try again.
+const reviewJobs = new Map(); // `${userId}:${style}[:${code}]` -> { status, startedAt, result?, error? }
+const REVIEW_INLINE_WAIT_MS = 20_000;
+const REVIEW_JOB_TTL_MS = 30 * 60_000;
+
+function reviewJobKey(userId, style, code = null) {
+  return `${userId}:${style ?? 'medium'}${code ? `:${code}` : ''}`;
+}
+
+function sendReviewJob(res, job) {
+  if (job.status === 'running') return res.json({ status: 'running', startedAt: job.startedAt });
+  if (job.status === 'error') return res.status(500).json({ error: job.error });
+  return res.json(job.result);
+}
+
+/** Starts `run` as a background job (or joins the one already running) and answers inline if it finishes quickly. */
+async function startReviewJob(res, key, run) {
+  const now = Date.now();
+  for (const [k, j] of reviewJobs) {
+    if (j.status !== 'running' && now - j.finishedAt > REVIEW_JOB_TTL_MS) reviewJobs.delete(k);
+  }
+
+  const existing = reviewJobs.get(key);
+  if (existing?.status === 'running') return sendReviewJob(res, existing);
+
+  const job = { status: 'running', startedAt: new Date().toISOString() };
+  job.promise = run()
+    .then((result) => Object.assign(job, { status: 'done', result, finishedAt: Date.now() }))
+    .catch((err) => {
+      console.error(`[review] ${key} failed:`, err);
+      Object.assign(job, { status: 'error', error: err.message || 'تعذر تحليل المحفظة', finishedAt: Date.now() });
+    });
+  reviewJobs.set(key, job);
+
+  // A cached review finishes in seconds — answer it in this same request.
+  await Promise.race([job.promise, new Promise((r) => setTimeout(r, REVIEW_INLINE_WAIT_MS))]);
+  sendReviewJob(res, job);
+  if (job.status === 'error') reviewJobs.delete(key);
+}
+
+function reviewPreflight(req, res) {
+  if (!aiAvailable()) {
+    res.status(503).json({
+      error: 'مفيش مفتاح API. حط OPENROUTER_API_KEY في .env — التحليل الفني شغال من غيره.',
+      aiAvailable: false,
+    });
+    return null;
+  }
+  const style = req.body?.style ?? req.query.style;
+  if (style && !STYLE_KEYS.includes(style)) {
+    res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
+    return null;
+  }
+  // Regenerating skips the per-day cache and pays for a fresh model call, so
+  // only admins may force it — everyone else gets today's cached review.
+  const force = Boolean(req.user.isAdmin) && (req.body?.force === true || req.query.force === '1');
+  return { style, force };
+}
+
+app.post('/api/review', wrap(async (req, res) => {
+  const pre = reviewPreflight(req, res);
+  if (!pre) return;
+  await startReviewJob(res, reviewJobKey(req.user.id, pre.style), () => runReview({ userId: req.user.id, ...pre }));
+}));
+
+app.post('/api/review/stock', wrap(async (req, res) => {
+  const pre = reviewPreflight(req, res);
+  if (!pre) return;
+  const code = String(req.body?.code ?? '').toUpperCase();
+  const portfolio = await loadPortfolio(req.user.id);
+  if (!portfolio.positions[code]) return res.status(400).json({ error: `مفيش مركز مفتوح في ${code || 'السهم ده'}` });
+
+  const userId = req.user.id;
+  await startReviewJob(res, reviewJobKey(userId, pre.style, code), async () => {
+    const rules = pre.style ? rulesForStyle(RULES, pre.style) : RULES;
+    const capital = capitalOf(portfolio);
+    // Every holding, not just this one: weights and sector mix need the whole book.
+    const { results } = await analyzeMany(Object.keys(portfolio.positions), {
+      capital,
+      positions: portfolio.positions,
+      concurrency: 5,
+      rules,
+    });
+    const { getOrGenerateStockReview } = await import('../agent/analyst.js');
+    const { verdict, source } = await getOrGenerateStockReview(
+      portfolio,
+      results,
+      code,
+      { cash: portfolio.cash, capital },
+      { userId, rules, style: pre.style ?? 'medium', force: pre.force },
+    );
+    return { verdict, source, code };
+  });
+}));
+
+app.get('/api/review/status', wrap(async (req, res) => {
+  const code = req.query.code ? String(req.query.code).toUpperCase() : null;
+  const key = reviewJobKey(req.user.id, req.query.style, code);
+  const job = reviewJobs.get(key);
+  if (!job) {
+    return res.status(404).json({ error: 'التحليل اتقطع (غالبًا السيرفر اتعمل له ريستارت) — جرّب تاني.' });
+  }
+  sendReviewJob(res, job);
+  if (job.status === 'error') reviewJobs.delete(key);
 }));
 
 app.get('/api/market-analysis', wrap(async (req, res) => {

@@ -29,9 +29,8 @@ export type Row = {
 };
 export type Portfolio = any;
 export type LogEntry = any;
-/** One /api/review stock verdict — mirrors backend/src/agent/schemas.js StockVerdictSchema. */
+/** One AI stock verdict — mirrors backend/src/agent/schemas.js StockVerdictSchema. */
 export type Verdict = any;
-export type Review = any;
 export type Stock = { code: string; ar?: string; en?: string };
 export type User = {
   name?: string;
@@ -89,10 +88,6 @@ type DeskValue = {
   reloadPortfolio: () => Promise<void>;
   reloadLog: () => Promise<void>;
   refreshPrices: (options?: { force?: boolean }) => Promise<void>;
-  review: Review | null;
-  reviewLoading: boolean;
-  reviewError: string | null;
-  loadReview: (options?: { force?: boolean }) => Promise<void>;
   detailCode: string | null;
   openDetail: (code: string | null) => void;
   marketFocus: "market" | "cash" | null;
@@ -126,9 +121,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [marketFocus, setMarketFocus] = useState<"market" | "cash" | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
-  const [review, setReview] = useState<Review | null>(null);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const rowsRef = useRef<Row[]>([]);
   rowsRef.current = rows;
@@ -194,25 +186,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const reloadLog = useCallback(async () => {
     setLog((await api("/api/log")).log ?? {});
   }, []);
-
-  // AI review is expensive (real model calls, web search) and cached
-  // server-side once per user per day per style, so it's fetched on demand
-  // rather than on every portfolio load — see /api/review in server.js.
-  const loadReview = useCallback(
-    async ({ force = false }: { force?: boolean } = {}) => {
-      setReviewLoading(true);
-      setReviewError(null);
-      try {
-        setReview(await post("/api/review", { style, force }));
-      } catch (caught) {
-        if (await handledExpiry(caught)) return;
-        setReviewError(caught instanceof Error ? caught.message : "تعذر تحليل الذكاء الاصطناعي");
-      } finally {
-        setReviewLoading(false);
-      }
-    },
-    [style, handledExpiry],
-  );
 
   const loadUniverse = useCallback(async () => {
     try {
@@ -425,10 +398,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     reloadPortfolio,
     reloadLog,
     refreshPrices,
-    review,
-    reviewLoading,
-    reviewError,
-    loadReview,
     detailCode,
     openDetail: setDetailCode,
     marketFocus,
