@@ -51,7 +51,7 @@ const SECTIONS = [
 
 export function ToolExplainer() {
   return (
-    <section className="border-t bg-surface">
+    <section id="how-it-works" className="scroll-mt-16 border-t bg-surface">
       <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
         <Badge variant="outline">شرح تفصيلي</Badge>
         <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">

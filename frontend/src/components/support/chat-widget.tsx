@@ -62,36 +62,42 @@ const TOPICS = [
     q: "الأداة بتشتغل إزاي؟",
     a: "EGXpert بيقرأ محفظتك الحقيقية وأسعار البورصة اللحظية، وبيحسب لكل سهم وقف خسارة وهدفين وتوصية يومية حسب أسلوبك في الاستثمار.",
     to: "/",
+    hash: "how-it-works",
     linkLabel: "الشرح التفصيلي",
   },
   {
     q: "إزاي أضيف أسهمي؟",
     a: 'من شاشة "الأسهم" تقدر تدخّل السهم يدويًا بالكمية ومتوسط سعر الشراء، أو ترفع لقطة شاشة من تطبيق السمسار وهي تتقرا تلقائيًا.',
     to: "/how-to-use",
+    hash: "start",
     linkLabel: "دليل الاستخدام",
   },
   {
     q: "يعني إيه وقف الخسارة والأهداف؟",
     a: "لكل سهم بنحسب سعر تخرج عنده لو السوق مشي ضدك (وقف الخسارة)، وهدفين للربح — محسوبين من حركة السهم نفسه ومن أسلوبك: مضارب، متوسط المدى، أو طويل المدى.",
     to: "/how-to-use",
+    hash: "recommendations",
     linkLabel: "دليل الاستخدام",
   },
   {
     q: "أستخدم التوصيات إزاي؟",
     a: 'على كل سهم في "الأسهم" توصية لليوم (احتفاظ، بيع جزئي، جني أرباح، خروج) ومعاها سطر "الأمر" بالكمية والسعر. نفّذه بأمر محدد من تطبيق السمسار، وبعدها سجّل الصفقة من "إدخال يدوي". ولو عايز رأي أعمق دوس "قولي توصية اليوم".',
     to: "/how-to-use",
+    hash: "recommendations",
     linkLabel: "دليل الاستخدام",
   },
   {
     q: "تحليل الكاش بيعمل إيه؟",
     a: 'من شاشة "الكاش" حدّث رصيدك ودوس "حلل استخدام الكاش" — هيقترح أسهم بعدد وسعر دخول وتكلفة لكل سهم، مع احتياطي، ورأي الذكاء الاصطناعي: تنشر الكاش دلوقتي، على دفعات، ولا تحتفظ بيه.',
     to: "/how-to-use",
+    hash: "cash-analysis",
     linkLabel: "دليل الاستخدام",
   },
   {
     q: "الأسعار كام؟",
     a: "شهري ١٤٩ جنيه، أو سنوي ١٥٩٩ جنيه — يعني بتوفّر ١٨٩ جنيه في السنة. والتجربة المجانية ٤ أيام تداول بكل المزايا وبدون بطاقة.",
     to: "/pricing",
+    hash: "",
     linkLabel: "صفحة الأسعار",
   },
 ] as const;
@@ -220,6 +226,17 @@ export function ChatWidget() {
     setMode("menu");
   };
 
+  // Expanding the folded previous conversation from the menu is a way back
+  // into it, so the composer shows there too and a reply sent from it simply
+  // resumes that thread instead of opening a new help request.
+  const replyingToPrevious = showPrevious && mode !== "human";
+  const resumePrevious = () => {
+    setBot([]);
+    setBranchAt(0);
+    setShowPrevious(false);
+    setMode("human");
+  };
+
   const send = async () => {
     const body = draft.trim();
     if (!body || sending) return;
@@ -228,13 +245,14 @@ export function ChatWidget() {
     try {
       // First message of a session (the whole thread, or since the last "new
       // topic") is flagged as a help request so the notification email says so.
-      const isFirstOfSession = messages.length === branchAt;
+      const isFirstOfSession = !replyingToPrevious && messages.length === branchAt;
       const { message } = await post("/api/support/messages", {
         body,
         intent: isFirstOfSession ? "help" : undefined,
       });
       setMessages((previous) => [...previous, message]);
       setDraft("");
+      if (replyingToPrevious) resumePrevious();
       if (isFirstOfSession) say("admin", "وصلتنا رسالتك — هنرد عليك في أقرب وقت.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر إرسال الرسالة");
@@ -258,13 +276,14 @@ export function ChatWidget() {
     setSending(true);
     setError(null);
     try {
-      const isFirstOfSession = messages.length === branchAt;
+      const isFirstOfSession = !replyingToPrevious && messages.length === branchAt;
       const { message } = await postRaw(
         `/api/support/messages/image${isFirstOfSession ? "?intent=help" : ""}`,
         file,
         file.type,
       );
       setMessages((previous) => [...previous, message]);
+      if (replyingToPrevious) resumePrevious();
       if (isFirstOfSession) say("admin", "وصلتنا صورتك — هنرد عليك في أقرب وقت.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "تعذر رفع الصورة");
@@ -401,7 +420,16 @@ export function ChatWidget() {
                       key={topic.q}
                       onClick={() => {
                         say("user", topic.q);
-                        say("admin", topic.a, <TopicLink to={topic.to} label={topic.linkLabel} />);
+                        say(
+                          "admin",
+                          topic.a,
+                          <TopicLink
+                            to={topic.to}
+                            hash={topic.hash}
+                            label={topic.linkLabel}
+                            onNavigate={() => setOpen(false)}
+                          />,
+                        );
                         setMode("human");
                       }}
                     >
@@ -421,7 +449,7 @@ export function ChatWidget() {
             </div>
           )}
 
-          {user && mode === "human" && (
+          {user && (mode === "human" || replyingToPrevious) && (
             <>
               {error && <p className="px-4 pb-2 text-[12px] text-down">{error}</p>}
 
@@ -458,7 +486,11 @@ export function ChatWidget() {
                     const file = [...event.clipboardData.files].find((f) => IMAGE_TYPES.includes(f.type));
                     if (file) void sendImage(file);
                   }}
-                  placeholder="اكتب رسالتك… أو الصق/ارفق صورة"
+                  placeholder={
+                    replyingToPrevious
+                      ? "رد على المحادثة السابقة…"
+                      : "اكتب رسالتك… أو الصق/ارفق صورة"
+                  }
                   rows={2}
                   className="min-h-0 resize-none text-[13px]"
                 />
@@ -544,10 +576,34 @@ function Choice({
   );
 }
 
-function TopicLink({ to, label }: { to: string; label: string }) {
+/**
+ * Closes the chat on click, since it covers most of the page on a phone. A
+ * link to the page the visitor is already on is a no-op for the router, so
+ * that case scrolls to the section itself instead of looking dead.
+ */
+function TopicLink({
+  to,
+  hash,
+  label,
+  onNavigate,
+}: {
+  to: string;
+  hash: string;
+  label: string;
+  onNavigate: () => void;
+}) {
   return (
     <Link
       to={to}
+      {...(hash ? { hash } : {})}
+      onClick={(event) => {
+        onNavigate();
+        if (window.location.pathname !== to) return;
+        event.preventDefault();
+        const target = hash ? document.getElementById(hash) : null;
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+        else window.scrollTo({ top: 0, behavior: "smooth" });
+      }}
       className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline"
     >
       {label}

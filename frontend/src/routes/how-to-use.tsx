@@ -238,7 +238,7 @@ function HowToUsePage() {
       </section>
 
       {/* Getting started */}
-      <section className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
+      <section id="start" className="mx-auto scroll-mt-20 w-full max-w-3xl px-4 py-14 sm:py-16">
         <h2 className="text-2xl font-bold tracking-tight">تبدأ إزاي</h2>
         <ol className="mt-8 space-y-4">
           {START_STEPS.map((step) => (
@@ -305,7 +305,7 @@ function HowToUsePage() {
       </section>
 
       {/* Recommendations */}
-      <section className="border-y bg-surface">
+      <section id="recommendations" className="scroll-mt-16 border-y bg-surface">
         <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
           <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
             <Sparkles className="size-5 text-primary" />
@@ -356,7 +356,7 @@ function HowToUsePage() {
       </section>
 
       {/* Cash analysis */}
-      <section className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
+      <section id="cash-analysis" className="mx-auto scroll-mt-20 w-full max-w-3xl px-4 py-14 sm:py-16">
         <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
           <Coins className="size-5 text-primary" />
           إزاي تستخدم تحليل الكاش
