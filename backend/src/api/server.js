@@ -2181,7 +2181,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
   if (!exempt && !withinCashScanSession(portfolio)) {
     return cashScansLeft(portfolio) <= 0
       ? res.status(429).json({ error: CASH_SCAN_LIMIT_MESSAGE, reason: 'cash_scan_limit', cashScansLeft: 0 })
-      : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب قراءة الذكاء الاصطناعي.' });
+      : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب مراجعة الخطة.' });
   }
 
   await startReviewJob(res, cashReviewJobKey(userId, pre.style, index), async () => {

@@ -152,7 +152,7 @@ export function MarketDialog() {
         while (!cancelled && res?.status === "running") {
           if (Date.now() > giveUpAt)
             throw new Error(
-              "قراءة الذكاء الاصطناعي أخدت وقت أطول من المتوقع — جرّب تاني بعد شوية.",
+              "مراجعة الكاش أخدت وقت أطول من المتوقع — جرّب تاني بعد شوية.",
             );
           await new Promise((resolve) => setTimeout(resolve, CASH_REVIEW_POLL_MS));
           if (cancelled) return;
@@ -167,7 +167,7 @@ export function MarketDialog() {
           await refreshUser();
           return;
         }
-        setReviewError(caught instanceof Error ? caught.message : "تعذرت قراءة الذكاء الاصطناعي");
+        setReviewError(caught instanceof Error ? caught.message : "تعذرت مراجعة الكاش");
       } finally {
         if (!cancelled) setReviewLoading(false);
       }
@@ -262,7 +262,7 @@ export function MarketDialog() {
               <div className="space-y-3 rounded-lg border bg-card p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Sparkles className="size-4 text-primary" aria-hidden />
-                  <span className="text-[13px] font-semibold">قراءة الذكاء الاصطناعي للخطة</span>
+                  <span className="text-[13px] font-semibold">مراجعة الكاش</span>
                   {stance && (
                     <Badge variant="outline" className={toneClass[stance.tone]}>
                       {stance.label}
@@ -276,7 +276,7 @@ export function MarketDialog() {
                     className="flex items-center gap-2 text-[12.5px] text-muted-foreground"
                   >
                     <Spinner />
-                    الذكاء الاصطناعي بيراجع الخطة وظروف السوق…
+                    جاري مراجعة الخطة وظروف السوق…
                   </p>
                 )}
 

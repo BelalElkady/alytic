@@ -399,8 +399,8 @@ async function requestStructuredORWithModel({
   console.error(`[ai] ${schemaName} failed after 3 attempts:`, lastError?.message);
   throw new Error(
     lastTruncated
-      ? 'رد الذكاء الاصطناعي طلع طويل أوي واتقطع قبل ما يكمل — جرّب تاني بعد شوية.'
-      : 'رد الذكاء الاصطناعي رجع بشكل مش مفهوم — جرّب تاني بعد شوية.',
+      ? 'التحليل طلع طويل أوي واتقطع قبل ما يكمل — جرّب تاني بعد شوية.'
+      : 'التحليل رجع بشكل مش مفهوم — جرّب تاني بعد شوية.',
   );
 }
 
