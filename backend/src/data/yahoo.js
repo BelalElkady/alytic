@@ -111,7 +111,8 @@ export async function fetchDaily(yahooSymbol, { range = '2y' } = {}) {
  * TAQA Arabia, Suez Cement, ENPPI). For those, and for symbols where Yahoo
  * serves a dead series, TradingView's chart feed is the fallback. A handful of
  * real EGX listings (e.g. AIHC) sit outside TradingView's EGX coverage too —
- * Mubasher's scraped stock-page CSV is the last resort for those.
+ * Mubasher's scraped stock-page CSV covers those, and StockAnalysis's scraped
+ * history page is the last resort when Mubasher blocks the server (403).
  *
  * @param {string} code - plain ticker, e.g. 'QNBE'
  * @param {object} [opts]
@@ -141,7 +142,12 @@ export async function fetchDailyAuto(code, { range = '2y', yahooSymbol = null, m
     try {
       return await fetchDailyMubasher(code);
     } catch (mbErr) {
-      throw new Error(`${tvErr.message}; mubasher: ${mbErr.message}`);
+      const { fetchDailyStockAnalysis } = await import('./stockanalysis.js');
+      try {
+        return await fetchDailyStockAnalysis(code);
+      } catch (saErr) {
+        throw new Error(`${tvErr.message}; mubasher: ${mbErr.message}; stockanalysis: ${saErr.message}`);
+      }
     }
   }
 }
