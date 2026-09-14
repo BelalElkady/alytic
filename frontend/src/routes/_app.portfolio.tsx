@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
 import {
@@ -95,8 +95,31 @@ const AI_ACTION_TONE: Record<string, string> = {
 // so a reload shows the cached verdict without another request.
 const todayKey = () => new Date().toDateString();
 const reviewStorageKey = (code: string) => `alytic-stock-review:${code}`;
-const REVIEW_POLL_MS = 5 * 1000;
+// Short on purpose: /api/review/status already holds each request open until
+// the job finishes (up to 15s), so this is only the gap between long-polls.
+const REVIEW_POLL_MS = 1000;
 const REVIEW_MAX_WAIT_MS = 15 * 60 * 1000;
+
+// Every stock review — a single card's click or the page's "all stocks" button —
+// takes one of these slots, so a whole book never hits the model (or a free
+// tier's rate limit) all at once. Each review is its own job, so the batch
+// still finishes in about the time of its slowest few stocks, not their sum.
+const REVIEW_CONCURRENCY = 3;
+let reviewSlotsInUse = 0;
+const reviewSlotWaiters: (() => void)[] = [];
+
+async function withReviewSlot<T>(run: () => Promise<T>): Promise<T> {
+  if (reviewSlotsInUse < REVIEW_CONCURRENCY) reviewSlotsInUse++;
+  else await new Promise<void>((resolve) => reviewSlotWaiters.push(resolve));
+  try {
+    return await run();
+  } finally {
+    // Hand the slot straight to the next waiter instead of releasing it.
+    const next = reviewSlotWaiters.shift();
+    if (next) next();
+    else reviewSlotsInUse--;
+  }
+}
 
 // For the daily cache, a trade on the position (e.g. acting on the verdict)
 // makes it stale, so it's only reused for the same day, style and position.
@@ -131,13 +154,16 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, life
       try {
         // Usually answered inline; a slow model call becomes a server-side
         // job that this polls, so no request outlives nginx's 180s timeout.
-        let result = await post("/api/review/stock", { code, style, force });
-        const giveUpAt = Date.now() + REVIEW_MAX_WAIT_MS;
-        while (result?.status === "running") {
-          if (Date.now() > giveUpAt) throw new Error("التحليل أخد وقت أطول من المتوقع — جرّب تاني بعد شوية.");
-          await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_MS));
-          result = await api(`/api/review/status?style=${style}&code=${encodeURIComponent(code)}`);
-        }
+        const result = await withReviewSlot(async () => {
+          let res = await post("/api/review/stock", { code, style, force });
+          const giveUpAt = Date.now() + REVIEW_MAX_WAIT_MS;
+          while (res?.status === "running") {
+            if (Date.now() > giveUpAt) throw new Error("التحليل أخد وقت أطول من المتوقع — جرّب تاني بعد شوية.");
+            await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_MS));
+            res = await api(`/api/review/status?style=${style}&code=${encodeURIComponent(code)}`);
+          }
+          return res;
+        });
         setVerdict(result.verdict);
         try {
           window.localStorage.setItem(
@@ -164,9 +190,44 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, life
 }
 
 function PositionsPage() {
-  const { rows, loading, error, reload, openDetail, pf } = useDesk();
+  const { rows, loading, error, reload, openDetail, pf, aiAvailable, user } = useDesk();
   const { style } = useActiveInvestStyle(pf?.trades);
   const nearStopPct = STYLE_RULES[style].nearStopPct;
+  const isAdmin = Boolean(user?.isAdmin);
+  const isTrial = !isAdmin && !user?.subscriptionActive;
+
+  // "All stocks" button: a batch is just every card without a verdict running
+  // its own per-stock review (queued through withReviewSlot). Only fills in
+  // missing verdicts — never regenerates one, not even for an admin.
+  const [batch, setBatch] = useState<{ id: number; codes: Set<string> }>({ id: 0, codes: new Set() });
+  const [batchPending, setBatchPending] = useState<Set<string>>(new Set());
+  const [batchConfirm, setBatchConfirm] = useState<string[] | null>(null);
+
+  const onBatchSettled = useCallback((code: string) => {
+    setBatchPending((prev) => {
+      if (!prev.has(code)) return prev;
+      const next = new Set(prev);
+      next.delete(code);
+      return next;
+    });
+  }, []);
+
+  const openBatchConfirm = () => {
+    const missing = rows
+      .filter((row) => !readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`, isTrial))
+      .map((row) => row.code);
+    if (missing.length === 0) {
+      toast.info("كل الأسهم عندها توصية بالفعل");
+      return;
+    }
+    setBatchConfirm(missing);
+  };
+
+  const startBatch = (codes: string[]) => {
+    setBatchConfirm(null);
+    setBatchPending(new Set(codes));
+    setBatch((prev) => ({ id: prev.id + 1, codes: new Set(codes) }));
+  };
 
   if (error) {
     return (
@@ -232,17 +293,69 @@ function PositionsPage() {
         )}
       </div>
 
+      {aiAvailable && rows.length > 1 && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {batchPending.size > 0 && (
+            <span className="text-[12px] text-muted-foreground">
+              باقي {int(batchPending.size)} من {int(batch.codes.size)} — كل كارت بيظهر أول ما يخلص
+            </span>
+          )}
+          <Button variant="outline" size="sm" disabled={batchPending.size > 0} onClick={openBatchConfirm}>
+            {batchPending.size > 0 && <Spinner />}
+            توصية اليوم لكل الأسهم
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         {rows.map((row) => (
-          <PositionCard key={row.code} row={row} onOpen={() => openDetail(row.code)} />
+          <PositionCard
+            key={row.code}
+            row={row}
+            onOpen={() => openDetail(row.code)}
+            batchId={batch.codes.has(row.code) ? batch.id : 0}
+            onBatchSettled={onBatchSettled}
+          />
         ))}
       </div>
+
+      <AlertDialog open={batchConfirm !== null} onOpenChange={(open) => !open && setBatchConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader className="text-start">
+            <AlertDialogTitle>
+              متأكد إنك عايز توصية اليوم لـ {int(batchConfirm?.length ?? 0)} سهم دلوقتي؟
+            </AlertDialogTitle>
+            <AlertDialogDescription className="leading-relaxed">
+              {`الأسهم اللي مالهاش توصية: ${batchConfirm?.join("، ") ?? ""}. `}
+              {isAdmin
+                ? "كل سهم فيهم هيتعمل له تحليل جديد بالذكاء الاصطناعي؛ الأسهم اللي عندها توصية مش هتتعاد."
+                : isTrial
+                  ? "دي هتستخدم توصيتك المجانية الوحيدة لكل سهم فيهم — مش هتتجدد تاني إلا بعد الاشتراك."
+                  : "هتستخدم توصية النهارده لكل سهم فيهم، والأزرار هتتقفل لحد بكرة."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:justify-start">
+            <AlertDialogAction onClick={() => batchConfirm && startBatch(batchConfirm)}>أيوة</AlertDialogAction>
+            <AlertDialogCancel>لسه</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
+function PositionCard({
+  row,
+  onOpen,
+  batchId,
+  onBatchSettled,
+}: {
+  row: Row;
+  onOpen: () => void;
+  /** Non-zero when this stock is part of a page batch; a new id starts a new run. */
+  batchId: number;
+  onBatchSettled: (code: string) => void;
+}) {
   const { reload, indices, pf, aiAvailable, user } = useDesk();
   const memberOf = indices[row.code] ?? [];
   const p = row.position;
@@ -266,6 +379,21 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
     isTrial,
   );
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
+
+  // Run this card's review once per page batch it's part of. Already has a
+  // verdict, or a single-card request is already running: nothing to add, so
+  // it counts as settled straight away.
+  const handledBatchId = useRef(0);
+  useEffect(() => {
+    if (!batchId || handledBatchId.current === batchId) return;
+    handledBatchId.current = batchId;
+    if (verdict || reviewLoading) {
+      onBatchSettled(row.code);
+      return;
+    }
+    void requestReview(false).finally(() => onBatchSettled(row.code));
+  }, [batchId, verdict, reviewLoading, requestReview, onBatchSettled, row.code]);
+
   // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
   // over the badge and recommendation box when one has been fetched for this
   // stock; the mechanical rec above stays the fallback (and still drives
@@ -452,15 +580,18 @@ function PositionCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
             </span>
           )}
           <Button
-            variant="outline"
+            // Filled while a recommendation is still on offer, so it stands out
+            // on the card; once used it drops back to the quiet outline style.
+            variant={verdict ? "outline" : "default"}
             size="sm"
+            className={cn(!verdict && "font-semibold shadow-sm")}
             disabled={reviewLoading || (Boolean(verdict) && !isAdmin)}
             onClick={(e) => {
               e.stopPropagation();
               setConfirmReviewOpen(true);
             }}
           >
-            {reviewLoading && <Spinner />}
+            {reviewLoading ? <Spinner /> : !verdict && <Sparkles className="size-4" />}
             {verdict && isAdmin ? "توصية جديدة" : "قولي توصية اليوم"}
           </Button>
         </div>
