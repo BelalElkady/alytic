@@ -1125,6 +1125,27 @@ app.get('/api/scan', wrap(async (req, res) => {
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
 
+  const { payload } = await runScan(portfolio, {
+    codes,
+    style,
+    force: req.query.force === '1',
+    focus: req.query.focus,
+    cashScansLeftNow,
+  });
+  res.json(payload);
+}));
+
+/**
+ * The scan itself — engine analysis, sector-aware sizing and the cash plan —
+ * without the HTTP layer, so the AI cash review (/api/review/cash) judges
+ * exactly the plan the dialog shows. Returns the response payload plus the
+ * full analyses its compact rows were cut from.
+ */
+async function runScan(portfolio, { codes, style, force = false, focus = null, cashScansLeftNow = null }) {
+  // A cash plan has to see the whole book, even holdings outside the index
+  // being browsed: the sector limits it sizes against and the AI cash review
+  // both depend on every position, not just the ones in that index.
+  if (focus === 'cash') codes = [...new Set([...codes, ...Object.keys(portfolio.positions)])];
   // A style changes which rule numbers the engine sizes and gates setups
   // with — same deterministic engine, different risk/reward and sizing
   // inputs, exactly like every other `rules` param it already accepts.
@@ -1134,7 +1155,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     capital,
     positions: portfolio.positions,
     concurrency: 5,
-    force: req.query.force === '1',
+    force,
     rules,
   });
   const latestQuotes = await fetchLatestQuotes(results.map((result) => result.code));
@@ -1248,7 +1269,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     }
   }
   let investedTotal = 0;
-  res.json({
+  const payload = {
     asOf: results[0]?.asOf ?? null,
     count: results.length,
     cash: portfolio.cash,
@@ -1324,7 +1345,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     });
     }),
     actionableCodes: actionable.map((r) => r.code),
-    focus: req.query.focus ?? 'market',
+    focus: focus ?? 'market',
     style: style ?? 'medium',
     cashPlan: {
       selectedCodes: [...selectedCodes],
@@ -1334,8 +1355,9 @@ app.get('/api/scan', wrap(async (req, res) => {
       unallocatedCash: +(investableCash - investedTotal).toFixed(2),
     },
     errors,
-  });
-}));
+  };
+  return { payload, results, rules, capital };
+}
 
 // ---- Portfolio -------------------------------------------------------------
 
@@ -2028,20 +2050,79 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   });
 }));
 
-app.get('/api/review/status', wrap(async (req, res) => {
-  const code = req.query.code ? String(req.query.code).toUpperCase() : null;
-  const key = reviewJobKey(req.user.id, req.query.style, code);
+// The AI read on the cash plan (see agent/cashAnalysis.js) — the market dialog
+// asks for it right after its own focus=cash scan loads, for the same index
+// and style. Its job key has its own `cash:` namespace so it never collides
+// with a stock review's.
+function cashReviewJobKey(userId, style, index) {
+  return `${userId}:cash:${style ?? 'medium'}:${index}`;
+}
+
+app.post('/api/review/cash', wrap(async (req, res) => {
+  const pre = reviewPreflight(req, res);
+  if (!pre) return;
+  const index = String(req.body?.index ?? 'ALL').toUpperCase();
+  const indexCodes = index === 'ALL' ? ALL_CODES : await codesForIndex(index);
+  if (!indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${index}` });
+
+  const userId = req.user.id;
+  const portfolio = await loadPortfolio(userId);
+  if (!(portfolio.cash > 0)) return res.status(400).json({ error: 'مفيش كاش متاح يتحلل.' });
+
+  // A free-trial account's AI review rides on a cash-scan use it already
+  // spent: it's only answered while that use's session is open, so it can
+  // never become a way around CASH_SCAN_TRIAL_LIMIT.
+  const exempt = Boolean(req.user.isAdmin) || userId === 'local' || Boolean(req.access?.subscriptionActive);
+  if (!exempt && !withinCashScanSession(portfolio)) {
+    return cashScansLeft(portfolio) <= 0
+      ? res.status(429).json({ error: CASH_SCAN_LIMIT_MESSAGE, reason: 'cash_scan_limit', cashScansLeft: 0 })
+      : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب قراءة الذكاء الاصطناعي.' });
+  }
+
+  await startReviewJob(res, cashReviewJobKey(userId, pre.style, index), async () => {
+    const startedAt = Date.now();
+    const { getOrGenerateCashReview } = await import('../agent/cashAnalysis.js');
+    const { review, source } = await getOrGenerateCashReview(portfolio, {
+      userId,
+      style: pre.style ?? 'medium',
+      // Whether that style came from the investor's own trade history or a
+      // manual pick (useActiveInvestStyle) — the review flags a mismatch
+      // between the picked style and actual behavior.
+      styleAuto: req.body?.styleAuto === true,
+      index,
+      rules: pre.style ? rulesForStyle(RULES, pre.style) : RULES,
+      force: pre.force,
+      runScan: () => runScan(portfolio, { codes: indexCodes, style: pre.style, focus: 'cash' }),
+    });
+    console.log(`[review] cash ${index} ${source} in ${Date.now() - startedAt}ms`);
+    return { review, source, index };
+  });
+}));
+
+app.get('/api/review/cash/status', wrap(async (req, res) => {
+  const index = String(req.query.index ?? 'ALL').toUpperCase();
+  await sendJobStatus(res, cashReviewJobKey(req.user.id, req.query.style, index));
+}));
+
+/**
+ * Long-poll: hold the request until the job settles (or a short cap), so the
+ * client hears about a finished review immediately instead of on its next tick.
+ */
+async function sendJobStatus(res, key) {
   const job = reviewJobs.get(key);
   if (!job) {
     return res.status(404).json({ error: 'التحليل اتقطع (غالبًا السيرفر اتعمل له ريستارت) — جرّب تاني.' });
   }
-  // Long-poll: hold the request until the job settles (or a short cap), so the
-  // client hears about a finished verdict immediately instead of on its next tick.
   if (job.status === 'running') {
     await Promise.race([job.promise, new Promise((r) => setTimeout(r, REVIEW_STATUS_WAIT_MS))]);
   }
   sendReviewJob(res, job);
   if (job.status === 'error') reviewJobs.delete(key);
+}
+
+app.get('/api/review/status', wrap(async (req, res) => {
+  const code = req.query.code ? String(req.query.code).toUpperCase() : null;
+  await sendJobStatus(res, reviewJobKey(req.user.id, req.query.style, code));
 }));
 
 app.get('/api/market-analysis', wrap(async (req, res) => {

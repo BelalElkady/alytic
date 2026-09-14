@@ -321,9 +321,10 @@ export function briefFor(a) {
 /**
  * The book-level facts every review needs — cash, capital, weights, sectors,
  * health score, classification mix — computed here so the analyst judges them
- * rather than derives them. Shared by the full and single-stock reviews.
+ * rather than derives them. Shared by the full and single-stock reviews and
+ * the cash review (cashAnalysis.js).
  */
-function portfolioContext(analyses, ctx, rules) {
+export function portfolioContext(analyses, ctx, rules) {
   const held = analyses.filter((a) => a.position);
   const totalPositionValue = held.reduce((sum, a) => sum + (a.position?.marketValue ?? 0), 0);
   const cash = ctx.cash ?? 0;

@@ -271,6 +271,82 @@ export const MarketReframeSchema = z.object({
   topPriority: z.string().describe('In Egyptian Arabic — the single most important thing for this horizon\'s reader today, one sentence'),
 });
 
+export const CASH_STANCES = [
+  'deploy_now',       // the setups are ready — place the plan's orders now
+  'deploy_gradually', // deploy in tranches over the coming sessions
+  'hold_cash',        // nothing here is worth the money today
+];
+
+export const CASH_PICK_ACTIONS = [
+  'buy_now',          // place the engine's limit order as given
+  'buy_on_pullback',  // worth owning, but wait for a better price before filling
+  'wait',             // not yet — a condition has to be met first
+  'skip',             // leave this one out of the deployment
+];
+
+/**
+ * The AI's review of one user's engine-built cash plan (/api/scan?focus=cash).
+ * Judgement only: which stocks, share counts, entries, stops and amounts are
+ * all the engine's and are rendered from the scan payload, never from here.
+ * See cashAnalysis.js.
+ */
+export const CashPlanReviewSchema = z.object({
+  stance: z.enum(CASH_STANCES).describe('The overall call on deploying this cash today'),
+  headline: z.string().describe('One short sentence in Egyptian Arabic: the overall call on this cash today'),
+
+  marketRead: z
+    .string()
+    .describe('In Egyptian Arabic — 2-3 sentences on whether today\'s market regime favors deploying cash, based on the context given to you'),
+
+  portfolioRead: z
+    .string()
+    .describe(
+      'In Egyptian Arabic — 2-3 sentences on the investor\'s current portfolio as it bears on this cash: concentration, ' +
+        'sector exposure, and any existing holding that needs attention before new money goes in. Grounded in the portfolio numbers given to you.',
+    ),
+
+  behaviorRead: z
+    .string()
+    .describe(
+      'In Egyptian Arabic — 2-3 sentences on what this investor\'s own trading record shows (holding periods, win rate, averaging down, ' +
+        'ticket size, usual cash level) and how that shaped this advice. If there is no trade history, say so in one sentence.',
+    ),
+
+  deploymentPlan: z
+    .string()
+    .describe(
+      'In Egyptian Arabic — how to actually carry the plan out: which orders first, in how many tranches and over what period, ' +
+        'and what to wait for before each later tranche. 2-4 sentences, quoting only amounts and prices given to you.',
+    ),
+
+  picks: z
+    .array(
+      z.object({
+        code: z.string().describe('EGX ticker — exactly one of the codes in the engine plan, never any other'),
+        action: z.enum(CASH_PICK_ACTIONS),
+        conviction: z.enum(CONVICTION),
+        comment: z
+          .string()
+          .describe('In Egyptian Arabic — 1-2 sentences: why this action, naming the strongest supporting and opposing signal from the brief'),
+        portfolioFit: z
+          .string()
+          .describe('In Egyptian Arabic — one short sentence: how this pick fits this investor\'s current holdings and their own trading habits'),
+        watchFor: z
+          .string()
+          .describe('In Egyptian Arabic — one short sentence: the level or event that would change this call'),
+      }),
+    )
+    .describe('One entry per stock in the engine plan, in the same order — no more, no fewer'),
+
+  reserveAdvice: z
+    .string()
+    .describe('In Egyptian Arabic — one or two sentences on the reserve and any cash the plan leaves unallocated: keep it, or what would justify using it'),
+
+  risks: z.array(z.string()).describe('In Egyptian Arabic — at most 4 concrete risks to this deployment: concentration, liquidity, market regime'),
+
+  topPriority: z.string().describe('In Egyptian Arabic — the single most important thing to do with this cash next session, one sentence'),
+});
+
 /** Fundamentals gathered from the web for one company. */
 export const FundamentalsSchema = z.object({
   code: z.string(),

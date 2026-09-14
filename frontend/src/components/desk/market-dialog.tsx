@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { Sparkles } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { ErrorState, LoadingBlock, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { api } from "@/lib/api";
+import { ApiError, api, post } from "@/lib/api";
 import { fmt, int, pct } from "@/lib/format";
 import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
@@ -38,13 +40,67 @@ const toneClass: Record<string, string> = {
   avoid: "border-border bg-surface text-muted-foreground",
 };
 
+/** backend/src/agent/schemas.js CashPlanReviewSchema — judgement only, every number stays the scan's. */
+type CashPick = {
+  code: string;
+  action: string;
+  conviction: string;
+  comment: string;
+  // Absent on a review cached before these fields existed.
+  portfolioFit?: string;
+  watchFor: string;
+};
+/** backend/src/scoring/behavior.js behaviorProfile — the subset shown here. */
+type BehaviorStats = {
+  tradesCount: number;
+  sells: number;
+  avgHoldDays: number | null;
+  winRatePct: number | null;
+  averagingDownBuys: number;
+  avgCashPct: number | null;
+};
+type CashReview = {
+  stance: string;
+  headline: string;
+  marketRead: string;
+  portfolioRead?: string;
+  behaviorRead?: string;
+  deploymentPlan: string;
+  picks: CashPick[];
+  reserveAdvice: string;
+  risks: string[];
+  topPriority: string;
+  _meta?: { behavior?: BehaviorStats };
+};
+
+const STANCE: Record<string, { label: string; tone: string }> = {
+  deploy_now: { label: "انشر الكاش دلوقتي", tone: "buy" },
+  deploy_gradually: { label: "انشر على دفعات", tone: "wait" },
+  hold_cash: { label: "احتفظ بالكاش", tone: "avoid" },
+};
+const PICK_ACTION: Record<string, { label: string; tone: string }> = {
+  buy_now: { label: "اشتري دلوقتي", tone: "buy" },
+  buy_on_pullback: { label: "اشتري على تصحيح", tone: "wait" },
+  wait: { label: "استنى", tone: "wait" },
+  skip: { label: "سيبه", tone: "avoid" },
+};
+
+// Same cadence as the per-stock review on the portfolio page: the status
+// endpoint already long-polls, so this is only the gap between requests.
+const CASH_REVIEW_POLL_MS = 1000;
+const CASH_REVIEW_MAX_WAIT_MS = 10 * 60 * 1000;
+
 /** Market / cash-allocation scan, same /api/scan payload as before. */
 export function MarketDialog() {
-  const { marketFocus, openMarket, pf, reloadPortfolio } = useDesk();
+  const { marketFocus, openMarket, pf, reloadPortfolio, aiAvailable, refreshUser } = useDesk();
   const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState("ALL");
   const { style, auto } = useActiveInvestStyle(pf?.trades);
+  const [review, setReview] = useState<CashReview | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewAttempt, setReviewAttempt] = useState(0);
 
   useEffect(() => {
     if (!marketFocus) return;
@@ -74,7 +130,58 @@ export function MarketDialog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marketFocus, index, style]);
 
+  // The AI read on the plan, asked only once this scan has loaded — the scan
+  // is what opens (or joins) the trial's cash-scan use the review rides on.
+  // Cached server-side per day, portfolio, style and index, so reopening the
+  // dialog on an unchanged book doesn't ask the model again.
+  const cashToReview =
+    marketFocus === "cash" && aiAvailable && Boolean(data) && (data.cash ?? 0) > 0;
+  useEffect(() => {
+    setReview(null);
+    setReviewError(null);
+    if (!cashToReview) {
+      setReviewLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setReviewLoading(true);
+    (async () => {
+      try {
+        let res = await post("/api/review/cash", { style, styleAuto: auto, index });
+        const giveUpAt = Date.now() + CASH_REVIEW_MAX_WAIT_MS;
+        while (!cancelled && res?.status === "running") {
+          if (Date.now() > giveUpAt)
+            throw new Error(
+              "قراءة الذكاء الاصطناعي أخدت وقت أطول من المتوقع — جرّب تاني بعد شوية.",
+            );
+          await new Promise((resolve) => setTimeout(resolve, CASH_REVIEW_POLL_MS));
+          if (cancelled) return;
+          res = await api(
+            `/api/review/cash/status?style=${style}&index=${encodeURIComponent(index)}`,
+          );
+        }
+        if (!cancelled) setReview(res?.review ?? null);
+      } catch (caught) {
+        if (cancelled) return;
+        if (caught instanceof ApiError && caught.status === 402) {
+          await refreshUser();
+          return;
+        }
+        setReviewError(caught instanceof Error ? caught.message : "تعذرت قراءة الذكاء الاصطناعي");
+      } finally {
+        if (!cancelled) setReviewLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `data` changes once per finished scan, which is exactly when to ask.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, cashToReview, reviewAttempt]);
+
   const isCash = marketFocus === "cash";
+  const pickByCode = new Map((review?.picks ?? []).map((pick) => [pick.code, pick]));
+  const stance = review ? STANCE[review.stance] : undefined;
   const rows = [...(data?.results ?? [])].sort(
     (a: ScanRow, b: ScanRow) =>
       (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
@@ -150,6 +257,78 @@ export function MarketDialog() {
               </span>
               <span className="text-muted-foreground">آخر تحديث: {data.asOf ?? "—"}</span>
             </div>
+
+            {cashToReview && (
+              <div className="space-y-3 rounded-lg border bg-card p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Sparkles className="size-4 text-primary" aria-hidden />
+                  <span className="text-[13px] font-semibold">قراءة الذكاء الاصطناعي للخطة</span>
+                  {stance && (
+                    <Badge variant="outline" className={toneClass[stance.tone]}>
+                      {stance.label}
+                    </Badge>
+                  )}
+                </div>
+
+                {reviewLoading && (
+                  <p
+                    role="status"
+                    className="flex items-center gap-2 text-[12.5px] text-muted-foreground"
+                  >
+                    <Spinner />
+                    الذكاء الاصطناعي بيراجع الخطة وظروف السوق…
+                  </p>
+                )}
+
+                {reviewError && (
+                  <Notice tone="warn">
+                    {reviewError}{" "}
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0"
+                      onClick={() => setReviewAttempt((n) => n + 1)}
+                    >
+                      جرّب تاني
+                    </Button>
+                  </Notice>
+                )}
+
+                {review && (
+                  <div className="space-y-3 text-[13px] leading-relaxed">
+                    <p className="font-medium">{review.headline}</p>
+                    <p className="text-muted-foreground">{review.marketRead}</p>
+                    {review.portfolioRead && (
+                      <ReviewSection title="محفظتك الحالية">{review.portfolioRead}</ReviewSection>
+                    )}
+                    {review.behaviorRead && (
+                      <ReviewSection title="أسلوبك في التداول">
+                        {review._meta?.behavior && review._meta.behavior.tradesCount > 0 && (
+                          <BehaviorStrip stats={review._meta.behavior} />
+                        )}
+                        {review.behaviorRead}
+                      </ReviewSection>
+                    )}
+                    <ReviewSection title="إزاي تنفّذ">{review.deploymentPlan}</ReviewSection>
+                    <ReviewSection title="الاحتياطي والكاش المتبقي">
+                      {review.reserveAdvice}
+                    </ReviewSection>
+                    {review.risks?.length > 0 && (
+                      <ReviewSection title="مخاطر">
+                        <ul className="list-disc space-y-0.5 ps-5">
+                          {review.risks.map((risk) => (
+                            <li key={risk}>{risk}</li>
+                          ))}
+                        </ul>
+                      </ReviewSection>
+                    )}
+                    <Notice tone="info">
+                      <b>الأولوية:</b> {review.topPriority}
+                    </Notice>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="space-y-3">
               {shown.map((row: ScanRow) => {
@@ -229,6 +408,31 @@ export function MarketDialog() {
                         )}
                       </Notice>
                     )}
+
+                    {isCash &&
+                      (() => {
+                        const pick = pickByCode.get(row.code);
+                        const pickAction = pick && PICK_ACTION[pick.action];
+                        return pick && pickAction ? (
+                          <div className="mt-3 rounded-md border bg-surface px-3 py-2 text-[12.5px] leading-relaxed">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Sparkles className="size-3.5 text-primary" aria-hidden />
+                              <Badge variant="outline" className={toneClass[pickAction.tone]}>
+                                {pickAction.label}
+                              </Badge>
+                              <span className="text-muted-foreground">ثقة {pick.conviction}</span>
+                            </div>
+                            <p className="mt-1.5">{pick.comment}</p>
+                            {pick.portfolioFit && (
+                              <p className="mt-1">
+                                <span className="text-muted-foreground">مع محفظتك: </span>
+                                {pick.portfolioFit}
+                              </p>
+                            )}
+                            <p className="mt-1 text-muted-foreground">راقب: {pick.watchFor}</p>
+                          </div>
+                        ) : null;
+                      })()}
                   </div>
                 );
               })}
@@ -241,6 +445,38 @@ export function MarketDialog() {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The engine-computed figures behind the AI's behavior read, so the prose can be checked against them. */
+function BehaviorStrip({ stats }: { stats: BehaviorStats }) {
+  const items = [
+    { label: "صفقات", value: int(stats.tradesCount) },
+    stats.winRatePct != null && { label: "نسبة الربح", value: `${fmt(stats.winRatePct, 0)}%` },
+    stats.avgHoldDays != null && {
+      label: "متوسط الاحتفاظ",
+      value: `${fmt(stats.avgHoldDays, 0)} يوم`,
+    },
+    { label: "تبريد على خسارة", value: int(stats.averagingDownBuys) },
+    stats.avgCashPct != null && { label: "كاشك المعتاد", value: `${fmt(stats.avgCashPct, 0)}%` },
+  ].filter(Boolean) as { label: string; value: string }[];
+  return (
+    <div className="mb-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+      {items.map((item) => (
+        <span key={item.label} className="text-muted-foreground">
+          {item.label}: <b className="num text-foreground">{item.value}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ReviewSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="mb-0.5 text-[12px] font-semibold text-muted-foreground">{title}</div>
+      <div>{children}</div>
+    </div>
   );
 }
 
