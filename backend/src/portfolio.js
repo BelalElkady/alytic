@@ -21,7 +21,8 @@ const EMPTY = {
   // One entry per saved close, keyed YYYY-MM-DD. This is what the calendar and
   // the equity curve read — without it the app can show today but has no
   // memory, so "how did the book do this month" is unanswerable.
-  log: {},         // date -> { total, positionsValue, cash, dayChange, pl, prices, stops, note, changes }
+  log: {},         // date -> { total, positionsValue, cash, cashFlow, dayChange, pl, prices, stops, note, changes, savedAt }
+  cashFlows: [],   // { at, amount, source } — money moved in or out other than by the market; see recordCashFlow
   settings: { commissionPct: 0.20 },
   realizedPnl: 0,
   updatedAt: null,
@@ -269,6 +270,35 @@ export function editTrade(portfolio, index, next, rules = RULES) {
   return { ...portfolio, trades, positions, cash: +cash.toFixed(2), realizedPnl: +realizedPnl.toFixed(2) };
 }
 
+/**
+ * Note value that entered (+) or left (−) the book without the market moving
+ * it: cash set by hand or read off a screenshot, or shares that appear or
+ * disappear through an import or a holding fix. The daily close subtracts
+ * these from the change in total, so a 50,000 deposit on a flat day doesn't
+ * show as a 50,000 gain. Trades aren't flows — they swap cash for shares.
+ */
+export function recordCashFlow(portfolio, amount, source, at = new Date()) {
+  if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) return portfolio;
+  const flow = { at: at.toISOString(), amount: +amount.toFixed(2), source };
+  return { ...portfolio, cashFlows: [...(portfolio.cashFlows ?? []), flow].slice(-500) };
+}
+
+/**
+ * Market value of the shares that differ between two position maps, valued at
+ * one set of prices (falling back to average cost where there's no price) —
+ * the flow to record when positions are replaced or corrected by hand.
+ */
+export function positionsFlow(before, after, prices) {
+  let flow = 0;
+  for (const code of new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])) {
+    const delta = (after?.[code]?.shares ?? 0) - (before?.[code]?.shares ?? 0);
+    if (!delta) continue;
+    const price = prices.get(code) ?? after?.[code]?.avgCost ?? before?.[code]?.avgCost ?? 0;
+    flow += delta * price;
+  }
+  return flow;
+}
+
 /** Update the stored stop/target for a position (e.g. after a trailing-stop move). */
 export function setLevels(portfolio, code, { stop, target }) {
   const c = code.toUpperCase();
@@ -308,10 +338,12 @@ export function portfolioHash(portfolio) {
  * `dayChange` is measured against the previous *saved* entry rather than
  * against yesterday's calendar date — the market is shut two days a week and
  * the app may not be opened daily, so consecutive log entries are the only
- * honest baseline.
+ * honest baseline. Cash flows recorded after that entry was saved are taken
+ * out, so only what the market did remains.
  */
-export function recordSnapshot(portfolio, analyses, date = null) {
-  const day = date ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+export function recordSnapshot(portfolio, analyses, date = null, now = new Date()) {
+  const day = date ?? now.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  const savedAt = now.toISOString();
   const held = analyses.filter((a) => a.usable && a.position);
 
   const prices = {};
@@ -337,23 +369,36 @@ export function recordSnapshot(portfolio, analyses, date = null) {
   const prior = Object.keys(portfolio.log ?? {}).sort().filter((d) => d < day).pop();
   const priorTotal = prior ? portfolio.log[prior].total : null;
 
+  // The prior total already includes every flow made before it was saved.
+  // Entries from before flows were tracked have no savedAt, and every flow
+  // postdates them.
+  const priorSavedAt = prior ? portfolio.log[prior].savedAt : null;
+  const flows = prior
+    ? (portfolio.cashFlows ?? []).filter((f) => (!priorSavedAt || f.at > priorSavedAt) && f.at <= savedAt)
+    : [];
+  const cashFlow = flows.reduce((sum, f) => sum + f.amount, 0);
+  const inflow = flows.reduce((sum, f) => sum + Math.max(f.amount, 0), 0);
+
   // No saved entry to diff against yet (first-ever snapshot, or a gap before
   // it) — fall back to today's real exchange move instead of reporting a
   // flat 0%, using each holding's own close-to-close change from the synced
-  // daily bars.
+  // daily bars. marketValue is today's value, so a +pct move on it was
+  // earned on marketValue / (1 + pct/100).
   const dayChange = priorTotal != null
-    ? total - priorTotal
+    ? total - priorTotal - cashFlow
     : held.reduce((sum, a) => {
         const changePct = a.snapshot.price.changePct;
-        return changePct == null ? sum : sum + a.position.marketValue * (changePct / 100);
+        return changePct == null || changePct <= -100 ? sum : sum + a.position.marketValue * (changePct / (100 + changePct));
       }, 0);
-  const priorEffective = priorTotal ?? total - dayChange;
+  // New money counts as capital at work for the day's percentage.
+  const priorEffective = priorTotal != null ? priorTotal + inflow : total - dayChange;
 
   const entry = {
     date: day,
     total: +total.toFixed(2),
     positionsValue: +positionsValue.toFixed(2),
     cash: portfolio.cash,
+    cashFlow: +cashFlow.toFixed(2),
     pl: +pl.toFixed(2),
     dayChange: +dayChange.toFixed(2),
     dayChangePct: priorEffective ? +((dayChange / priorEffective) * 100).toFixed(2) : 0,
@@ -362,6 +407,7 @@ export function recordSnapshot(portfolio, analyses, date = null) {
     recs,
     changes,
     note: portfolio.log?.[day]?.note ?? null, // never clobber a note already written
+    savedAt,
   };
 
   return { ...portfolio, log: { ...(portfolio.log ?? {}), [day]: entry } };

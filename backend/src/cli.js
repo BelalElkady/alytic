@@ -18,7 +18,7 @@
 import './loadEnv.js';
 import { analyzeTicker, analyzeMany } from './analyze.js';
 import { ALL_CODES, lookup } from './config/universe.js';
-import { loadPortfolio, savePortfolio, recordTrade, trackedCodes } from './portfolio.js';
+import { loadPortfolio, savePortfolio, recordTrade, trackedCodes, recordCashFlow } from './portfolio.js';
 import { aiAvailable } from './agent/clientOpenRouter.js';
 import RULES from './config/rules.js';
 import { DEFAULT_STYLE, STYLE_KEYS, rulesForStyle, styleProfile } from './config/styles.js';
@@ -273,7 +273,7 @@ async function cmdCash(amount) {
     console.log(`\nالكاش المتاح: ${portfolio.cash.toLocaleString('en-US')} ج\n`);
     return;
   }
-  await savePortfolio({ ...portfolio, cash: +amount });
+  await savePortfolio(recordCashFlow({ ...portfolio, cash: +amount }, +amount - (portfolio.cash ?? 0), 'cash'));
   console.log(c.green(`\nالكاش اتحدّث لـ ${(+amount).toLocaleString('en-US')} ج\n`));
 }
 

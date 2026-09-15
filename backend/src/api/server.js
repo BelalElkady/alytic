@@ -25,7 +25,7 @@ import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
-import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -1500,9 +1500,26 @@ app.post('/api/portfolio/trades/:index/delete', wrap(async (req, res) => {
 app.post('/api/portfolio/cash', wrap(async (req, res) => {
   const amount = Number(req.body?.cash);
   if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'مبلغ غير صالح' });
-  const updated = await withPortfolio(req.user.id, (portfolio) => ({ ...portfolio, cash: amount }));
+  const updated = await withPortfolio(req.user.id, (portfolio) =>
+    recordCashFlow({ ...portfolio, cash: amount }, amount - (portfolio.cash ?? 0), 'cash'),
+  );
   res.json(updated);
 }));
+
+/**
+ * Live price per code, falling back to the last synced close — what shares
+ * added or removed by hand are worth, for the cash-flow record.
+ */
+async function currentPrices(codes) {
+  const prices = new Map();
+  if (!codes.length) return prices;
+  const live = await fetchLatestQuotes(codes).catch(() => new Map());
+  for (const code of codes) {
+    const price = live.get(code)?.price ?? (await readBars(code).catch(() => null))?.bars?.at(-1)?.c;
+    if (price > 0) prices.set(code, price);
+  }
+  return prices;
+}
 
 app.post('/api/portfolio/levels', wrap(async (req, res) => {
   const { code, stop, target } = req.body ?? {};
@@ -1535,6 +1552,8 @@ app.post('/api/portfolio/holding', wrap(async (req, res) => {
     return res.status(400).json({ error: 'متوسط الشراء لازم يكون أكبر من صفر' });
   }
 
+  // Fetched outside the lock; only a share-count change moves the book's value.
+  const prices = nextShares != null ? await currentPrices([c]) : new Map();
   const updated = await withPortfolio(req.user.id, (portfolio) => {
     const existing = portfolio.positions[c];
     if (!existing) throw new Error(`مفيش مركز مفتوح في ${c}`);
@@ -1543,16 +1562,15 @@ app.post('/api/portfolio/holding', wrap(async (req, res) => {
     // Zero shares means the position is closed out entirely.
     if (nextShares === 0) {
       delete positions[c];
-      return { ...portfolio, positions };
+    } else {
+      const { derivedFromScreenshot, reportedValue, reportedPnl, ...rest } = existing;
+      positions[c] = {
+        ...rest,
+        shares: nextShares ?? existing.shares,
+        avgCost: nextAvgCost ?? existing.avgCost,
+      };
     }
-
-    const { derivedFromScreenshot, reportedValue, reportedPnl, ...rest } = existing;
-    positions[c] = {
-      ...rest,
-      shares: nextShares ?? existing.shares,
-      avgCost: nextAvgCost ?? existing.avgCost,
-    };
-    return { ...portfolio, positions };
+    return recordCashFlow({ ...portfolio, positions }, positionsFlow(portfolio.positions, positions, prices), 'holding');
   });
   res.json(updated);
 }));
@@ -1602,7 +1620,31 @@ async function snapshotForUser(userId, date = null) {
         },
       };
     });
-    return recordSnapshot(portfolio, withLivePrices, date);
+    // A holding whose analysis failed (fetch error, quality gate) or has no
+    // cost basis would otherwise drop out of the total — a phantom loss that
+    // day and a phantom gain the next. Value it at the live quote, else its
+    // last saved price; with neither, save nothing rather than a short total.
+    const priced = new Set(withLivePrices.filter((r) => r.usable && r.position).map((r) => r.code));
+    const days = Object.keys(portfolio.log ?? {}).sort().reverse();
+    const fallback = codes.filter((code) => !priced.has(code)).map((code) => {
+      const pos = portfolio.positions[code];
+      const lastSaved = days.map((d) => portfolio.log[d].prices?.[code]).find((p) => p > 0);
+      const price = live.get(code)?.price ?? lastSaved;
+      if (!(price > 0)) throw new Error(`مفيش سعر متاح لـ ${code} — إغلاق اليوم متسجلش عشان الإجمالي ميطلعش ناقص.`);
+      return {
+        code,
+        usable: true,
+        snapshot: { price: { close: price, changePct: live.get(code)?.changePct ?? null } },
+        position: {
+          shares: pos.shares,
+          avgCost: pos.avgCost,
+          stop: pos.stop ?? null,
+          marketValue: +(pos.shares * price).toFixed(2),
+          unrealizedEgp: +(pos.shares * (price - pos.avgCost)).toFixed(2),
+        },
+      };
+    });
+    return recordSnapshot(portfolio, [...withLivePrices, ...fallback], date);
   });
 }
 
@@ -1773,6 +1815,8 @@ app.post('/api/log/backfill', wrap(async (req, res) => {
         changes: [],
         note: log[date]?.note ?? null,
         reconstructed: true,
+        // Valued with today's cash and shares, so every earlier flow is in it.
+        savedAt: new Date().toISOString(),
       };
       priorTotal = total;
       added++;
@@ -2048,6 +2092,11 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   const merge = req.query.merge === '1';
   const importedAt = new Date().toISOString();
   const cashFromScreenshot = numberFromScreenshot(extracted.cash);
+  // Prices for every code the import can add or remove, to record the value it
+  // moves as a cash flow — fetched here, outside the lock.
+  const importPrices = await currentPrices([
+    ...new Set([...Object.keys(positions), ...Object.keys((await loadPortfolio(req.user.id)).positions)]),
+  ]);
   // Only the merge-and-save is locked. The AI extraction above can take
   // several seconds; holding the per-user write lock for that whole span
   // would block ordinary trades/cash edits for no reason, since none of it
@@ -2062,7 +2111,9 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
       ...(Number.isFinite(cashFromScreenshot) && cashFromScreenshot >= 0 ? { cash: cashFromScreenshot } : {}),
       imports: [...(portfolio.imports ?? []), { importedAt, positions: Object.keys(positions), source: 'screenshot' }].slice(-20),
     };
-    return baseScreenshotImportsLeft(portfolio) > 0 ? next : addCredits(next, { screenshots: -1 });
+    const flow = (next.cash ?? 0) - (portfolio.cash ?? 0) + positionsFlow(portfolio.positions, next.positions, importPrices);
+    const withFlow = recordCashFlow(next, flow, 'screenshot');
+    return baseScreenshotImportsLeft(portfolio) > 0 ? withFlow : addCredits(withFlow, { screenshots: -1 });
   });
   res.json({
     ok: true,

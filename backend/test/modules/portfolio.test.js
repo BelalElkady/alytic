@@ -6,7 +6,7 @@ import '../helpers/env.js';
 import RULES from '../../src/config/rules.js';
 import {
   recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, withPortfolio,
-  loadPortfolio,
+  loadPortfolio, recordCashFlow, positionsFlow,
 } from '../../src/portfolio.js';
 import { register } from '../../src/auth.js';
 import { getUserByEmail } from '../../src/db.js';
@@ -196,6 +196,46 @@ test('recordSnapshot writes today\'s entry, preserving any earlier note', () => 
   const again = recordSnapshot(noted, analyses, day);
   assert.equal(again.log[day].note, 'ملاحظة');
   assert.ok(again.log[day].total > 1);
+});
+
+test('recordSnapshot takes cash flows since the prior close out of the day change', () => {
+  const held = (close, changePct = 0) => [{
+    code: 'ABUK',
+    usable: true,
+    snapshot: { price: { close, changePct } },
+    position: { shares: 100, avgCost: 45, stop: 42, marketValue: 100 * close, unrealizedEgp: 100 * (close - 45) },
+  }];
+  const priorAt = new Date('2026-09-13T11:30:00Z');
+  let p = { ...base(50_000), positions: { ABUK: { shares: 100, avgCost: 45 } } };
+  p = recordSnapshot(p, held(50), '2026-09-13', priorAt);
+
+  // A deposit after that close, before one made after the next close is saved.
+  p = recordCashFlow({ ...p, cash: 100_000 }, 50_000, 'cash', new Date('2026-09-13T14:00:00Z'));
+  p = recordCashFlow(p, 999, 'cash', new Date('2026-09-14T15:00:00Z'));
+  const next = recordSnapshot(p, held(51), '2026-09-14', new Date('2026-09-14T11:30:00Z')).log['2026-09-14'];
+  assert.equal(next.cashFlow, 50_000);
+  assert.equal(next.dayChange, 100); // 100 shares × +1, not +50,100
+  assert.equal(next.dayChangePct, +((100 / 105_000) * 100).toFixed(2));
+});
+
+test('recordSnapshot\'s first entry measures a +10% move on the value before it', () => {
+  const analyses = [{
+    code: 'ABUK',
+    usable: true,
+    snapshot: { price: { close: 110, changePct: 10 } },
+    position: { shares: 1, avgCost: 100, marketValue: 110, unrealizedEgp: 10 },
+  }];
+  const entry = Object.values(recordSnapshot(base(0), analyses).log)[0];
+  assert.equal(entry.dayChange, 10);
+  assert.equal(entry.dayChangePct, 10);
+});
+
+test('positionsFlow values changed share counts at the given prices', () => {
+  const before = { ABUK: { shares: 100, avgCost: 45 }, SWDY: { shares: 10, avgCost: 20 } };
+  const after = { ABUK: { shares: 150, avgCost: 40 }, COMI: { shares: 5, avgCost: 70 } };
+  const prices = new Map([['ABUK', 50], ['SWDY', 30]]);
+  // +50 ABUK @50, −10 SWDY @30, +5 COMI at its average cost (no price)
+  assert.equal(positionsFlow(before, after, prices), 2500 - 300 + 350);
 });
 
 test('setNote edits an existing day and refuses days with no data', () => {
