@@ -25,6 +25,15 @@
  * now a real EGX70 constituent — added. EGX33 was stale: removed OLFI and
  * CIRA, added GOUR and CLHO per the same review.
  *
+ * Re-checked 2026-09-15: EGX30 held 29 codes and EGX70 67, because the three
+ * EXCLUDED_UNMATCHED names were real constituents under stale labels that the
+ * universe does track — "GB Auto" is GB Corp (GBCO, EGX30), "EDBE" is Export
+ * Development Bank (EXPA), and "Atlas Land Reclamation" is the former name of
+ * Atlas for Investment & Food Industries (AIFI, which the review added — not
+ * AALR, an unrelated General Land Reclamation). Orascom Financial Holding
+ * (OFH) was simply missing from EGX70. Taaleem (TALM) is correctly absent:
+ * the same review removed it from EGX70 and EGX100.
+ *
  * An admin can now also replace any of these lists at runtime by uploading a
  * CSV (see the /api/admin/indices routes in api/server.js) — that upload is
  * stored in the `index_overrides` DB table and takes priority over the
@@ -40,13 +49,14 @@ export const INDICES_AS_OF = '2026-09';
 /** Names investing.com listed that had no confident match in UNIVERSE — not
  * a bug, just outside what this app can currently track (delisted, too
  * illiquid to have made the analyzable universe, or a name too generic to
- * resolve safely: "GB Auto", "EDBE", "Atlas Land Reclamation"). */
-export const EXCLUDED_UNMATCHED = ['GB Auto', 'EDBE', 'Atlas Land Reclamation'];
+ * resolve safely). Empty as of the 2026-09-15 re-check. */
+export const EXCLUDED_UNMATCHED = [];
 
 export const EGX30 = [
   'CCAP', 'COMI', 'ETEL', 'HRHO', 'PHDC', 'SKPC', 'TMGH', 'HELI', 'RAYA', 'ABUK',
   'MCQE', 'AMOC', 'EAST', 'ALCN', 'BTFH', 'EGAL', 'JUFO', 'ORHD', 'ADIB', 'ORAS',
   'EMFD', 'CLHO', 'EFID', 'MFPC', 'ISPH', 'FWRY', 'RMDA', 'VLMRA', 'EFIH',
+  'GBCO',
 ];
 
 export const EGX70 = [
@@ -57,6 +67,7 @@ export const EGX70 = [
   'GPIM', 'IDRE', 'MEPA', 'MPCI', 'OBRI', 'OIH', 'SDTI', 'ARCC', 'IEEC', 'ARAB',
   'SIPC', 'MTIE', 'ICFC', 'MOED', 'ATLC', 'CNFN', 'ISMQ', 'GDWA', 'PRDC', 'MCRO',
   'TAQA', 'ACTF', 'VALU', 'BONY', 'AIDC', 'GOUR', 'EGCH',
+  'EXPA', 'AIFI', 'OFH',
 ];
 
 export const EGX33 = [
