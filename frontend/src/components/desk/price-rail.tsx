@@ -42,7 +42,41 @@ export function PriceRail({
   const lo = Math.min(...lows) * 0.96;
   const hi = Math.max(...highs) * 1.04;
   const span = hi - lo || 1;
-  const at = (value: number) => `${(((value - lo) / span) * 100).toFixed(1)}%`;
+  const raw = (value: number) => ((value - lo) / span) * 100;
+
+  // Levels a few percent apart (price just above a trailing stop and the
+  // cost) land within a few pixels of each other on a phone, so the price dot
+  // swallows their ticks. Keep every point at least MIN_GAP apart, in order,
+  // and map values piecewise-linearly between those spread-out anchors. The
+  // rail is a picture of order and rough distance; exact numbers are in the
+  // labels.
+  const MIN_GAP = 8;
+  const EDGE = 6;
+  const values = [...new Set([stop, cost, price, target, longTarget])]
+    .filter((v): v is number => v != null)
+    .sort((a, b) => a - b);
+  const pos = values.map(raw);
+  for (let i = 0; i < pos.length; i++)
+    pos[i] = Math.max(pos[i]!, i === 0 ? EDGE : pos[i - 1]! + MIN_GAP);
+  for (let i = pos.length - 1; i >= 0; i--)
+    pos[i] = Math.min(pos[i]!, i === pos.length - 1 ? 100 - EDGE : pos[i + 1]! - MIN_GAP);
+  const anchors = [
+    { v: lo, p: 0 },
+    ...values.map((v, i) => ({ v, p: pos[i]! })),
+    { v: hi, p: 100 },
+  ];
+  const at = (value: number) => {
+    let p = raw(value);
+    for (let i = 1; i < anchors.length; i++) {
+      const a = anchors[i - 1]!;
+      const b = anchors[i]!;
+      if (value <= b.v) {
+        p = b.v === a.v ? b.p : a.p + ((value - a.v) / (b.v - a.v)) * (b.p - a.p);
+        break;
+      }
+    }
+    return `${Math.min(100, Math.max(0, p)).toFixed(1)}%`;
+  };
 
   const marks: Mark[] = [];
   // Two targets on effectively the same level become one mark, so the rail
