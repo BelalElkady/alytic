@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 
 import { ErrorState } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +6,14 @@ import { getBlogPost, type BlogContentBlock, type BlogImage, type BlogPost } fro
 import { canonical, OG_LOGO_URL, SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/$slug")({
-  loader: ({ params }) => getBlogPost({ data: params.slug }),
+  loader: async ({ params }) => {
+    const result = await getBlogPost({ data: params.slug });
+    // A deleted or unpublished post must answer HTTP 404, not a 200 page that
+    // says "not found" — search engines keep those indexed as empty pages.
+    if (result.notFound) throw notFound();
+    return result;
+  },
+  notFoundComponent: BlogPostNotFound,
   head: ({ params, loaderData }) => {
     const post = loaderData?.post ?? null;
     const url = `${SITE_URL}/blog/${params.slug}`;
@@ -120,6 +127,20 @@ function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
         );
       })}
     </div>
+  );
+}
+
+function BlogPostNotFound() {
+  return (
+    <article className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
+      <ErrorState message="المقالة غير موجودة أو اتشالت." />
+      <Link
+        to="/blog"
+        className="mt-4 inline-block text-[13px] text-muted-foreground hover:text-foreground"
+      >
+        ← كل المقالات
+      </Link>
+    </article>
   );
 }
 
