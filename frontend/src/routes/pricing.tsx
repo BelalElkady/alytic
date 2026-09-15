@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SITE_URL } from "@/lib/seo";
+import { canonical, SITE_URL } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/pricing")({
@@ -23,6 +23,7 @@ export const Route = createFileRoute("/pricing")({
       },
       { property: "og:url", content: `${SITE_URL}/pricing` },
     ],
+    links: [canonical("/pricing")],
   }),
   component: PricingPage,
 });

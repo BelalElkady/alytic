@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { post } from "@/lib/api";
-import { SITE_URL } from "@/lib/seo";
+import { canonical, SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -25,6 +25,7 @@ export const Route = createFileRoute("/contact")({
       },
       { property: "og:url", content: `${SITE_URL}/contact` },
     ],
+    links: [canonical("/contact")],
   }),
   component: ContactPage,
 });

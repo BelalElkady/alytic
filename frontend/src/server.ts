@@ -44,8 +44,21 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+// www.egxpert.com served the same pages as egxpert.com, which search engines
+// count as duplicate content. nginx forwards the original Host header, so the
+// redirect lives here and ships with every deploy instead of in the VPS's
+// hand-maintained nginx config.
+function wwwRedirect(request: Request): Response | null {
+  const host = request.headers.get("host") ?? "";
+  if (!host.toLowerCase().startsWith("www.")) return null;
+  const url = new URL(request.url);
+  return Response.redirect(`https://${host.slice(4)}${url.pathname}${url.search}`, 301);
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const redirect = wwwRedirect(request);
+    if (redirect) return redirect;
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

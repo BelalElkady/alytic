@@ -17,6 +17,7 @@ import { LatestPosts } from "@/components/marketing/latest-posts";
 import { ToolExplainer } from "@/components/marketing/tool-explainer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { canonical } from "@/lib/seo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -36,6 +37,7 @@ export const Route = createFileRoute("/")({
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
+    links: [canonical("/")],
   }),
   component: LandingPage,
 });
