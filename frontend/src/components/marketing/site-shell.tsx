@@ -78,10 +78,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
       <footer className="border-t bg-surface">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between">
           <Logo />
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
+          <p className="text-[14.5px] font-medium leading-relaxed text-muted-foreground">
             EGXpert أداة تحليل ومساعدة في القرار — وليست توصية مالية مرخّصة. القرار الأخير مسؤوليتك.
           </p>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Link
               to="/blog"
               className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -99,6 +99,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
               className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
               تواصل معنا
+            </Link>
+            <Link
+              to="/privacy"
+              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              سياسة الخصوصية
             </Link>
           </div>
         </div>
