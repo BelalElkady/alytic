@@ -1,43 +1,55 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 
-import { ErrorState, LoadingBlock } from "@/components/desk/state-blocks";
+import { ErrorState } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api";
-import { SITE_URL } from "@/lib/seo";
+import { getBlogPost, type BlogContentBlock, type BlogImage, type BlogPost } from "@/lib/blog";
+import { canonical, OG_LOGO_URL, SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/$slug")({
-  head: ({ params }) => ({
-    meta: [
-      { title: "مقالة — EGXpert" },
-      { property: "og:title", content: "مقالة — EGXpert" },
-      { property: "og:url", content: `${SITE_URL}/blog/${params.slug}` },
-    ],
-  }),
+  loader: ({ params }) => getBlogPost({ data: params.slug }),
+  head: ({ params, loaderData }) => {
+    const post = loaderData?.post ?? null;
+    const url = `${SITE_URL}/blog/${params.slug}`;
+    const title = post ? `${post.title} — EGXpert` : "مقالة — EGXpert";
+    const description = post?.metaDescription || post?.dek || null;
+    return {
+      meta: [
+        { title },
+        { property: "og:title", content: title },
+        { property: "og:type", content: "article" },
+        { property: "og:url", content: url },
+        ...(description
+          ? [
+              { name: "description", content: description },
+              { property: "og:description", content: description },
+            ]
+          : []),
+        ...(post?.image ? [{ property: "og:image", content: post.image.url }] : []),
+        ...(post ? [{ property: "article:published_time", content: post.publishedAt }] : []),
+      ],
+      links: [canonical(`/blog/${params.slug}`)],
+      scripts: post ? [articleJsonLd(post, url, description)] : [],
+    };
+  },
   component: BlogPostPage,
 });
 
-type ContentBlock =
-  | { type: "heading"; level: 2 | 3; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "list"; items: string[] };
-
-type BlogImage = {
-  url: string;
-  sourceUrl: string | null;
-  creditName: string | null;
-  creditUrl: string | null;
-};
-
-type BlogPost = {
-  slug: string;
-  title: string;
-  dek: string | null;
-  content: ContentBlock[];
-  tags: string[];
-  image: BlogImage | null;
-  publishedAt: string;
-};
+/** schema.org NewsArticle, so Google can read the headline, date and image without guessing. */
+function articleJsonLd(post: BlogPost, url: string, description: string | null) {
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    headline: post.title,
+    ...(description ? { description } : {}),
+    ...(post.image ? { image: [post.image.url] } : {}),
+    datePublished: post.publishedAt,
+    inLanguage: "ar",
+    mainEntityOfPage: url,
+    publisher: { "@type": "Organization", name: "EGXpert", logo: { "@type": "ImageObject", url: OG_LOGO_URL } },
+  };
+  // "<" escaped so article text can never close the script tag early.
+  return { type: "application/ld+json", children: JSON.stringify(data).replace(/</g, "\\u003c") };
+}
 
 function BlogHeroImage({ image, alt }: { image: BlogImage; alt: string }) {
   return (
@@ -73,7 +85,7 @@ function BlogHeroImage({ image, alt }: { image: BlogImage; alt: string }) {
   );
 }
 
-function BlogContent({ blocks }: { blocks: ContentBlock[] }) {
+function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
   return (
     <div className="space-y-4">
       {blocks.map((block, index) => {
@@ -112,18 +124,8 @@ function BlogContent({ blocks }: { blocks: ContentBlock[] }) {
 }
 
 function BlogPostPage() {
-  const { slug } = Route.useParams();
+  const { post, error } = Route.useLoaderData();
   const navigate = useNavigate();
-  const [post, setPost] = useState<BlogPost | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPost(null);
-    setError(null);
-    api(`/api/blog/${slug}`)
-      .then((result) => setPost(result.post))
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "تعذر تحميل المقالة"));
-  }, [slug]);
 
   return (
     <article className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
@@ -142,8 +144,7 @@ function BlogPostPage() {
         ← كل المقالات
       </div>
 
-      {error && <ErrorState message={error} />}
-      {!error && !post && <LoadingBlock rows={5} />}
+      {(error || !post) && <ErrorState message={error ?? "تعذر تحميل المقالة"} />}
       {!error && post && (
         <>
           <div className="mt-4 flex flex-wrap gap-1.5">

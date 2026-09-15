@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 
-import { EmptyState, ErrorState, LoadingBlock } from "@/components/desk/state-blocks";
-import { BlogCard, type BlogPostSummary } from "@/components/marketing/blog-card";
-import { api } from "@/lib/api";
-import { SITE_URL } from "@/lib/seo";
+import { EmptyState, ErrorState } from "@/components/desk/state-blocks";
+import { BlogCard } from "@/components/marketing/blog-card";
+import { getBlogPosts } from "@/lib/blog";
+import { canonical, SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/")({
+  loader: () => getBlogPosts(),
   head: () => ({
     meta: [
       { title: "تابع اخبار البورصة — EGXpert" },
@@ -21,24 +21,13 @@ export const Route = createFileRoute("/blog/")({
       },
       { property: "og:url", content: `${SITE_URL}/blog` },
     ],
+    links: [canonical("/blog")],
   }),
   component: BlogIndexPage,
 });
 
 function BlogIndexPage() {
-  const [posts, setPosts] = useState<BlogPostSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api("/api/blog?limit=30")
-      .then((result) => {
-        setPosts(result.posts);
-        setError(null);
-      })
-      .catch((caught) =>
-        setError(caught instanceof Error ? caught.message : "تعذر تحميل المقالات"),
-      );
-  }, []);
+  const { posts, error } = Route.useLoaderData();
 
   return (
     <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
@@ -51,7 +40,6 @@ function BlogIndexPage() {
 
       <div className="mt-10">
         {error && <ErrorState message={error} />}
-        {!error && !posts && <LoadingBlock rows={4} />}
         {!error && posts && posts.length === 0 && (
           <EmptyState title="لسه مفيش مقالات منشورة" hint="تابعنا هنا أول ما ننشر أول مقالة." />
         )}
