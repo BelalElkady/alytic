@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import { fmt } from "@/lib/format";
 import { mergedTargetPrice } from "@/lib/targets";
 import { cn } from "@/lib/utils";
@@ -16,8 +18,8 @@ type Mark = { value: number; label: string; dot: string; text: string };
 
 /**
  * Price vs stop / cost / targets, on one line.
- * Same four levels the previous rail showed; the labels moved into a legend
- * underneath so nothing overlaps on narrow screens.
+ * Same four levels the previous rail showed, labelled with pills under the
+ * rail — or above it, when two would otherwise overlap on a narrow screen.
  *
  * `stop` is deliberately the only stop shown: it is the one the active
  * style's mechanical rules actually enforce (session-close trailing stop —
@@ -125,27 +127,66 @@ export function PriceRail({
       ? `linear-gradient(to right, var(--down-soft) 0%, var(--down-soft) ${at(stop)}, var(--surface-2) ${at(stop)}, var(--surface-2) ${at(cost)}, var(--up-soft) ${at(cost)}, var(--up-soft) 100%)`
       : `linear-gradient(to right, var(--down-soft) 0%, var(--down-soft) ${at(stop ?? lo)}, var(--up-soft) ${at(stop ?? lo)}, var(--up-soft) 100%)`;
 
-  // When two legend values are visually close — e.g. a trailing stop sitting
-  // right under the cost — drop every other one to a second row so the
-  // rounded pills don't overlap. The current price has its own tag above the
-  // rail, so it never competes with the pills below it.
+  // Pills closer than this (in % of the rail) would overlap. A pill that
+  // would collide with its neighbour below the rail moves above it instead —
+  // unless it would hit the "now" price tag or another pill up there too, in
+  // which case it drops to a second row below as a last resort.
   const thresholdPct = 14;
+  const priceAt = parseFloat(at(price));
   const sorted = marks
     .map((m) => ({ key: m.label, at: parseFloat(at(m.value)) }))
     .sort((a, b) => a.at - b.at);
-  const staggerByKey = new Map<string, boolean>();
-  let prevFlag = false;
-  for (let i = 1; i < sorted.length; i++) {
-    const close = Math.abs(sorted[i]!.at - sorted[i - 1]!.at) < thresholdPct;
-    const flag = close ? !prevFlag : false;
-    staggerByKey.set(sorted[i]!.key, flag);
-    prevFlag = flag;
+  const placementByKey = new Map<string, "below" | "above" | "second">();
+  let lastBelow = -Infinity;
+  let lastAbove = -Infinity;
+  for (const item of sorted) {
+    const clashBelow = item.at - lastBelow < thresholdPct;
+    const clashAbove =
+      item.at - lastAbove < thresholdPct || Math.abs(item.at - priceAt) < thresholdPct;
+    if (!clashBelow) {
+      placementByKey.set(item.key, "below");
+      lastBelow = item.at;
+    } else if (!clashAbove) {
+      placementByKey.set(item.key, "above");
+      lastAbove = item.at;
+    } else {
+      placementByKey.set(item.key, "second");
+    }
   }
-  const staggered = marks.map((m) => staggerByKey.get(m.label) ?? false);
-  const needsStagger = staggered.some(Boolean);
+  const placement = marks.map((m) => placementByKey.get(m.label) ?? "below");
+  const anyAbove = placement.includes("above");
+  const needsSecondRow = placement.includes("second");
+
+  const pill = (mark: Mark, style: CSSProperties) => {
+    const labelText = mark.label.replace(/\s[\d.,]+$/, "");
+    return (
+      <div
+        key={mark.label}
+        className={cn(
+          "absolute -translate-x-1/2 rounded-full border border-border/60 bg-surface px-3 py-1.5 shadow-sm min-w-max text-center",
+          mark.text,
+        )}
+        style={{ left: at(mark.value), ...style }}
+      >
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="flex items-center gap-1">
+            <span className={cn("size-2 rounded-full", mark.dot)} />
+            <span className="text-muted-foreground whitespace-nowrap">{labelText}</span>
+          </div>
+          <span className="num font-medium leading-none">{fmt(mark.value)}</span>
+        </div>
+      </div>
+    );
+  };
+  const pillsBelow = marks.flatMap((mark, i) =>
+    placement[i] === "above" ? [] : [pill(mark, { top: placement[i] === "second" ? "3rem" : 0 })],
+  );
+  const pillsAbove = marks.flatMap((mark, i) =>
+    placement[i] === "above" ? [pill(mark, { bottom: "calc(100% + 10px)" })] : [],
+  );
 
   const railLine = (
-    <div className={cn("relative", !compact && "pt-10")}>
+    <div className={cn("relative", !compact && (anyAbove ? "pt-[4.25rem]" : "pt-10"))}>
       <div className="relative">
         <div
           className="relative h-2.5 w-full overflow-hidden rounded-full border"
@@ -171,6 +212,7 @@ export function PriceRail({
           className="pointer-events-none absolute top-1/2 z-10 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-background bg-foreground shadow-md ring-[3px] ring-foreground/25"
           style={{ left: at(price) }}
         />
+        {!compact && <div className="text-[11px]">{pillsAbove}</div>}
         {!compact && (
           <div
             className="pointer-events-none absolute bottom-[calc(100%+14px)] z-10 -translate-x-1/2"
@@ -187,34 +229,12 @@ export function PriceRail({
     </div>
   );
 
-  const legendPills = marks.map((mark, i) => {
-    const labelText = mark.label.replace(/\s[\d.,]+$/, "");
-    return (
-      <div
-        key={mark.label}
-        className={cn(
-          "absolute -translate-x-1/2 rounded-full border border-border/60 bg-surface px-3 py-1.5 shadow-sm min-w-max text-center",
-          mark.text,
-        )}
-        style={{ left: at(mark.value), top: staggered[i] ? "3rem" : 0 }}
-      >
-        <div className="flex flex-col items-center gap-0.5">
-          <div className="flex items-center gap-1">
-            <span className={cn("size-2 rounded-full", mark.dot)} />
-            <span className="text-muted-foreground whitespace-nowrap">{labelText}</span>
-          </div>
-          <span className="num font-medium leading-none">{fmt(mark.value)}</span>
-        </div>
-      </div>
-    );
-  });
-
   return (
     <div className={cn("space-y-4 px-2", className)}>
       {railLine}
       {!compact && (
-        <div className={cn("relative text-[11px]", needsStagger ? "h-[5.75rem]" : "h-11")}>
-          {legendPills}
+        <div className={cn("relative text-[11px]", needsSecondRow ? "h-[5.75rem]" : "h-11")}>
+          {pillsBelow}
         </div>
       )}
     </div>
