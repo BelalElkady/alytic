@@ -123,6 +123,17 @@ export function atr(bars, period = 14) {
   return wilder(trueRange(bars), period);
 }
 
+/**
+ * ATR measured on closes only: the smoothed absolute close-to-close move. A stop
+ * that triggers on a session close can't be hit by an intraday wick, so this is
+ * the noise it actually has to survive — and on thin EGX names the high/low
+ * range runs several times wider than the closes do.
+ */
+export function closeAtr(bars, period = 14) {
+  const moves = bars.slice(1).map((b, i) => Math.abs(b.c - bars[i].c));
+  return [null, ...wilder(moves, period)];
+}
+
 export function bollinger(closes, period = 20, mult = 2) {
   const mid = sma(closes, period);
   const upper = new Array(closes.length).fill(null);

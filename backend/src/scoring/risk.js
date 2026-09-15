@@ -19,23 +19,31 @@ const r2 = (x) => (x == null ? null : +x.toFixed(2));
  */
 export function computeStop(snapshot, entry = null, rules = RULES) {
   const price = entry ?? snapshot.price.close;
-  const atr = snapshot.volatility.atr14;
+  // Stops honor the close, so the noise they must clear is the close-to-close
+  // move. High/low ATR is only a fallback for snapshots that lack it.
+  const atr = snapshot.volatility.closeAtr14 ?? snapshot.volatility.atr14;
   const cfg = rules.stop;
 
-  // 1. Structural: under the nearest support that has actually been defended.
-  const support = snapshot.levels.supports.find((s) => s.strength >= 45 && s.price < price);
-  const structural = support ? support.price * (1 - cfg.structureBufferPct / 100) : null;
+  // 1. Structural: under the nearest support that has actually been defended —
+  // as long as it is close enough to be where this trade is proven wrong. A
+  // support 20% down is a different trade's invalidation; using it would just
+  // pin the stop to the risk cap.
+  const nearest = snapshot.levels.supports.find((s) => s.strength >= 45 && s.price < price);
+  const nearestStop = nearest ? nearest.price * (1 - cfg.structureBufferPct / 100) : null;
+  const tooFar = nearestStop != null && atr && price - nearestStop > cfg.noiseMultiple * atr;
+  const support = tooFar ? null : nearest;
+  const structural = support ? nearestStop : null;
 
   // 2. Volatility: far enough out that ordinary noise doesn't reach it.
-  const volatility = atr ? price - cfg.atrMultiple * atr : null;
+  const volatility = atr ? price - cfg.noiseMultiple * atr : null;
 
   let stop = structural ?? volatility ?? price * (1 - cfg.maxStopPct / 100);
   let basis = structural ? 'structure' : volatility ? 'volatility' : 'fallback';
 
   // A structural stop sitting inside the noise band is not survivable — push it
   // out to the volatility floor.
-  if (atr && stop > price - cfg.minAtrMultiple * atr) {
-    stop = price - cfg.minAtrMultiple * atr;
+  if (atr && stop > price - cfg.minNoiseMultiple * atr) {
+    stop = price - cfg.minNoiseMultiple * atr;
     basis = 'volatility_floor';
   }
 
@@ -43,8 +51,9 @@ export function computeStop(snapshot, entry = null, rules = RULES) {
   let capped = false;
 
   if (riskPct > cfg.maxStopPct) {
-    // Honest structure is too far away. Keep the stop where risk is tolerable and
-    // flag it — the caller should shrink the position rather than pretend.
+    // The noise alone is wider than the book tolerates. Keep the stop where risk
+    // is tolerable and flag it — the caller should shrink the position rather
+    // than pretend.
     stop = price * (1 - cfg.maxStopPct / 100);
     riskPct = cfg.maxStopPct;
     capped = true;
@@ -64,9 +73,9 @@ export function computeStop(snapshot, entry = null, rules = RULES) {
     supportDefended: support ? { price: support.price, strength: support.strength } : null,
     note:
       basis === 'structure' ? `تحت دعم ${r2(support.price)} بهامش ${cfg.structureBufferPct}%`
-      : basis === 'volatility' ? `${cfg.atrMultiple}× متوسط المدى الحقيقي (ATR ${atr})`
-      : basis === 'volatility_floor' ? `الدعم قريب جدًا — الوقف اتوسّع لـ ${cfg.minAtrMultiple}× ATR عشان التذبذب العادي ما يضربوش`
-      : basis === 'risk_cap' ? `الدعم بعيد — الوقف عند الحد الأقصى للمخاطرة ${cfg.maxStopPct}% وقلّل حجم المركز`
+      : basis === 'volatility' ? `${tooFar ? `أقرب دعم (${r2(nearest.price)}) بعيد أوي — ` : ''}${cfg.noiseMultiple}× متوسط حركة الإغلاق اليومية (${r2(atr)})`
+      : basis === 'volatility_floor' ? `الدعم قريب جدًا — الوقف اتوسّع لـ ${cfg.minNoiseMultiple}× متوسط حركة الإغلاق عشان التذبذب العادي ما يضربوش`
+      : basis === 'risk_cap' ? `السهم متذبذب جدًا — الوقف عند الحد الأقصى للمخاطرة ${cfg.maxStopPct}% وقلّل حجم المركز`
       : basis === 'min_stop' ? `الوقف الطبيعي قريب أوي — اتثبت عند الحد الأدنى ${cfg.minStopPct}%`
       : 'وقف افتراضي',
   };

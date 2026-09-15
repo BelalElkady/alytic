@@ -9,7 +9,7 @@
  */
 
 import {
-  sma, ema, rsi, macd, atr, bollinger, stochastic, adx, obv, roc,
+  sma, ema, rsi, macd, atr, closeAtr, bollinger, stochastic, adx, obv, roc,
   donchian, relativeVolume, linregSlopePct, historicalVolatility, maxDrawdown,
   last, at,
 } from './indicators.js';
@@ -140,6 +140,7 @@ export function buildSnapshot(bars, meta = {}) {
   const rsi14 = rsi(closes, 14);
   const macdVals = macd(closes);
   const atr14 = atr(bars, 14);
+  const closeAtr14 = closeAtr(bars, 14);
   const bb = bollinger(closes, 20, 2);
   const stoch = stochastic(bars, 14, 3);
   const adxVals = adx(bars, 14);
@@ -152,6 +153,7 @@ export function buildSnapshot(bars, meta = {}) {
 
   const atrNow = last(atr14);
   const atrPct = atrNow && price ? (atrNow / price) * 100 : null;
+  const closeAtrNow = last(closeAtr14);
 
   const window52w = bars.slice(-252);
   const high52 = Math.max(...window52w.map((b) => b.h));
@@ -259,6 +261,8 @@ export function buildSnapshot(bars, meta = {}) {
     volatility: {
       atr14: r2(atrNow),
       atrPct: r2(atrPct),
+      closeAtr14: r2(closeAtrNow),
+      closeAtrPct: r2(closeAtrNow && price ? (closeAtrNow / price) * 100 : null),
       annualizedVolPct: r1(last(hv)),
       bollingerUpper: r2(last(bb.upper)),
       bollingerMid: r2(last(bb.mid)),

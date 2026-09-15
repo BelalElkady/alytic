@@ -32,18 +32,32 @@ test('computeStop: structure wins when a defended support exists', () => {
 test('computeStop: no support falls back to the volatility stop', () => {
   const s = computeStop(snap({ atr14: 2 }), 100);
   assert.equal(s.basis, 'volatility');
-  assert.equal(s.stop, 95); // 100 − 2.5×2
-  assert.equal(s.riskPct, 5);
+  assert.equal(s.stop, 93); // 100 − 3.5×2
+  assert.equal(s.riskPct, 7);
+});
+
+test('computeStop: close-to-close ATR takes precedence over high/low ATR', () => {
+  const base = snap({ atr14: 4 });
+  const s = computeStop({ ...base, volatility: { ...base.volatility, closeAtr14: 2 } }, 100);
+  assert.equal(s.stop, 93); // 100 − 3.5×2, not 3.5×4
 });
 
 test('computeStop: a structural stop inside the noise band widens to the ATR floor', () => {
   const s = computeStop(snap({ atr14: 2, supports: [{ price: 99, strength: 60 }] }), 100);
   assert.equal(s.basis, 'volatility_floor');
-  assert.equal(s.stop, 97); // 100 − 1.5×2
+  assert.equal(s.stop, 96); // 100 − 2×2
 });
 
-test('computeStop: far support caps risk at maxStopPct and flags the cap', () => {
+test('computeStop: a support beyond the noise band is skipped for the volatility stop', () => {
   const s = computeStop(snap({ atr14: 2, supports: [{ price: 80, strength: 60 }] }), 100);
+  assert.equal(s.basis, 'volatility');
+  assert.equal(s.stop, 93); // 79.2 is 20.8% away, past 3.5×2 — not this trade's invalidation
+  assert.equal(s.supportDefended, null);
+  assert.equal(s.capped, false);
+});
+
+test('computeStop: noise wider than maxStopPct caps risk and flags the cap', () => {
+  const s = computeStop(snap({ atr14: 4 }), 100);
   assert.equal(s.basis, 'risk_cap');
   assert.equal(s.capped, true);
   assert.equal(s.stop, 88); // 12% below
@@ -211,7 +225,7 @@ test('invest styles only override the four behaviour groups', () => {
   assert.equal(trader.trailing.trailPct, 4);
   assert.equal(trader.entry.minRiskReward, 1.5);
   assert.equal(trader.sizing.riskPerTradePct, 1);
-  assert.equal(trader.stop.atrMultiple, RULES.stop.atrMultiple, 'stop rules must be untouched by a style');
+  assert.equal(trader.stop.noiseMultiple, RULES.stop.noiseMultiple, 'stop rules must be untouched by a style');
   assert.equal(trader.liquidity.minAvgTurnoverEgp, RULES.liquidity.minAvgTurnoverEgp);
   const medium = rulesForStyle(RULES, 'medium');
   assert.equal(medium.trailing.trailPct, RULES.trailing.trailPct);

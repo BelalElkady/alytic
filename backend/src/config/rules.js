@@ -25,8 +25,10 @@ export const RULES = {
   },
 
   stop: {
-    atrMultiple: 2.5,        // volatility stop distance
-    minAtrMultiple: 1.5,     // never tighter than this, or noise takes you out
+    // Distances below are in multiples of close-to-close ATR, not high/low ATR:
+    // stops honor the close, so intraday wicks are noise they never see.
+    noiseMultiple: 3.5,      // volatility stop distance; also the farthest a support may sit and still set the stop
+    minNoiseMultiple: 2,     // never tighter than this, or noise takes you out
     structureBufferPct: 1.0, // sit this far under the support being defended
     maxStopPct: 12,          // hard cap on risk per position
     minStopPct: 3,           // a stop closer than this is not a stop
