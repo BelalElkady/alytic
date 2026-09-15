@@ -734,29 +734,33 @@ function MobileNav() {
 
 function HeroBar() {
   const { totals, loading } = useDesk();
+  // Three columns on phones keeps the five totals to two rows instead of
+  // three, with the cash total no longer sitting alone on its own row.
+  const size = "text-[15px] sm:text-[17px]";
   return (
     <section className="border-b bg-card">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-2 gap-x-4 gap-y-3 px-3 py-4 sm:px-5 md:grid-cols-5">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-3 gap-x-3 gap-y-2.5 px-3 py-3 sm:gap-x-4 sm:gap-y-3 sm:px-5 sm:py-4 md:grid-cols-5">
         {loading && !totals.value ? (
           Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-12" />)
         ) : (
           <>
-            <Stat label="التكلفة الكلية" value={int(totals.cost)} />
-            <Stat label="قيمة الأسهم" value={int(totals.value)} />
+            <Stat label="التكلفة الكلية" value={int(totals.cost)} valueClassName={size} />
+            <Stat label="قيمة الأسهم" value={int(totals.value)} valueClassName={size} />
             <Stat
               label="ربح/خسارة من الشراء"
               value={signed(totals.pl)}
-              valueClassName={tone(totals.pl)}
+              valueClassName={cn(size, tone(totals.pl))}
               sub={<span className={tone(totals.pl)}>{totals.plPct.toFixed(2)}%</span>}
             />
             <Stat
               label="تغيّر اليوم"
               value={totals.hasDay ? signed(totals.day) : "—"}
-              valueClassName={totals.hasDay ? tone(totals.day) : ""}
+              valueClassName={cn(size, totals.hasDay && tone(totals.day))}
             />
             <Stat
               label="الكاش"
               value={int(totals.cash)}
+              valueClassName={size}
               sub={`إجمالي ${int(totals.value + totals.cash)} ج`}
             />
           </>
