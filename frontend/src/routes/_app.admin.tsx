@@ -74,8 +74,10 @@ type IndexRow = {
   name: string;
   tickers: Ticker[];
   count: number;
-  /** "derived" is the read-only ALL row: tracked stocks outside every index. */
+  /** "derived" is the read-only ALL row: every tracked stock, index member or not. */
   source: "default" | "upload" | "derived";
+  /** ALL row only: how many of its stocks are in none of the index lists. */
+  outsideCount?: number;
   updatedAt: string | null;
   updatedBy: string | null;
 };
@@ -88,7 +90,7 @@ const LABELS: Record<string, string> = {
   EGX70: "EGX70 EWI",
   EGX33: "EGX33 (شريعة)",
   EGX100: "EGX100",
-  ALL: "الكل (خارج المؤشرات)",
+  ALL: "الكل",
 };
 
 /**
@@ -192,6 +194,7 @@ function IndicesTab() {
       query && rows ? rows.filter((row) => row.tickers.some((t) => matchesQuery(t, query))) : [],
     [rows, query],
   );
+  const indexMatches = matches.filter((row) => row.source !== "derived");
 
   if (error)
     return (
@@ -222,10 +225,12 @@ function IndicesTab() {
         placeholder="ابحث بكود السهم أو اسم الشركة عشان تعرف موجود في أنهي مؤشر…"
       />
       {query && (
-        <Notice tone={matches.length ? "success" : "warn"}>
-          {matches.length
+        <Notice tone={indexMatches.length ? "success" : matches.length ? "info" : "warn"}>
+          {indexMatches.length
             ? `"${search}" موجود في: ${matches.map((m) => LABELS[m.name] ?? m.name).join("، ")}`
-            : `"${search}" مش موجود في أي مؤشر من اللي هنا.`}
+            : matches.length
+              ? `"${search}" سهم متابَع بس مش في أي مؤشر — موجود في «الكل» بس.`
+              : `"${search}" مش موجود في أي مؤشر ولا في قائمة الأسهم المتابَعة.`}
         </Notice>
       )}
 
@@ -291,7 +296,7 @@ function IndexPanel({
         <>
           {row.count} كود ·{" "}
           {row.source === "derived"
-            ? "أسهم متابَعة مش في أي مؤشر — بتتحدث تلقائيًا"
+            ? `كل الأسهم المتابَعة، منهم ${row.outsideCount ?? 0} مش في أي مؤشر — بتتحدث تلقائيًا`
             : row.source === "upload"
               ? "مرفوع يدويًا"
               : "افتراضي"}

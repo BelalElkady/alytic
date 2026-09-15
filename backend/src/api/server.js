@@ -726,13 +726,21 @@ app.get('/api/admin/indices', wrap(async (req, res) => {
       updatedBy: override?.updatedBy ?? null,
     };
   }));
-  // Every tracked stock outside all four indices (TALM after the 2026-09
-  // review, say), so a search still finds it somewhere instead of reading as
-  // untracked. Derived, not uploadable: it follows whatever the index lists
-  // above currently are.
+  // Every tracked stock, index member or not (TALM after the 2026-09 review,
+  // say), so a search always finds it somewhere instead of reading as
+  // untracked. Derived, not uploadable; outsideCount is how many of these sit
+  // in none of the four lists above.
   const inAnIndex = new Set(indices.flatMap((row) => row.tickers.map((t) => t.code)));
-  const others = toTickers(ALL_CODES.filter((code) => !inAnIndex.has(code)).sort());
-  indices.push({ name: 'ALL', tickers: others, count: others.length, source: 'derived', updatedAt: null, updatedBy: null });
+  const all = toTickers([...ALL_CODES].sort());
+  indices.push({
+    name: 'ALL',
+    tickers: all,
+    count: all.length,
+    outsideCount: ALL_CODES.filter((code) => !inAnIndex.has(code)).length,
+    source: 'derived',
+    updatedAt: null,
+    updatedBy: null,
+  });
   res.json({ indices });
 }));
 
