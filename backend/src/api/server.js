@@ -1840,6 +1840,19 @@ function resolveScreenshotCode(item) {
   return match?.code ?? null;
 }
 
+// Alytic doesn't support ETFs. One in the image must not be imported at all:
+// the vision model, told to use the ticker list, will happily map an ETF onto
+// whichever stock's name it resembles. The model's own flag is checked
+// alongside the raw name/code, since either can be the one that gives it away.
+// Deliberately not a bare "fund" match — EGREF (Egyptians Real Estate Fund)
+// is a supported listed instrument.
+const ETF_UNSUPPORTED_MESSAGE = 'الصورة فيها صندوق مؤشرات (ETF)، والتطبيق مش بيدعمها — مفيش حاجة اتضافت. ارفع صورة فيها أسهم بس، أو ضيفها من «إدخال يدوي».';
+function isEtfHolding(item) {
+  if (item?.isEtf === true || item?.isEtf === 'true') return true;
+  const text = normalizeScreenshotText([item?.code, item?.symbol, item?.ticker, item?.name, item?.company, item?.companyName, item?.assetType, item?.type].filter(Boolean).join(' '));
+  return /\b(ETFS?|EXCHANGE TRADED)\b/.test(text) || /(صندوق|صناديق) (ال)?مؤشر/.test(text);
+}
+
 // Every image is a vision-model call, so each account gets a daily allowance
 // of successful imports, counted per Cairo day off portfolio.imports. That log
 // keeps only its last 20 entries, which is why the cap can't exceed 20.
@@ -1871,7 +1884,9 @@ app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 
     model: SCREENSHOT_VISION_MODEL,
     max_tokens: 4000,
     messages: [
-      { role: 'system', content: `You extract stock portfolio data from an image. Never guess a number that is not visible. Return JSON only, without markdown, using this shape: {"cash":number|null,"positions":[{"code":"EGX ticker or null","name":"company name as shown","shares":number|null,"marketValue":number|null,"profit":number|null,"returnPct":number|null,"avgCost":number|null,"lastPrice":number|null,"stop":number|null,"target":number|null}]}. If the ticker is not visible, write the company name as shown.
+      { role: 'system', content: `You extract stock portfolio data from an image. Never guess a number that is not visible. Return JSON only, without markdown, using this shape: {"cash":number|null,"positions":[{"code":"EGX ticker or null","name":"company name as shown","shares":number|null,"marketValue":number|null,"profit":number|null,"returnPct":number|null,"avgCost":number|null,"lastPrice":number|null,"stop":number|null,"target":number|null,"isEtf":boolean}]}. If the ticker is not visible, write the company name as shown.
+
+Set "isEtf" to true for any holding that is an ETF / exchange-traded index fund (صندوق مؤشرات، e.g. a gold ETF or an EGX30 ETF) and false otherwise. For an ETF, keep "name" and "code" exactly as shown and never map it to a ticker from the reference list below. A listed fund that is itself in that reference list (e.g. EGREF, Egyptians Real Estate Fund) is not an ETF.
 
 The single most valuable field is "shares" — the number of shares held (الكمية / عدد الأسهم / كمية). Look for it carefully, including in small print, a secondary line under the company name, or a detail row. A whole number sitting beside a company with no currency symbol is usually the quantity, not a price. Only use null for it if you genuinely cannot see it.
 
@@ -1901,6 +1916,11 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   const rows = Array.isArray(extractedPositions)
     ? extractedPositions
     : Object.entries(extractedPositions).map(([code, value]) => ({ ...(value && typeof value === 'object' ? value : { shares: value }), code }));
+  // Rejected before anything is saved, so the image adds nothing (not even
+  // cash) and doesn't use up the day's import allowance.
+  if (rows.some(isEtfHolding)) {
+    return res.status(422).json({ error: ETF_UNSUPPORTED_MESSAGE, reason: 'etf_unsupported' });
+  }
   // Resolve every row first so the live quotes below can be fetched in one
   // batch rather than a websocket round-trip per stock.
   const parsed = rows.map((item) => ({

@@ -944,6 +944,11 @@ of that dialog.
 - Steps: import images using common aliases (CIB, TMG, EFG Hermes) and Arabic names.
 - Expect: they map to COMI, TMGH, HRHO and the right codes rather than being dropped.
 
+**IMP-10 — ETF holdings are refused** · P1
+- Steps: upload a screenshot that contains an ETF / fund (alone or next to stocks).
+- Expect: "الصورة فيها صندوق مؤشرات (ETF)…" and nothing is added — no positions, no
+  cash change — and today's screenshot count is not used up.
+
 **MAN-01 — Manual entry dialog opens pre-filled** · P1
 - Expect: every position with its current shares, average cost, stop and target
   already in the fields.
