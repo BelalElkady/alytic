@@ -709,14 +709,14 @@ function parseTickerFile(buffer) {
 
 app.get('/api/admin/indices', wrap(async (req, res) => {
   const overrides = await getAllIndexOverrides();
+  // The company name so the admin UI can show more than a bare code, and
+  // so a search can match on it too — pulled from the live universe
+  // (verified entries and admin-registered custom stocks alike), not from
+  // whatever an upload's own name column happened to say.
+  const toTickers = (codes) => codes.map((code) => ({ code, name: lookup(code)?.ar || lookup(code)?.en || code }));
   const indices = await Promise.all(UPLOADABLE_INDICES.map(async (name) => {
     const override = overrides[name];
-    const codes = await codesForIndex(name);
-    // The company name so the admin UI can show more than a bare code, and
-    // so a search can match on it too — pulled from the live universe
-    // (verified entries and admin-registered custom stocks alike), not from
-    // whatever an upload's own name column happened to say.
-    const tickers = codes.map((code) => ({ code, name: lookup(code)?.ar || lookup(code)?.en || code }));
+    const tickers = toTickers(await codesForIndex(name));
     return {
       name,
       tickers,
@@ -726,6 +726,13 @@ app.get('/api/admin/indices', wrap(async (req, res) => {
       updatedBy: override?.updatedBy ?? null,
     };
   }));
+  // Every tracked stock outside all four indices (TALM after the 2026-09
+  // review, say), so a search still finds it somewhere instead of reading as
+  // untracked. Derived, not uploadable: it follows whatever the index lists
+  // above currently are.
+  const inAnIndex = new Set(indices.flatMap((row) => row.tickers.map((t) => t.code)));
+  const others = toTickers(ALL_CODES.filter((code) => !inAnIndex.has(code)).sort());
+  indices.push({ name: 'ALL', tickers: others, count: others.length, source: 'derived', updatedAt: null, updatedBy: null });
   res.json({ indices });
 }));
 

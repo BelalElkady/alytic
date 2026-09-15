@@ -74,7 +74,8 @@ type IndexRow = {
   name: string;
   tickers: Ticker[];
   count: number;
-  source: "default" | "upload";
+  /** "derived" is the read-only ALL row: tracked stocks outside every index. */
+  source: "default" | "upload" | "derived";
   updatedAt: string | null;
   updatedBy: string | null;
 };
@@ -87,6 +88,7 @@ const LABELS: Record<string, string> = {
   EGX70: "EGX70 EWI",
   EGX33: "EGX33 (شريعة)",
   EGX100: "EGX100",
+  ALL: "الكل (خارج المؤشرات)",
 };
 
 /**
@@ -287,32 +289,39 @@ function IndexPanel({
       title={LABELS[row.name] ?? row.name}
       description={
         <>
-          {row.count} كود · {row.source === "upload" ? "مرفوع يدويًا" : "افتراضي"}
+          {row.count} كود ·{" "}
+          {row.source === "derived"
+            ? "أسهم متابَعة مش في أي مؤشر — بتتحدث تلقائيًا"
+            : row.source === "upload"
+              ? "مرفوع يدويًا"
+              : "افتراضي"}
           {row.updatedAt && ` · آخر تحديث ${new Date(row.updatedAt).toLocaleString("ar-EG")}`}
         </>
       }
       action={
-        <div className="flex items-center gap-2">
-          {row.source === "upload" && (
-            <Button variant="outline" size="sm" onClick={() => void reset()} disabled={busy}>
-              استرجاع الافتراضي
+        row.source !== "derived" && (
+          <div className="flex items-center gap-2">
+            {row.source === "upload" && (
+              <Button variant="outline" size="sm" onClick={() => void reset()} disabled={busy}>
+                استرجاع الافتراضي
+              </Button>
+            )}
+            <Button size="sm" onClick={() => fileRef.current?.click()} disabled={busy}>
+              {busy && <Spinner />}
+              رفع CSV / Excel
             </Button>
-          )}
-          <Button size="sm" onClick={() => fileRef.current?.click()} disabled={busy}>
-            {busy && <Spinner />}
-            رفع CSV / Excel
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,.xls,.xlsx,text/csv,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void upload(file);
-            }}
-          />
-        </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xls,.xlsx,text/csv,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void upload(file);
+              }}
+            />
+          </div>
+        )
       }
     >
       <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
