@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
 import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -1061,6 +1061,39 @@ app.get('/api/admin/blog-drafts', wrap(async (req, res) => {
       publishedAt: p.published_at,
     })),
   });
+}));
+
+// Lets an admin write and publish an article by hand, alongside the
+// auto-generated pipeline above — see insertManualBlogPost for how it avoids
+// colliding with the cron job's (post_date, batch_index) numbering.
+app.post('/api/admin/blog-drafts', wrap(async (req, res) => {
+  const { title, slug, metaDescription, dek, content, tags, publish } = req.body ?? {};
+  if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'العنوان مطلوب' });
+  if (typeof slug !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+    return res.status(400).json({ error: 'الرابط لازم يكون حروف إنجليزية صغيرة وأرقام وشرطات بس' });
+  }
+  if (typeof metaDescription !== 'string' || !metaDescription.trim()) {
+    return res.status(400).json({ error: 'الوصف التعريفي مطلوب' });
+  }
+  if (dek !== undefined && dek !== null && typeof dek !== 'string') return res.status(400).json({ error: 'المقدمة لازم تكون نص' });
+  if (!Array.isArray(content) || content.length === 0) return res.status(400).json({ error: 'المقالة لازم تحتوي على محتوى' });
+  if (tags !== undefined && !Array.isArray(tags)) return res.status(400).json({ error: 'الوسوم لازم تكون قائمة' });
+
+  try {
+    const post = await insertManualBlogPost({
+      title: title.trim(),
+      slug,
+      metaDescription: metaDescription.trim(),
+      dek: (dek ?? '').trim() || null,
+      content,
+      tags: tags ?? [],
+      publish: Boolean(publish),
+    });
+    res.status(201).json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'في مقالة تانية باستخدام نفس الرابط' });
+    throw err;
+  }
 }));
 
 app.post('/api/admin/blog-drafts/:id/approve', wrap(async (req, res) => {

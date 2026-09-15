@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/table";
 import { api, del, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
+import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
@@ -151,11 +152,15 @@ function AdminPage() {
         <SupportTab />
       </TabsContent>
       <TabsContent value="blog">
-        <Tabs defaultValue="pending" className="space-y-4">
+        <Tabs defaultValue="new" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="new">مقالة جديدة</TabsTrigger>
             <TabsTrigger value="pending">قيد المراجعة</TabsTrigger>
             <TabsTrigger value="published">المنشور</TabsTrigger>
           </TabsList>
+          <TabsContent value="new">
+            <NewArticleTab />
+          </TabsContent>
           <TabsContent value="pending">
             <BlogDraftsTab />
           </TabsContent>

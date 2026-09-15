@@ -589,6 +589,58 @@ export async function insertBlogPostDraft(row) {
   return data[0] ?? null;
 }
 
+/**
+ * Inserts an article written directly by an admin (as opposed to
+ * insertBlogPostDraft above, which is only ever called by the auto-generation
+ * pipeline and requires generation-specific fields like postDate/batchIndex
+ * to line up with that day's cron batch). Manual posts still need *some*
+ * (post_date, batch_index) to satisfy that unique constraint, so they get a
+ * negative, per-second batch_index — auto-generation only ever uses small
+ * positive indices (see ARTICLES_PER_DAY in blogGenerator.js), so the two
+ * numbering schemes can never collide.
+ * @throws an Error with a `.code` matching the underlying Postgres error
+ *   code (e.g. '23505' for a duplicate slug) so callers can give a friendly
+ *   message for that case.
+ */
+export async function insertManualBlogPost({
+  title,
+  slug,
+  metaDescription,
+  dek,
+  content,
+  tags,
+  primaryKeyword,
+  publish,
+}) {
+  const now = new Date();
+  const status = publish ? 'published' : 'draft';
+  const { data, error } = await supabase
+    .from('blog_posts')
+    .insert({
+      post_date: now.toISOString().slice(0, 10),
+      batch_index: -Math.floor(now.getTime() / 1000),
+      slug,
+      primary_keyword: primaryKeyword || title,
+      secondary_keywords: [],
+      title,
+      meta_description: metaDescription,
+      dek: dek ?? null,
+      content_json: content,
+      tags: tags ?? [],
+      status,
+      generated_at: now.toISOString(),
+      published_at: publish ? now.toISOString() : null,
+    })
+    .select('*')
+    .single();
+  if (error) {
+    const wrapped = new Error(`insertManualBlogPost: ${error.message}`);
+    wrapped.code = error.code;
+    throw wrapped;
+  }
+  return data;
+}
+
 export async function listBlogPosts({ status, limit = 50 } = {}) {
   let query = supabase.from('blog_posts').select('*').order('generated_at', { ascending: false }).limit(limit);
   if (status) query = query.eq('status', status);
