@@ -25,7 +25,7 @@ import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
-import { loadPortfolio, withPortfolio, recordTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -1461,6 +1461,38 @@ app.post('/api/portfolio/trade', wrap(async (req, res) => {
   }
   const updated = await withPortfolio(req.user.id, (portfolio) =>
     recordTrade(portfolio, { code, side, shares: Number(shares), price: Number(price), date, note }),
+  );
+  res.json({ ...updated, capital: capitalOf(updated) });
+}));
+
+// Correct or delete a logged trade (see editTrade). Trades have no ids, so
+// the client names one by its index in the log and echoes the row it saw as
+// `original`; if the log has moved under it (another tab, a new trade), the
+// row at that index won't match and nothing is changed.
+function tradeAt(portfolio, req) {
+  const index = Number(req.params.index);
+  const trade = Number.isInteger(index) ? portfolio.trades?.[index] : null;
+  const seen = req.body?.original ?? {};
+  const same = trade && ['date', 'code', 'side'].every((key) => trade[key] === seen[key])
+    && ['shares', 'price'].every((key) => Number(trade[key]) === Number(seen[key]));
+  if (!same) throw new Error('سجل الصفقات اتغير — حدّث الصفحة وجرب تاني.');
+  return index;
+}
+
+app.post('/api/portfolio/trades/:index', wrap(async (req, res) => {
+  const { code, side, shares, price, date, note } = req.body ?? {};
+  if (!code || !side || !shares || !price) {
+    return res.status(400).json({ error: 'محتاج code و side و shares و price' });
+  }
+  const updated = await withPortfolio(req.user.id, (portfolio) =>
+    editTrade(portfolio, tradeAt(portfolio, req), { code, side, shares, price, date, note }),
+  );
+  res.json({ ...updated, capital: capitalOf(updated) });
+}));
+
+app.post('/api/portfolio/trades/:index/delete', wrap(async (req, res) => {
+  const updated = await withPortfolio(req.user.id, (portfolio) =>
+    editTrade(portfolio, tradeAt(portfolio, req), null),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
 }));

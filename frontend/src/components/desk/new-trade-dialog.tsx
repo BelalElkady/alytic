@@ -1,3 +1,4 @@
+import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -25,24 +26,80 @@ import { useDesk } from "@/lib/store";
 
 const EMPTY = { code: "", side: "buy", shares: "", price: "", date: "" };
 
-/** Log an executed buy/sell — shares, average cost and cash update server-side. */
+/** A row of the trade log, with its position in the log — what the edit endpoints address it by. */
+export type LoggedTrade = {
+  index: number;
+  date: string;
+  code: string;
+  side: string;
+  shares: number;
+  price: number;
+};
+
+/**
+ * Log an executed buy/sell — shares, average cost and cash update server-side.
+ * Given `trade`, corrects or deletes that logged trade instead.
+ */
 export function NewTradeDialog({
   open,
   onOpenChange,
+  trade = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  trade?: LoggedTrade | null;
 }) {
   const { reload } = useDesk();
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setForm(EMPTY);
+    setForm(
+      trade
+        ? {
+            code: trade.code,
+            side: trade.side,
+            shares: String(trade.shares),
+            price: String(trade.price),
+            date: trade.date,
+          }
+        : EMPTY,
+    );
     setError(null);
-  }, [open]);
+    setDeleteArmed(false);
+  }, [open, trade]);
+
+  // Echoed back so the server can tell the log hasn't shifted under this row.
+  const original = trade && {
+    date: trade.date,
+    code: trade.code,
+    side: trade.side,
+    shares: trade.shares,
+    price: trade.price,
+  };
+
+  const remove = async () => {
+    if (!trade) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await post(`/api/portfolio/trades/${trade.index}/delete`, { original });
+      onOpenChange(false);
+      await reload();
+      toast.success("تم حذف الصفقة وتحديث المحفظة");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر حذف الصفقة");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (!form.code) {
@@ -52,18 +109,26 @@ export function NewTradeDialog({
     setBusy(true);
     setError(null);
     try {
-      await post("/api/portfolio/trade", {
+      const body = {
         code: form.code,
         side: form.side,
         shares: +form.shares,
         price: +form.price,
         date: form.date || undefined,
-      });
+      };
+      if (trade) await post(`/api/portfolio/trades/${trade.index}`, { ...body, original });
+      else await post("/api/portfolio/trade", body);
       onOpenChange(false);
       await reload();
-      toast.success("تم تسجيل الصفقة وتحديث المحفظة");
+      toast.success(trade ? "تم تعديل الصفقة وتحديث المحفظة" : "تم تسجيل الصفقة وتحديث المحفظة");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "تعذر تسجيل الصفقة");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : trade
+            ? "تعذر تعديل الصفقة"
+            : "تعذر تسجيل الصفقة",
+      );
     } finally {
       setBusy(false);
     }
@@ -73,9 +138,13 @@ export function NewTradeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] gap-4 overflow-y-auto sm:max-w-md">
         <DialogHeader className="text-start">
-          <DialogTitle className="text-base">إدخال صفقة جديدة</DialogTitle>
+          <DialogTitle className="text-base">
+            {trade ? "تعديل الصفقة" : "إدخال صفقة جديدة"}
+          </DialogTitle>
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-            أي بيع أو شراء اتنفذ فعليًا. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا.
+            {trade
+              ? "صحّح أي بيانات اتسجلت غلط. العدد والمتوسط والكاش والربح المحقق بيتعاد حسابهم تلقائيًا."
+              : "أي بيع أو شراء اتنفذ فعليًا. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا."}
           </p>
         </DialogHeader>
 
@@ -145,11 +214,17 @@ export function NewTradeDialog({
 
         {error && <p className="text-[13px] text-down">{error}</p>}
 
-        <DialogFooter className="sm:justify-start">
+        <DialogFooter className="gap-2 sm:justify-start">
           <Button onClick={() => void submit()} disabled={busy}>
             {busy && <Spinner />}
-            تسجيل الصفقة
+            {trade ? "حفظ التعديل" : "تسجيل الصفقة"}
           </Button>
+          {trade && (
+            <Button variant="destructive" onClick={() => void remove()} disabled={busy}>
+              <Trash2 className="size-4" />
+              {deleteArmed ? "اضغط تاني لتأكيد الحذف" : "حذف الصفقة"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

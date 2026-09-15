@@ -142,6 +142,133 @@ export async function recordTrade(portfolio, { code, side, shares, price, date =
   return p;
 }
 
+/**
+ * Walk one stock's trades, in log order, from a starting holding. Returns the
+ * shares and average cost it ends on, the cash it moved, the P&L it realised
+ * (and each sell's share of it), and whether any sell exceeded what was held.
+ * Same arithmetic as recordTrade, minus the rounding.
+ */
+function replayCode(trades, start) {
+  let shares = start.shares;
+  let avgCost = start.avgCost;
+  let cash = 0;
+  let realized = 0;
+  let oversold = false;
+  const sellRealized = [];
+  for (const t of trades) {
+    const value = t.shares * t.price;
+    const commission = t.commission ?? 0;
+    if (t.side === 'buy') {
+      avgCost = shares + t.shares > 0 ? (Math.max(shares, 0) * avgCost + value) / (Math.max(shares, 0) + t.shares) : 0;
+      shares += t.shares;
+      cash -= value + commission;
+    } else {
+      if (t.shares > shares + 1e-9) oversold = true;
+      const r = t.shares * (t.price - avgCost) - commission;
+      realized += r;
+      sellRealized.push(r);
+      shares -= t.shares;
+      if (shares <= 1e-9) avgCost = 0;
+      cash += value - commission;
+    }
+  }
+  return { shares, avgCost, cash, realized, sellRealized, oversold };
+}
+
+/**
+ * Correct (`next` = the fixed trade) or delete (`next` = null) the trade at
+ * `index` in the log.
+ *
+ * A position isn't always built from logged trades alone: a screenshot import
+ * or a manual holding fix can set shares and average cost directly. So rather
+ * than rebuilding the book from nothing, each affected stock's trades are
+ * replayed from the holding they must have started from, once as logged and
+ * once as corrected, and only the difference is applied to the position, cash
+ * and realised P&L. That starting holding is solved from the current one: its
+ * shares are today's minus the logged net, and since the replayed average cost
+ * is linear in the starting average, two replays pin that down exactly. An
+ * edit that changes nothing leaves the portfolio as it was.
+ */
+export function editTrade(portfolio, index, next, rules = RULES) {
+  const old = portfolio.trades?.[index];
+  if (!old) throw new Error('الصفقة دي مش موجودة — حدّث الصفحة وجرب تاني.');
+
+  let replacement = null;
+  if (next) {
+    const code = String(next.code ?? '').toUpperCase();
+    const shares = Number(next.shares);
+    const price = Number(next.price);
+    if (!(shares > 0) || !(price > 0)) throw new Error('عدد الأسهم والسعر لازم يكونوا أكبر من صفر');
+    if (next.side !== 'buy' && next.side !== 'sell') throw new Error(`نوع الصفقة لازم يكون buy أو sell، مش ${next.side}`);
+    if (!lookup(code)) {
+      throw new Error(`الكود "${code}" مش في قائمة الأسهم اللي التطبيق بيقدر يتابعها — اختاره من القائمة بدل الكتابة اليدوية.`);
+    }
+    const { realized: _realized, ...kept } = old;
+    replacement = {
+      ...kept,
+      date: next.date || old.date,
+      code,
+      side: next.side,
+      shares,
+      price,
+      commission: +(shares * price * (rules.commissionPct / 100)).toFixed(2),
+      note: next.note !== undefined ? next.note : old.note ?? null,
+    };
+  }
+
+  const trades = [...portfolio.trades];
+  if (replacement) trades[index] = replacement;
+  else trades.splice(index, 1);
+
+  const positions = { ...portfolio.positions };
+  let cash = portfolio.cash ?? 0;
+  let realizedPnl = portfolio.realizedPnl ?? 0;
+
+  for (const code of new Set([old.code, replacement?.code].filter(Boolean))) {
+    const before = portfolio.trades.filter((t) => t.code === code);
+    const after = trades.filter((t) => t.code === code);
+    const current = positions[code];
+    const net = before.reduce((sum, t) => sum + (t.side === 'buy' ? t.shares : -t.shares), 0);
+    const startShares = (current?.shares ?? 0) - net;
+
+    const at0 = replayCode(before, { shares: startShares, avgCost: 0 }).avgCost;
+    const at1 = replayCode(before, { shares: startShares, avgCost: 1 }).avgCost;
+    const slope = at1 - at0;
+    const startAvg = Math.abs(slope) > 1e-12 ? ((current?.avgCost ?? 0) - at0) / slope : 0;
+    const start = { shares: startShares, avgCost: startAvg };
+
+    const was = replayCode(before, start);
+    const now = replayCode(after, start);
+    if (now.oversold && !was.oversold) {
+      throw new Error(`بعد التعديل هتبقى بايع من ${code} أكتر من اللي كان عندك.`);
+    }
+    if (now.shares < -1e-9) throw new Error(`بعد التعديل عدد أسهم ${code} هيبقى بالسالب.`);
+
+    cash += now.cash - was.cash;
+    realizedPnl += now.realized - was.realized;
+
+    // Each sell's realised figure depends on the average cost before it.
+    let sell = 0;
+    for (let i = 0; i < trades.length; i++) {
+      if (trades[i].code !== code || trades[i].side !== 'sell') continue;
+      trades[i] = { ...trades[i], realized: +now.sellRealized[sell++].toFixed(2) };
+    }
+
+    if (now.shares <= 1e-9) {
+      delete positions[code];
+    } else {
+      const firstBuy = after.find((t) => t.side === 'buy');
+      positions[code] = {
+        ...(current ?? { stop: null, target: null, openedAt: firstBuy?.date ?? old.date }),
+        shares: +now.shares.toFixed(4),
+        avgCost: +now.avgCost.toFixed(4),
+      };
+    }
+  }
+
+  return { ...portfolio, trades, positions, cash: +cash.toFixed(2), realizedPnl: +realizedPnl.toFixed(2) };
+}
+
 /** Update the stored stop/target for a position (e.g. after a trailing-stop move). */
 export function setLevels(portfolio, code, { stop, target }) {
   const c = code.toUpperCase();

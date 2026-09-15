@@ -5,7 +5,7 @@ import '../helpers/env.js';
 
 import RULES from '../../src/config/rules.js';
 import {
-  recordTrade, setLevels, trackedCodes, recordSnapshot, setNote, withPortfolio,
+  recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, withPortfolio,
   loadPortfolio,
 } from '../../src/portfolio.js';
 import { register } from '../../src/auth.js';
@@ -71,6 +71,59 @@ test('overselling, unknown codes, bad sides and non-positive amounts all refuse'
   await assert.rejects(() => recordTrade(p, { code: CODE, side: 'hold', shares: 1, price: 50 }), /buy أو sell/);
   await assert.rejects(() => recordTrade(p, { code: CODE, side: 'buy', shares: 0, price: 50 }));
   await assert.rejects(() => recordTrade(p, { code: CODE, side: 'buy', shares: 1, price: -5 }));
+});
+
+test('editing a buy re-averages the position, moves cash by the difference and re-prices later sells', async () => {
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
+  p = await recordTrade(p, { code: CODE, side: 'buy', shares: 100, price: 60 });
+  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 50, price: 70 });
+  const edited = editTrade(p, 0, { code: CODE, side: 'buy', shares: 100, price: 40 });
+
+  assert.equal(edited.positions.ABUK.shares, 150);
+  assert.equal(edited.positions.ABUK.avgCost, 50);
+  assert.equal(edited.cash, +(p.cash + 100 * 10 + p.trades[0].commission - edited.trades[0].commission).toFixed(2));
+  const realized = +(50 * (70 - 50) - p.trades[2].commission).toFixed(2);
+  assert.equal(edited.trades[2].realized, realized);
+  assert.equal(edited.realizedPnl, realized);
+});
+
+test('an edit that changes nothing leaves the book as it was', async () => {
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
+  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 30, price: 55 });
+  const t = p.trades[1];
+  const edited = editTrade(p, 1, { code: t.code, side: t.side, shares: t.shares, price: t.price, date: t.date });
+  assert.deepEqual(edited.positions, p.positions);
+  assert.equal(edited.cash, p.cash);
+  assert.equal(edited.realizedPnl, p.realizedPnl);
+});
+
+test('deleting a trade keeps a holding that came from outside the log', async () => {
+  // e.g. 200 shares at 30 imported from a screenshot, then one logged buy.
+  let p = { ...base(), positions: { [CODE]: { shares: 200, avgCost: 30, stop: 25, target: null, openedAt: '2026-01-01' } } };
+  p = await recordTrade(p, { code: CODE, side: 'buy', shares: 100, price: 60 });
+  const edited = editTrade(p, 0, null);
+
+  assert.equal(edited.trades.length, 0);
+  assert.equal(edited.positions.ABUK.shares, 200);
+  assert.equal(edited.positions.ABUK.avgCost, 30);
+  assert.equal(edited.positions.ABUK.stop, 25);
+  assert.equal(edited.cash, 100_000);
+});
+
+test('moving a trade to another stock updates both positions', async () => {
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 10, price: 50 });
+  const edited = editTrade(p, 0, { code: 'COMI', side: 'buy', shares: 10, price: 50 });
+  assert.equal(edited.positions.ABUK, undefined);
+  assert.equal(edited.positions.COMI.shares, 10);
+  assert.equal(edited.cash, p.cash);
+});
+
+test('an edit or delete that would leave a sell uncovered refuses', async () => {
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 10, price: 50 });
+  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 10, price: 55 });
+  assert.throws(() => editTrade(p, 0, { code: CODE, side: 'buy', shares: 5, price: 50 }), /أكتر من اللي كان عندك/);
+  assert.throws(() => editTrade(p, 0, null), /أكتر من اللي كان عندك/);
+  assert.throws(() => editTrade(p, 5, null), /مش موجودة/);
 });
 
 test('withPortfolio serialises concurrent writes — the lost-update regression', async () => {

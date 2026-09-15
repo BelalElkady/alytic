@@ -1,8 +1,8 @@
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Pencil, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { NewTradeDialog } from "@/components/desk/new-trade-dialog";
+import { NewTradeDialog, type LoggedTrade } from "@/components/desk/new-trade-dialog";
 import { EmptyState, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -34,6 +34,8 @@ type Draft = Record<string, { shares: string; avgCost: string; stop: string; tar
 export function ManualEntryDialog() {
   const { manualOpen, setManualOpen, rows, reload, pf } = useDesk();
   const [tradeOpen, setTradeOpen] = useState(false);
+  // The logged trade being corrected; null while the dialog adds a new one.
+  const [editingTrade, setEditingTrade] = useState<LoggedTrade | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -119,7 +121,14 @@ export function ManualEntryDialog() {
             الأسعار بتتحدث تلقائيًا من السوق. استعمل ده لو عايز تصحّح عدد الأسهم أو متوسط الشراء، أو
             تعدّل وقف وهدف بنفسك. ولو نفّذت بيع أو شراء، سجّله كصفقة جديدة.
           </p>
-          <Button size="sm" className="mt-1 w-fit" onClick={() => setTradeOpen(true)}>
+          <Button
+            size="sm"
+            className="mt-1 w-fit"
+            onClick={() => {
+              setEditingTrade(null);
+              setTradeOpen(true);
+            }}
+          >
             <Plus className="size-4" />
             إدخال صفقة جديدة
           </Button>
@@ -200,8 +209,15 @@ export function ManualEntryDialog() {
           </DialogFooter>
         )}
 
-        <TradeLog trades={pf?.trades ?? []} realized={pf?.realizedPnl ?? 0} />
-        <NewTradeDialog open={tradeOpen} onOpenChange={setTradeOpen} />
+        <TradeLog
+          trades={pf?.trades ?? []}
+          realized={pf?.realizedPnl ?? 0}
+          onEdit={(trade) => {
+            setEditingTrade(trade);
+            setTradeOpen(true);
+          }}
+        />
+        <NewTradeDialog open={tradeOpen} onOpenChange={setTradeOpen} trade={editingTrade} />
       </DialogContent>
     </Dialog>
   );
@@ -217,7 +233,15 @@ type Trade = {
   realized?: number | null;
 };
 
-function TradeLog({ trades, realized }: { trades: Trade[]; realized: number }) {
+function TradeLog({
+  trades,
+  realized,
+  onEdit,
+}: {
+  trades: Trade[];
+  realized: number;
+  onEdit: (trade: LoggedTrade) => void;
+}) {
   if (trades.length === 0) return null;
   return (
     <Collapsible className="rounded-lg border">
@@ -241,26 +265,44 @@ function TradeLog({ trades, realized }: { trades: Trade[]; realized: number }) {
               <TableHead className="text-start">السعر</TableHead>
               <TableHead className="text-start">عمولة</TableHead>
               <TableHead className="text-start">محقق</TableHead>
+              <TableHead>
+                <span className="sr-only">تعديل</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...trades].reverse().map((trade, index) => (
-              <TableRow key={`${trade.date}-${trade.code}-${index}`}>
-                <TableCell className="num text-right">{trade.date}</TableCell>
-                <TableCell className="font-medium">{trade.code}</TableCell>
-                <TableCell className={trade.side === "buy" ? "text-up" : "text-down"}>
-                  {trade.side === "buy" ? "شراء" : "بيع"}
-                </TableCell>
-                <TableCell className="num text-right">{int(trade.shares)}</TableCell>
-                <TableCell className="num text-right">{fmt(trade.price)}</TableCell>
-                <TableCell className="num text-right text-muted-foreground">
-                  {fmt(trade.commission)}
-                </TableCell>
-                <TableCell className={cn("num text-right", tone(trade.realized))}>
-                  {trade.realized != null ? signed(trade.realized) : "—"}
-                </TableCell>
-              </TableRow>
-            ))}
+            {[...trades].reverse().map((trade, reversedIndex) => {
+              // Newest first on screen; the edit endpoints address the log's own order.
+              const index = trades.length - 1 - reversedIndex;
+              return (
+                <TableRow key={`${trade.date}-${trade.code}-${index}`}>
+                  <TableCell className="num text-right">{trade.date}</TableCell>
+                  <TableCell className="font-medium">{trade.code}</TableCell>
+                  <TableCell className={trade.side === "buy" ? "text-up" : "text-down"}>
+                    {trade.side === "buy" ? "شراء" : "بيع"}
+                  </TableCell>
+                  <TableCell className="num text-right">{int(trade.shares)}</TableCell>
+                  <TableCell className="num text-right">{fmt(trade.price)}</TableCell>
+                  <TableCell className="num text-right text-muted-foreground">
+                    {fmt(trade.commission)}
+                  </TableCell>
+                  <TableCell className={cn("num text-right", tone(trade.realized))}>
+                    {trade.realized != null ? signed(trade.realized) : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-muted-foreground"
+                      aria-label={`تعديل صفقة ${trade.code} بتاريخ ${trade.date}`}
+                      onClick={() => onEdit({ ...trade, index })}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </CollapsibleContent>
