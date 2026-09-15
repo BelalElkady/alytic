@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -22,6 +22,7 @@ import {
   Notice,
   Panel,
   Spinner,
+  Stat,
 } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import {
@@ -428,10 +429,100 @@ const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
 const matchesUser = (row: AdminUserRow, query: string) =>
   [row.email, row.name, row.phone].some((field) => field?.toLowerCase().includes(query));
 
+/** Where a user actually stands for renewal purposes — active/trial/free-and-lapsed are mutually exclusive. */
+type SubStatus = "activeSub" | "trial" | "free";
+
+const statusOf = (row: AdminUserRow): SubStatus => {
+  if (row.subscription?.active) return "activeSub";
+  if (row.trialActive) return "trial";
+  return "free";
+};
+
+type StatusFilter = "all" | SubStatus;
+
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "الكل" },
+  { key: "activeSub", label: "مشترك فعال" },
+  { key: "trial", label: "تجربة سارية" },
+  { key: "free", label: "مجاني — محتاج تجديد" },
+];
+
+const STATUS_LABEL: Record<SubStatus, string> = {
+  activeSub: "مشترك فعال",
+  trial: "تجربة سارية",
+  free: "مجاني — محتاج تجديد",
+};
+
+const csvCell = (value: unknown) => {
+  const str = value === null || value === undefined ? "" : String(value);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+};
+
+const CSV_HEADERS = [
+  "البريد الإلكتروني",
+  "الاسم",
+  "الهاتف",
+  "تاريخ التسجيل",
+  "آخر دخول",
+  "رأس المال",
+  "ربح محقق",
+  "عدد الصفقات",
+  "عدد المراكز",
+  "عدد المتابعة",
+  "الأسلوب الاستثماري",
+  "حالة الحساب",
+  "الباقة",
+  "تاريخ انتهاء الاشتراك",
+  "بريد مفعّل",
+  "مرتبط بجوجل",
+  "مشرف",
+];
+
+/** Downloads the given rows as a CSV file — Excel-friendly (UTF-8 BOM, CRLF rows). */
+function downloadUsersCsv(rows: AdminUserRow[]) {
+  const lines = rows.map((row) => {
+    const pf = row.portfolio;
+    const style = row.behavior?.chosenStyle ?? row.behavior?.inferredStyle ?? null;
+    return [
+      row.email,
+      row.name ?? "",
+      row.phone ?? "",
+      row.createdAt?.slice(0, 10) ?? "",
+      row.lastLoginAt ?? "",
+      pf ? pf.cash + pf.positionsValue : "",
+      pf?.realizedPnl ?? "",
+      pf?.tradesCount ?? "",
+      pf?.positionsCount ?? "",
+      pf?.watchlistCount ?? "",
+      style ? STYLE_LABEL[style] : "",
+      STATUS_LABEL[statusOf(row)],
+      row.subscription ? PLAN_LABEL[row.subscription.plan] : "",
+      row.subscription?.currentPeriodEnd?.slice(0, 10) ?? "",
+      row.emailVerified ? "نعم" : "لا",
+      row.googleLinked ? "نعم" : "لا",
+      row.isAdmin ? "نعم" : "لا",
+    ]
+      .map(csvCell)
+      .join(",");
+  });
+
+  const csv = `﻿${[CSV_HEADERS.map(csvCell).join(","), ...lines].join("\r\n")}`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `alytic-users-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function UsersTab() {
   const [rows, setRows] = useState<AdminUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const load = () => {
     api("/api/admin/users")
@@ -448,11 +539,54 @@ function UsersTab() {
     load();
   }, []);
 
+  const stats = useMemo(() => {
+    if (!rows) return null;
+    let capital = 0;
+    let profit = 0;
+    const statusCounts: Record<SubStatus, number> = { activeSub: 0, trial: 0, free: 0 };
+    const styleCounts: Record<StyleKey, number> = { trader: 0, medium: 0, long: 0 };
+    const subByStyle: Record<StyleKey, number> = { trader: 0, medium: 0, long: 0 };
+    let styleUnknown = 0;
+
+    for (const row of rows) {
+      if (row.portfolio) {
+        capital += row.portfolio.cash + row.portfolio.positionsValue;
+        profit += row.portfolio.realizedPnl;
+      }
+      const status = statusOf(row);
+      statusCounts[status] += 1;
+
+      const style = row.behavior?.chosenStyle ?? row.behavior?.inferredStyle ?? null;
+      if (style) {
+        styleCounts[style] += 1;
+        if (status === "activeSub") subByStyle[style] += 1;
+      } else {
+        styleUnknown += 1;
+      }
+    }
+
+    return {
+      total: rows.length,
+      active: statusCounts.activeSub + statusCounts.trial,
+      capital,
+      profit,
+      styleCounts,
+      styleUnknown,
+      statusCounts,
+      subTrader: subByStyle.trader,
+      subMediumLong: subByStyle.medium + subByStyle.long,
+    };
+  }, [rows]);
+
   const query = search.trim().toLowerCase();
-  const filtered = useMemo(
-    () => (rows ? (query ? rows.filter((row) => matchesUser(row, query)) : rows) : []),
-    [rows, query],
-  );
+  const filtered = useMemo(() => {
+    if (!rows) return [];
+    return rows.filter(
+      (row) =>
+        (statusFilter === "all" || statusOf(row) === statusFilter) &&
+        (!query || matchesUser(row, query)),
+    );
+  }, [rows, query, statusFilter]);
 
   if (error)
     return (
@@ -465,15 +599,68 @@ function UsersTab() {
         }
       />
     );
-  if (!rows) return <LoadingBlock rows={3} />;
+  if (!rows || !stats) return <LoadingBlock rows={3} />;
 
   return (
     <div className="space-y-4">
-      <Input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="ابحث بالبريد الإلكتروني أو الاسم أو رقم الهاتف…"
-      />
+      <div className="grid grid-cols-2 gap-3 rounded-lg border bg-surface p-3 sm:grid-cols-3 lg:grid-cols-4">
+        <Stat label="إجمالي المستخدمين" value={int(stats.total)} />
+        <Stat
+          label="نشط (تجربة سارية أو اشتراك فعال)"
+          value={int(stats.active)}
+          sub={`من ${stats.total}`}
+        />
+        <Stat label="إجمالي رأس مال المحافظ" value={`${int(stats.capital)} ج`} />
+        <Stat
+          label="إجمالي الأرباح المحققة"
+          value={signed(stats.profit)}
+          valueClassName={tone(stats.profit)}
+        />
+        <Stat label="مضاربة (مخاطرة)" value={int(stats.styleCounts.trader)} />
+        <Stat label="متوسط المدى" value={int(stats.styleCounts.medium)} />
+        <Stat label="طويل المدى" value={int(stats.styleCounts.long)} />
+        <Stat label="غير محدد الأسلوب" value={int(stats.styleUnknown)} />
+        <Stat label="مشترك فعال — مضاربة" value={int(stats.subTrader)} />
+        <Stat label="مشترك فعال — متوسط/طويل المدى" value={int(stats.subMediumLong)} />
+        <Stat label="تجربة سارية" value={int(stats.statusCounts.trial)} />
+        <Stat
+          label="مجاني — محتاج تجديد"
+          value={int(stats.statusCounts.free)}
+          valueClassName="text-warn"
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="ابحث بالبريد الإلكتروني أو الاسم أو رقم الهاتف…"
+          className="sm:max-w-sm"
+        />
+        <div className="flex flex-wrap gap-1.5">
+          {STATUS_FILTERS.map(({ key, label }) => (
+            <Button
+              key={key}
+              size="sm"
+              variant={statusFilter === key ? "default" : "outline"}
+              onClick={() => setStatusFilter(key)}
+            >
+              {label} ({key === "all" ? stats.total : stats.statusCounts[key]})
+            </Button>
+          ))}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="sm:ms-auto"
+          disabled={filtered.length === 0}
+          onClick={() => downloadUsersCsv(filtered)}
+        >
+          <Download className="size-4" />
+          تصدير CSV ({filtered.length})
+        </Button>
+      </div>
+
       <Panel
         title="المستخدمون المسجّلون"
         description={`${filtered.length} من ${rows.length} مستخدم`}
@@ -481,25 +668,25 @@ function UsersTab() {
       >
         {filtered.length === 0 ? (
           <div className="p-4">
-            <EmptyState title="لا يوجد مستخدمون مطابقون" hint="جرّب كلمة بحث مختلفة." />
+            <EmptyState title="لا يوجد مستخدمون مطابقون" hint="جرّب كلمة بحث أو فلتر مختلف." />
           </div>
         ) : (
           <div className="scrollbar-slim overflow-x-auto">
-            <Table>
+            <Table className="min-w-[1400px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-start">المستخدم</TableHead>
-                  <TableHead className="text-start">الهاتف</TableHead>
-                  <TableHead className="text-start">تاريخ التسجيل</TableHead>
-                  <TableHead className="text-start">آخر دخول</TableHead>
-                  <TableHead className="text-start">رأس المال</TableHead>
-                  <TableHead className="text-start">ربح محقق</TableHead>
-                  <TableHead className="text-start">النشاط الاستثماري</TableHead>
-                  <TableHead className="text-start">السلوك الاستثماري</TableHead>
-                  <TableHead className="text-start">الرصيد</TableHead>
-                  <TableHead className="text-start">الاشتراك</TableHead>
-                  <TableHead className="text-start">الحالة</TableHead>
-                  <TableHead>
+                  <TableHead className="min-w-[190px] whitespace-nowrap py-3 text-start">المستخدم</TableHead>
+                  <TableHead className="min-w-[120px] whitespace-nowrap py-3 text-start">الهاتف</TableHead>
+                  <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">تاريخ التسجيل</TableHead>
+                  <TableHead className="min-w-[150px] whitespace-nowrap py-3 text-start">آخر دخول</TableHead>
+                  <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">رأس المال</TableHead>
+                  <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">ربح محقق</TableHead>
+                  <TableHead className="min-w-[210px] whitespace-nowrap py-3 text-start">النشاط الاستثماري</TableHead>
+                  <TableHead className="min-w-[250px] whitespace-nowrap py-3 text-start">السلوك الاستثماري</TableHead>
+                  <TableHead className="min-w-[180px] whitespace-nowrap py-3 text-start">الرصيد</TableHead>
+                  <TableHead className="min-w-[170px] whitespace-nowrap py-3 text-start">الاشتراك</TableHead>
+                  <TableHead className="min-w-[140px] whitespace-nowrap py-3 text-start">الحالة</TableHead>
+                  <TableHead className="py-3">
                     <span className="sr-only">حذف</span>
                   </TableHead>
                 </TableRow>
@@ -523,15 +710,15 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
 
   return (
     <TableRow>
-      <TableCell>
+      <TableCell className="align-top py-3">
         <div className="min-w-0">
           <div className="truncate font-medium">{row.email}</div>
           {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.name}</div>}
         </div>
       </TableCell>
-      <TableCell className="num text-right">{row.phone || "—"}</TableCell>
-      <TableCell className="num text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
-      <TableCell className="num text-right">
+      <TableCell className="num align-top py-3 text-right">{row.phone || "—"}</TableCell>
+      <TableCell className="num align-top py-3 text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
+      <TableCell className="num align-top py-3 text-right">
         {row.lastLoginAt
           ? new Date(row.lastLoginAt).toLocaleString("ar-EG", {
               day: "numeric",
@@ -542,36 +729,41 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
             })
           : "—"}
       </TableCell>
-      <TableCell className="num text-right">
+      <TableCell className="num align-top py-3 text-right">
         {capital != null ? `${int(capital)} ج` : "—"}
       </TableCell>
       <TableCell
-        className={cn("num text-right", pf ? tone(pf.realizedPnl) : "text-muted-foreground")}
+        className={cn(
+          "num align-top py-3 text-right",
+          pf ? tone(pf.realizedPnl) : "text-muted-foreground",
+        )}
       >
         {pf ? signed(pf.realizedPnl) : "—"}
       </TableCell>
-      <TableCell className="text-muted-foreground">
+      <TableCell className="align-top py-3 text-muted-foreground">
         {pf
           ? `${pf.tradesCount} صفقة · ${pf.positionsCount} مركز · ${pf.watchlistCount} متابعة`
           : "لا توجد محفظة"}
       </TableCell>
-      <TableCell className="min-w-[220px]">
+      <TableCell className="align-top py-3">
         {row.behavior ? <BehaviorCell behavior={row.behavior} /> : "—"}
       </TableCell>
-      <TableCell className="min-w-[170px]">
+      <TableCell className="align-top py-3">
         <CreditsCell row={row} onChanged={onChanged} />
       </TableCell>
-      <TableCell>
+      <TableCell className="align-top py-3">
         <SubscriptionCell row={row} onChanged={onChanged} />
       </TableCell>
-      <TableCell>
+      <TableCell className="align-top py-3">
         <div className="flex flex-wrap gap-1">
           {row.isAdmin && <Badge>مشرف</Badge>}
           {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
           {row.googleLinked && <Badge variant="secondary">Google</Badge>}
         </div>
       </TableCell>
-      <TableCell>{!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}</TableCell>
+      <TableCell className="align-top py-3">
+        {!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}
+      </TableCell>
     </TableRow>
   );
 }

@@ -649,6 +649,15 @@ export async function listBlogPosts({ status, limit = 50 } = {}) {
   return data;
 }
 
+/** True row count for a status, independent of listBlogPosts' page size — so an admin count display stays right past the 50-row cap. */
+export async function countBlogPosts(status) {
+  let query = supabase.from('blog_posts').select('*', { count: 'exact', head: true });
+  if (status) query = query.eq('status', status);
+  const { count, error } = await query;
+  if (error) throw new Error(`countBlogPosts: ${error.message}`);
+  return count ?? 0;
+}
+
 /** Newest published posts first — for the public /blog list and the header ticker. */
 export async function listPublishedBlogPosts({ limit = 20 } = {}) {
   const { data, error } = await supabase

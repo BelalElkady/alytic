@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,56 +8,52 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { post } from "@/lib/api";
 
-type ContentBlock =
-  | { type: "heading"; level: 2 | 3; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "list"; items: string[] };
+// Best-effort Arabic → Latin so an Arabic title still produces a readable
+// /blog/<slug> URL instead of an empty or garbled one.
+const ARABIC_TRANSLITERATION: Record<string, string> = {
+  "أ": "a", "إ": "i", "آ": "a", "ا": "a", "ب": "b", "ت": "t", "ث": "th", "ج": "j",
+  "ح": "h", "خ": "kh", "د": "d", "ذ": "dh", "ر": "r", "ز": "z", "س": "s", "ش": "sh",
+  "ص": "s", "ض": "d", "ط": "t", "ظ": "z", "ع": "a", "غ": "gh", "ف": "f", "ق": "q",
+  "ك": "k", "ل": "l", "م": "m", "ن": "n", "ه": "h", "و": "w", "ي": "y", "ى": "a",
+  "ة": "a", "ء": "",
+  "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+};
 
-const emptyForm = () => ({
-  title: "",
-  slug: "",
-  dek: "",
-  metaDescription: "",
-  tags: "",
-  blocks: [{ type: "paragraph", text: "" }] as ContentBlock[],
-});
+function slugify(title: string): string {
+  const transliterated = title
+    .replace(/[ً-ٰٟۖ-ۭ]/g, "") // strip Arabic diacritics
+    .split("")
+    .map((ch) => ARABIC_TRANSLITERATION[ch] ?? ch)
+    .join("");
+  const base = transliterated
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || "article";
+}
 
-const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** Splits free-form article text into the paragraph blocks the site's blog renderer expects — blank lines separate paragraphs. */
+function toContentBlocks(text: string) {
+  return text
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .map((paragraph) => ({ type: "paragraph" as const, text: paragraph }));
+}
+
+const emptyForm = () => ({ title: "", content: "", metaDescription: "" });
 
 /** Lets an admin write and publish (or save as a draft for review) an article by hand, alongside the auto-generated pipeline. */
 export function NewArticleTab() {
   const [form, setForm] = useState(emptyForm());
   const [busy, setBusy] = useState<"draft" | "publish" | null>(null);
 
-  const updateBlock = (index: number, patchBlock: { text?: string; items?: string[] }) => {
-    setForm((prev) => ({
-      ...prev,
-      blocks: prev.blocks.map((b, i) => (i === index ? ({ ...b, ...patchBlock } as ContentBlock) : b)),
-    }));
-  };
-
-  const removeBlock = (index: number) => {
-    setForm((prev) => ({ ...prev, blocks: prev.blocks.filter((_, i) => i !== index) }));
-  };
-
-  const addBlock = (type: ContentBlock["type"]) => {
-    setForm((prev) => {
-      const block: ContentBlock =
-        type === "list"
-          ? { type: "list", items: [""] }
-          : type === "heading"
-            ? { type: "heading", level: 2, text: "" }
-            : { type: "paragraph", text: "" };
-      return { ...prev, blocks: [...prev.blocks, block] };
-    });
-  };
+  const baseSlug = useMemo(() => slugify(form.title), [form.title]);
 
   const validate = (): string | null => {
     if (!form.title.trim()) return "العنوان مطلوب";
-    if (!SLUG_PATTERN.test(form.slug.trim())) return "الرابط لازم يكون حروف إنجليزية صغيرة وأرقام وشرطات بس، من غير مسافات";
     if (!form.metaDescription.trim()) return "الوصف التعريفي مطلوب";
-    const blocks = form.blocks.filter((b) => (b.type === "list" ? b.items.some((i) => i.trim()) : b.text.trim()));
-    if (blocks.length === 0) return "المقالة لازم تحتوي على محتوى";
+    if (toContentBlocks(form.content).length === 0) return "المقالة لازم تحتوي على محتوى";
     return null;
   };
 
@@ -69,24 +65,39 @@ export function NewArticleTab() {
     }
     setBusy(publish ? "publish" : "draft");
     try {
-      const tags = form.tags
-        .split(/[،,]/)
-        .map((t) => t.trim())
-        .filter(Boolean);
-      const content = form.blocks.filter((b) =>
-        b.type === "list" ? b.items.some((i) => i.trim()) : b.text.trim(),
-      );
-      await post("/api/admin/blog-drafts", {
-        title: form.title.trim(),
-        slug: form.slug.trim(),
-        dek: form.dek.trim() || null,
-        metaDescription: form.metaDescription.trim(),
-        tags,
-        content,
-        publish,
-      });
-      toast.success(publish ? "اتنشرت المقالة" : "اتحفظت المسودة — هتلاقيها في تبويب قيد المراجعة");
-      setForm(emptyForm());
+      const title = form.title.trim();
+      const content = toContentBlocks(form.content);
+      const metaDescription = form.metaDescription.trim();
+      const dateSuffix = new Date().toISOString().slice(0, 10);
+
+      // The slug is derived automatically and isn't shown for editing, so a
+      // same-day duplicate title can't be fixed by hand — retry a few times
+      // with a growing numeric suffix instead of failing outright.
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        const slug = attempt === 1 ? `${baseSlug}-${dateSuffix}` : `${baseSlug}-${dateSuffix}-${attempt}`;
+        try {
+          const { post: created } = await post<{ post: { slug: string } }>("/api/admin/blog-drafts", {
+            title,
+            slug,
+            metaDescription,
+            content,
+            publish,
+          });
+          toast.success(
+            publish
+              ? `اتنشرت المقالة على /blog/${created.slug}`
+              : "اتحفظت المسودة — هتلاقيها في تبويب قيد المراجعة",
+          );
+          setForm(emptyForm());
+          return;
+        } catch (caught) {
+          lastError = caught;
+          const isDuplicateSlug = caught instanceof Error && caught.message.includes("نفس الرابط");
+          if (!isDuplicateSlug) throw caught;
+        }
+      }
+      throw lastError;
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "تعذر حفظ المقالة");
     } finally {
@@ -98,26 +109,16 @@ export function NewArticleTab() {
     <Panel title="مقالة جديدة" description="اكتب مقالة يدويًا وانشرها على طول، أو احفظها كمسودة للمراجعة.">
       <div className="space-y-3">
         <div className="space-y-1">
-          <label className="text-[12px] text-muted-foreground">العنوان</label>
+          <label className="text-[12px] text-muted-foreground">العنوان (Meta Title)</label>
           <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <p dir="ltr" className="text-[11.5px] text-muted-foreground">
+            /blog/{form.title.trim() ? `${baseSlug}-...` : "..."}
+          </p>
         </div>
         <div className="space-y-1">
           <label className="text-[12px] text-muted-foreground">
-            الرابط (بالإنجليزي، حروف صغيرة وأرقام وشرطات بس) — /blog/{form.slug || "..."}
+            الوصف التعريفي (Meta Description، ١٤٠-١٦٠ حرف)
           </label>
-          <Input
-            dir="ltr"
-            value={form.slug}
-            onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase() })}
-            placeholder="egx30-weekly-review"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[12px] text-muted-foreground">المقدمة</label>
-          <Textarea rows={2} value={form.dek} onChange={(e) => setForm({ ...form, dek: e.target.value })} />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[12px] text-muted-foreground">الوصف التعريفي (meta description، ١٤٠-١٦٠ حرف)</label>
           <Textarea
             rows={2}
             value={form.metaDescription}
@@ -125,46 +126,12 @@ export function NewArticleTab() {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-[12px] text-muted-foreground">الوسوم (افصل بينها بفاصلة)</label>
-          <Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} />
-        </div>
-        <div className="space-y-3 border-t pt-3">
-          {form.blocks.map((block, index) => (
-            <div key={index} className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-[12px] text-muted-foreground">
-                  {block.type === "heading" ? "عنوان فرعي" : block.type === "list" ? "قائمة (سطر لكل عنصر)" : "فقرة"}
-                </label>
-                <Button variant="ghost" size="sm" onClick={() => removeBlock(index)}>
-                  حذف الفقرة
-                </Button>
-              </div>
-              {block.type === "list" ? (
-                <Textarea
-                  rows={3}
-                  value={block.items.join("\n")}
-                  onChange={(e) => updateBlock(index, { items: e.target.value.split("\n") })}
-                />
-              ) : (
-                <Textarea
-                  rows={block.type === "heading" ? 1 : 3}
-                  value={block.text}
-                  onChange={(e) => updateBlock(index, { text: e.target.value })}
-                />
-              )}
-            </div>
-          ))}
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => addBlock("paragraph")}>
-              + فقرة
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => addBlock("heading")}>
-              + عنوان فرعي
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => addBlock("list")}>
-              + قائمة
-            </Button>
-          </div>
+          <label className="text-[12px] text-muted-foreground">نص المقالة (سطر فاضي بين كل فقرة والتانية)</label>
+          <Textarea
+            rows={16}
+            value={form.content}
+            onChange={(e) => setForm({ ...form, content: e.target.value })}
+          />
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t pt-3">
           <Button disabled={busy !== null} onClick={() => void submit(true)}>

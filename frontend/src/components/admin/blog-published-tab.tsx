@@ -56,6 +56,9 @@ const toEditState = (row: BlogPost): EditState => ({
 /** Live posts already served by /api/blog — lets an admin fix, pull back to review, or permanently remove them. */
 export function PublishedPostsTab() {
   const [rows, setRows] = useState<BlogPost[] | null>(null);
+  // Total published count from the server — distinct from rows.length, which
+  // is capped at the 50-row page the list endpoint returns.
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -66,6 +69,7 @@ export function PublishedPostsTab() {
     api("/api/admin/blog-drafts?status=published")
       .then((result) => {
         setRows(result.posts);
+        setTotal(result.total);
         setError(null);
       })
       .catch((caught) =>
@@ -199,6 +203,9 @@ export function PublishedPostsTab() {
 
   return (
     <div className="space-y-4">
+      <p className="text-[13px] text-muted-foreground">
+        عدد المقالات المنشورة: <span className="font-semibold text-foreground">{total}</span>
+      </p>
       {rows.length === 0 ? (
         <EmptyState
           title="مفيش مقالات منشورة دلوقتي"
