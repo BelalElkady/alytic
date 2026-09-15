@@ -51,10 +51,23 @@ export function StockPicker({
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[min(20rem,90vw)] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="ابحث بالكود أو الاسم…" />
-          <CommandList>
+      {/* Capped to the room Radix measured on the chosen side, with the list
+          taking whatever is left under the search box, so the top of the
+          menu (search + first stocks) never ends up off screen. On touch
+          screens the search isn't auto-focused: the keyboard would eat half
+          the viewport before the menu is even positioned. */}
+      <PopoverContent
+        className="flex max-h-[min(22rem,var(--radix-popover-content-available-height))] w-[min(20rem,90vw)] flex-col p-0"
+        align="start"
+        collisionPadding={8}
+        onOpenAutoFocus={(event) => {
+          if (window.matchMedia("(pointer: coarse)").matches) event.preventDefault();
+        }}
+      >
+        <Command className="min-h-0 flex-1">
+          {/* 16px on phones: iOS zooms the page into any smaller input. */}
+          <CommandInput placeholder="ابحث بالكود أو الاسم…" className="text-base sm:text-sm" />
+          <CommandList className="max-h-none min-h-0 flex-1">
             <CommandEmpty>مفيش نتائج.</CommandEmpty>
             <CommandGroup>
               {universe.map((stock) => (
