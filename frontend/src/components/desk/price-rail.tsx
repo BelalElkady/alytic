@@ -91,110 +91,97 @@ export function PriceRail({
       ? `linear-gradient(to right, var(--down-soft) 0%, var(--down-soft) ${at(stop)}, var(--surface-2) ${at(stop)}, var(--surface-2) ${at(cost)}, var(--up-soft) ${at(cost)}, var(--up-soft) 100%)`
       : `linear-gradient(to right, var(--down-soft) 0%, var(--down-soft) ${at(stop ?? lo)}, var(--up-soft) ${at(stop ?? lo)}, var(--up-soft) 100%)`;
 
-  // When two legend values are visually close — including a stop that has
-  // trailed up right next to the current price, e.g. a fresh trailing stop
-  // sitting a percent below a live position — stagger them vertically so the
-  // rounded pills (and the current-price dot) do not overlap. The price has
-  // no pill of its own but still needs to take part in the collision check,
-  // otherwise a stop pill can land directly under the price dot and become
-  // unreadable.
+  // When two legend values are visually close — e.g. a trailing stop sitting
+  // right under the cost — drop every other one to a second row so the
+  // rounded pills don't overlap. The current price has its own tag above the
+  // rail, so it never competes with the pills below it.
   const thresholdPct = 14;
-  const sortedWithPrice = [
-    ...marks.map((m) => ({ key: m.label, at: parseFloat(at(m.value)) })),
-    { key: "__price__", at: parseFloat(at(price)) },
-  ].sort((a, b) => a.at - b.at);
+  const sorted = marks
+    .map((m) => ({ key: m.label, at: parseFloat(at(m.value)) }))
+    .sort((a, b) => a.at - b.at);
   const staggerByKey = new Map<string, boolean>();
   let prevFlag = false;
-  for (let i = 1; i < sortedWithPrice.length; i++) {
-    const close = Math.abs(sortedWithPrice[i]!.at - sortedWithPrice[i - 1]!.at) < thresholdPct;
+  for (let i = 1; i < sorted.length; i++) {
+    const close = Math.abs(sorted[i]!.at - sorted[i - 1]!.at) < thresholdPct;
     const flag = close ? !prevFlag : false;
-    if (sortedWithPrice[i]!.key !== "__price__") staggerByKey.set(sortedWithPrice[i]!.key, flag);
+    staggerByKey.set(sorted[i]!.key, flag);
     prevFlag = flag;
   }
   const staggered = marks.map((m) => staggerByKey.get(m.label) ?? false);
   const needsStagger = staggered.some(Boolean);
 
   const railLine = (
-    <div
-      className="relative h-2.5 w-full overflow-hidden rounded-full border"
-      style={{ background: gradient }}
-      role="img"
-      aria-label={`السعر ${fmt(price)} بين وقف ${fmt(stop)} وهدف ${fmt(target)}`}
-    >
-      <span
-        className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-sm"
-        style={{ left: at(price) }}
-      />
-      {marks.map((mark) => (
+    <div className={cn("relative", !compact && "pt-10")}>
+      <div className="relative">
+        <div
+          className="relative h-2.5 w-full overflow-hidden rounded-full border"
+          style={{ background: gradient }}
+          role="img"
+          aria-label={`السعر ${fmt(price)} بين وقف ${fmt(stop)} وهدف ${fmt(target)}`}
+        >
+          {marks.map((mark) => (
+            <span
+              key={mark.label}
+              className={cn("absolute top-0 h-full w-[2px] -translate-x-1/2", mark.dot)}
+              style={{ left: at(mark.value) }}
+            />
+          ))}
+        </div>
+        {/* Current price: kept outside the clipped bar and drawn last so the
+            level ticks never cover it. */}
         <span
-          key={mark.label}
-          className={cn("absolute top-0 h-full w-[2px] -translate-x-1/2", mark.dot)}
-          style={{ left: at(mark.value) }}
+          className="pointer-events-none absolute top-1/2 z-10 h-7 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
+          style={{ left: at(price) }}
         />
-      ))}
+        <span
+          className="pointer-events-none absolute top-1/2 z-10 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-background bg-foreground shadow-md ring-[3px] ring-foreground/25"
+          style={{ left: at(price) }}
+        />
+        {!compact && (
+          <div
+            className="pointer-events-none absolute bottom-[calc(100%+14px)] z-10 -translate-x-1/2"
+            style={{ left: at(price) }}
+          >
+            <div className="flex min-w-max items-center gap-1 rounded-md bg-foreground px-2 py-0.5 text-[11px] text-background shadow-sm">
+              <span className="opacity-75">الآن</span>
+              <span className="num font-semibold">{fmt(price)}</span>
+            </div>
+            <span className="absolute top-full left-1/2 size-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-foreground" />
+          </div>
+        )}
+      </div>
     </div>
   );
 
-  const legendPills = (aboveBelow: boolean) =>
-    marks.map((mark, i) => {
-      const labelText = mark.label.replace(/\s[\d.,]+$/, "");
-      const stagger = staggered[i];
-      return (
-        <div
-          key={mark.label}
-          className={cn(
-            "absolute -translate-x-1/2 rounded-full border border-border/60 bg-surface px-3 py-1.5 shadow-sm min-w-max text-center",
-            mark.text,
-          )}
-          style={{
-            left: at(mark.value),
-            ...(aboveBelow && stagger
-              ? { bottom: "calc(50% + 8px)" }
-              : aboveBelow
-                ? { top: "calc(50% + 8px)" }
-                : { top: 0 }),
-          }}
-        >
-          <div className="flex flex-col items-center gap-0.5">
-            <div className="flex items-center gap-1">
-              <span className={cn("size-2 rounded-full", mark.dot)} />
-              <span className="text-muted-foreground whitespace-nowrap">{labelText}</span>
-            </div>
-            <span className="num font-medium leading-none">{fmt(mark.value)}</span>
+  const legendPills = marks.map((mark, i) => {
+    const labelText = mark.label.replace(/\s[\d.,]+$/, "");
+    return (
+      <div
+        key={mark.label}
+        className={cn(
+          "absolute -translate-x-1/2 rounded-full border border-border/60 bg-surface px-3 py-1.5 shadow-sm min-w-max text-center",
+          mark.text,
+        )}
+        style={{ left: at(mark.value), top: staggered[i] ? "3rem" : 0 }}
+      >
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="flex items-center gap-1">
+            <span className={cn("size-2 rounded-full", mark.dot)} />
+            <span className="text-muted-foreground whitespace-nowrap">{labelText}</span>
           </div>
+          <span className="num font-medium leading-none">{fmt(mark.value)}</span>
         </div>
-      );
-    });
+      </div>
+    );
+  });
 
   return (
-    <div className={cn("space-y-2 px-2", className)}>
-      {needsStagger && !compact ? (
-        <div className="relative h-20 text-[11px]">
-          <div
-            className="absolute top-1/2 left-0 right-0 h-2.5 -translate-y-1/2 overflow-hidden rounded-full border"
-            style={{ background: gradient }}
-            role="img"
-            aria-label={`السعر ${fmt(price)} بين وقف ${fmt(stop)} وهدف ${fmt(target)}`}
-          >
-            <span
-              className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground shadow-sm"
-              style={{ left: at(price) }}
-            />
-            {marks.map((mark) => (
-              <span
-                key={`line-${mark.label}`}
-                className={cn("absolute top-0 h-full w-[2px] -translate-x-1/2", mark.dot)}
-                style={{ left: at(mark.value) }}
-              />
-            ))}
-          </div>
-          {legendPills(true)}
+    <div className={cn("space-y-4 px-2", className)}>
+      {railLine}
+      {!compact && (
+        <div className={cn("relative text-[11px]", needsStagger ? "h-[5.75rem]" : "h-11")}>
+          {legendPills}
         </div>
-      ) : (
-        <>
-          {railLine}
-          {!compact && <div className="relative min-h-9 text-[11px]">{legendPills(false)}</div>}
-        </>
       )}
     </div>
   );
