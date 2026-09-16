@@ -215,31 +215,6 @@ export async function getPortfolioReview(userId, reportDate, style) {
 }
 
 /**
- * The most recent stored review for this user/style, regardless of date —
- * used to give a free-trial user their one lifetime per-stock recommendation
- * back on every later click instead of paying for a new one. See
- * getOrGenerateStockReview's `lifetimeCache` in analyst.js.
- * @returns {object|null} same shape as getPortfolioReview, or null if none exists.
- */
-export async function getLatestPortfolioReview(userId, style) {
-  const { data, error } = await supabase
-    .from('portfolio_reviews')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('style', style)
-    .order('generated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(`getLatestPortfolioReview: ${error.message}`);
-  if (!data) return null;
-  return {
-    ...data.review_json,
-    portfolioHash: data.portfolio_hash,
-    _meta: { ...data.review_json._meta, model: data.model, generatedAt: data.generated_at, usage: data.usage_json ?? null },
-  };
-}
-
-/**
  * Stores today's review for this user/style, replacing whatever was there —
  * unlike putMarketReport this is a per-user row, so there is no cross-request
  * race to protect against with insert-if-absent; the latest generation for a
@@ -306,12 +281,13 @@ export async function getAllSubscriptions() {
 }
 
 /** Starts or extends the user's plan. One row per user, so a renewal overwrites rather than stacking — the caller computes the new current_period_end. */
-export async function putSubscription({ userId, plan, currentPeriodEnd, grantedBy, note }) {
+export async function putSubscription({ userId, plan, tier, currentPeriodEnd, grantedBy, note }) {
   must(
     await supabase.from('subscriptions').upsert(
       {
         user_id: userId,
         plan,
+        tier,
         current_period_end: currentPeriodEnd,
         granted_by: grantedBy ?? null,
         note: note ?? null,
@@ -559,6 +535,7 @@ export async function insertBlogPostDraft(row) {
         primary_keyword: row.primaryKeyword,
         secondary_keywords: row.secondaryKeywords ?? [],
         title: row.title,
+        meta_title: row.metaTitle ?? row.title,
         meta_description: row.metaDescription,
         dek: row.dek ?? null,
         content_json: row.content,
@@ -605,11 +582,13 @@ export async function insertBlogPostDraft(row) {
 export async function insertManualBlogPost({
   title,
   slug,
+  metaTitle,
   metaDescription,
   dek,
   content,
   tags,
   primaryKeyword,
+  imageUrl,
   publish,
 }) {
   const now = new Date();
@@ -623,10 +602,13 @@ export async function insertManualBlogPost({
       primary_keyword: primaryKeyword || title,
       secondary_keywords: [],
       title,
+      meta_title: metaTitle,
       meta_description: metaDescription,
       dek: dek ?? null,
       content_json: content,
       tags: tags ?? [],
+      image_url: imageUrl ?? null,
+      image_thumb_url: imageUrl ?? null,
       status,
       generated_at: now.toISOString(),
       published_at: publish ? now.toISOString() : null,

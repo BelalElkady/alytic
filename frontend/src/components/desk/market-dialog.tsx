@@ -100,7 +100,10 @@ export function MarketDialog() {
     setData(null);
     setError(null);
     const params = new URLSearchParams();
-    if (marketFocus === "cash") params.set("focus", "cash");
+    // Always sent explicitly (not just for "cash") — the backend meters
+    // opening either tab against that account's monthly tier allowance (see
+    // TIERS in backend/src/billing/plans.js), keyed off this exact value.
+    params.set("focus", marketFocus);
     if (index !== "ALL") params.set("index", index);
     // Same rules the position-level recommendation already uses per style —
     // which setups clear the risk/reward bar, and how big a position sizes
@@ -111,9 +114,10 @@ export function MarketDialog() {
       .then((result) => {
         if (cancelled) return;
         setData(result);
-        // Picks up the updated trial-cap count (cashScansLeft) shown on the
-        // cash page's button without waiting for its own next portfolio load.
-        if (marketFocus === "cash") void reloadPortfolio();
+        // Picks up the updated allowance counts (cashScansLeft/
+        // marketAnalysisLeft) shown elsewhere without waiting for its own
+        // next portfolio load.
+        void reloadPortfolio();
       })
       .catch((caught) => !cancelled && setError(caught?.message ?? "تعذر تحليل السوق"));
     return () => {

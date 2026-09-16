@@ -19,7 +19,7 @@ import RULES from '../config/rules.js';
 import { portfolioStructure, portfolioClassificationSummary } from '../scoring/portfolio.js';
 import { DEFAULT_STYLE } from '../config/styles.js';
 import { portfolioHash } from '../portfolio.js';
-import { getPortfolioReview, getLatestPortfolioReview, putPortfolioReview } from '../db.js';
+import { getPortfolioReview, putPortfolioReview } from '../db.js';
 
 /**
  * Client-side tool: an independent recomputation of RSI/MACD/Bollinger from a
@@ -585,15 +585,13 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
  * Cache-or-generate for reviewStock, same contract as getOrGenerateReview.
  * Stored in portfolio_reviews under a `style:CODE` style key (the column is
  * free text), and hashed on this position plus cash only, so a trade in a
- * different stock doesn't throw away this one's verdict.
+ * different stock doesn't throw away this one's verdict. Every account gets
+ * the same one-per-day-per-stock cache; how many *fresh* (non-cached)
+ * verdicts an account may ask for in a month is a separate check the caller
+ * makes against its tier's recommendation allowance before calling this at
+ * all (see leftFor('recommendations', ...) in src/api/server.js) — `force`
+ * (a spent recommendation use) skips the cache for one fresh verdict.
  *
- * @param {boolean} [opts.lifetimeCache] - a free-trial account gets exactly
- *   one AI-generated recommendation per stock, ever, instead of one per day:
- *   every later request for the same stock is answered from whatever was
- *   generated the first time — regardless of date or a since-changed position
- *   — rather than paying for a new model call. Subscribers and admins never
- *   set this, so they keep the normal one-per-day-per-stock cache. `force`
- *   (a spent recommendation credit) still skips it for one fresh verdict.
  * @param {() => Promise<object[]>} opts.loadAnalyses - every held position's
  *   analysis; called only on a cache miss, so a cached verdict never pays for
  *   analysing the whole book.
@@ -602,20 +600,14 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
  */
 export async function getOrGenerateStockReview(portfolio, code, ctx = {}, opts = {}) {
   const {
-    userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE, lifetimeCache = false,
+    userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE,
     loadAnalyses, resolveAsOf,
   } = opts;
   const today = new Date().toISOString().slice(0, 10);
   const cacheStyle = `${style}:${code}`;
   const hash = portfolioHash({ positions: { [code]: portfolio.positions[code] }, watchlist: {}, cash: portfolio.cash });
 
-  if (lifetimeCache && !force) {
-    const cached = await getLatestPortfolioReview(userId, cacheStyle);
-    if (cached) {
-      const { portfolioHash: _hash, ...verdict } = cached;
-      return { verdict, source: 'cached' };
-    }
-  } else if (!force) {
+  if (!force) {
     const cached = await getPortfolioReview(userId, (await resolveAsOf?.()) ?? today, cacheStyle);
     if (cached && cached.portfolioHash === hash) {
       const { portfolioHash: _hash, ...verdict } = cached;

@@ -50,7 +50,8 @@ export type User = {
   trialDaysTotal?: number;
   trialActive?: boolean;
   trialEndsAt?: string;
-  plan?: "monthly" | "yearly" | "custom" | null;
+  plan?: "long_monthly" | "long_yearly" | "trader_monthly" | "trader_yearly" | "custom" | null;
+  tier?: "free" | "long" | "trader" | null;
   subscriptionActive?: boolean;
   currentPeriodEnd?: string | null;
   hasAccess?: boolean;
@@ -271,7 +272,11 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         );
         setPriceError(false);
         setLastPriceSync(
-          new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+          new Date().toLocaleTimeString("ar-EG", {
+            hour: "2-digit",
+            minute: "2-digit",
+            numberingSystem: "latn",
+          }),
         );
       } catch (caught) {
         if (await handledExpiry(caught)) return;

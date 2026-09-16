@@ -38,7 +38,7 @@ export function BlogCard({ post }: { post: BlogPostSummary }) {
           <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{post.dek}</p>
         )}
         <p className="num mt-4 text-[11.5px] text-muted-foreground">
-          {new Date(post.publishedAt).toLocaleDateString("ar-EG")}
+          {new Date(post.publishedAt).toLocaleDateString("ar-EG", { numberingSystem: "latn" })}
         </p>
       </div>
     </Link>

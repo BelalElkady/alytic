@@ -38,7 +38,12 @@ export const arDay = (iso?: string | null) => {
   if (!iso) return "—";
   const date = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("ar-EG", { day: "numeric", month: "long", year: "numeric" });
+  return date.toLocaleDateString("ar-EG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    numberingSystem: "latn",
+  });
 };
 
 export const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));

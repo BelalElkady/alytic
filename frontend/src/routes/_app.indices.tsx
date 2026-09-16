@@ -85,7 +85,11 @@ function IndicesPage() {
         {asOf && (
           <span className="text-[12px] text-muted-foreground">
             آخر تحديث{" "}
-            {new Date(asOf).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+            {new Date(asOf).toLocaleTimeString("ar-EG", {
+              hour: "2-digit",
+              minute: "2-digit",
+              numberingSystem: "latn",
+            })}
           </span>
         )}
       </div>

@@ -42,7 +42,7 @@ type SubscribeInfo = {
 };
 
 const POLL_MS = 15 * 1000;
-const EG_NUMBER = new Intl.NumberFormat("ar-EG");
+const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString("ar-EG", {
@@ -50,6 +50,7 @@ const time = (iso: string) =>
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    numberingSystem: "latn",
   });
 
 /**
@@ -95,7 +96,7 @@ const TOPICS = [
   },
   {
     q: "الأسعار كام؟",
-    a: "شهري ١٤٩ جنيه، أو سنوي ١٥٩٩ جنيه — يعني بتوفّر ١٨٩ جنيه في السنة. والتجربة المجانية ٤ أيام تداول بكل المزايا وبدون بطاقة.",
+    a: "باقة النفس الطويل ٢٩٩ جنيه شهريًا أو ٢٩٩٠ جنيه سنويًا، وباقة الحريفة ٤٩٩ جنيه شهريًا أو ٤٩٩٠ جنيه سنويًا — كل باقة بحدود استخدام شهرية مختلفة. والتجربة المجانية ٤ أيام تداول بحدودها الخاصة وبدون بطاقة.",
     to: "/pricing",
     hash: "",
     linkLabel: "صفحة الأسعار",

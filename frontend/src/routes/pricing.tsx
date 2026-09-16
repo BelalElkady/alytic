@@ -14,12 +14,12 @@ export const Route = createFileRoute("/pricing")({
       {
         name: "description",
         content:
-          "باقة واحدة بكل المزايا: تجربة مجانية ٤ أيام تداول، ثم اشتراك شهري ١٤٩ جنيه أو سنوي ١٥٩٩ جنيه بتوفير ١٨٩ جنيه.",
+          "٣ باقات: تجربة مجانية ٤ أيام تداول، باقة النفس الطويل من ٢٩٩ جنيه شهريًا، وباقة الحريفة من ٤٩٩ جنيه شهريًا.",
       },
       { property: "og:title", content: "الأسعار — EGXpert" },
       {
         property: "og:description",
-        content: "تجربة مجانية ٤ أيام تداول، ثم شهري أو سنوي — نفس المزايا كاملة بدون حدود.",
+        content: "تجربة مجانية ٤ أيام تداول، ثم اختار باقة النفس الطويل أو الحريفة حسب نشاطك.",
       },
       { property: "og:url", content: `${SITE_URL}/pricing` },
     ],
@@ -28,47 +28,58 @@ export const Route = createFileRoute("/pricing")({
   component: PricingPage,
 });
 
-const INCLUDED = [
+const BASE_INCLUDED = [
   "متابعة كل أسهمك بأسعار لحظية",
   "وقف خسارة وأهداف محسوبة لكل سهم",
-  "توصية يومية حسب سلوكك الاستثماري",
-  "رفع صورة المحفظة وقراءتها تلقائيًا",
-  "تحليل السوق وتحليل كل سهم",
   "تقويم إغلاقات ورسوم أداء",
   "إدارة الكاش والصفقات والعمولات",
   "وضع ليلي ودعم كامل للعربية",
 ];
 
+/** كل رقم شهري — يتجدد أول كل شهر ميلادي، بلا علاقة بمدة الاشتراك (شهري أو سنوي). */
 const PLANS = [
   {
-    key: "trial",
-    name: "تجربة مجانية",
+    key: "free",
+    name: "الباقة المجانية",
     price: "مجانًا",
     unit: "لمدة ٤ أيام تداول",
-    note: "بدون بطاقة، بكل المزايا.",
+    yearlyNote: null,
+    note: "بدون بطاقة، بكل المزايا بحدود التجربة.",
     cta: "ابدأ التجربة",
     highlight: false,
+    limits: { screenshots: 2, recommendations: 4, cashScans: 1, marketAnalysis: 1 },
   },
   {
-    key: "monthly",
-    name: "شهري",
-    price: "١٤٩",
+    key: "long",
+    name: "باقة النفس الطويل",
+    price: "٢٩٩",
     unit: "جنيه / شهر",
-    note: "تلغي في أي وقت.",
-    cta: "اشترك شهري",
+    yearlyNote: "أو ٢٩٩٠ جنيه سنويًا",
+    note: "لمستثمر متوسط وطويل المدى.",
+    cta: "اشترك في النفس الطويل",
     highlight: true,
     tag: "الأكثر اختيارًا",
+    limits: { screenshots: 7, recommendations: 480, cashScans: 7, marketAnalysis: 7 },
   },
   {
-    key: "yearly",
-    name: "سنوي",
-    price: "١٥٩٩",
-    unit: "جنيه / سنة",
-    note: "بتوفّر ١٨٩ جنيه مقارنة بالشهري.",
-    cta: "اشترك سنوي",
+    key: "trader",
+    name: "باقة الحريفة",
+    price: "٤٩٩",
+    unit: "جنيه / شهر",
+    yearlyNote: "أو ٤٩٩٠ جنيه سنويًا",
+    note: "للمضارب النشط ومتوسط وطويل المدى.",
+    cta: "اشترك في الحريفة",
     highlight: false,
-    tag: "وفّر ١٨٩ جنيه",
+    tag: "أعلى الحدود",
+    limits: { screenshots: 12, recommendations: 960, cashScans: 15, marketAnalysis: 15 },
   },
+] as const;
+
+const FEATURE_ROWS = [
+  { key: "screenshots", label: "رفع سكرين شوت للمحفظة", unit: "صورة" },
+  { key: "recommendations", label: "توصيات الأسهم", unit: "توصية" },
+  { key: "cashScans", label: "تحليل استخدام الكاش", unit: "مرة" },
+  { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة" },
 ] as const;
 
 function PricingPage() {
@@ -76,11 +87,11 @@ function PricingPage() {
     <SiteShell>
       <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
         <div className="max-w-2xl">
-          <Badge variant="outline">باقة واحدة — بدون مستويات مربكة</Badge>
-          <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">أسعار بسيطة وواضحة</h1>
+          <Badge variant="outline">٣ باقات — اختار اللي يناسب نشاطك</Badge>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">أسعار واضحة لكل مستوى</h1>
           <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            نفس المزايا كاملة في كل الخطط. الفرق بس في مدة الاشتراك. ابدأ بـ ٤ أيام تداول مجانًا
-            وقرّر بعد كده.
+            نفس الأدوات في كل الباقات — الفرق في عدد مرات استخدام كل ميزة شهريًا. ابدأ بـ ٤ أيام
+            تداول مجانًا وقرّر بعد كده.
           </p>
         </div>
 
@@ -108,13 +119,29 @@ function PricingPage() {
                 <span className="num text-4xl font-bold tracking-tight">{plan.price}</span>
                 <span className="pb-1 text-[12.5px] text-muted-foreground">{plan.unit}</span>
               </p>
+              {plan.yearlyNote && (
+                <p className="mt-1 text-[12.5px] text-muted-foreground">{plan.yearlyNote}</p>
+              )}
               <p className="mt-2 text-[12.5px] text-muted-foreground">{plan.note}</p>
+
+              <ul className="mt-5 space-y-2 border-t pt-4">
+                {FEATURE_ROWS.map((row) => (
+                  <li key={row.key} className="flex items-center justify-between text-[13px]">
+                    <span className="text-muted-foreground">{row.label}</span>
+                    <span className="num font-semibold">
+                      {plan.limits[row.key]} {row.unit}
+                      {plan.limits[row.key] === 1 ? "" : plan.key === "free" ? "" : "/شهر"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
               <Button
                 asChild
                 className="mt-6 w-full"
                 variant={plan.highlight ? "default" : "outline"}
               >
-                {plan.key === "trial" ? (
+                {plan.key === "free" ? (
                   <Link to="/login" search={{ mode: "register" }}>
                     {plan.cta}
                   </Link>
@@ -127,9 +154,9 @@ function PricingPage() {
         </div>
 
         <div className="mt-8 rounded-2xl border bg-surface p-6">
-          <h2 className="text-[16px] font-semibold">كل الخطط بتشمل</h2>
+          <h2 className="text-[16px] font-semibold">كل الباقات بتشمل</h2>
           <ul className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-            {INCLUDED.map((item) => (
+            {BASE_INCLUDED.map((item) => (
               <li key={item} className="flex items-start gap-2 text-[13px] leading-relaxed">
                 <Check className="mt-0.5 size-4 shrink-0 text-up" />
                 {item}
@@ -142,7 +169,11 @@ function PricingPage() {
           {[
             {
               q: "هل التجربة محتاجة بطاقة؟",
-              a: "لا. تعمل حساب وتستخدم كل المزايا ٤ أيام تداول، وبعدها تختار خطة لو عجبتك. تحليل الكاش متاح مرتين طول فترة التجربة، وبيبقى بلا حدود بعد الاشتراك.",
+              a: "لا. تعمل حساب وتستخدم الباقة المجانية ٤ أيام تداول بحدودها (صورتين، ٤ توصيات، تحليل كاش وتحليل سوق مرة لكل واحد)، وبعدها تختار باقة النفس الطويل أو الحريفة.",
+            },
+            {
+              q: "الحدود دي بتتجدد إزاي؟",
+              a: "عدد مرات كل ميزة في النفس الطويل والحريفة بيتجدد أول كل شهر ميلادي، سواء اشتراكك شهري أو سنوي.",
             },
             {
               q: "بدفع إزاي؟",

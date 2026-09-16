@@ -28,6 +28,7 @@ const time = (iso: string) =>
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    numberingSystem: "latn",
   });
 
 /** The admin side of the in-app chat — where subscription requests are answered and payment details are sent privately. */

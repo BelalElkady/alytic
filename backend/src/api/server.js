@@ -21,7 +21,7 @@ import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
-import { PLANS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
+import { PLANS, TIERS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
@@ -41,6 +41,7 @@ import { login, register, userFromRequest, sessionCookie, clearSessionCookie, go
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
 import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
+import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
 
 // Where the public contact form's messages land. Same default as
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
@@ -87,12 +88,19 @@ async function accessInfo(user) {
   const periodEnd = subscription ? new Date(subscription.current_period_end) : null;
   const subscriptionActive = Boolean(periodEnd && periodEnd.getTime() > Date.now());
   const exempt = Boolean(user.isAdmin) || user.id === 'local';
+  // Which set of feature caps (see TIERS in src/billing/plans.js) this
+  // account's usage should be checked against. Staff/CLI get the top tier
+  // rather than a bypass, so the per-feature counters below still mean
+  // something for them; a lapsed, non-trial account gets null, which is
+  // moot since PAID_PATHS already blocks it before any cap is checked.
+  const tier = exempt ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive ? 'free' : null;
   return {
     trialDaysTotal: trial.trialDaysTotal,
     trialDaysLeft: trial.trialDaysLeft,
     trialActive: trial.trialActive,
     trialEndsAt: trial.trialEndsAt.toISOString(),
     plan: subscriptionActive ? subscription.plan : null,
+    tier,
     subscriptionActive,
     currentPeriodEnd: periodEnd ? periodEnd.toISOString() : null,
     hasAccess: exempt || trial.trialActive || subscriptionActive,
@@ -256,6 +264,7 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
     post: {
       slug: post.slug,
       title: post.title,
+      metaTitle: post.meta_title,
       metaDescription: post.meta_description,
       dek: post.dek,
       content: post.content_json,
@@ -320,7 +329,9 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
 // here: users ask on the support chat and an admin sends them privately, so
 // no account number is published to anyone who can curl this.
 app.get('/api/billing/plans', (_req, res) => {
-  res.json({ plans: Object.values(PLANS) });
+  // tiers is included so the subscribe screen can show each plan's feature
+  // caps without hardcoding a second copy of TIERS.
+  res.json({ plans: Object.values(PLANS), tiers: TIERS });
 });
 
 app.use('/api', async (req, res, next) => {
@@ -521,11 +532,10 @@ const capitalOf = (p) =>
   Object.values(p.positions).reduce((a, pos) => a + pos.shares * pos.avgCost, 0) + p.cash;
 
 // Extra uses an admin grants from the users table, one balance per capped
-// feature: cash-scan trial uses, fresh stock recommendations past the
-// one-per-stock limit, and screenshot imports past the daily allowance. Kept
-// in portfolio.credits so spending one rides the same withPortfolio lock as
-// the usage it pays for. A credit is only spent once the base allowance is gone.
-const CREDIT_KINDS = ['cashScans', 'recommendations', 'screenshots'];
+// feature, on top of that account's tier allowance (see TIERS). Kept in
+// portfolio.credits so spending one rides the same withPortfolio lock as the
+// usage it pays for. A credit is only spent once the base allowance is gone.
+const CREDIT_KINDS = ['cashScans', 'recommendations', 'screenshots', 'marketAnalysis'];
 function creditsOf(portfolio) {
   const stored = portfolio?.credits ?? {};
   return Object.fromEntries(CREDIT_KINDS.map((kind) => [kind, Math.max(0, Math.floor(Number(stored[kind])) || 0)]));
@@ -534,6 +544,38 @@ function addCredits(portfolio, deltas) {
   const credits = creditsOf(portfolio);
   for (const kind of CREDIT_KINDS) credits[kind] = Math.max(0, credits[kind] + (deltas[kind] ?? 0));
   return { ...portfolio, credits };
+}
+
+// One counter per capped feature, reset the moment the calendar month (Cairo
+// time) changes — lazily, on read, like the credits above: there is no cron
+// resetting these, a stale stored month is simply treated as all-zero. This
+// is the tier system's usage side; TIERS in src/billing/plans.js is the
+// limit side, and req.access.tier (see accessInfo()) says which tier's
+// limits apply to a given account right now.
+const USAGE_KINDS = ['cashScans', 'recommendations', 'screenshots', 'marketAnalysis'];
+function usageFor(portfolio) {
+  const month = cairoToday().slice(0, 7);
+  if (portfolio?.usage?.month === month) return portfolio.usage;
+  return Object.fromEntries([['month', month], ...USAGE_KINDS.map((kind) => [kind, 0])]);
+}
+function bumpUsage(portfolio, kind) {
+  const usage = usageFor(portfolio);
+  return { ...portfolio, usage: { ...usage, [kind]: usage[kind] + 1 } };
+}
+// This month's remaining tier allowance alone, with no credits mixed in —
+// callers use this to decide whether a charged use should still count
+// against the base allowance or has to draw from credits instead.
+function baseLeftFor(kind, portfolio, tier) {
+  const limit = (TIERS[tier] ?? TIERS.free)[kind];
+  const used = usageFor(portfolio)[kind];
+  return Math.max(0, limit - used);
+}
+// What's left of a capped feature right now: this month's remaining tier
+// allowance, plus any admin-granted credits on top. tier is req.access.tier
+// — a signed-in, paid/trial account always has one by the time this runs,
+// since every metered endpoint sits behind the PAID_PATHS gate.
+function leftFor(kind, portfolio, tier) {
+  return baseLeftFor(kind, portfolio, tier) + creditsOf(portfolio)[kind];
 }
 
 // ---- Reference data --------------------------------------------------------
@@ -803,6 +845,10 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     const chosenStyle = STYLE_KEYS.includes(pf?.settings?.investStyle) ? pf.settings.investStyle : null;
     const subscription = subscriptionByUser.get(u.id);
     const trial = trialInfo({ createdAt: u.created_at });
+    const subscriptionActive = Boolean(subscription) && new Date(subscription.current_period_end).getTime() > Date.now();
+    // Same resolution as accessInfo() for this user's own request — see its
+    // comment on why staff/CLI get the top tier rather than a bypass.
+    const tier = u.is_admin || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive ? 'free' : null;
     return {
       id: u.id,
       email: u.email,
@@ -815,10 +861,12 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       lastLoginAt: u.last_login_at,
       trialActive: trial.trialActive,
       trialEndsAt: trial.trialEndsAt.toISOString(),
+      tier,
       subscription: subscription && {
         plan: subscription.plan,
+        tier: subscription.tier,
         currentPeriodEnd: subscription.current_period_end,
-        active: new Date(subscription.current_period_end).getTime() > Date.now(),
+        active: subscriptionActive,
         note: subscription.note,
         updatedAt: subscription.updated_at,
       },
@@ -845,10 +893,12 @@ app.get('/api/admin/users', wrap(async (req, res) => {
         importedPositions: profile.importedPositions,
       },
       // What's left of each capped allowance right now (base + credits), and
-      // the granted credits within it. Cash scans are only capped in the trial.
+      // the granted credits within it — see TIERS in src/billing/plans.js.
       usage: {
-        cashScansLeft: cashScansLeft(pf ?? {}),
-        screenshotsLeftToday: screenshotImportsLeft(pf ?? {}),
+        cashScansLeft: cashScansLeft(pf ?? {}, tier),
+        screenshotsLeftThisMonth: screenshotImportsLeft(pf ?? {}, tier),
+        recommendationsLeft: leftFor('recommendations', pf ?? {}, tier),
+        marketAnalysisLeft: leftFor('marketAnalysis', pf ?? {}, tier),
         credits: creditsOf(pf),
       },
     };
@@ -858,7 +908,8 @@ app.get('/api/admin/users', wrap(async (req, res) => {
 
 // Adds (or, with a negative number, takes back) credits on top of a user's
 // capped allowances — see creditsOf(). Body: { cashScans, recommendations,
-// screenshots }, each a whole-number change; a balance never drops below 0.
+// screenshots, marketAnalysis }, each a whole-number change; a balance never
+// drops below 0.
 app.post('/api/admin/users/:id/credits', wrap(async (req, res) => {
   if (!(await getUserById(req.params.id))) return res.status(404).json({ error: 'المستخدم مش موجود' });
   const deltas = {};
@@ -887,12 +938,19 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
   const requested = String(req.body?.plan ?? '');
   const plan = planFor(requested);
   let currentPeriodEnd;
+  let tier;
   if (plan) {
     currentPeriodEnd = addMonths(await periodStartFor(target.id), plan.months);
+    tier = plan.tier;
   } else if (requested === 'custom') {
     currentPeriodEnd = new Date(String(req.body?.endsAt ?? ''));
     if (Number.isNaN(currentPeriodEnd.getTime())) return res.status(400).json({ error: 'اكتب تاريخ انتهاء صحيح' });
     if (currentPeriodEnd.getTime() <= Date.now()) return res.status(400).json({ error: 'تاريخ الانتهاء لازم يكون في المستقبل' });
+    // No SKU to infer a tier from, so a custom grant (a gift period, a
+    // goodwill extension, a correction) must say explicitly which tier's
+    // feature caps the account should get.
+    tier = String(req.body?.tier ?? '');
+    if (!TIERS[tier] || tier === 'free') return res.status(400).json({ error: 'اختر باقة (نفس طويل أو حريفة) للاشتراك المخصص' });
   } else {
     return res.status(400).json({ error: 'اختر باقة صحيحة' });
   }
@@ -905,6 +963,7 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
   await putSubscription({
     userId: target.id,
     plan: plan?.key ?? 'custom',
+    tier,
     currentPeriodEnd: currentPeriodEnd.toISOString(),
     grantedBy: req.user.id,
     note,
@@ -919,7 +978,7 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
     action: 'grant',
     grantedBy: req.user.id,
   });
-  res.json({ ok: true, subscription: { plan: plan?.key ?? 'custom', currentPeriodEnd: currentPeriodEnd.toISOString(), active: true } });
+  res.json({ ok: true, subscription: { plan: plan?.key ?? 'custom', tier, currentPeriodEnd: currentPeriodEnd.toISOString(), active: true } });
 }));
 
 // Ends paid access now — a refund, a chargeback, or an activation entered
@@ -1044,6 +1103,7 @@ app.get('/api/admin/blog-drafts', wrap(async (req, res) => {
       primaryKeyword: p.primary_keyword,
       secondaryKeywords: p.secondary_keywords,
       title: p.title,
+      metaTitle: p.meta_title,
       metaDescription: p.meta_description,
       dek: p.dek,
       content: p.content_json,
@@ -1064,14 +1124,26 @@ app.get('/api/admin/blog-drafts', wrap(async (req, res) => {
   });
 }));
 
+// A manually written article's feature image — a raw image body (mirroring
+// /api/support/messages/image) uploaded ahead of the article itself, so the
+// admin form can preview it and send its public URL along with the post.
+app.post('/api/admin/blog-drafts/image', express.raw({ type: BLOG_IMAGE_TYPES, limit: '8mb' }), wrap(async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة الأول' });
+  const url = await uploadBlogImage({ mediaType: req.headers['content-type'], buffer: req.body });
+  res.status(201).json({ url });
+}));
+
 // Lets an admin write and publish an article by hand, alongside the
 // auto-generated pipeline above — see insertManualBlogPost for how it avoids
 // colliding with the cron job's (post_date, batch_index) numbering.
 app.post('/api/admin/blog-drafts', wrap(async (req, res) => {
-  const { title, slug, metaDescription, dek, content, tags, publish } = req.body ?? {};
+  const { title, slug, metaTitle, metaDescription, dek, content, tags, imageUrl, publish } = req.body ?? {};
   if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'العنوان مطلوب' });
   if (typeof slug !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
     return res.status(400).json({ error: 'الرابط لازم يكون حروف إنجليزية صغيرة وأرقام وشرطات بس' });
+  }
+  if (typeof metaTitle !== 'string' || !metaTitle.trim()) {
+    return res.status(400).json({ error: 'عنوان الميتا مطلوب' });
   }
   if (typeof metaDescription !== 'string' || !metaDescription.trim()) {
     return res.status(400).json({ error: 'الوصف التعريفي مطلوب' });
@@ -1079,15 +1151,20 @@ app.post('/api/admin/blog-drafts', wrap(async (req, res) => {
   if (dek !== undefined && dek !== null && typeof dek !== 'string') return res.status(400).json({ error: 'المقدمة لازم تكون نص' });
   if (!Array.isArray(content) || content.length === 0) return res.status(400).json({ error: 'المقالة لازم تحتوي على محتوى' });
   if (tags !== undefined && !Array.isArray(tags)) return res.status(400).json({ error: 'الوسوم لازم تكون قائمة' });
+  if (imageUrl !== undefined && imageUrl !== null && typeof imageUrl !== 'string') {
+    return res.status(400).json({ error: 'رابط الصورة غير صالح' });
+  }
 
   try {
     const post = await insertManualBlogPost({
       title: title.trim(),
       slug,
+      metaTitle: metaTitle.trim(),
       metaDescription: metaDescription.trim(),
       dek: (dek ?? '').trim() || null,
       content,
       tags: tags ?? [],
+      imageUrl: imageUrl || null,
       publish: Boolean(publish),
     });
     res.status(201).json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
@@ -1167,63 +1244,88 @@ app.get('/api/quotes', wrap(async (req, res) => {
   res.json({ asOf: new Date().toISOString(), quotes: Object.fromEntries(quotes) });
 }));
 
-// "تحليل الكاش" (focus=cash, see market-dialog.tsx) is capped to this many
-// uses for the life of the free trial — once a subscription is active (or
-// for admin/local accounts) it's unlimited, same as every other /api/scan
-// use. The cap counts how many times the feature is opened, never which
-// index or how many stocks a given scan covers, so every use still analyzes
-// the full universe like any other scan: the market-dialog UI re-issues this
-// same request as the user flips between index tabs or invest styles while
-// the dialog stays open, and all of those belong to the one "time" that
-// opened it. A request within CASH_SCAN_SESSION_WINDOW_MS of the account's
-// last recorded use is treated as such a continuation and never charged —
-// only a request arriving after that gap spends a new use. Recorded as one
-// ISO timestamp per charged use in portfolio.cashScans rather than a DB
-// table, so the check-then-write race is closed by withPortfolio's existing
-// per-user write lock — the same pattern the screenshot-import cap (below)
-// uses.
-const CASH_SCAN_TRIAL_LIMIT = Math.max(0, Math.floor(Number(process.env.CASH_SCAN_TRIAL_LIMIT ?? 2)) || 0);
-const CASH_SCAN_SESSION_WINDOW_MS = 10 * 60 * 1000;
-const CASH_SCAN_LIMIT_MESSAGE = `خلصت محاولات تحليل الكاش المتاحة في فترة التجربة (${CASH_SCAN_TRIAL_LIMIT}) — بيبقى بلا حدود بعد الاشتراك.`;
-function baseCashScansLeft(portfolio) {
-  return Math.max(0, CASH_SCAN_TRIAL_LIMIT - (portfolio.cashScans ?? []).length);
+// "تحليل استخدام الكاش" (focus=cash) and "تحليل السوق" (focus=market) — see
+// market-dialog.tsx, which opens the same dialog for both — are each capped
+// to that account's tier allowance (see TIERS in src/billing/plans.js) each
+// calendar month, same as every other capped feature. A request with neither
+// focus value (e.g. the desk's own portfolio-refresh scan, or the cash
+// page's watchlist scan) is never metered — only a deliberate open of one of
+// these two dialogs is. The cap counts how many times a dialog is opened,
+// never which index or how many stocks a given scan covers, so every use
+// still analyzes the full universe like any other scan: the dialog UI
+// re-issues this same request as the user flips between index tabs or invest
+// styles while it stays open, and all of those belong to the one "time" that
+// opened it. A request within SCAN_SESSION_WINDOW_MS of the account's last
+// recorded use of that same kind is treated as such a continuation and never
+// charged — only a request arriving after that gap spends a new use.
+// portfolio.lastCashScanAt/lastMarketScanAt track that moment separately
+// from the monthly usage count (see usageFor()) so a use late in one month
+// can still be recognised as a continuation just after the month rolls over.
+// The check-then-write race on the count itself is closed by withPortfolio's
+// existing per-user write lock — the same pattern the screenshot-import cap
+// (below) uses.
+const SCAN_SESSION_WINDOW_MS = 10 * 60 * 1000;
+const SCAN_FOCUS_KIND = { cash: 'cashScans', market: 'marketAnalysis' };
+const SCAN_LAST_AT_FIELD = { cashScans: 'lastCashScanAt', marketAnalysis: 'lastMarketScanAt' };
+const SCAN_LIMIT_MESSAGE = {
+  cashScans: 'خلصت محاولات تحليل الكاش المتاحة الشهر ده — تقدر تكمّل الشهر الجاي، أو كلّمنا في الشات لو محتاج رصيد إضافي.',
+  marketAnalysis: 'خلصت محاولات تحليل السوق المتاحة الشهر ده — تقدر تكمّل الشهر الجاي، أو كلّمنا في الشات لو محتاج رصيد إضافي.',
+};
+const CASH_SCAN_LIMIT_MESSAGE = SCAN_LIMIT_MESSAGE.cashScans;
+function cashScansLeft(portfolio, tier) {
+  return leftFor('cashScans', portfolio, tier);
 }
-function cashScansLeft(portfolio) {
-  return baseCashScansLeft(portfolio) + creditsOf(portfolio).cashScans;
+function withinScanSession(portfolio, kind) {
+  const last = portfolio[SCAN_LAST_AT_FIELD[kind]];
+  return Boolean(last) && Date.now() - Date.parse(last) < SCAN_SESSION_WINDOW_MS;
 }
 function withinCashScanSession(portfolio) {
-  const last = (portfolio.cashScans ?? []).at(-1);
-  return Boolean(last) && Date.now() - Date.parse(last) < CASH_SCAN_SESSION_WINDOW_MS;
+  return withinScanSession(portfolio, 'cashScans');
+}
+// Spends one use of `kind` for this scan session, or joins an already-open
+// one for free — see the block comment above. Returns the portfolio to read
+// the resulting *Left value from, or throws (429-worthy) if the allowance is
+// gone. Only called for focus values in SCAN_FOCUS_KIND.
+async function chargeScanSession(userId, portfolio, kind, tier) {
+  if (withinScanSession(portfolio, kind)) return portfolio;
+  if (leftFor(kind, portfolio, tier) <= 0) throw Object.assign(new Error(SCAN_LIMIT_MESSAGE[kind]), { scanLimitKind: kind });
+  // Re-checked under the lock: parallel requests can all pass the read above
+  // before any of them has recorded a use, and a request that lands a moment
+  // after another one just opened a new session must join it rather than
+  // spend a second one.
+  return withPortfolio(userId, (p) => {
+    if (withinScanSession(p, kind)) return p;
+    if (leftFor(kind, p, tier) <= 0) throw Object.assign(new Error(SCAN_LIMIT_MESSAGE[kind]), { scanLimitKind: kind });
+    const next = { ...bumpUsage(p, kind), [SCAN_LAST_AT_FIELD[kind]]: new Date().toISOString() };
+    return baseLeftFor(kind, p, tier) > 0 ? next : addCredits(next, { [kind]: -1 });
+  });
 }
 
 app.get('/api/scan', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(req.user.id);
 
   let cashScansLeftNow = null;
-  if (req.query.focus === 'cash') {
-    const exempt = Boolean(req.user.isAdmin) || req.user.id === 'local' || Boolean(req.access?.subscriptionActive);
-    if (!exempt) {
-      if (withinCashScanSession(portfolio)) {
-        cashScansLeftNow = cashScansLeft(portfolio);
-      } else {
-        // Checked before the (still non-trivial, whole-universe) analysis
-        // runs, so an exhausted allowance costs nothing.
-        if (cashScansLeft(portfolio) <= 0) {
-          return res.status(429).json({ error: CASH_SCAN_LIMIT_MESSAGE, reason: 'cash_scan_limit', cashScansLeft: 0 });
-        }
-        // Re-checked under the lock: parallel requests can all pass the read
-        // above before any of them has recorded a use, and a request that
-        // lands a moment after another one just opened a new session must
-        // join it rather than spend a second one.
-        const updated = await withPortfolio(req.user.id, (p) => {
-          if (withinCashScanSession(p)) return p;
-          if (cashScansLeft(p) <= 0) throw new Error(CASH_SCAN_LIMIT_MESSAGE);
-          const next = { ...p, cashScans: [...(p.cashScans ?? []), new Date().toISOString()] };
-          return baseCashScansLeft(p) > 0 ? next : addCredits(next, { cashScans: -1 });
+  let marketAnalysisLeftNow = null;
+  const focusKind = SCAN_FOCUS_KIND[req.query.focus];
+  if (focusKind) {
+    const tier = req.access?.tier;
+    let updated;
+    try {
+      // Checked/charged before the (still non-trivial, whole-universe)
+      // analysis runs, so an exhausted allowance costs nothing.
+      updated = await chargeScanSession(req.user.id, portfolio, focusKind, tier);
+    } catch (err) {
+      if (err.scanLimitKind) {
+        return res.status(429).json({
+          error: err.message,
+          reason: focusKind === 'cashScans' ? 'cash_scan_limit' : 'market_analysis_limit',
+          [`${focusKind}Left`]: 0,
         });
-        cashScansLeftNow = cashScansLeft(updated);
       }
+      throw err;
     }
+    if (focusKind === 'cashScans') cashScansLeftNow = leftFor('cashScans', updated, tier);
+    else marketAnalysisLeftNow = leftFor('marketAnalysis', updated, tier);
   }
 
   const indexCodes = req.query.index ? await codesForIndex(req.query.index) : null;
@@ -1240,6 +1342,8 @@ app.get('/api/scan', wrap(async (req, res) => {
     force: req.query.force === '1',
     focus: req.query.focus,
     cashScansLeftNow,
+    marketAnalysisLeftNow,
+    tier: req.access?.tier,
   });
   res.json(payload);
 }));
@@ -1250,7 +1354,7 @@ app.get('/api/scan', wrap(async (req, res) => {
  * exactly the plan the dialog shows. Returns the response payload plus the
  * full analyses its compact rows were cut from.
  */
-async function runScan(portfolio, { codes, style, force = false, focus = null, cashScansLeftNow = null }) {
+async function runScan(portfolio, { codes, style, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
   // A cash plan has to see the whole book, even holdings outside the index
   // being browsed: the sector limits it sizes against and the AI cash review
   // both depend on every position, not just the ones in that index.
@@ -1382,10 +1486,11 @@ async function runScan(portfolio, { codes, style, force = false, focus = null, c
     asOf: results[0]?.asOf ?? null,
     count: results.length,
     cash: portfolio.cash,
-    // Only set for focus=cash on a non-exempt account — null means either
-    // this wasn't a cash scan, or the account has unlimited use.
+    // Only set for focus=cash — null means this wasn't a cash scan.
     cashScansLeft: cashScansLeftNow,
-    cashScanTrialLimit: CASH_SCAN_TRIAL_LIMIT,
+    cashScansPerMonth: tier ? (TIERS[tier] ?? TIERS.free).cashScans : null,
+    marketAnalysisLeft: marketAnalysisLeftNow,
+    marketAnalysisPerMonth: tier ? (TIERS[tier] ?? TIERS.free).marketAnalysis : null,
     // A compact row per stock — the full analysis is one request away and far
     // too large to send 43 of.
     results: results.map((r) => {
@@ -1472,18 +1577,24 @@ async function runScan(portfolio, { codes, style, force = false, focus = null, c
 
 app.get('/api/portfolio', wrap(async (req, res) => {
   const p = await loadPortfolio(req.user.id);
+  // /api/portfolio isn't a PAID_PATHS entry (a lapsed account can still read
+  // its own data), so req.access isn't guaranteed to be set the way it is on
+  // /api/scan — compute it directly rather than assume.
+  const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
+  const limits = TIERS[tier] ?? TIERS.free;
   res.json({
     ...p,
     capital: capitalOf(p),
     tracked: trackedCodes(p),
-    screenshotImportsLeft: screenshotImportsLeft(p),
-    screenshotImportsPerDay: SCREENSHOT_IMPORTS_PER_DAY,
-    // Raw count against the trial cap — ignores subscription status (the
-    // frontend already has user.subscriptionActive from /api/auth/me and
-    // hides this once that's true, since a subscribed account is never
-    // actually blocked by it).
-    cashScansLeft: cashScansLeft(p),
-    cashScanTrialLimit: CASH_SCAN_TRIAL_LIMIT,
+    tier,
+    screenshotImportsLeft: screenshotImportsLeft(p, tier),
+    screenshotsPerMonth: limits.screenshots,
+    cashScansLeft: cashScansLeft(p, tier),
+    cashScansPerMonth: limits.cashScans,
+    recommendationsLeft: leftFor('recommendations', p, tier),
+    recommendationsPerMonth: limits.recommendations,
+    marketAnalysisLeft: leftFor('marketAnalysis', p, tier),
+    marketAnalysisPerMonth: limits.marketAnalysis,
     credits: creditsOf(p),
   });
 }));
@@ -1696,12 +1807,18 @@ app.post('/api/snapshot', wrap(async (req, res) => {
 
 /**
  * Run at 14:30 Cairo by startDailyCloseScheduler() below, and as a backup by
- * .github/workflows/daily-close-cron.yml over the VPS's loopback interface —
- * same pattern as /api/cron/blog-generate. GitHub
- * Actions cron is UTC-only and Cairo alternates between EET (UTC+2) and
- * EEST (UTC+3) across the year, so the workflow fires at both possible UTC
- * times for 14:30 Cairo and this endpoint no-ops if the session hasn't closed
- * yet in Cairo — that keeps the trigger correct across DST without the
+ * both .github/workflows/daily-close-cron.yml (over the VPS's loopback
+ * interface, same pattern as /api/cron/blog-generate) and an external cron
+ * pinger hitting this route's public URL directly — GitHub Actions' own
+ * `schedule` trigger has silently skipped whole days (see the comment above
+ * that workflow's cron block), so a second, independently-hosted backup
+ * covers the case where GitHub drops the run entirely rather than just
+ * running it late. The external pinger is gated by the same X-Cron-Secret
+ * check below, same as the other two callers.
+ * GitHub Actions cron is UTC-only and Cairo alternates between EET (UTC+2)
+ * and EEST (UTC+3) across the year, so that workflow fires at both possible
+ * UTC times for 14:30 Cairo and this endpoint no-ops if the session hasn't
+ * closed yet in Cairo — that keeps the trigger correct across DST without the
  * workflow's cron schedule needing manual updates twice a year. There's no
  * upper bound: GitHub routinely starts scheduled runs 30-60+ minutes late, and
  * a narrow window around 14:30 turned those late runs into silent no-ops.
@@ -1914,11 +2031,12 @@ app.post('/api/reset', wrap(async (req, res) => {
   const scope = req.body?.scope ?? 'log';
   await withPortfolio(req.user.id, (portfolio) =>
     scope === 'all'
-      // imports and cashScans survive the wipe: they're what the daily
-      // screenshot cap and the trial cash-scan cap count, so dropping either
-      // would hand out a fresh allowance on every reset. Admin-granted credits
-      // are kept too.
-      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports, cashScans: portfolio.cashScans, credits: portfolio.credits }
+      // imports survives the wipe — behaviorProfile() reads it to know
+      // whether the account has ever imported a screenshot, wipe or not.
+      // usage/credits/lastCashScanAt/lastMarketScanAt survive too: they're
+      // what the monthly feature caps count, so dropping any of them would
+      // hand out a fresh allowance on every reset.
+      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports, credits: portfolio.credits, usage: portfolio.usage, lastCashScanAt: portfolio.lastCashScanAt, lastMarketScanAt: portfolio.lastMarketScanAt }
       : { ...portfolio, log: {}, trades: [], realizedPnl: 0 },
   );
   res.json({ ok: true, scope });
@@ -1978,29 +2096,23 @@ function isEtfHolding(item) {
   return /\b(ETFS?|EXCHANGE TRADED)\b/.test(text) || /(صندوق|صناديق) (ال)?مؤشر/.test(text);
 }
 
-// Every image is a vision-model call, so each account gets a daily allowance
-// of successful imports, counted per Cairo day off portfolio.imports. That log
-// keeps only its last 20 entries, which is why the cap can't exceed 20.
-const SCREENSHOT_IMPORTS_PER_DAY = Math.min(20, Math.max(0, Math.floor(Number(process.env.SCREENSHOT_IMPORTS_PER_DAY ?? 5)) || 0));
-const SCREENSHOT_LIMIT_MESSAGE = 'خلصت عدد صور المحفظة المسموح بيه النهارده — تقدر ترفع تاني بكرة، أو عدّل من «إدخال يدوي».';
+// Every image is a vision-model call, so each account gets that tier's
+// monthly allowance of successful imports (see TIERS in
+// src/billing/plans.js and usageFor() above). portfolio.imports is a
+// separate, capped-at-20-entries log of the imports themselves (read by
+// behaviorProfile() to know whether the account has ever imported a
+// screenshot) — it is no longer what this cap counts against.
+const SCREENSHOT_LIMIT_MESSAGE = 'خلصت عدد صور المحفظة المسموح بيه الشهر ده — تقدر تكمّل الشهر الجاي، أو كلّمنا في الشات لو محتاج رصيد إضافي.';
 
-function baseScreenshotImportsLeft(portfolio) {
-  const today = cairoToday();
-  const used = (portfolio.imports ?? []).filter((entry) => {
-    const at = Date.parse(entry?.importedAt);
-    return entry?.source === 'screenshot' && Number.isFinite(at) && cairoDateOf(at) === today;
-  }).length;
-  return Math.max(0, SCREENSHOT_IMPORTS_PER_DAY - used);
-}
-function screenshotImportsLeft(portfolio) {
-  return baseScreenshotImportsLeft(portfolio) + creditsOf(portfolio).screenshots;
+function screenshotImportsLeft(portfolio, tier) {
+  return leftFor('screenshots', portfolio, tier);
 }
 
 app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'استيراد الصورة محتاج OPENROUTER_API_KEY في .env' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة لمحفظتك أولاً' });
   // Checked before the model call so an exhausted allowance costs nothing.
-  if (screenshotImportsLeft(await loadPortfolio(req.user.id)) <= 0) {
+  if (screenshotImportsLeft(await loadPortfolio(req.user.id), req.access.tier) <= 0) {
     return res.status(429).json({ error: SCREENSHOT_LIMIT_MESSAGE, reason: 'screenshot_limit', screenshotImportsLeft: 0 });
   }
 
@@ -2138,23 +2250,23 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   const updated = await withPortfolio(req.user.id, (portfolio) => {
     // Re-checked under the lock: parallel requests all pass the early check
     // while none of them has been recorded yet.
-    if (screenshotImportsLeft(portfolio) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
+    if (screenshotImportsLeft(portfolio, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
     const next = {
-      ...portfolio,
+      ...bumpUsage(portfolio, 'screenshots'),
       positions: merge ? { ...portfolio.positions, ...positions } : positions,
       ...(Number.isFinite(cashFromScreenshot) && cashFromScreenshot >= 0 ? { cash: cashFromScreenshot } : {}),
       imports: [...(portfolio.imports ?? []), { importedAt, positions: Object.keys(positions), source: 'screenshot' }].slice(-20),
     };
     const flow = (next.cash ?? 0) - (portfolio.cash ?? 0) + positionsFlow(portfolio.positions, next.positions, importPrices);
     const withFlow = recordCashFlow(next, flow, 'screenshot');
-    return baseScreenshotImportsLeft(portfolio) > 0 ? withFlow : addCredits(withFlow, { screenshots: -1 });
+    return baseLeftFor('screenshots', portfolio, req.access.tier) > 0 ? withFlow : addCredits(withFlow, { screenshots: -1 });
   });
   res.json({
     ok: true,
     importedAt,
     positions: Object.keys(positions).length,
     derivedPositions,
-    screenshotImportsLeft: screenshotImportsLeft(updated),
+    screenshotImportsLeft: screenshotImportsLeft(updated, req.access.tier),
     portfolio: { ...updated, capital: capitalOf(updated) },
   });
 }));
@@ -2278,28 +2390,19 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   if (!portfolio.positions[code]) return res.status(400).json({ error: `مفيش مركز مفتوح في ${code || 'السهم ده'}` });
 
   const userId = req.user.id;
-  // A free-trial account (not admin, not the local CLI user, not subscribed)
-  // gets exactly one AI recommendation per stock, ever — mirrors the cash-scan
-  // trial limit elsewhere in this file. A subscription lifts it permanently,
-  // same as every other paid feature — no separate flag to track or reset.
-  const lifetimeCache = !req.user.isAdmin && userId !== 'local' && !req.access?.subscriptionActive;
+  const tier = req.access.tier;
   const jobKey = reviewJobKey(userId, pre.style, code);
+  const force = req.body?.force === true;
 
-  // Past that limit (the trial's one per stock, or a subscriber's one per
-  // stock per day), asking to regenerate spends a recommendation credit an
-  // admin granted. Joining a review that's already running spends nothing.
-  let force = pre.force;
-  let spentCredit = false;
-  if (!req.user.isAdmin && userId !== 'local' && req.body?.force === true && reviewJobs.get(jobKey)?.status !== 'running') {
-    await withPortfolio(userId, (p) => {
-      if (creditsOf(p).recommendations <= 0) return p;
-      spentCredit = true;
-      return addCredits(p, { recommendations: -1 });
-    });
-    if (!spentCredit) {
-      return res.status(429).json({ error: 'خلص رصيد التوصيات الإضافية.', reason: 'recommendation_credit_limit' });
-    }
-    force = true;
+  // Every account draws fresh (non-cached) recommendations from its tier's
+  // monthly allowance (see TIERS) — a same-day cached verdict for an
+  // unchanged position costs nothing, but there's no cheap way to know in
+  // advance which this request will turn out to be, so an exhausted
+  // allowance blocks a new job outright. Joining a review that's already
+  // running never spends anything, cached or not.
+  const joiningRunningJob = reviewJobs.get(jobKey)?.status === 'running';
+  if (!joiningRunningJob && leftFor('recommendations', portfolio, tier) <= 0) {
+    return res.status(429).json({ error: 'خلص رصيد التوصيات المتاح الشهر ده.', reason: 'recommendation_credit_limit' });
   }
 
   await startReviewJob(res, jobKey, async () => {
@@ -2307,13 +2410,12 @@ app.post('/api/review/stock', wrap(async (req, res) => {
     const rules = pre.style ? rulesForStyle(RULES, pre.style) : RULES;
     const capital = capitalOf(portfolio);
     const { getOrGenerateStockReview } = await import('../agent/analyst.js');
-    // A failed model call gives the credit back — it bought nothing.
     const { verdict, source } = await getOrGenerateStockReview(
       portfolio,
       code,
       { cash: portfolio.cash, capital },
       {
-        userId, rules, style: pre.style ?? 'medium', force, lifetimeCache,
+        userId, rules, style: pre.style ?? 'medium', force,
         // Just this stock's bars, no fundamentals — enough to date the cache lookup.
         resolveAsOf: async () =>
           (await analyzeTicker(code, { position: portfolio.positions[code], capital, rules, withFundamentals: false })).asOf,
@@ -2331,12 +2433,18 @@ app.post('/api/review/stock', wrap(async (req, res) => {
           return results;
         },
       },
-    ).catch(async (err) => {
-      if (spentCredit) await withPortfolio(userId, (p) => addCredits(p, { recommendations: 1 })).catch(() => {});
-      throw err;
-    });
+    );
+    // Charged only once the call is known to be a real, fresh generation —
+    // a cache hit is free, and a failed call never reaches this line, so
+    // there's nothing to refund either way.
+    if (source === 'ai') {
+      await withPortfolio(userId, (p) => {
+        const next = bumpUsage(p, 'recommendations');
+        return baseLeftFor('recommendations', p, tier) > 0 ? next : addCredits(next, { recommendations: -1 });
+      });
+    }
     console.log(`[review] ${code} ${source} in ${Date.now() - startedAt}ms`);
-    return { verdict, source, code, lifetimeCache };
+    return { verdict, source, code };
   });
 }));
 
@@ -2359,12 +2467,12 @@ app.post('/api/review/cash', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(userId);
   if (!(portfolio.cash > 0)) return res.status(400).json({ error: 'مفيش كاش متاح يتحلل.' });
 
-  // A free-trial account's AI review rides on a cash-scan use it already
-  // spent: it's only answered while that use's session is open, so it can
-  // never become a way around CASH_SCAN_TRIAL_LIMIT.
-  const exempt = Boolean(req.user.isAdmin) || userId === 'local' || Boolean(req.access?.subscriptionActive);
-  if (!exempt && !withinCashScanSession(portfolio)) {
-    return cashScansLeft(portfolio) <= 0
+  // This review rides on a cash-scan use that was already spent (or is
+  // still free) at /api/scan: it's only answered while that use's session is
+  // open, so asking for it directly can never become a separate way around
+  // the tier's cashScans allowance.
+  if (!withinCashScanSession(portfolio)) {
+    return cashScansLeft(portfolio, req.access.tier) <= 0
       ? res.status(429).json({ error: CASH_SCAN_LIMIT_MESSAGE, reason: 'cash_scan_limit', cashScansLeft: 0 })
       : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب مراجعة الخطة.' });
   }

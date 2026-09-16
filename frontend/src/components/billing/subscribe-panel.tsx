@@ -8,9 +8,20 @@ import { api } from "@/lib/api";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-type Plan = { key: "monthly" | "yearly"; label: string; priceEgp: number; months: number };
+type Tier = "long" | "trader";
+type PlanKey = "long_monthly" | "long_yearly" | "trader_monthly" | "trader_yearly";
+type Plan = { key: PlanKey; tier: Tier; label: string; priceEgp: number; months: number };
+type TierLimits = { screenshots: number; recommendations: number; cashScans: number; marketAnalysis: number };
 
-const EG_NUMBER = new Intl.NumberFormat("ar-EG");
+const TIER_LABEL: Record<Tier, string> = { long: "النفس الطويل", trader: "الحريفة" };
+const FEATURE_ROWS: { key: keyof TierLimits; label: string; unit: string }[] = [
+  { key: "screenshots", label: "رفع سكرين شوت للمحفظة", unit: "صورة/شهر" },
+  { key: "recommendations", label: "توصيات الأسهم", unit: "توصية/شهر" },
+  { key: "cashScans", label: "تحليل استخدام الكاش", unit: "مرة/شهر" },
+  { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة/شهر" },
+];
+
+const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 /**
  * How someone subscribes: ask on the support chat, get the payment details
@@ -22,14 +33,25 @@ const EG_NUMBER = new Intl.NumberFormat("ar-EG");
 export function SubscribePanel({ compact = false }: { compact?: boolean }) {
   const { user, refreshUser } = useDesk();
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [selected, setSelected] = useState<"monthly" | "yearly">("yearly");
+  const [tiers, setTiers] = useState<Record<Tier, TierLimits> | null>(null);
+  const [tier, setTier] = useState<Tier>("long");
+  const [months, setMonths] = useState<1 | 12>(12);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     api("/api/billing/plans")
-      .then((result) => setPlans(result.plans ?? []))
-      .catch(() => setPlans([]));
+      .then((result) => {
+        setPlans(result.plans ?? []);
+        setTiers(result.tiers ?? null);
+      })
+      .catch(() => {
+        setPlans([]);
+        setTiers(null);
+      });
   }, []);
+
+  const selected = plans.find((p) => p.tier === tier && p.months === months) ?? null;
+  const limits = tiers?.[tier] ?? null;
 
   const recheck = async () => {
     setChecking(true);
@@ -47,32 +69,73 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
   return (
     <div className={cn("space-y-4", compact && "space-y-3")}>
       <div className="grid gap-3 sm:grid-cols-2">
-        {plans.map((option) => {
-          const active = option.key === selected;
+        {(["long", "trader"] as const).map((option) => {
+          const active = option === tier;
           return (
             <button
-              key={option.key}
+              key={option}
               type="button"
-              onClick={() => setSelected(option.key)}
+              onClick={() => setTier(option)}
               className={cn(
                 "rounded-xl border bg-card p-4 text-start transition-colors",
                 active ? "border-primary/60 ring-1 ring-primary/20" : "hover:bg-accent",
               )}
             >
+              <span className="text-[14px] font-semibold">{TIER_LABEL[option]}</span>
+              {tiers?.[option] && (
+                <ul className="mt-2 space-y-1">
+                  {FEATURE_ROWS.map((row) => (
+                    <li key={row.key} className="flex items-center justify-between text-[12px] text-muted-foreground">
+                      <span>{row.label}</span>
+                      <span className="num">
+                        {tiers[option][row.key]} {row.unit}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {([1, 12] as const).map((m) => {
+          const plan = plans.find((p) => p.tier === tier && p.months === m);
+          const active = m === months;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMonths(m)}
+              disabled={!plan}
+              className={cn(
+                "rounded-xl border bg-card p-4 text-start transition-colors disabled:opacity-50",
+                active ? "border-primary/60 ring-1 ring-primary/20" : "hover:bg-accent",
+              )}
+            >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[14px] font-semibold">{option.label}</span>
-                {option.key === "yearly" && <Badge variant="outline">وفّر ١٨٩ جنيه</Badge>}
+                <span className="text-[13px] text-muted-foreground">{m === 12 ? "سنوي" : "شهري"}</span>
+                {m === 12 && <Badge variant="outline">التوفير الأكبر</Badge>}
               </div>
               <p className="mt-2 flex items-end gap-1.5">
-                <span className="num text-2xl font-bold">{EG_NUMBER.format(option.priceEgp)}</span>
+                <span className="num text-2xl font-bold">
+                  {plan ? EG_NUMBER.format(plan.priceEgp) : "—"}
+                </span>
                 <span className="pb-0.5 text-[12px] text-muted-foreground">
-                  جنيه / {option.months === 12 ? "سنة" : "شهر"}
+                  جنيه / {m === 12 ? "سنة" : "شهر"}
                 </span>
               </p>
             </button>
           );
         })}
       </div>
+
+      {limits && (
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          باقة {TIER_LABEL[tier]}: {FEATURE_ROWS.map((row) => `${limits[row.key]} ${row.unit}`).join(" · ")}
+        </p>
+      )}
 
       <div className="rounded-xl border bg-surface p-4">
         <h3 className="flex items-center gap-2 text-[14px] font-semibold">
@@ -81,7 +144,7 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
         </h3>
         <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
           {user
-            ? "افتح الشات من زرار المحادثة تحت في الركن، قولّنا الباقة اللي عايزها، وهنبعتلك بيانات الدفع وكل التفاصيل هناك. أول ما نراجع التحويل بنفعّل حسابك على طول."
+            ? `افتح الشات من زرار المحادثة تحت في الركن، قولّنا باقة ${TIER_LABEL[tier]}${selected ? ` (${selected.months === 12 ? "سنوي" : "شهري"})` : ""} وهنبعتلك بيانات الدفع وكل التفاصيل هناك. أول ما نراجع التحويل بنفعّل حسابك على طول.`
             : "سجّل دخولك الأول، وبعدين افتح الشات من زرار المحادثة تحت في الركن وقولّنا الباقة اللي عايزها — هنبعتلك بيانات الدفع وكل التفاصيل هناك."}
         </p>
       </div>

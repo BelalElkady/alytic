@@ -17,7 +17,7 @@ export const Route = createFileRoute("/blog/$slug")({
   head: ({ params, loaderData }) => {
     const post = loaderData?.post ?? null;
     const url = `${SITE_URL}/blog/${params.slug}`;
-    const title = post ? `${post.title} — EGXpert` : "مقالة — EGXpert";
+    const title = post ? `${post.metaTitle || post.title} — EGXpert` : "مقالة — EGXpert";
     const description = post?.metaDescription || post?.dek || null;
     return {
       meta: [
@@ -181,7 +181,7 @@ function BlogPostPage() {
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{post.dek}</p>
           )}
           <p className="num mt-2 text-[11.5px] text-muted-foreground">
-            {new Date(post.publishedAt).toLocaleDateString("ar-EG")}
+            {new Date(post.publishedAt).toLocaleDateString("ar-EG", { numberingSystem: "latn" })}
           </p>
           <div className="mt-8">
             <BlogContent blocks={post.content} />

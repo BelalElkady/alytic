@@ -209,6 +209,7 @@ function CalendarPage() {
           weekday: "long",
           day: "numeric",
           month: "long",
+          numberingSystem: "latn",
         })}
       >
         {entry ? (

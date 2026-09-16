@@ -87,12 +87,13 @@ const AI_ACTION_TONE: Record<string, string> = {
   wait: "border-border bg-surface-2 text-muted-foreground",
 };
 
-// A per-stock AI review is a real, paid model call. A subscribed account (or
-// admin) gets one "قولي توصية اليوم" per stock per day; a free-trial account
-// gets exactly one per stock, ever (mirrors CASH_SCAN_TRIAL_LIMIT elsewhere
-// in the app) — the server enforces this (getOrGenerateStockReview's
-// `lifetimeCache`, see /api/review/stock), this only mirrors it client-side
-// so a reload shows the cached verdict without another request.
+// A per-stock AI review is a real, paid model call, cached per day/style/
+// position for every account alike (see getOrGenerateStockReview in
+// backend/src/agent/analyst.js) — this local cache just mirrors that
+// client-side so a reload shows today's verdict without another request. How
+// many *fresh* verdicts an account may still generate this month is a
+// separate, tier-based allowance the server enforces (see TIERS in
+// backend/src/billing/plans.js), reflected in pf.recommendationsLeft.
 const todayKey = () => new Date().toDateString();
 const reviewStorageKey = (code: string) => `alytic-stock-review:${code}`;
 // Short on purpose: /api/review/status already holds each request open until
@@ -121,31 +122,32 @@ async function withReviewSlot<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-// For the daily cache, a trade on the position (e.g. acting on the verdict)
-// makes it stale, so it's only reused for the same day, style and position.
-// For the trial's lifetime cache, none of that matters — it's the one and
-// only verdict this stock will ever get, so it's kept regardless of date or
-// later trades, matching what the server will keep returning either way.
-function readStoredVerdict(code: string, style: StyleKey, positionKey: string, lifetime: boolean): Verdict | null {
+// A trade on the position (e.g. acting on the verdict) makes the cached
+// verdict stale, so it's only reused for the same day, style and position —
+// matching the server's own per-stock daily cache (see
+// getOrGenerateStockReview in backend/src/agent/analyst.js). How many fresh
+// (non-cached) verdicts an account may still ask for this month is a
+// separate, tier-based limit — see pf.recommendationsLeft below — not
+// something this local cache tracks.
+function readStoredVerdict(code: string, style: StyleKey, positionKey: string): Verdict | null {
   try {
     const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
     if (!stored || stored.style !== style) return null;
-    if (lifetime) return stored.verdict;
     return stored.day === todayKey() && stored.positionKey === positionKey ? stored.verdict : null;
   } catch {
     return null;
   }
 }
 
-function useStockReview(code: string, style: StyleKey, positionKey: string, lifetime: boolean) {
+function useStockReview(code: string, style: StyleKey, positionKey: string) {
   const { refreshUser, reloadPortfolio } = useDesk();
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setVerdict(readStoredVerdict(code, style, positionKey, lifetime));
-  }, [code, style, positionKey, lifetime]);
+    setVerdict(readStoredVerdict(code, style, positionKey));
+  }, [code, style, positionKey]);
 
   const request = useCallback(
     async (force: boolean) => {
@@ -196,7 +198,8 @@ function PositionsPage() {
   const { style } = useActiveInvestStyle(pf?.trades);
   const nearStopPct = STYLE_RULES[style].nearStopPct;
   const isAdmin = Boolean(user?.isAdmin);
-  const isTrial = !isAdmin && !user?.subscriptionActive;
+  const recommendationsLeft =
+    typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
 
   // "All stocks" button: a batch is just every card without a verdict running
   // its own per-stock review (queued through withReviewSlot). Only fills in
@@ -216,7 +219,7 @@ function PositionsPage() {
 
   const openBatchConfirm = () => {
     const missing = rows
-      .filter((row) => !readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`, isTrial))
+      .filter((row) => !readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`))
       .map((row) => row.code);
     if (missing.length === 0) {
       toast.info("كل الأسهم عندها توصية بالفعل");
@@ -332,9 +335,9 @@ function PositionsPage() {
               {`الأسهم اللي مالهاش توصية: ${batchConfirm?.join("، ") ?? ""}. `}
               {isAdmin
                 ? "كل سهم فيهم هيتعمل له تحليل جديد؛ الأسهم اللي عندها توصية مش هتتعاد."
-                : isTrial
-                  ? "دي هتستخدم توصيتك المجانية الوحيدة لكل سهم فيهم — مش هتتجدد تاني إلا بعد الاشتراك."
-                  : "هتستخدم توصية النهارده لكل سهم فيهم، والأزرار هتتقفل لحد بكرة."}
+                : recommendationsLeft !== null && recommendationsLeft < (batchConfirm?.length ?? 0)
+                  ? `عندك ${recommendationsLeft} بس من رصيد التوصيات الشهر ده — أول ${recommendationsLeft} سهم بس هياخدوا توصية.`
+                  : "هتستهلك توصية من رصيدك الشهري لكل سهم فيهم، والأزرار هتتقفل لحد بكرة."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">
@@ -369,23 +372,20 @@ function PositionCard({
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
   const primaryTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
-  // Admins aren't held to any limit: each confirmed click regenerates (the
-  // server only honors `force` for admins). Everyone else who isn't
-  // subscribed gets one recommendation per stock, ever, not per day — see
-  // `lifetimeCache` in useStockReview above and on the server.
+  // Every fresh (non-cached) verdict spends from that account's monthly
+  // recommendations allowance (see TIERS in backend/src/billing/plans.js) —
+  // admins included, though their tier's allowance is generous. Requesting
+  // this stock's cached same-day verdict again costs nothing.
   const isAdmin = Boolean(user?.isAdmin);
-  const isTrial = !isAdmin && !user?.subscriptionActive;
   const { verdict, loading: reviewLoading, error: reviewError, request: requestReview } = useStockReview(
     row.code,
     style,
     `${p.shares}@${p.avgCost}`,
-    isTrial,
   );
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
-  // Admin-granted credits buy a fresh verdict once this stock's own limit is
-  // used — the server spends one per forced request (/api/review/stock).
-  const recommendationCredits = Number(pf?.credits?.recommendations ?? 0);
-  const canSpendCredit = !isAdmin && Boolean(verdict) && recommendationCredits > 0;
+  const recommendationsLeft =
+    typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
+  const recommendationsExhausted = recommendationsLeft !== null && recommendationsLeft <= 0;
 
   // Run this card's review once per page batch it's part of. Already has a
   // verdict, or a single-card request is already running: nothing to add, so
@@ -575,17 +575,11 @@ function PositionCard({
       {aiAvailable && (
         <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">
           {reviewError && <span className="text-[12px] text-down">{reviewError}</span>}
-          {!isAdmin && (
+          {!isAdmin && recommendationsLeft !== null && (
             <span className="text-[11.5px] text-muted-foreground">
-              {canSpendCredit
-                ? `عندك ${recommendationCredits} توصية إضافية — تقدر تطلب توصية جديدة للسهم ده`
-                : isTrial
-                  ? verdict
-                    ? "استخدمت توصيتك المجانية للسهم ده — اشترك عشان تحصل على توصية جديدة كل يوم"
-                    : "توصية واحدة مجانية لكل سهم — تتجدد يوميًا بعد الاشتراك"
-                  : verdict
-                    ? "استخدمت توصيتك النهارده للسهم ده"
-                    : "توصية واحدة بس لكل سهم في اليوم"}
+              {recommendationsExhausted
+                ? "خلصت توصيات الشهر ده — كلّمنا في الشات لو محتاج رصيد إضافي"
+                : `باقي ${recommendationsLeft} ${recommendationsLeft === 1 ? "توصية" : "توصيات"} الشهر ده`}
             </span>
           )}
           <Button
@@ -594,14 +588,14 @@ function PositionCard({
             variant={verdict ? "outline" : "default"}
             size="sm"
             className={cn(!verdict && "font-semibold shadow-sm")}
-            disabled={reviewLoading || (Boolean(verdict) && !isAdmin && !canSpendCredit)}
+            disabled={reviewLoading || (!isAdmin && recommendationsExhausted)}
             onClick={(e) => {
               e.stopPropagation();
               setConfirmReviewOpen(true);
             }}
           >
             {reviewLoading ? <Spinner /> : !verdict && <Sparkles className="size-4" />}
-            {verdict && (isAdmin || canSpendCredit) ? "توصية جديدة" : "قولي توصية اليوم"}
+            {verdict ? "توصية جديدة" : "قولي توصية اليوم"}
           </Button>
         </div>
       )}
@@ -614,19 +608,17 @@ function PositionCard({
             <AlertDialogTitle>متأكد إنك عايز توصية اليوم لسهم {row.code} دلوقتي؟</AlertDialogTitle>
             <AlertDialogDescription className="leading-relaxed">
               {isAdmin
-                ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد."
-                : canSpendCredit
-                  ? `هتستخدم توصية واحدة من رصيدك الإضافي (عندك ${recommendationCredits}) لتحليل جديد للسهم.`
-                  : isTrial
-                    ? "دي توصيتك المجانية الوحيدة للسهم ده — مش هتتجدد تاني إلا بعد الاشتراك."
-                    : "بتتحسب مرة واحدة بس في اليوم لكل سهم، والزرار هيتقفل لحد بكرة بعد ما تستخدمه."}
+                ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد ضمن رصيد باقتك الشهري."
+                : recommendationsExhausted
+                  ? "خلصت توصيات الشهر ده."
+                  : `لو محتاج تحليل جديد هتستهلك توصية من رصيدك الشهري (باقي ${recommendationsLeft}) — نفس اليوم والمركز بيرجّع نفس التوصية من غير استهلاك.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">
             <AlertDialogAction
               onClick={() => {
                 setConfirmReviewOpen(false);
-                void requestReview(isAdmin || canSpendCredit);
+                void requestReview(Boolean(verdict));
               }}
             >
               أيوة

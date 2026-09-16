@@ -77,11 +77,12 @@ create table if not exists portfolio_reviews (
 );
 
 -- The one-per-Cairo-day "تحليل الكاش" limit this table tracked was dropped
--- (the scan is pure technical scoring, no per-call cost to guard). The
--- trial-lifetime cap that replaced it (CASH_SCAN_TRIAL_LIMIT in
--- src/api/server.js) lives in portfolio.cashScans instead, since it needs no
--- cross-device row — a leftover `cash_scan_usage` table from that era may
--- still exist in already-migrated databases; it's simply unused now.
+-- (the scan is pure technical scoring, no per-call cost to guard). What
+-- replaced it — first a trial-lifetime cap, now a per-tier monthly one, see
+-- TIERS in src/billing/plans.js and usageFor() in src/api/server.js — lives
+-- in portfolio.usage instead, since it needs no cross-device row — a
+-- leftover `cash_scan_usage` table from that era may still exist in
+-- already-migrated databases; it's simply unused now.
 
 -- One row per AI call across every feature (portfolio review, market
 -- research/reframe, fundamentals, blog discovery/article/review) — the
@@ -129,13 +130,35 @@ create table if not exists fundamentals_cache (
 -- stops being in the future.
 create table if not exists subscriptions (
   user_id text primary key references users(id) on delete cascade,
-  plan text not null check (plan in ('monthly', 'yearly', 'custom')),
+  plan text not null check (plan in ('long_monthly', 'long_yearly', 'trader_monthly', 'trader_yearly', 'custom')),
+  tier text not null default 'trader' check (tier in ('long', 'trader')),
   started_at timestamptz not null default now(),
   current_period_end timestamptz not null,
   granted_by text references users(id),
   note text,
   updated_at timestamptz not null default now()
 );
+
+-- Migration to the 3-tier product (free trial / نفس طويل / حريفة — see
+-- TIERS/PLANS in src/billing/plans.js) for a database created before this
+-- change. Each paid tier is sold monthly and yearly, so `plan` moved from
+-- the old 2-SKU set ('monthly'/'yearly') to 4 SKU keys, and `tier` was added
+-- to say which feature caps apply. Existing subscribers are backfilled to
+-- 'trader' (the top tier) so running this migration never silently shrinks
+-- anyone's already-paid-for access. No-op on a fresh install, which already
+-- created the table above in its final shape.
+alter table subscriptions add column if not exists tier text;
+update subscriptions set tier = 'trader' where tier is null;
+alter table subscriptions alter column tier set default 'trader';
+alter table subscriptions alter column tier set not null;
+alter table subscriptions drop constraint if exists subscriptions_tier_check;
+alter table subscriptions add constraint subscriptions_tier_check check (tier in ('long', 'trader'));
+
+update subscriptions set plan = 'trader_monthly' where plan = 'monthly';
+update subscriptions set plan = 'trader_yearly' where plan = 'yearly';
+alter table subscriptions drop constraint if exists subscriptions_plan_check;
+alter table subscriptions add constraint subscriptions_plan_check
+  check (plan in ('long_monthly', 'long_yearly', 'trader_monthly', 'trader_yearly', 'custom'));
 
 -- Append-only record of every activation, extension and revocation an admin
 -- performed: who did it, what it cost, and the InstaPay reference the user
@@ -222,6 +245,7 @@ create table if not exists blog_posts (
   primary_keyword text not null,
   secondary_keywords text[] not null default '{}',
   title text not null,
+  meta_title text not null,
   meta_description text not null,
   dek text,
   content_json jsonb not null,
@@ -268,6 +292,10 @@ alter table blog_posts add column if not exists secondary_keywords text[] not nu
 alter table blog_posts add column if not exists meta_description text;
 update blog_posts set meta_description = coalesce(meta_description, left(dek, 160), left(title, 160)) where meta_description is null;
 alter table blog_posts alter column meta_description set not null;
+
+alter table blog_posts add column if not exists meta_title text;
+update blog_posts set meta_title = coalesce(meta_title, title) where meta_title is null;
+alter table blog_posts alter column meta_title set not null;
 
 alter table blog_posts add column if not exists image_json jsonb;
 

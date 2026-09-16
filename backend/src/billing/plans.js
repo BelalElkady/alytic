@@ -1,17 +1,34 @@
 /**
+ * The per-feature caps for each tier. 'free' is the 4-trading-day trial
+ * (see TRIAL_DAYS/trialInfo in src/api/server.js) — it needs no purchase, so
+ * it has no matching PLANS entry below. 'long' and 'trader' are the two paid
+ * tiers, each sold at a monthly and a yearly price (see PLANS). Every count
+ * resets on the 1st of the calendar month (Cairo time) — see usageFor() in
+ * src/api/server.js — except the free tier, which never resets since the
+ * trial itself is a one-time window.
+ */
+export const TIERS = {
+  free: { key: 'free', label: 'الباقة المجانية', screenshots: 2, recommendations: 4, cashScans: 1, marketAnalysis: 1 },
+  long: { key: 'long', label: 'باقة النفس الطويل', screenshots: 7, recommendations: 480, cashScans: 7, marketAnalysis: 7 },
+  trader: { key: 'trader', label: 'باقة الحريفة', screenshots: 12, recommendations: 960, cashScans: 15, marketAnalysis: 15 },
+};
+
+/**
  * The price list. Subscriptions are arranged over the support chat and
  * activated by hand from the admin panel, so nothing here charges anyone —
  * these are the figures the "اشترك" screen quotes and the admin panel
- * defaults to.
+ * defaults to. Four purchasable SKUs: each paid tier (see TIERS) at a
+ * monthly or yearly length.
  *
- * Yearly saves 189 EGP against twelve monthly payments (149 × 12 = 1788),
- * i.e. 10.6%. Customer-facing copy says "توفير ١٨٩ جنيه" rather than a
- * percentage: the exact figure needs no rounding, and rounding 10.57 up to 11
- * would overstate the saving.
+ * Yearly saves against twelve monthly payments in both tiers (299 × 12 =
+ * 3588 vs 2990; 499 × 12 = 5988 vs 4990) — customer-facing copy can quote
+ * the exact EGP figure rather than a rounded percentage.
  */
 export const PLANS = {
-  monthly: { key: 'monthly', label: 'شهري', priceEgp: 149, months: 1 },
-  yearly: { key: 'yearly', label: 'سنوي', priceEgp: 1599, months: 12 },
+  long_monthly: { key: 'long_monthly', tier: 'long', label: 'النفس الطويل — شهري', priceEgp: 299, months: 1 },
+  long_yearly: { key: 'long_yearly', tier: 'long', label: 'النفس الطويل — سنوي', priceEgp: 2990, months: 12 },
+  trader_monthly: { key: 'trader_monthly', tier: 'trader', label: 'الحريفة — شهري', priceEgp: 499, months: 1 },
+  trader_yearly: { key: 'trader_yearly', tier: 'trader', label: 'الحريفة — سنوي', priceEgp: 4990, months: 12 },
 };
 
 export const planFor = (key) => PLANS[String(key ?? '')] ?? null;

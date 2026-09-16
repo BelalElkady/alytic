@@ -356,6 +356,7 @@ function DeskHeader() {
     day: "numeric",
     month: "long",
     year: "numeric",
+    numberingSystem: "latn",
   });
 
   // Entitlement fields come from /api/auth/me (server.js's accessInfo) — the
@@ -366,19 +367,32 @@ function DeskHeader() {
   const subscriptionActive = Boolean(user?.subscriptionActive);
   const periodEnd = user?.currentPeriodEnd ?? null;
   const locked = user?.hasAccess === false;
-  // Daily allowance from GET /api/portfolio — the server enforces it; this
-  // only explains it and disables the button once it's used up.
+  // Monthly allowance from GET /api/portfolio (see TIERS in
+  // backend/src/billing/plans.js) — the server enforces it; this only
+  // explains it and disables the button once it's used up.
   const screenshotsLeft =
     typeof pf?.screenshotImportsLeft === "number" ? pf.screenshotImportsLeft : null;
-  const screenshotsPerDay =
-    typeof pf?.screenshotImportsPerDay === "number" ? pf.screenshotImportsPerDay : null;
+  const screenshotsPerMonth =
+    typeof pf?.screenshotsPerMonth === "number" ? pf.screenshotsPerMonth : null;
   const screenshotsExhausted = screenshotsLeft !== null && screenshotsLeft <= 0;
   const screenshotsHint =
     screenshotsLeft === null
       ? null
       : screenshotsExhausted
-        ? "خلصت صور النهارده — تتجدد بكرة"
-        : `باقي ${screenshotsLeft}${screenshotsPerDay && !pf?.credits?.screenshots ? ` من ${screenshotsPerDay}` : ""} ${screenshotsLeft === 1 ? "صورة" : "صور"} النهارده`;
+        ? "خلصت صور الشهر ده — تتجدد الشهر الجاي"
+        : `باقي ${screenshotsLeft}${screenshotsPerMonth && !pf?.credits?.screenshots ? ` من ${screenshotsPerMonth}` : ""} ${screenshotsLeft === 1 ? "صورة" : "صور"} الشهر ده`;
+
+  const marketAnalysisLeft =
+    typeof pf?.marketAnalysisLeft === "number" ? pf.marketAnalysisLeft : null;
+  const marketAnalysisPerMonth =
+    typeof pf?.marketAnalysisPerMonth === "number" ? pf.marketAnalysisPerMonth : null;
+  const marketAnalysisExhausted = marketAnalysisLeft !== null && marketAnalysisLeft <= 0;
+  const marketAnalysisHint =
+    marketAnalysisLeft === null
+      ? null
+      : marketAnalysisExhausted
+        ? "خلصت محاولات تحليل السوق المتاحة الشهر ده — تتجدد الشهر الجاي"
+        : `باقي ${marketAnalysisLeft}${marketAnalysisPerMonth && !pf?.credits?.marketAnalysis ? ` من ${marketAnalysisPerMonth}` : ""} ${marketAnalysisLeft === 1 ? "محاولة" : "محاولات"} الشهر ده`;
 
   const importFiles = async (files: File[], replaceAll: boolean) => {
     setUploading(true);
@@ -457,11 +471,8 @@ function DeskHeader() {
             {subscriptionActive ? (
               <Link to="/subscribe" aria-label="حالة الاشتراك">
                 <Badge variant="secondary" className="whitespace-nowrap">
-                  {user?.plan === "yearly"
-                    ? "اشتراك سنوي"
-                    : user?.plan === "monthly"
-                      ? "اشتراك شهري"
-                      : "اشتراك"}
+                  {user?.tier === "trader" ? "الحريفة" : user?.tier === "long" ? "النفس الطويل" : "اشتراك"}
+                  {user?.plan?.endsWith("_yearly") ? " · سنوي" : user?.plan?.endsWith("_monthly") ? " · شهري" : ""}
                   {periodEnd ? ` حتى ${arDay(periodEnd.slice(0, 10))}` : ""}
                 </Badge>
               </Link>
@@ -509,10 +520,29 @@ function DeskHeader() {
             locked && "hidden",
           )}
         >
-          <Button size="sm" onClick={() => openMarket("market")}>
-            <Radar className="size-4" />
-            تحليل السوق
-          </Button>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="relative inline-flex">
+                  <Button
+                    size="sm"
+                    onClick={() => openMarket("market")}
+                    disabled={marketAnalysisExhausted}
+                    aria-describedby={marketAnalysisHint ? "market-analysis-left-hint" : undefined}
+                  >
+                    <Radar className="size-4" />
+                    تحليل السوق
+                    {marketAnalysisHint && (
+                      <span id="market-analysis-left-hint" className="sr-only">
+                        {marketAnalysisHint}
+                      </span>
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {marketAnalysisHint && <TooltipContent>{marketAnalysisHint}</TooltipContent>}
+            </Tooltip>
+          </TooltipProvider>
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               {/* The wrapper takes the hover: a disabled button gets no pointer events. */}
@@ -563,7 +593,7 @@ function DeskHeader() {
               let files = [...(event.target.files ?? [])];
               if (screenshotsLeft !== null && files.length > screenshotsLeft) {
                 toast.warning(
-                  `باقي ${screenshotsLeft} ${screenshotsLeft === 1 ? "صورة" : "صور"} بس النهارده — هيترفع أول ${screenshotsLeft} بس.`,
+                  `باقي ${screenshotsLeft} ${screenshotsLeft === 1 ? "صورة" : "صور"} بس الشهر ده — هيترفع أول ${screenshotsLeft} بس.`,
                 );
                 files = files.slice(0, screenshotsLeft);
               }

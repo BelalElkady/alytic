@@ -143,14 +143,16 @@ export function Stat({
       <div className="truncate text-[11.5px] font-medium text-muted-foreground">{label}</div>
       <div
         className={cn(
-          "num mt-0.5 text-right text-[17px] font-semibold tracking-tight",
+          "num mt-0.5 truncate text-right text-[17px] font-semibold tracking-tight",
           valueClassName,
         )}
       >
         {value}
       </div>
       {sub && (
-        <div className="num mt-0.5 text-right text-[11.5px] text-muted-foreground">{sub}</div>
+        <div className="num mt-0.5 truncate text-right text-[11.5px] text-muted-foreground">
+          {sub}
+        </div>
       )}
     </div>
   );

@@ -306,7 +306,8 @@ function IndexPanel({
             : row.source === "upload"
               ? "مرفوع يدويًا"
               : "افتراضي"}
-          {row.updatedAt && ` · آخر تحديث ${new Date(row.updatedAt).toLocaleString("ar-EG")}`}
+          {row.updatedAt &&
+            ` · آخر تحديث ${new Date(row.updatedAt).toLocaleString("ar-EG", { numberingSystem: "latn" })}`}
         </>
       }
       action={
@@ -387,8 +388,12 @@ type AdminUserBehavior = {
   importedPositions: boolean;
 };
 
+type PlanKey = "long_monthly" | "long_yearly" | "trader_monthly" | "trader_yearly" | "custom";
+type Tier = "free" | "long" | "trader";
+
 type AdminSubscription = {
-  plan: "monthly" | "yearly" | "custom";
+  plan: PlanKey;
+  tier: Exclude<Tier, "free">;
   currentPeriodEnd: string;
   active: boolean;
   note: string | null;
@@ -407,18 +412,21 @@ type AdminUserRow = {
   lastLoginAt: string | null;
   trialActive: boolean;
   trialEndsAt: string;
+  tier: Tier | null;
   subscription: AdminSubscription | null;
   portfolio: AdminUserPortfolio | null;
   behavior: AdminUserBehavior | null;
   usage: AdminUserUsage;
 };
 
-type CreditKind = "cashScans" | "recommendations" | "screenshots";
+type CreditKind = "cashScans" | "recommendations" | "screenshots" | "marketAnalysis";
 
 /** What's left of each capped allowance (base + credits), and the admin-granted credits within it. */
 type AdminUserUsage = {
   cashScansLeft: number;
-  screenshotsLeftToday: number;
+  screenshotsLeftThisMonth: number;
+  recommendationsLeft: number;
+  marketAnalysisLeft: number;
   credits: Record<CreditKind, number>;
 };
 
@@ -661,45 +669,47 @@ function UsersTab() {
         </Button>
       </div>
 
-      <Panel
-        title="المستخدمون المسجّلون"
-        description={`${filtered.length} من ${rows.length} مستخدم`}
-        bodyClassName="px-0 py-0 sm:px-0"
-      >
-        {filtered.length === 0 ? (
-          <div className="p-4">
-            <EmptyState title="لا يوجد مستخدمون مطابقون" hint="جرّب كلمة بحث أو فلتر مختلف." />
-          </div>
-        ) : (
-          <div className="scrollbar-slim overflow-x-auto">
-            <Table className="min-w-[1400px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[190px] whitespace-nowrap py-3 text-start">المستخدم</TableHead>
-                  <TableHead className="min-w-[120px] whitespace-nowrap py-3 text-start">الهاتف</TableHead>
-                  <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">تاريخ التسجيل</TableHead>
-                  <TableHead className="min-w-[150px] whitespace-nowrap py-3 text-start">آخر دخول</TableHead>
-                  <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">رأس المال</TableHead>
-                  <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">ربح محقق</TableHead>
-                  <TableHead className="min-w-[210px] whitespace-nowrap py-3 text-start">النشاط الاستثماري</TableHead>
-                  <TableHead className="min-w-[250px] whitespace-nowrap py-3 text-start">السلوك الاستثماري</TableHead>
-                  <TableHead className="min-w-[180px] whitespace-nowrap py-3 text-start">الرصيد</TableHead>
-                  <TableHead className="min-w-[170px] whitespace-nowrap py-3 text-start">الاشتراك</TableHead>
-                  <TableHead className="min-w-[140px] whitespace-nowrap py-3 text-start">الحالة</TableHead>
-                  <TableHead className="py-3">
-                    <span className="sr-only">حذف</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((row) => (
-                  <UserRow key={row.id} row={row} onChanged={load} />
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </Panel>
+      <div className="relative left-1/2 w-screen -translate-x-1/2 px-3 sm:px-5">
+        <Panel
+          title="المستخدمون المسجّلون"
+          description={`${filtered.length} من ${rows.length} مستخدم`}
+          bodyClassName="px-0 py-0 sm:px-0"
+        >
+          {filtered.length === 0 ? (
+            <div className="p-4">
+              <EmptyState title="لا يوجد مستخدمون مطابقون" hint="جرّب كلمة بحث أو فلتر مختلف." />
+            </div>
+          ) : (
+            <div className="scrollbar-slim overflow-x-auto">
+              <Table className="min-w-[1400px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[190px] whitespace-nowrap py-3 text-start">المستخدم</TableHead>
+                    <TableHead className="min-w-[120px] whitespace-nowrap py-3 text-start">الهاتف</TableHead>
+                    <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">تاريخ التسجيل</TableHead>
+                    <TableHead className="min-w-[150px] whitespace-nowrap py-3 text-start">آخر دخول</TableHead>
+                    <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">رأس المال</TableHead>
+                    <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">ربح محقق</TableHead>
+                    <TableHead className="min-w-[210px] whitespace-nowrap py-3 text-start">النشاط الاستثماري</TableHead>
+                    <TableHead className="min-w-[250px] whitespace-nowrap py-3 text-start">السلوك الاستثماري</TableHead>
+                    <TableHead className="min-w-[180px] whitespace-nowrap py-3 text-start">الرصيد</TableHead>
+                    <TableHead className="min-w-[170px] whitespace-nowrap py-3 text-start">الاشتراك</TableHead>
+                    <TableHead className="min-w-[140px] whitespace-nowrap py-3 text-start">الحالة</TableHead>
+                    <TableHead className="py-3">
+                      <span className="sr-only">حذف</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((row) => (
+                    <UserRow key={row.id} row={row} onChanged={load} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }
@@ -726,6 +736,7 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
               year: "numeric",
               hour: "2-digit",
               minute: "2-digit",
+              numberingSystem: "latn",
             })
           : "—"}
       </TableCell>
@@ -891,12 +902,18 @@ function DeleteUserButton({ row, onDeleted }: { row: AdminUserRow; onDeleted: ()
 }
 
 const CREDIT_FIELDS: { kind: CreditKind; label: string; hint: string }[] = [
-  { kind: "cashScans", label: "تحليل الكاش", hint: "محاولات زيادة على حد التجربة" },
-  { kind: "recommendations", label: "توصيات الأسهم", hint: "توصية جديدة بعد ما يستخدم توصية السهم" },
-  { kind: "screenshots", label: "صور المحفظة", hint: "صور زيادة بعد ما يخلص حد اليوم" },
+  { kind: "cashScans", label: "تحليل الكاش", hint: "محاولات زيادة على حد الباقة الشهري" },
+  { kind: "recommendations", label: "توصيات الأسهم", hint: "توصيات زيادة على حد الباقة الشهري" },
+  { kind: "screenshots", label: "صور المحفظة", hint: "صور زيادة بعد ما يخلص حد الشهر" },
+  { kind: "marketAnalysis", label: "تحليل السوق", hint: "محاولات زيادة على حد الباقة الشهري" },
 ];
 
-const NO_CREDITS: Record<CreditKind, string> = { cashScans: "", recommendations: "", screenshots: "" };
+const NO_CREDITS: Record<CreditKind, string> = {
+  cashScans: "",
+  recommendations: "",
+  screenshots: "",
+  marketAnalysis: "",
+};
 
 /**
  * Extra uses on top of the capped allowances (backend creditsOf()). Each
@@ -906,9 +923,7 @@ function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => v
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [amounts, setAmounts] = useState(NO_CREDITS);
-  const { cashScansLeft, screenshotsLeftToday, credits } = row.usage;
-  // Subscribers and admins aren't held to the trial's cash-scan cap.
-  const cashUnlimited = row.isAdmin || Boolean(row.subscription?.active);
+  const { cashScansLeft, screenshotsLeftThisMonth, recommendationsLeft, marketAnalysisLeft, credits } = row.usage;
 
   const deltas = Object.fromEntries(
     CREDIT_FIELDS.map(({ kind }) => [kind, Number(amounts[kind] || 0)]),
@@ -936,13 +951,13 @@ function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => v
   return (
     <div className="space-y-1.5">
       <div className="space-y-0.5 text-[12px] text-muted-foreground">
+        <div>تحليل الكاش: {withCredits(`باقي ${cashScansLeft}`, credits.cashScans)}</div>
+        <div>توصيات: {withCredits(`باقي ${recommendationsLeft}`, credits.recommendations)}</div>
         <div>
-          تحليل الكاش:{" "}
-          {cashUnlimited ? "بلا حدود" : withCredits(`باقي ${cashScansLeft}`, credits.cashScans)}
+          صور الشهر ده: {withCredits(`باقي ${screenshotsLeftThisMonth}`, credits.screenshots)}
         </div>
-        <div>توصيات إضافية: {credits.recommendations}</div>
         <div>
-          صور النهارده: {withCredits(`باقي ${screenshotsLeftToday}`, credits.screenshots)}
+          تحليل السوق: {withCredits(`باقي ${marketAnalysisLeft}`, credits.marketAnalysis)}
         </div>
       </div>
 
@@ -995,10 +1010,17 @@ function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => v
   );
 }
 
-const PLAN_LABEL: Record<AdminSubscription["plan"], string> = {
-  monthly: "شهري",
-  yearly: "سنوي",
+const PLAN_LABEL: Record<PlanKey, string> = {
+  long_monthly: "النفس الطويل — شهري",
+  long_yearly: "النفس الطويل — سنوي",
+  trader_monthly: "الحريفة — شهري",
+  trader_yearly: "الحريفة — سنوي",
   custom: "مخصص",
+};
+
+const GRANT_TIER_LABEL: Record<Exclude<Tier, "free">, string> = {
+  long: "النفس الطويل",
+  trader: "الحريفة",
 };
 
 /**
@@ -1010,14 +1032,16 @@ function SubscriptionCell({ row, onChanged }: { row: AdminUserRow; onChanged: ()
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [endsAt, setEndsAt] = useState("");
+  const [customTier, setCustomTier] = useState<Exclude<Tier, "free">>("long");
   const [reference, setReference] = useState("");
   const subscription = row.subscription;
 
-  const grant = async (plan: "monthly" | "yearly" | "custom") => {
+  const grant = async (plan: PlanKey, tier?: Exclude<Tier, "free">) => {
     setBusy(true);
     try {
       await post(`/api/admin/users/${row.id}/subscription`, {
         plan,
+        tier: plan === "custom" ? tier : undefined,
         endsAt: plan === "custom" ? endsAt : undefined,
         reference: reference.trim() || undefined,
       });
@@ -1094,17 +1118,38 @@ function SubscriptionCell({ row, onChanged }: { row: AdminUserRow; onChanged: ()
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void grant("monthly")} disabled={busy}>
-                {busy && <Spinner />}+ شهر
+              <Button onClick={() => void grant("long_monthly")} disabled={busy}>
+                {busy && <Spinner />}النفس الطويل · شهر
               </Button>
-              <Button onClick={() => void grant("yearly")} disabled={busy}>
-                {busy && <Spinner />}+ سنة
+              <Button onClick={() => void grant("long_yearly")} disabled={busy}>
+                {busy && <Spinner />}النفس الطويل · سنة
+              </Button>
+              <Button onClick={() => void grant("trader_monthly")} disabled={busy}>
+                {busy && <Spinner />}الحريفة · شهر
+              </Button>
+              <Button onClick={() => void grant("trader_yearly")} disabled={busy}>
+                {busy && <Spinner />}الحريفة · سنة
               </Button>
             </div>
 
             <div className="space-y-1.5 border-t pt-4">
               <Label htmlFor={`ends-${row.id}`}>أو تاريخ انتهاء مخصص</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <div className="flex overflow-hidden rounded-md border">
+                  {(["long", "trader"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setCustomTier(t)}
+                      className={cn(
+                        "px-2.5 text-[12px]",
+                        customTier === t ? "bg-primary text-primary-foreground" : "bg-transparent",
+                      )}
+                    >
+                      {GRANT_TIER_LABEL[t]}
+                    </button>
+                  ))}
+                </div>
                 <Input
                   id={`ends-${row.id}`}
                   type="date"
@@ -1113,7 +1158,7 @@ function SubscriptionCell({ row, onChanged }: { row: AdminUserRow; onChanged: ()
                 />
                 <Button
                   variant="outline"
-                  onClick={() => void grant("custom")}
+                  onClick={() => void grant("custom", customTier)}
                   disabled={busy || !endsAt}
                 >
                   حفظ

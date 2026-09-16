@@ -17,6 +17,7 @@ export type BlogImage = {
 export type BlogPost = {
   slug: string;
   title: string;
+  metaTitle: string | null;
   metaDescription: string | null;
   dek: string | null;
   content: BlogContentBlock[];

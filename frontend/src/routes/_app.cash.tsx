@@ -52,7 +52,7 @@ type FavoriteRow = {
 };
 
 function CashPage() {
-  const { pf, totals, reloadPortfolio, openMarket, user } = useDesk();
+  const { pf, totals, reloadPortfolio, openMarket } = useDesk();
   const [cash, setCash] = useState("");
   const [savingCash, setSavingCash] = useState(false);
   const [watchCode, setWatchCode] = useState("");
@@ -66,14 +66,13 @@ function CashPage() {
     setCash(String(pf?.cash ?? 0));
   }, [pf?.cash]);
 
-  // From GET /api/portfolio (server-enforced) — a subscribed or admin
-  // account is never actually blocked by the trial cap, so the note and the
-  // disabled state only apply to everyone else.
-  const cashScanCapApplies = !user?.subscriptionActive && !user?.isAdmin;
+  // From GET /api/portfolio (server-enforced) — every tier (including the
+  // free trial) has a monthly allowance for this feature, see TIERS in
+  // backend/src/billing/plans.js.
   const cashScansLeft = typeof pf?.cashScansLeft === "number" ? pf.cashScansLeft : null;
-  const cashScanTrialLimit =
-    typeof pf?.cashScanTrialLimit === "number" ? pf.cashScanTrialLimit : null;
-  const cashScanExhausted = cashScanCapApplies && cashScansLeft !== null && cashScansLeft <= 0;
+  const cashScansPerMonth =
+    typeof pf?.cashScansPerMonth === "number" ? pf.cashScansPerMonth : null;
+  const cashScanExhausted = cashScansLeft !== null && cashScansLeft <= 0;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the portfolio watchlist shape
   const watchlist: [string, any][] = Object.entries(pf?.watchlist ?? {});
@@ -197,13 +196,13 @@ function CashPage() {
         >
           حلل استخدام الكاش
         </Button>
-        {cashScanCapApplies && cashScansLeft !== null && (
+        {cashScansLeft !== null && (
           <p
             className={`mt-2 text-[12px] ${cashScanExhausted ? "text-down" : "text-muted-foreground"}`}
           >
             {cashScanExhausted
-              ? "خلصت محاولات تحليل الكاش المتاحة في فترة التجربة — بيبقى بلا حدود بعد الاشتراك."
-              : `باقي ${cashScansLeft}${cashScanTrialLimit && !pf?.credits?.cashScans ? ` من ${cashScanTrialLimit}` : ""} ${cashScansLeft === 1 ? "محاولة" : "محاولات"} في فترة التجربة.`}
+              ? "خلصت محاولات تحليل الكاش المتاحة الشهر ده — تقدر تكمّل الشهر الجاي."
+              : `باقي ${cashScansLeft}${cashScansPerMonth && !pf?.credits?.cashScans ? ` من ${cashScansPerMonth}` : ""} ${cashScansLeft === 1 ? "محاولة" : "محاولات"} الشهر ده.`}
           </p>
         )}
       </Panel>

@@ -223,7 +223,7 @@ export function PublishedPostsTab() {
                 <>
                   {row.postDate} · مقالة {row.batchIndex}/10
                   {row.publishedAt &&
-                    ` · اتنشرت ${new Date(row.publishedAt).toLocaleString("ar-EG")}`}
+                    ` · اتنشرت ${new Date(row.publishedAt).toLocaleString("ar-EG", { numberingSystem: "latn" })}`}
                 </>
               }
               action={
