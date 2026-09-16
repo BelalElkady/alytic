@@ -30,6 +30,75 @@ const RUNNERS_UP = 3;
 
 const egp = (x) => Math.round(x ?? 0).toLocaleString('en-US');
 
+// A cheap, non-blocking hallucination guard: the system prompt tells the
+// model to "quote only numbers given to you," but that's an instruction, not
+// an enforcement — this actually checks it. Bare 1-2 digit integers are
+// skipped since those are usually a legitimate count the model derives by
+// reading the context (e.g. "3 مراكز قريبة من وقفها"), not an invented price,
+// amount or percentage.
+const NUMBER_RE = /\d[\d,]*(?:\.\d+)?/g;
+
+function extractFinancialNumbers(text) {
+  if (!text) return [];
+  const out = [];
+  let m;
+  NUMBER_RE.lastIndex = 0;
+  while ((m = NUMBER_RE.exec(text))) {
+    const raw = m[0];
+    if (!/[.,]/.test(raw) && raw.length <= 2) continue;
+    const value = Number(raw.replace(/,/g, ''));
+    if (Number.isFinite(value)) out.push(value);
+  }
+  return out;
+}
+
+// Tolerant of the model rounding to fewer decimals or dropping a thousands
+// separator — this isn't meant to catch every stylistic reformat, only a
+// number that isn't grounded in what the model was actually given.
+const numbersMatch = (a, b) => Math.abs(a - b) <= Math.max(0.05, Math.abs(b) * 0.01);
+
+function findUnverifiedNumbers(text, allowed) {
+  const found = extractFinancialNumbers(text);
+  return found.filter((n) => !allowed.some((a) => numbersMatch(n, a)));
+}
+
+/**
+ * Flags numbers in the model's free-text fields that don't match any number
+ * it was actually given in `userMessage` — logged for now, not blocking:
+ * false positives are possible (a legitimately derived figure, e.g. summing
+ * two given amounts), so this is a signal to watch, not a hard gate on a
+ * feature that's meant to stay cheap and fast.
+ */
+function flagUnverifiedNumbers(userMessage, data, reviewedPicks) {
+  const allowed = extractFinancialNumbers(userMessage);
+  const fields = [
+    ['headline', data.headline],
+    ['marketRead', data.marketRead],
+    ['portfolioRead', data.portfolioRead],
+    ['behaviorRead', data.behaviorRead],
+    ['deploymentPlan', data.deploymentPlan],
+    ['reserveAdvice', data.reserveAdvice],
+    ['topPriority', data.topPriority],
+    ...(data.risks ?? []).map((r, i) => [`risks[${i}]`, r]),
+    ...reviewedPicks.flatMap((p) => [
+      [`picks.${p.code}.comment`, p.comment],
+      [`picks.${p.code}.portfolioFit`, p.portfolioFit],
+      [`picks.${p.code}.watchFor`, p.watchFor],
+    ]),
+  ];
+  const flags = fields
+    .map(([field, text]) => ({ field, numbers: findUnverifiedNumbers(text, allowed) }))
+    .filter((f) => f.numbers.length > 0);
+  if (flags.length) {
+    console.warn(
+      `[ai] cash_plan_review: numbers not found in the given context — ${flags
+        .map((f) => `${f.field}: ${f.numbers.join(', ')}`)
+        .join(' | ')}`,
+    );
+  }
+  return flags;
+}
+
 function planLine(row, investableCash) {
   const bp = row.buyPlan;
   const share = investableCash > 0 ? ((bp.cost / investableCash) * 100).toFixed(1) : '0';
@@ -160,6 +229,7 @@ Remember: these numbers are final — judge them, do not recompute them.`;
   const allowed = new Set(pickCodes);
   const seen = new Set();
   const reviewedPicks = (data.picks ?? []).filter((p) => allowed.has(p.code) && !seen.has(p.code) && seen.add(p.code));
+  const unverifiedNumbers = flagUnverifiedNumbers(userMessage, data, reviewedPicks);
 
   return {
     ...data,
@@ -171,6 +241,7 @@ Remember: these numbers are final — judge them, do not recompute them.`;
       picksReviewed: pickCodes.length,
       marketReportAsOf: marketReport?.asOf ?? null,
       behavior,
+      ...(unverifiedNumbers.length ? { unverifiedNumbers } : {}),
     },
   };
 }

@@ -1,9 +1,8 @@
 import { Sparkles } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ErrorState, LoadingBlock, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError, api, post } from "@/lib/api";
@@ -73,11 +72,6 @@ type CashReview = {
   _meta?: { behavior?: BehaviorStats };
 };
 
-const STANCE: Record<string, { label: string; tone: string }> = {
-  deploy_now: { label: "انشر الكاش دلوقتي", tone: "buy" },
-  deploy_gradually: { label: "انشر على دفعات", tone: "wait" },
-  hold_cash: { label: "احتفظ بالكاش", tone: "avoid" },
-};
 const PICK_ACTION: Record<string, { label: string; tone: string }> = {
   buy_now: { label: "اشتري دلوقتي", tone: "buy" },
   buy_on_pullback: { label: "اشتري على تصحيح", tone: "wait" },
@@ -98,9 +92,6 @@ export function MarketDialog() {
   const [index, setIndex] = useState("ALL");
   const { style, auto } = useActiveInvestStyle(pf?.trades);
   const [review, setReview] = useState<CashReview | null>(null);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
-  const [reviewAttempt, setReviewAttempt] = useState(0);
 
   useEffect(() => {
     if (!marketFocus) return;
@@ -138,13 +129,8 @@ export function MarketDialog() {
     marketFocus === "cash" && aiAvailable && Boolean(data) && (data.cash ?? 0) > 0;
   useEffect(() => {
     setReview(null);
-    setReviewError(null);
-    if (!cashToReview) {
-      setReviewLoading(false);
-      return;
-    }
+    if (!cashToReview) return;
     let cancelled = false;
-    setReviewLoading(true);
     (async () => {
       try {
         let res = await post("/api/review/cash", { style, styleAuto: auto, index });
@@ -167,9 +153,9 @@ export function MarketDialog() {
           await refreshUser();
           return;
         }
-        setReviewError(caught instanceof Error ? caught.message : "تعذرت مراجعة الكاش");
-      } finally {
-        if (!cancelled) setReviewLoading(false);
+        // Only the per-stock pick badges depend on this — no dedicated error UI,
+        // they just stay absent, same as when aiAvailable is false.
+        console.warn("cash review failed:", caught instanceof Error ? caught.message : caught);
       }
     })();
     return () => {
@@ -177,11 +163,10 @@ export function MarketDialog() {
     };
     // `data` changes once per finished scan, which is exactly when to ask.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, cashToReview, reviewAttempt]);
+  }, [data, cashToReview]);
 
   const isCash = marketFocus === "cash";
   const pickByCode = new Map((review?.picks ?? []).map((pick) => [pick.code, pick]));
-  const stance = review ? STANCE[review.stance] : undefined;
   const rows = [...(data?.results ?? [])].sort(
     (a: ScanRow, b: ScanRow) =>
       (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
@@ -257,78 +242,6 @@ export function MarketDialog() {
               </span>
               <span className="text-muted-foreground">آخر تحديث: {data.asOf ?? "—"}</span>
             </div>
-
-            {cashToReview && (
-              <div className="space-y-3 rounded-lg border bg-card p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Sparkles className="size-4 text-primary" aria-hidden />
-                  <span className="text-[13px] font-semibold">مراجعة الكاش</span>
-                  {stance && (
-                    <Badge variant="outline" className={toneClass[stance.tone]}>
-                      {stance.label}
-                    </Badge>
-                  )}
-                </div>
-
-                {reviewLoading && (
-                  <p
-                    role="status"
-                    className="flex items-center gap-2 text-[12.5px] text-muted-foreground"
-                  >
-                    <Spinner />
-                    جاري مراجعة الخطة وظروف السوق…
-                  </p>
-                )}
-
-                {reviewError && (
-                  <Notice tone="warn">
-                    {reviewError}{" "}
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0"
-                      onClick={() => setReviewAttempt((n) => n + 1)}
-                    >
-                      جرّب تاني
-                    </Button>
-                  </Notice>
-                )}
-
-                {review && (
-                  <div className="space-y-3 text-[13px] leading-relaxed">
-                    <p className="font-medium">{review.headline}</p>
-                    <p className="text-muted-foreground">{review.marketRead}</p>
-                    {review.portfolioRead && (
-                      <ReviewSection title="محفظتك الحالية">{review.portfolioRead}</ReviewSection>
-                    )}
-                    {review.behaviorRead && (
-                      <ReviewSection title="أسلوبك في التداول">
-                        {review._meta?.behavior && review._meta.behavior.tradesCount > 0 && (
-                          <BehaviorStrip stats={review._meta.behavior} />
-                        )}
-                        {review.behaviorRead}
-                      </ReviewSection>
-                    )}
-                    <ReviewSection title="إزاي تنفّذ">{review.deploymentPlan}</ReviewSection>
-                    <ReviewSection title="الاحتياطي والكاش المتبقي">
-                      {review.reserveAdvice}
-                    </ReviewSection>
-                    {review.risks?.length > 0 && (
-                      <ReviewSection title="مخاطر">
-                        <ul className="list-disc space-y-0.5 ps-5">
-                          {review.risks.map((risk) => (
-                            <li key={risk}>{risk}</li>
-                          ))}
-                        </ul>
-                      </ReviewSection>
-                    )}
-                    <Notice tone="info">
-                      <b>الأولوية:</b> {review.topPriority}
-                    </Notice>
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="space-y-3">
               {shown.map((row: ScanRow) => {
@@ -445,38 +358,6 @@ export function MarketDialog() {
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** The engine-computed figures behind the AI's behavior read, so the prose can be checked against them. */
-function BehaviorStrip({ stats }: { stats: BehaviorStats }) {
-  const items = [
-    { label: "صفقات", value: int(stats.tradesCount) },
-    stats.winRatePct != null && { label: "نسبة الربح", value: `${fmt(stats.winRatePct, 0)}%` },
-    stats.avgHoldDays != null && {
-      label: "متوسط الاحتفاظ",
-      value: `${fmt(stats.avgHoldDays, 0)} يوم`,
-    },
-    { label: "تبريد على خسارة", value: int(stats.averagingDownBuys) },
-    stats.avgCashPct != null && { label: "كاشك المعتاد", value: `${fmt(stats.avgCashPct, 0)}%` },
-  ].filter(Boolean) as { label: string; value: string }[];
-  return (
-    <div className="mb-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
-      {items.map((item) => (
-        <span key={item.label} className="text-muted-foreground">
-          {item.label}: <b className="num text-foreground">{item.value}</b>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function ReviewSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="mb-0.5 text-[12px] font-semibold text-muted-foreground">{title}</div>
-      <div>{children}</div>
-    </div>
   );
 }
 
