@@ -308,8 +308,21 @@ async function requestStructuredORWithModel({
 }) {
   const client = getOpenRouterClient();
 
+  // A call with no tools and no web search has nothing for a research turn to
+  // do — running one anyway would just be a second full model generation
+  // (free-text, then reformatted to JSON) for zero benefit. Skip straight to
+  // the schema-constrained call in that case; it's the common path (cash
+  // review, fundamentals' retry, ...), not an edge case.
+  const needsToolPhase = clientTools.length > 0 || Boolean(webSearch);
+
   const startedAt = Date.now();
-  const { convo, reasoningOff: reasoningOffFromTools } = await runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch, maxTurns });
+  let convo, reasoningOffFromTools;
+  if (needsToolPhase) {
+    ({ convo, reasoningOff: reasoningOffFromTools } = await runToolPhase(client, { model, system, messages, clientTools, maxTokens, webSearch, maxTurns }));
+  } else {
+    convo = [{ role: 'system', content: system }, ...messages];
+    reasoningOffFromTools = true;
+  }
   const researchMs = Date.now() - startedAt;
 
   const { z } = await import('zod');
@@ -317,14 +330,16 @@ async function requestStructuredORWithModel({
 
   let reasoningOff = reasoningOffFromTools;
   let structuredSupported = true;
-  let formatConvo = [
-    ...convo,
-    {
-      role: 'user',
-      content:
-        'Now output your final answer as a single JSON object matching the required schema exactly — no prose before or after it, no markdown fences.',
-    },
-  ];
+  let formatConvo = needsToolPhase
+    ? [
+        ...convo,
+        {
+          role: 'user',
+          content:
+            'Now output your final answer as a single JSON object matching the required schema exactly — no prose before or after it, no markdown fences.',
+        },
+      ]
+    : convo;
 
   let lastError = null;
   let lastTruncated = false;
