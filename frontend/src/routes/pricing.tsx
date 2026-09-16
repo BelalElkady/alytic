@@ -82,6 +82,13 @@ const FEATURE_ROWS = [
   { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة" },
 ] as const;
 
+/** رصيد صور إضافي فوق حد الباقة الشهري — يتباع مرة واحدة، مش اشتراك. مطابقة لـ SCREENSHOT_ADDONS في backend/src/billing/plans.js. */
+const SCREENSHOT_ADDONS = [
+  { screenshots: 8, priceEgp: 20 },
+  { screenshots: 14, priceEgp: 40 },
+  { screenshots: 22, priceEgp: 60 },
+] as const;
+
 function PricingPage() {
   return (
     <SiteShell>
@@ -151,6 +158,29 @@ function PricingPage() {
               </Button>
             </article>
           ))}
+        </div>
+
+        <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-[16px] font-semibold">رصيد صور إضافي</h2>
+            <Badge variant="outline">دفعة واحدة — مش اشتراك</Badge>
+          </div>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">
+            خلصت صور المحفظة المسموح بيها الشهر ده قبل ما يجي الشهر الجاي؟ زوّد رصيدك برصيد إضافي
+            فوق حد باقتك.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {SCREENSHOT_ADDONS.map((addon) => (
+              <div key={addon.screenshots} className="rounded-xl border bg-surface p-4 text-center">
+                <p className="num text-2xl font-bold tracking-tight">{addon.screenshots}</p>
+                <p className="text-[12px] text-muted-foreground">صورة إضافية</p>
+                <p className="num mt-2 text-[15px] font-semibold">{addon.priceEgp} جنيه</p>
+              </div>
+            ))}
+          </div>
+          <Button asChild variant="outline" className="mt-4">
+            <Link to="/subscribe">اطلب رصيد إضافي</Link>
+          </Button>
         </div>
 
         <div className="mt-8 rounded-2xl border bg-surface p-6">

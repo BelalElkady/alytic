@@ -21,7 +21,7 @@ import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
-import { PLANS, TIERS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
+import { PLANS, TIERS, SCREENSHOT_ADDONS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
@@ -330,8 +330,9 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
 // no account number is published to anyone who can curl this.
 app.get('/api/billing/plans', (_req, res) => {
   // tiers is included so the subscribe screen can show each plan's feature
-  // caps without hardcoding a second copy of TIERS.
-  res.json({ plans: Object.values(PLANS), tiers: TIERS });
+  // caps without hardcoding a second copy of TIERS. addons are the one-time
+  // screenshot top-ups (see SCREENSHOT_ADDONS) shown alongside the plans.
+  res.json({ plans: Object.values(PLANS), tiers: TIERS, addons: { screenshots: SCREENSHOT_ADDONS } });
 });
 
 app.use('/api', async (req, res, next) => {

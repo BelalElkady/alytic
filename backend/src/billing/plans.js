@@ -34,6 +34,20 @@ export const PLANS = {
 export const planFor = (key) => PLANS[String(key ?? '')] ?? null;
 
 /**
+ * One-time top-ups on top of a tier's monthly screenshot allowance — for an
+ * account that keeps running out before the month resets. Arranged and paid
+ * the same manual way as a subscription (support chat + InstaPay), then an
+ * admin adds the matching number of screenshot credits from the admin panel
+ * (see CREDIT_KINDS/creditsOf in src/api/server.js) — there is nothing here
+ * that grants anything by itself.
+ */
+export const SCREENSHOT_ADDONS = [
+  { key: 'screenshots_8', screenshots: 8, priceEgp: 20 },
+  { key: 'screenshots_14', screenshots: 14, priceEgp: 40 },
+  { key: 'screenshots_22', screenshots: 22, priceEgp: 60 },
+];
+
+/**
  * Where users send the transfer. Handed out by the support bot to a
  * signed-in user and nowhere else — never from the public /api/billing/plans
  * — so the account isn't published to anyone who can curl the site, and every

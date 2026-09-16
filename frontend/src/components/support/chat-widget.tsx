@@ -101,6 +101,13 @@ const TOPICS = [
     hash: "",
     linkLabel: "صفحة الأسعار",
   },
+  {
+    q: "خلصت صور المحفظة الشهر ده، أعمل إيه؟",
+    a: "تقدر تشتري رصيد صور إضافي دفعة واحدة (مش اشتراك): 8 صور بـ20 جنيه، أو 14 صورة بـ40 جنيه، أو 22 صورة بـ60 جنيه. قولّنا في الشات عايز أنهي رصيد وهنفعّله بعد التحويل.",
+    to: "/pricing",
+    hash: "",
+    linkLabel: "صفحة الأسعار",
+  },
 ] as const;
 
 type BotBubble = { id: string; side: "user" | "admin"; text: string; node?: React.ReactNode };

@@ -12,6 +12,7 @@ type Tier = "long" | "trader";
 type PlanKey = "long_monthly" | "long_yearly" | "trader_monthly" | "trader_yearly";
 type Plan = { key: PlanKey; tier: Tier; label: string; priceEgp: number; months: number };
 type TierLimits = { screenshots: number; recommendations: number; cashScans: number; marketAnalysis: number };
+type ScreenshotAddon = { key: string; screenshots: number; priceEgp: number };
 
 const TIER_LABEL: Record<Tier, string> = { long: "النفس الطويل", trader: "الحريفة" };
 const FEATURE_ROWS: { key: keyof TierLimits; label: string; unit: string }[] = [
@@ -34,6 +35,8 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
   const { user, refreshUser } = useDesk();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tiers, setTiers] = useState<Record<Tier, TierLimits> | null>(null);
+  const [screenshotAddons, setScreenshotAddons] = useState<ScreenshotAddon[]>([]);
+  const [selectedAddon, setSelectedAddon] = useState<ScreenshotAddon | null>(null);
   const [tier, setTier] = useState<Tier>("long");
   const [months, setMonths] = useState<1 | 12>(12);
   const [checking, setChecking] = useState(false);
@@ -43,10 +46,12 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
       .then((result) => {
         setPlans(result.plans ?? []);
         setTiers(result.tiers ?? null);
+        setScreenshotAddons(result.addons?.screenshots ?? []);
       })
       .catch(() => {
         setPlans([]);
         setTiers(null);
+        setScreenshotAddons([]);
       });
   }, []);
 
@@ -137,6 +142,40 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
         </p>
       )}
 
+      {screenshotAddons.length > 0 && (
+        <div className="rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[14px] font-semibold">رصيد صور إضافي (اختياري)</span>
+            <Badge variant="outline">دفعة واحدة — مش اشتراك</Badge>
+          </div>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+            خلصت صور المحفظة الشهر ده؟ زوّد رصيدك فوق حد باقتك.
+          </p>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {screenshotAddons.map((addon) => {
+              const active = selectedAddon?.key === addon.key;
+              return (
+                <button
+                  key={addon.key}
+                  type="button"
+                  onClick={() => setSelectedAddon(active ? null : addon)}
+                  className={cn(
+                    "rounded-lg border p-3 text-center transition-colors",
+                    active ? "border-primary/60 bg-accent ring-1 ring-primary/20" : "hover:bg-accent",
+                  )}
+                >
+                  <p className="num text-lg font-bold">{addon.screenshots}</p>
+                  <p className="text-[11px] text-muted-foreground">صورة</p>
+                  <p className="num mt-1 text-[13px] font-semibold">
+                    {EG_NUMBER.format(addon.priceEgp)} جنيه
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border bg-surface p-4">
         <h3 className="flex items-center gap-2 text-[14px] font-semibold">
           <MessageCircle className="size-4" />
@@ -144,8 +183,13 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
         </h3>
         <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
           {user
-            ? `افتح الشات من زرار المحادثة تحت في الركن، قولّنا باقة ${TIER_LABEL[tier]}${selected ? ` (${selected.months === 12 ? "سنوي" : "شهري"})` : ""} وهنبعتلك بيانات الدفع وكل التفاصيل هناك. أول ما نراجع التحويل بنفعّل حسابك على طول.`
-            : "سجّل دخولك الأول، وبعدين افتح الشات من زرار المحادثة تحت في الركن وقولّنا الباقة اللي عايزها — هنبعتلك بيانات الدفع وكل التفاصيل هناك."}
+            ? `افتح الشات من زرار المحادثة تحت في الركن، قولّنا إنك عايز ${[
+                `باقة ${TIER_LABEL[tier]}${selected ? ` (${selected.months === 12 ? "سنوي" : "شهري"})` : ""}`,
+                selectedAddon ? `رصيد ${selectedAddon.screenshots} صورة إضافية` : null,
+              ]
+                .filter(Boolean)
+                .join(" و")}، وهنبعتلك بيانات الدفع وكل التفاصيل هناك. أول ما نراجع التحويل بنفعّل حسابك على طول.`
+            : "سجّل دخولك الأول، وبعدين افتح الشات من زرار المحادثة تحت في الركن وقولّنا الباقة أو الرصيد اللي عايزه — هنبعتلك بيانات الدفع وكل التفاصيل هناك."}
         </p>
       </div>
 

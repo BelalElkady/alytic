@@ -915,6 +915,13 @@ const NO_CREDITS: Record<CreditKind, string> = {
   marketAnalysis: "",
 };
 
+/** Matches SCREENSHOT_ADDONS in backend/src/billing/plans.js — quick-fill for whichever pack a user paid for over InstaPay. */
+const SCREENSHOT_ADDON_PACKS = [
+  { screenshots: 8, priceEgp: 20 },
+  { screenshots: 14, priceEgp: 40 },
+  { screenshots: 22, priceEgp: 60 },
+];
+
 /**
  * Extra uses on top of the capped allowances (backend creditsOf()). Each
  * credit is spent only after the user's normal allowance for it runs out.
@@ -997,6 +1004,20 @@ function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => v
                   placeholder="0"
                 />
                 <p className="text-[11.5px] text-muted-foreground">{hint}</p>
+                {kind === "screenshots" && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {SCREENSHOT_ADDON_PACKS.map((pack) => (
+                      <button
+                        key={pack.screenshots}
+                        type="button"
+                        onClick={() => setAmounts((prev) => ({ ...prev, screenshots: String(pack.screenshots) }))}
+                        className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent"
+                      >
+                        {pack.screenshots} صورة ({pack.priceEgp} ج)
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             <Button onClick={() => void save()} disabled={busy || !valid || !changed}>
