@@ -92,6 +92,7 @@ export function MarketDialog() {
   const [index, setIndex] = useState("ALL");
   const { style, auto } = useActiveInvestStyle(pf?.trades);
   const [review, setReview] = useState<CashReview | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
 
   useEffect(() => {
     if (!marketFocus) return;
@@ -129,8 +130,12 @@ export function MarketDialog() {
     marketFocus === "cash" && aiAvailable && Boolean(data) && (data.cash ?? 0) > 0;
   useEffect(() => {
     setReview(null);
-    if (!cashToReview) return;
+    if (!cashToReview) {
+      setReviewLoading(false);
+      return;
+    }
     let cancelled = false;
+    setReviewLoading(true);
     (async () => {
       try {
         let res = await post("/api/review/cash", { style, styleAuto: auto, index });
@@ -156,6 +161,8 @@ export function MarketDialog() {
         // Only the per-stock pick badges depend on this — no dedicated error UI,
         // they just stay absent, same as when aiAvailable is false.
         console.warn("cash review failed:", caught instanceof Error ? caught.message : caught);
+      } finally {
+        if (!cancelled) setReviewLoading(false);
       }
     })();
     return () => {
@@ -326,34 +333,44 @@ export function MarketDialog() {
                       (() => {
                         const pick = pickByCode.get(row.code);
                         const pickAction = pick && PICK_ACTION[pick.action];
-                        return pick && pickAction ? (
-                          <div className="mt-3 rounded-md border bg-surface px-3 py-2 text-[12.5px] leading-relaxed">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Sparkles className="size-3.5 text-primary" aria-hidden />
-                              <Badge variant="outline" className={toneClass[pickAction.tone]}>
-                                {pickAction.label}
-                              </Badge>
-                              <span className="text-muted-foreground">ثقة {pick.conviction}</span>
+                        if (pick && pickAction) {
+                          return (
+                            <div className="mt-3 rounded-md border bg-surface px-3 py-2 text-[12.5px] leading-relaxed">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Sparkles className="size-3.5 text-primary" aria-hidden />
+                                <Badge variant="outline" className={toneClass[pickAction.tone]}>
+                                  {pickAction.label}
+                                </Badge>
+                                <span className="text-muted-foreground">ثقة {pick.conviction}</span>
+                              </div>
+                              <p className="mt-1.5">{pick.comment}</p>
+                              {pick.portfolioFit && (
+                                <p className="mt-1">
+                                  <span className="text-muted-foreground">مع محفظتك: </span>
+                                  {pick.portfolioFit}
+                                </p>
+                              )}
+                              <p className="mt-1 text-muted-foreground">راقب: {pick.watchFor}</p>
                             </div>
-                            <p className="mt-1.5">{pick.comment}</p>
-                            {pick.portfolioFit && (
-                              <p className="mt-1">
-                                <span className="text-muted-foreground">مع محفظتك: </span>
-                                {pick.portfolioFit}
-                              </p>
-                            )}
-                            <p className="mt-1 text-muted-foreground">راقب: {pick.watchFor}</p>
-                          </div>
-                        ) : null;
+                          );
+                        }
+                        if (reviewLoading) {
+                          return (
+                            <p
+                              role="status"
+                              className="mt-3 flex items-center gap-2 text-[12px] text-muted-foreground"
+                            >
+                              <Spinner />
+                              جاري تحليل الفرصة بالذكاء الاصطناعي…
+                            </p>
+                          );
+                        }
+                        return null;
                       })()}
                   </div>
                 );
               })}
             </div>
-
-            {data.errors?.length ? (
-              <Notice tone="warn">تعذر تحليل {data.errors.length} سهم بسبب نقص البيانات.</Notice>
-            ) : null}
           </>
         )}
       </DialogContent>
