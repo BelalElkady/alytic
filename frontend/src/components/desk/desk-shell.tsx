@@ -62,7 +62,7 @@ const NAV = [
   { to: "/calendar", label: "التقويم", icon: CalendarDays, adminOnly: false },
   { to: "/charts", label: "الرسوم", icon: BarChart3, adminOnly: false },
   { to: "/cash", label: "تحليل الكاش", icon: LineChart, adminOnly: false },
-  { to: "/settings", label: "الإعدادات", icon: Settings, adminOnly: false },
+  { to: "/settings", label: "البروفايل والإعدادات", icon: Settings, adminOnly: false },
   { to: "/how-to-use", label: "طريقة الاستخدام", icon: HelpCircle, adminOnly: false },
   { to: "/admin", label: "الإدارة", icon: ShieldCheck, adminOnly: true },
 ] as const;

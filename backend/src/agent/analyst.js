@@ -582,42 +582,18 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
 }
 
 /**
- * Cache-or-generate for reviewStock, same contract as getOrGenerateReview.
- * Stored in portfolio_reviews under a `style:CODE` style key (the column is
- * free text), and hashed on this position plus cash only, so a trade in a
- * different stock doesn't throw away this one's verdict. Every account gets
- * the same one-per-day-per-stock cache; how many *fresh* (non-cached)
- * verdicts an account may ask for in a month is a separate check the caller
- * makes against its tier's recommendation allowance before calling this at
- * all (see leftFor('recommendations', ...) in src/api/server.js) — `force`
- * (a spent recommendation use) skips the cache for one fresh verdict.
+ * Generates a stock's AI recommendation — no caching, unlike
+ * getOrGenerateReview. Every call is a fresh model call and is billed as one
+ * recommendation-tier use by the caller (see leftFor('recommendations', ...)
+ * in src/api/server.js): asking again for the same stock the same day is a
+ * new use spending a new credit, not a free re-read of an earlier answer.
  *
  * @param {() => Promise<object[]>} opts.loadAnalyses - every held position's
- *   analysis; called only on a cache miss, so a cached verdict never pays for
- *   analysing the whole book.
- * @param {() => Promise<string|null>} [opts.resolveAsOf] - the stock's last
- *   bar date, for the daily cache lookup — cheaper than loadAnalyses.
+ *   analysis, needed for portfolio-wide context (sector mix, weights).
  */
-export async function getOrGenerateStockReview(portfolio, code, ctx = {}, opts = {}) {
-  const {
-    userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE,
-    loadAnalyses, resolveAsOf,
-  } = opts;
-  const today = new Date().toISOString().slice(0, 10);
-  const cacheStyle = `${style}:${code}`;
-  const hash = portfolioHash({ positions: { [code]: portfolio.positions[code] }, watchlist: {}, cash: portfolio.cash });
-
-  if (!force) {
-    const cached = await getPortfolioReview(userId, (await resolveAsOf?.()) ?? today, cacheStyle);
-    if (cached && cached.portfolioHash === hash) {
-      const { portfolioHash: _hash, ...verdict } = cached;
-      return { verdict, source: 'cached' };
-    }
-  }
-
+export async function getOrGenerateStockReview(code, ctx = {}, opts = {}) {
+  const { model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE, loadAnalyses } = opts;
   const analyses = await loadAnalyses();
-  const asOf = analyses.find((a) => a.code === code)?.asOf ?? today;
   const verdict = await reviewStock(analyses, code, ctx, { model, rules, style });
-  await putPortfolioReview(userId, asOf, cacheStyle, hash, verdict, verdict._meta.model, verdict._meta.usage);
   return { verdict, source: 'ai' };
 }

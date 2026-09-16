@@ -10,6 +10,7 @@ import {
   linkGoogleAccount,
   markEmailVerified,
   setResetToken,
+  setUserName,
   setUserPassword,
   setUserPhone,
   setVerificationToken,
@@ -271,6 +272,15 @@ export async function updatePhone({ userId, phone }) {
   const normalized = normalizePhone(phone);
   if (!normalized) throw new Error('اكتب رقم موبايل مصري صحيح (01xxxxxxxxx)');
   await setUserPhone(userId, normalized);
+  const user = await getUserById(userId);
+  return { user: publicUser(user) };
+}
+
+/** Lets a signed-in user correct their own display name from the profile page. */
+export async function updateName({ userId, name }) {
+  const trimmed = String(name ?? '').trim().slice(0, 100);
+  if (!trimmed) throw new Error('اكتب اسم صحيح');
+  await setUserName(userId, trimmed);
   const user = await getUserById(userId);
   return { user: publicUser(user) };
 }

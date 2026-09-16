@@ -87,13 +87,15 @@ const AI_ACTION_TONE: Record<string, string> = {
   wait: "border-border bg-surface-2 text-muted-foreground",
 };
 
-// A per-stock AI review is a real, paid model call, cached per day/style/
-// position for every account alike (see getOrGenerateStockReview in
-// backend/src/agent/analyst.js) — this local cache just mirrors that
-// client-side so a reload shows today's verdict without another request. How
-// many *fresh* verdicts an account may still generate this month is a
-// separate, tier-based allowance the server enforces (see TIERS in
-// backend/src/billing/plans.js), reflected in pf.recommendationsLeft.
+// A per-stock AI review is a real, paid model call and a pure spend-until-
+// empty credit — the server never serves a cached answer for free, so
+// re-asking for the same stock the same day spends a new use (see
+// getOrGenerateStockReview in backend/src/agent/analyst.js). This local
+// cache is purely a client-side "what did I last see" convenience so a page
+// reload still shows the last verdict without paying for another request —
+// it plays no part in what's billed. How many uses an account has left this
+// month is TIERS-based (backend/src/billing/plans.js), reflected in
+// pf.recommendationsLeft.
 const todayKey = () => new Date().toDateString();
 const reviewStorageKey = (code: string) => `alytic-stock-review:${code}`;
 // Short on purpose: /api/review/status already holds each request open until
@@ -122,13 +124,10 @@ async function withReviewSlot<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-// A trade on the position (e.g. acting on the verdict) makes the cached
-// verdict stale, so it's only reused for the same day, style and position —
-// matching the server's own per-stock daily cache (see
-// getOrGenerateStockReview in backend/src/agent/analyst.js). How many fresh
-// (non-cached) verdicts an account may still ask for this month is a
-// separate, tier-based limit — see pf.recommendationsLeft below — not
-// something this local cache tracks.
+// A trade on the position (e.g. acting on the verdict) makes the locally
+// remembered verdict stale, so it's only shown back for the same day, style
+// and position — this is purely a "what to display on reload" convenience,
+// not a billing cache (see the block comment above).
 function readStoredVerdict(code: string, style: StyleKey, positionKey: string): Verdict | null {
   try {
     const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
@@ -608,10 +607,10 @@ function PositionCard({
             <AlertDialogTitle>متأكد إنك عايز توصية اليوم لسهم {row.code} دلوقتي؟</AlertDialogTitle>
             <AlertDialogDescription className="leading-relaxed">
               {isAdmin
-                ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد ضمن رصيد باقتك الشهري."
+                ? "كمشرف تقدر تطلبها أكتر من مرة — كل مرة بتعمل تحليل جديد ضمن رصيدك."
                 : recommendationsExhausted
-                  ? "خلصت توصيات الشهر ده."
-                  : `لو محتاج تحليل جديد هتستهلك توصية من رصيدك الشهري (باقي ${recommendationsLeft}) — نفس اليوم والمركز بيرجّع نفس التوصية من غير استهلاك.`}
+                  ? "خلصت توصياتك."
+                  : `هتستهلك توصية من رصيدك (باقي ${recommendationsLeft}) — كل طلب بتحليل جديد، حتى لو نفس السهم ونفس اليوم.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">

@@ -80,6 +80,7 @@ type DeskValue = {
   resendVerification: (email: string) => Promise<void>;
   markEmailVerified: () => void;
   updatePhone: (phone: string) => Promise<void>;
+  updateName: (name: string) => Promise<void>;
   refreshUser: () => Promise<User | null>;
   pf: Portfolio;
   rows: Row[];
@@ -381,6 +382,11 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  const updateName = useCallback(async (name: string) => {
+    const result = await post("/api/account/name", { name });
+    setUser(result.user);
+  }, []);
+
   const totals = useMemo<Totals>(() => {
     const cost = rows.reduce((sum, r) => sum + r.position.shares * r.position.avgCost, 0);
     const value = rows.reduce((sum, r) => sum + (r.position.marketValue ?? 0), 0);
@@ -409,6 +415,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     resendVerification,
     markEmailVerified,
     updatePhone,
+    updateName,
     refreshUser,
     pf,
     rows,

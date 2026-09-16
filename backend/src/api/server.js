@@ -37,7 +37,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
 import { readBars, cairoToday, cairoDateOf, isTradingDay } from '../data/cache.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
-import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, forgotPassword, resetPassword } from '../auth.js';
+import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
 import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
@@ -526,6 +526,13 @@ app.post('/api/support/messages/image', chatLimiter, express.raw({ type: SUPPORT
 // gated behind a session.
 app.post('/api/account/phone', wrap(async (req, res) => {
   const result = await updatePhone({ userId: req.user.id, phone: req.body?.phone });
+  res.json({ user: result.user });
+}));
+
+// Self-service name correction from the profile page — the counterpart to
+// the admin panel's read-only view of the same field.
+app.post('/api/account/name', wrap(async (req, res) => {
+  const result = await updateName({ userId: req.user.id, name: req.body?.name });
   res.json({ user: result.user });
 }));
 
@@ -2393,17 +2400,16 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   const userId = req.user.id;
   const tier = req.access.tier;
   const jobKey = reviewJobKey(userId, pre.style, code);
-  const force = req.body?.force === true;
 
-  // Every account draws fresh (non-cached) recommendations from its tier's
-  // monthly allowance (see TIERS) — a same-day cached verdict for an
-  // unchanged position costs nothing, but there's no cheap way to know in
-  // advance which this request will turn out to be, so an exhausted
-  // allowance blocks a new job outright. Joining a review that's already
-  // running never spends anything, cached or not.
+  // A recommendation is a pure spend-until-empty credit: every explicit
+  // request pays for a fresh model call and draws one use from that
+  // account's monthly recommendations balance (see TIERS) — asking again for
+  // the same stock the same day is a new use, not a free re-read from a
+  // cache. Joining a review that's already running (a duplicate click, not a
+  // second ask) is the only free case.
   const joiningRunningJob = reviewJobs.get(jobKey)?.status === 'running';
   if (!joiningRunningJob && leftFor('recommendations', portfolio, tier) <= 0) {
-    return res.status(429).json({ error: 'خلص رصيد التوصيات المتاح الشهر ده.', reason: 'recommendation_credit_limit' });
+    return res.status(429).json({ error: 'خلص رصيد التوصيات المتاح.', reason: 'recommendation_credit_limit' });
   }
 
   await startReviewJob(res, jobKey, async () => {
@@ -2412,16 +2418,11 @@ app.post('/api/review/stock', wrap(async (req, res) => {
     const capital = capitalOf(portfolio);
     const { getOrGenerateStockReview } = await import('../agent/analyst.js');
     const { verdict, source } = await getOrGenerateStockReview(
-      portfolio,
       code,
       { cash: portfolio.cash, capital },
       {
-        userId, rules, style: pre.style ?? 'medium', force,
-        // Just this stock's bars, no fundamentals — enough to date the cache lookup.
-        resolveAsOf: async () =>
-          (await analyzeTicker(code, { position: portfolio.positions[code], capital, rules, withFundamentals: false })).asOf,
+        rules, style: pre.style ?? 'medium',
         // Every holding, not just this one: weights and sector mix need the whole book.
-        // Only runs on a cache miss.
         loadAnalyses: async () => {
           const t = Date.now();
           const { results } = await analyzeMany(Object.keys(portfolio.positions), {
@@ -2435,10 +2436,8 @@ app.post('/api/review/stock', wrap(async (req, res) => {
         },
       },
     );
-    // Charged only once the call is known to be a real, fresh generation —
-    // a cache hit is free, and a failed call never reaches this line, so
-    // there's nothing to refund either way.
-    if (source === 'ai') {
+    // A duplicate click joining the same in-flight job spends nothing extra.
+    if (!joiningRunningJob) {
       await withPortfolio(userId, (p) => {
         const next = bumpUsage(p, 'recommendations');
         return baseLeftFor('recommendations', p, tier) > 0 ? next : addCredits(next, { recommendations: -1 });

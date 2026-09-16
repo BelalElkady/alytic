@@ -103,6 +103,11 @@ export async function setUserPhone(id, phone) {
   must(await supabase.from('users').update({ phone }).eq('id', id), 'setUserPhone');
 }
 
+/** Lets a signed-in account correct its own display name from the profile page. */
+export async function setUserName(id, name) {
+  must(await supabase.from('users').update({ name }).eq('id', id), 'setUserName');
+}
+
 export async function getPortfolio(userId) {
   const { data, error } = await supabase.from('portfolios').select('state_json').eq('user_id', userId).maybeSingle();
   if (error) throw new Error(`getPortfolio: ${error.message}`);

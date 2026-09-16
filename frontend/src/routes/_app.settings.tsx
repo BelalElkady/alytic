@@ -1,9 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Notice, Panel, Spinner } from "@/components/desk/state-blocks";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { post } from "@/lib/api";
 import {
   clearInvestStyle,
@@ -18,15 +21,15 @@ import { useDesk } from "@/lib/store";
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({
     meta: [
-      { title: "الإعدادات — EGXpert" },
+      { title: "الملف الشخصي والإعدادات — EGXpert" },
       {
         name: "description",
-        content: "سلوكك الاستثماري ومسح بيانات المحفظة.",
+        content: "بياناتك، رصيدك من كل ميزة، وسلوكك الاستثماري.",
       },
-      { property: "og:title", content: "الإعدادات — EGXpert" },
+      { property: "og:title", content: "الملف الشخصي والإعدادات — EGXpert" },
       {
         property: "og:description",
-        content: "سلوكك الاستثماري ومسح بيانات المحفظة.",
+        content: "بياناتك، رصيدك من كل ميزة، وسلوكك الاستثماري.",
       },
       { name: "robots", content: "noindex, nofollow" },
       { property: "og:url", content: `${SITE_URL}/settings` },
@@ -35,8 +38,112 @@ export const Route = createFileRoute("/_app/settings")({
   component: SettingsPage,
 });
 
+const TIER_LABEL: Record<string, string> = {
+  free: "الباقة المجانية",
+  long: "باقة النفس الطويل",
+  trader: "باقة الحريفة",
+};
+
+/** Editable "بياناتك" row: shows the current value, only exposes an input + save once "تعديل" is pressed. */
+function ProfileField({
+  label,
+  value,
+  placeholder,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onSave: (next: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await onSave(draft.trim());
+      setEditing(false);
+      toast.success(`تم تحديث ${label}`);
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر الحفظ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {editing ? (
+        <div className="flex flex-wrap gap-2">
+          <Input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={placeholder}
+            className="max-w-xs"
+            autoFocus
+          />
+          <Button size="sm" onClick={() => void save()} disabled={busy || !draft.trim()}>
+            {busy && <Spinner />}
+            حفظ
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setDraft(value);
+              setEditing(false);
+            }}
+            disabled={busy}
+          >
+            إلغاء
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-[14px]">{value || "—"}</span>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]" onClick={() => setEditing(true)}>
+            تعديل
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One row of "رصيدك": this month's allowance left/total for one metered feature, plus any admin-granted extra credits. */
+function CreditRow({
+  label,
+  left,
+  perMonth,
+  credit,
+}: {
+  label: string;
+  left: number | null;
+  perMonth: number | null;
+  credit: number;
+}) {
+  if (left === null) return null;
+  return (
+    <div className="flex items-center justify-between border-b py-2 text-[13px] last:border-b-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="num font-semibold">
+        باقي {left}
+        {perMonth ? ` من ${perMonth}` : ""}
+        {credit > 0 ? ` (+${credit} رصيد إضافي)` : ""}
+      </span>
+    </div>
+  );
+}
+
 function SettingsPage() {
-  const { reload, pf } = useDesk();
+  const { reload, pf, user, updateName, updatePhone } = useDesk();
   const [armed, setArmed] = useState(false);
   const [resetting, setResetting] = useState(false);
   const { style, auto, inferred } = useActiveInvestStyle(pf?.trades);
@@ -71,8 +178,64 @@ function SettingsPage() {
     }
   };
 
+  const tier = typeof pf?.tier === "string" ? pf.tier : null;
+  const credits = pf?.credits ?? {};
+
   return (
     <div className="space-y-4">
+      <Panel title="بياناتك" description="بيانات حسابك — عدّل اللي محتاج يتغيّر منها.">
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>البريد الإلكتروني</Label>
+            <p className="text-[14px] text-muted-foreground">{user?.email}</p>
+          </div>
+          <ProfileField label="الاسم" value={user?.name ?? ""} onSave={updateName} />
+          <ProfileField
+            label="رقم الموبايل"
+            value={user?.phone ?? ""}
+            placeholder="01xxxxxxxxx"
+            onSave={updatePhone}
+          />
+        </div>
+      </Panel>
+
+      <Panel
+        title="رصيدك"
+        description="رصيد كل ميزة — بيتجدد أول كل شهر ميلادي، وأي رصيد إضافي اشتريته بيتضاف فوقه."
+      >
+        {tier && (
+          <Badge variant="outline" className="mb-3">
+            {TIER_LABEL[tier] ?? tier}
+          </Badge>
+        )}
+        <div>
+          <CreditRow
+            label="رفع سكرين شوت للمحفظة"
+            left={pf?.screenshotImportsLeft ?? null}
+            perMonth={pf?.screenshotsPerMonth ?? null}
+            credit={credits.screenshots ?? 0}
+          />
+          <CreditRow
+            label="توصيات الأسهم"
+            left={pf?.recommendationsLeft ?? null}
+            perMonth={pf?.recommendationsPerMonth ?? null}
+            credit={credits.recommendations ?? 0}
+          />
+          <CreditRow
+            label="تحليل استخدام الكاش"
+            left={pf?.cashScansLeft ?? null}
+            perMonth={pf?.cashScansPerMonth ?? null}
+            credit={credits.cashScans ?? 0}
+          />
+          <CreditRow
+            label="تحليل السوق"
+            left={pf?.marketAnalysisLeft ?? null}
+            perMonth={pf?.marketAnalysisPerMonth ?? null}
+            credit={credits.marketAnalysis ?? 0}
+          />
+        </div>
+      </Panel>
+
       <Panel
         title="اختار سلوكك الاستثماري لتحديد قواعد التوصيات"
         description="الاختيار بيغيّر قواعد التوصيات وتوصية كل سهم في صفحة المراكز فورًا."
