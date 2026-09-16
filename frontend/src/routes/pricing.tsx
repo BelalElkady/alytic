@@ -59,7 +59,7 @@ const PLANS = [
     cta: "اشترك في النفس الطويل",
     highlight: true,
     tag: "الأكثر اختيارًا",
-    limits: { screenshots: 7, recommendations: 480, cashScans: 7, marketAnalysis: 7 },
+    limits: { screenshots: 7, recommendations: 230, cashScans: 10, marketAnalysis: 30 },
   },
   {
     key: "trader",
@@ -71,7 +71,7 @@ const PLANS = [
     cta: "اشترك في الحريفة",
     highlight: false,
     tag: "أعلى الحدود",
-    limits: { screenshots: 12, recommendations: 960, cashScans: 15, marketAnalysis: 15 },
+    limits: { screenshots: 12, recommendations: 550, cashScans: 20, marketAnalysis: 70 },
   },
 ] as const;
 

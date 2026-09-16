@@ -9,8 +9,8 @@
  */
 export const TIERS = {
   free: { key: 'free', label: 'الباقة المجانية', screenshots: 2, recommendations: 4, cashScans: 1, marketAnalysis: 1 },
-  long: { key: 'long', label: 'باقة النفس الطويل', screenshots: 7, recommendations: 480, cashScans: 7, marketAnalysis: 7 },
-  trader: { key: 'trader', label: 'باقة الحريفة', screenshots: 12, recommendations: 960, cashScans: 15, marketAnalysis: 15 },
+  long: { key: 'long', label: 'باقة النفس الطويل', screenshots: 7, recommendations: 230, cashScans: 10, marketAnalysis: 30 },
+  trader: { key: 'trader', label: 'باقة الحريفة', screenshots: 12, recommendations: 550, cashScans: 20, marketAnalysis: 70 },
 };
 
 /**
