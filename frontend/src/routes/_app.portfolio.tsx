@@ -335,8 +335,8 @@ function PositionsPage() {
               {isAdmin
                 ? "كل سهم فيهم هيتعمل له تحليل جديد؛ الأسهم اللي عندها توصية مش هتتعاد."
                 : recommendationsLeft !== null && recommendationsLeft < (batchConfirm?.length ?? 0)
-                  ? `عندك ${recommendationsLeft} بس من رصيد التوصيات الشهر ده — أول ${recommendationsLeft} سهم بس هياخدوا توصية.`
-                  : "هتستهلك توصية من رصيدك الشهري لكل سهم فيهم، والأزرار هتتقفل لحد بكرة."}
+                  ? `عندك ${recommendationsLeft} بس في رصيدك — هيتكلف ${recommendationsLeft} توصية وياخدوا توصية أول ${recommendationsLeft} سهم، والباقي لأ.`
+                  : `هيتكلف ${int(batchConfirm?.length ?? 0)} توصية من رصيدك${recommendationsLeft !== null ? ` (باقي ${recommendationsLeft} دلوقتي)` : ""}.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:justify-start">
