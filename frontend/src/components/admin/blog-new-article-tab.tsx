@@ -12,9 +12,26 @@ import { post, postRaw } from "@/lib/api";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+/** Rough phonetic Arabic → Latin map so an Arabic title still produces a readable slug instead of collapsing to nothing. */
+const ARABIC_TRANSLITERATION: Record<string, string> = {
+  ا: "a", أ: "a", إ: "a", آ: "a", ى: "a", ة: "a", ء: "",
+  ب: "b", ت: "t", ث: "th", ج: "j", ح: "h", خ: "kh",
+  د: "d", ذ: "th", ر: "r", ز: "z", س: "s", ش: "sh",
+  ص: "s", ض: "d", ط: "t", ظ: "z", ع: "a", غ: "gh",
+  ف: "f", ق: "q", ك: "k", ل: "l", م: "m", ن: "n",
+  ه: "h", و: "w", ي: "y",
+  "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+  "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+};
+
+/** Transliterates Arabic letters/digits phonetically; leaves any already-Latin text untouched. */
+function transliterateArabic(value: string): string {
+  return value.replace(/[؀-ۿ]/g, (ch) => ARABIC_TRANSLITERATION[ch] ?? "");
+}
+
 /** Keeps only what the backend's slug regex accepts: lowercase English letters, digits and single hyphens. */
 function sanitizeSlug(value: string): string {
-  return value
+  return transliterateArabic(value)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");

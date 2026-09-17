@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,7 +22,6 @@ import {
   Notice,
   Panel,
   Spinner,
-  Stat,
 } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import {
@@ -609,33 +608,62 @@ function UsersTab() {
     );
   if (!rows || !stats) return <LoadingBlock rows={3} />;
 
+  const statRows: { label: string; value: ReactNode; sub?: string; valueClassName?: string }[][] = [
+    [
+      { label: "إجمالي المستخدمين", value: int(stats.total) },
+      { label: "نشط (تجربة سارية أو اشتراك فعال)", value: int(stats.active), sub: `من ${stats.total}` },
+      { label: "إجمالي رأس مال المحافظ", value: `${int(stats.capital)} ج` },
+      { label: "إجمالي الأرباح المحققة", value: signed(stats.profit), valueClassName: tone(stats.profit) },
+    ],
+    [
+      { label: "مضاربة (مخاطرة)", value: int(stats.styleCounts.trader) },
+      { label: "متوسط المدى", value: int(stats.styleCounts.medium) },
+      { label: "طويل المدى", value: int(stats.styleCounts.long) },
+      { label: "غير محدد الأسلوب", value: int(stats.styleUnknown) },
+    ],
+    [
+      { label: "مشترك فعال — مضاربة", value: int(stats.subTrader) },
+      { label: "مشترك فعال — متوسط/طويل المدى", value: int(stats.subMediumLong) },
+      { label: "تجربة سارية", value: int(stats.statusCounts.trial) },
+      { label: "مجاني — محتاج تجديد", value: int(stats.statusCounts.free), valueClassName: "text-warn" },
+    ],
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 rounded-lg border bg-surface p-3 sm:grid-cols-3 lg:grid-cols-4">
-        <Stat label="إجمالي المستخدمين" value={int(stats.total)} />
-        <Stat
-          label="نشط (تجربة سارية أو اشتراك فعال)"
-          value={int(stats.active)}
-          sub={`من ${stats.total}`}
-        />
-        <Stat label="إجمالي رأس مال المحافظ" value={`${int(stats.capital)} ج`} />
-        <Stat
-          label="إجمالي الأرباح المحققة"
-          value={signed(stats.profit)}
-          valueClassName={tone(stats.profit)}
-        />
-        <Stat label="مضاربة (مخاطرة)" value={int(stats.styleCounts.trader)} />
-        <Stat label="متوسط المدى" value={int(stats.styleCounts.medium)} />
-        <Stat label="طويل المدى" value={int(stats.styleCounts.long)} />
-        <Stat label="غير محدد الأسلوب" value={int(stats.styleUnknown)} />
-        <Stat label="مشترك فعال — مضاربة" value={int(stats.subTrader)} />
-        <Stat label="مشترك فعال — متوسط/طويل المدى" value={int(stats.subMediumLong)} />
-        <Stat label="تجربة سارية" value={int(stats.statusCounts.trial)} />
-        <Stat
-          label="مجاني — محتاج تجديد"
-          value={int(stats.statusCounts.free)}
-          valueClassName="text-warn"
-        />
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full min-w-[860px] border-collapse text-sm">
+          <tbody>
+            {statRows.map((row, ri) => (
+              <tr
+                key={ri}
+                className={cn("border-b last:border-b-0", ri % 2 === 1 ? "bg-muted/30" : "bg-surface")}
+              >
+                {row.map((cell, ci) => (
+                  <td
+                    key={cell.label}
+                    className={cn("p-3 align-top text-start", ci < row.length - 1 && "border-e")}
+                  >
+                    <div className="text-[11.5px] font-medium text-muted-foreground">{cell.label}</div>
+                    <div
+                      className={cn(
+                        "num mt-1 whitespace-nowrap text-[17px] font-semibold tracking-tight",
+                        cell.valueClassName,
+                      )}
+                    >
+                      {cell.value}
+                    </div>
+                    {cell.sub && (
+                      <div className="num mt-0.5 whitespace-nowrap text-[11.5px] text-muted-foreground">
+                        {cell.sub}
+                      </div>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

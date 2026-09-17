@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check src/api/server.js)",
+      "Bash(node --check src/billing/plans.js)"
+    ]
+  }
+}
