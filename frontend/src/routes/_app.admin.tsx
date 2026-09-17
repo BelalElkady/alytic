@@ -709,28 +709,28 @@ function UsersTab() {
             </div>
           ) : (
             <div className="scrollbar-slim overflow-x-auto">
-              <Table className="min-w-[1400px]">
+              <Table className="min-w-[1500px] border-collapse">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[190px] whitespace-nowrap py-3 text-start">المستخدم</TableHead>
-                    <TableHead className="min-w-[120px] whitespace-nowrap py-3 text-start">الهاتف</TableHead>
-                    <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">تاريخ التسجيل</TableHead>
-                    <TableHead className="min-w-[150px] whitespace-nowrap py-3 text-start">آخر دخول</TableHead>
-                    <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">رأس المال</TableHead>
-                    <TableHead className="min-w-[110px] whitespace-nowrap py-3 text-start">ربح محقق</TableHead>
-                    <TableHead className="min-w-[210px] whitespace-nowrap py-3 text-start">النشاط الاستثماري</TableHead>
-                    <TableHead className="min-w-[250px] whitespace-nowrap py-3 text-start">السلوك الاستثماري</TableHead>
-                    <TableHead className="min-w-[180px] whitespace-nowrap py-3 text-start">الرصيد</TableHead>
-                    <TableHead className="min-w-[170px] whitespace-nowrap py-3 text-start">الاشتراك</TableHead>
-                    <TableHead className="min-w-[140px] whitespace-nowrap py-3 text-start">الحالة</TableHead>
+                    <TableHead className="min-w-[190px] whitespace-nowrap border-e py-3 text-start">المستخدم</TableHead>
+                    <TableHead className="min-w-[120px] whitespace-nowrap border-e py-3 text-start">الهاتف</TableHead>
+                    <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">تاريخ التسجيل</TableHead>
+                    <TableHead className="min-w-[150px] whitespace-nowrap border-e py-3 text-start">آخر دخول</TableHead>
+                    <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">رأس المال</TableHead>
+                    <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">ربح محقق</TableHead>
+                    <TableHead className="min-w-[210px] whitespace-nowrap border-e py-3 text-start">النشاط الاستثماري</TableHead>
+                    <TableHead className="min-w-[250px] whitespace-nowrap border-e py-3 text-start">السلوك الاستثماري</TableHead>
+                    <TableHead className="min-w-[180px] whitespace-nowrap border-e py-3 text-start">الرصيد</TableHead>
+                    <TableHead className="min-w-[170px] whitespace-nowrap border-e py-3 text-start">الاشتراك</TableHead>
+                    <TableHead className="min-w-[140px] whitespace-nowrap border-e py-3 text-start">الحالة</TableHead>
                     <TableHead className="py-3">
                       <span className="sr-only">حذف</span>
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((row) => (
-                    <UserRow key={row.id} row={row} onChanged={load} />
+                  {filtered.map((row, index) => (
+                    <UserRow key={row.id} row={row} onChanged={load} striped={index % 2 === 1} />
                   ))}
                 </TableBody>
               </Table>
@@ -742,21 +742,29 @@ function UsersTab() {
   );
 }
 
-function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void }) {
+function UserRow({
+  row,
+  onChanged,
+  striped,
+}: {
+  row: AdminUserRow;
+  onChanged: () => void;
+  striped: boolean;
+}) {
   const pf = row.portfolio;
   const capital = pf ? pf.cash + pf.positionsValue : null;
 
   return (
-    <TableRow>
-      <TableCell className="align-top py-3">
+    <TableRow className={cn(striped && "bg-muted/30")}>
+      <TableCell className="border-e align-top py-3">
         <div className="min-w-0">
           <div className="truncate font-medium">{row.email}</div>
           {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.name}</div>}
         </div>
       </TableCell>
-      <TableCell className="num align-top py-3 text-right">{row.phone || "—"}</TableCell>
-      <TableCell className="num align-top py-3 text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
-      <TableCell className="num align-top py-3 text-right">
+      <TableCell className="num border-e align-top py-3 text-right">{row.phone || "—"}</TableCell>
+      <TableCell className="num border-e align-top py-3 text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
+      <TableCell className="num border-e align-top py-3 text-right">
         {row.lastLoginAt
           ? new Date(row.lastLoginAt).toLocaleString("ar-EG", {
               day: "numeric",
@@ -768,32 +776,32 @@ function UserRow({ row, onChanged }: { row: AdminUserRow; onChanged: () => void 
             })
           : "—"}
       </TableCell>
-      <TableCell className="num align-top py-3 text-right">
+      <TableCell className="num border-e align-top py-3 text-right">
         {capital != null ? `${int(capital)} ج` : "—"}
       </TableCell>
       <TableCell
         className={cn(
-          "num align-top py-3 text-right",
+          "num border-e align-top py-3 text-right",
           pf ? tone(pf.realizedPnl) : "text-muted-foreground",
         )}
       >
         {pf ? signed(pf.realizedPnl) : "—"}
       </TableCell>
-      <TableCell className="align-top py-3 text-muted-foreground">
+      <TableCell className="border-e align-top py-3 text-muted-foreground">
         {pf
           ? `${pf.tradesCount} صفقة · ${pf.positionsCount} مركز · ${pf.watchlistCount} متابعة`
           : "لا توجد محفظة"}
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className="border-e align-top py-3">
         {row.behavior ? <BehaviorCell behavior={row.behavior} /> : "—"}
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className="border-e align-top py-3">
         <CreditsCell row={row} onChanged={onChanged} />
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className="border-e align-top py-3">
         <SubscriptionCell row={row} onChanged={onChanged} />
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className="border-e align-top py-3">
         <div className="flex flex-wrap gap-1">
           {row.isAdmin && <Badge>مشرف</Badge>}
           {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
