@@ -1224,10 +1224,18 @@ app.delete('/api/admin/blog-drafts/:id', wrap(async (req, res) => {
 app.get('/api/analyze/:code', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(req.user.id);
   const code = req.params.code.toUpperCase();
+  const style = req.query.style;
+  if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
+  // Without this, the detail dialog silently analyzed every stock with the
+  // default/medium ruleset regardless of the account's chosen style, so its
+  // stop/targets could disagree with the same stock's row elsewhere (scan,
+  // alerts, position cards) which already passes ?style= — see /api/scan.
+  const rules = style ? rulesForStyle(RULES, style) : RULES;
   const analysis = await analyzeTicker(code, {
     position: portfolio.positions[code] ?? null,
     capital: capitalOf(portfolio) || 1_000_000,
     force: req.query.force === '1',
+    rules,
   });
   const live = (await fetchLatestQuotes([code])).get(code);
   if (live && analysis.snapshot?.price) {

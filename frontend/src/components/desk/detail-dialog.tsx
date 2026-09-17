@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { fmt, pct, tone } from "@/lib/format";
+import { useActiveInvestStyle } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { mergedTarget } from "@/lib/targets";
 
@@ -27,26 +28,31 @@ const CLASSIFICATION_TONE_CLASS: Record<ClassificationType, string> = {
 
 /** Per-stock analysis, same /api/analyze/:code payload as before. */
 export function DetailDialog() {
-  const { detailCode, openDetail } = useDesk();
+  const { detailCode, openDetail, pf } = useDesk();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the /api/analyze response shape
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const { style } = useActiveInvestStyle(pf?.trades);
 
   useEffect(() => {
     if (!detailCode) return;
     let cancelled = false;
     setData(null);
     setError(null);
-    api(`/api/analyze/${detailCode}`)
+    // Same style the rest of the desk (scan rows, alerts, cards) uses — a
+    // mismatch here used to show a different stop/targets for the same
+    // position depending which screen you looked at it from.
+    api(`/api/analyze/${detailCode}?style=${style}`)
       .then((result) => !cancelled && setData(result))
       .catch((caught) => !cancelled && setError(caught?.message ?? "تعذر التحليل"));
     return () => {
       cancelled = true;
     };
-  }, [detailCode]);
+  }, [detailCode, style]);
 
   const snapshot = data?.snapshot;
   const plan = data?.plan;
+  const position = data?.position;
   const technical = data?.technical;
   const oneTarget = mergedTarget(plan?.targets?.mid, plan?.targets?.long);
 
@@ -161,9 +167,20 @@ export function DetailDialog() {
                 <Line
                   label="الوقف"
                   value={
-                    <span className="num text-down">
-                      {fmt(plan.stop.stop)} ج · مخاطرة {plan.stop.riskPct}%
-                    </span>
+                    // A position already open enforces its own live,
+                    // ratcheted stop (see position-recommendation rules) —
+                    // that's the number that actually triggers an exit, not
+                    // the entry-plan stop for a fresh buy today, which is
+                    // shown only when there's no open position to defend.
+                    position ? (
+                      <span className="num text-down">
+                        {fmt(position.stop)} ج · مسافة {position.distanceToStopPct}%
+                      </span>
+                    ) : (
+                      <span className="num text-down">
+                        {fmt(plan.stop.stop)} ج · مخاطرة {plan.stop.riskPct}%
+                      </span>
+                    )
                   }
                 />
                 {oneTarget ? (
