@@ -34,18 +34,35 @@ export const PLANS = {
 export const planFor = (key) => PLANS[String(key ?? '')] ?? null;
 
 /**
- * One-time top-ups on top of a tier's monthly screenshot allowance — for an
- * account that keeps running out before the month resets. Arranged and paid
- * the same manual way as a subscription (support chat + InstaPay), then an
- * admin adds the matching number of screenshot credits from the admin panel
- * (see CREDIT_KINDS/creditsOf in src/api/server.js) — there is nothing here
- * that grants anything by itself.
+ * One-time top-ups on top of a tier's monthly allowance for any of the four
+ * capped features (see TIERS) — for an account that keeps running out before
+ * the month resets. Arranged and paid the same manual way as a subscription
+ * (support chat + InstaPay), then an admin adds the matching credits from
+ * the admin panel (see CREDIT_KINDS/creditsOf in src/api/server.js) — there
+ * is nothing here that grants anything by itself. Three sizes per feature.
  */
-export const SCREENSHOT_ADDONS = [
-  { key: 'screenshots_8', screenshots: 8, priceEgp: 20 },
-  { key: 'screenshots_14', screenshots: 14, priceEgp: 40 },
-  { key: 'screenshots_22', screenshots: 22, priceEgp: 60 },
-];
+export const ADDONS = {
+  screenshots: [
+    { key: 'screenshots_quick', label: 'سريع', screenshots: 3, priceEgp: 20 },
+    { key: 'screenshots_value', label: 'الأفضل قيمة', screenshots: 6, priceEgp: 39 },
+    { key: 'screenshots_bulk', label: 'بالجملة', screenshots: 12, priceEgp: 75 },
+  ],
+  recommendations: [
+    { key: 'recommendations_quick', label: 'سريع', recommendations: 50, priceEgp: 3.5 },
+    { key: 'recommendations_value', label: 'الأفضل قيمة', recommendations: 150, priceEgp: 9.5 },
+    { key: 'recommendations_bulk', label: 'بالجملة', recommendations: 400, priceEgp: 24 },
+  ],
+  cashScans: [
+    { key: 'cashScans_quick', label: 'سريع', cashScans: 20, priceEgp: 1.5 },
+    { key: 'cashScans_value', label: 'الأفضل قيمة', cashScans: 60, priceEgp: 4 },
+    { key: 'cashScans_bulk', label: 'بالجملة', cashScans: 150, priceEgp: 9 },
+  ],
+  marketAnalysis: [
+    { key: 'marketAnalysis_quick', label: 'سريع', marketAnalysis: 20, priceEgp: 1.5 },
+    { key: 'marketAnalysis_value', label: 'الأفضل قيمة', marketAnalysis: 60, priceEgp: 4 },
+    { key: 'marketAnalysis_bulk', label: 'بالجملة', marketAnalysis: 150, priceEgp: 9 },
+  ],
+};
 
 /**
  * Where users send the transfer. Handed out by the support bot to a

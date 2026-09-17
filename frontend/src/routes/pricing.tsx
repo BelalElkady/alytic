@@ -82,12 +82,29 @@ const FEATURE_ROWS = [
   { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة" },
 ] as const;
 
-/** رصيد صور إضافي فوق حد الباقة الشهري — يتباع مرة واحدة، مش اشتراك. مطابقة لـ SCREENSHOT_ADDONS في backend/src/billing/plans.js. */
-const SCREENSHOT_ADDONS = [
-  { screenshots: 8, priceEgp: 20 },
-  { screenshots: 14, priceEgp: 40 },
-  { screenshots: 22, priceEgp: 60 },
-] as const;
+/** رصيد إضافي فوق حد الباقة الشهري لأي ميزة — يتباع مرة واحدة، مش اشتراك. مطابقة لـ ADDONS في backend/src/billing/plans.js. */
+const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string; count: number; priceEgp: number }[]> = {
+  screenshots: [
+    { label: "سريع", count: 3, priceEgp: 20 },
+    { label: "الأفضل قيمة", count: 6, priceEgp: 39 },
+    { label: "بالجملة", count: 12, priceEgp: 75 },
+  ],
+  recommendations: [
+    { label: "سريع", count: 50, priceEgp: 3.5 },
+    { label: "الأفضل قيمة", count: 150, priceEgp: 9.5 },
+    { label: "بالجملة", count: 400, priceEgp: 24 },
+  ],
+  cashScans: [
+    { label: "سريع", count: 20, priceEgp: 1.5 },
+    { label: "الأفضل قيمة", count: 60, priceEgp: 4 },
+    { label: "بالجملة", count: 150, priceEgp: 9 },
+  ],
+  marketAnalysis: [
+    { label: "سريع", count: 20, priceEgp: 1.5 },
+    { label: "الأفضل قيمة", count: 60, priceEgp: 4 },
+    { label: "بالجملة", count: 150, priceEgp: 9 },
+  ],
+};
 
 function PricingPage() {
   return (
@@ -162,19 +179,27 @@ function PricingPage() {
 
         <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[16px] font-semibold">رصيد صور إضافي</h2>
+            <h2 className="text-[16px] font-semibold">رصيد إضافي</h2>
             <Badge variant="outline">دفعة واحدة — مش اشتراك</Badge>
           </div>
           <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">
-            خلصت صور المحفظة المسموح بيها الشهر ده قبل ما يجي الشهر الجاي؟ زوّد رصيدك برصيد إضافي
-            فوق حد باقتك.
+            خلصت رصيد أي ميزة الشهر ده قبل ما يجي الشهر الجاي؟ زوّد رصيدك فوق حد باقتك بأي ميزة على
+            حدة.
           </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            {SCREENSHOT_ADDONS.map((addon) => (
-              <div key={addon.screenshots} className="rounded-xl border bg-surface p-4 text-center">
-                <p className="num text-2xl font-bold tracking-tight">{addon.screenshots}</p>
-                <p className="text-[12px] text-muted-foreground">صورة إضافية</p>
-                <p className="num mt-2 text-[15px] font-semibold">{addon.priceEgp} جنيه</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {FEATURE_ROWS.map((row) => (
+              <div key={row.key} className="rounded-xl border bg-surface p-4">
+                <p className="text-[13px] font-semibold">{row.label}</p>
+                <div className="mt-3 space-y-2">
+                  {ADDON_PACKS[row.key].map((pack) => (
+                    <div key={pack.label} className="flex items-center justify-between text-[12.5px]">
+                      <span className="text-muted-foreground">
+                        {pack.label} · {pack.count} {row.unit}
+                      </span>
+                      <span className="num font-semibold">{pack.priceEgp} ج</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

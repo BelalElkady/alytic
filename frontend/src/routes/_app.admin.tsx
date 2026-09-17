@@ -915,12 +915,29 @@ const NO_CREDITS: Record<CreditKind, string> = {
   marketAnalysis: "",
 };
 
-/** Matches SCREENSHOT_ADDONS in backend/src/billing/plans.js — quick-fill for whichever pack a user paid for over InstaPay. */
-const SCREENSHOT_ADDON_PACKS = [
-  { screenshots: 8, priceEgp: 20 },
-  { screenshots: 14, priceEgp: 40 },
-  { screenshots: 22, priceEgp: 60 },
-];
+/** Matches ADDONS in backend/src/billing/plans.js — quick-fill for whichever pack a user paid for over InstaPay. */
+const ADDON_PACKS: Record<CreditKind, { count: number; priceEgp: number }[]> = {
+  screenshots: [
+    { count: 3, priceEgp: 20 },
+    { count: 6, priceEgp: 39 },
+    { count: 12, priceEgp: 75 },
+  ],
+  recommendations: [
+    { count: 50, priceEgp: 3.5 },
+    { count: 150, priceEgp: 9.5 },
+    { count: 400, priceEgp: 24 },
+  ],
+  cashScans: [
+    { count: 20, priceEgp: 1.5 },
+    { count: 60, priceEgp: 4 },
+    { count: 150, priceEgp: 9 },
+  ],
+  marketAnalysis: [
+    { count: 20, priceEgp: 1.5 },
+    { count: 60, priceEgp: 4 },
+    { count: 150, priceEgp: 9 },
+  ],
+};
 
 /**
  * Extra uses on top of the capped allowances (backend creditsOf()). Each
@@ -1004,20 +1021,18 @@ function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => v
                   placeholder="0"
                 />
                 <p className="text-[11.5px] text-muted-foreground">{hint}</p>
-                {kind === "screenshots" && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {SCREENSHOT_ADDON_PACKS.map((pack) => (
-                      <button
-                        key={pack.screenshots}
-                        type="button"
-                        onClick={() => setAmounts((prev) => ({ ...prev, screenshots: String(pack.screenshots) }))}
-                        className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent"
-                      >
-                        {pack.screenshots} صورة ({pack.priceEgp} ج)
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {ADDON_PACKS[kind].map((pack) => (
+                    <button
+                      key={pack.count}
+                      type="button"
+                      onClick={() => setAmounts((prev) => ({ ...prev, [kind]: String(pack.count) }))}
+                      className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent"
+                    >
+                      {pack.count} ({pack.priceEgp} ج)
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
             <Button onClick={() => void save()} disabled={busy || !valid || !changed}>
