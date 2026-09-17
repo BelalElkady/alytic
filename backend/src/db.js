@@ -169,6 +169,58 @@ export async function putMarketReport(reportDate, style, report, model, usage) {
   return data.length > 0;
 }
 
+/** @returns {object|null} the AI-determined entry-plan stop for that stock/style/day, or null if never generated. See stopPlanner.js. */
+export async function getStopPlan(code, style, reportDate) {
+  const { data, error } = await supabase
+    .from('ai_stop_plans')
+    .select('*')
+    .eq('code', code)
+    .eq('style', style)
+    .eq('report_date', reportDate)
+    .maybeSingle();
+  if (error) throw new Error(`getStopPlan: ${error.message}`);
+  if (!data) return null;
+  return { stop: data.stop, basis: data.basis };
+}
+
+/**
+ * Every (code, style) pair already generated for that day — just enough to
+ * compute what's still missing, without pulling every row's full payload.
+ * Used by the pre-warm cron (see agent/stopPlanWarmer.js) to find the next
+ * batch to generate.
+ */
+export async function getStopPlanCoverage(reportDate) {
+  const { data, error } = await supabase.from('ai_stop_plans').select('code, style').eq('report_date', reportDate);
+  if (error) throw new Error(`getStopPlanCoverage: ${error.message}`);
+  return data ?? [];
+}
+
+/**
+ * Stores today's AI-determined entry-plan stop for one stock/style. Same
+ * insert-if-absent reasoning as putMarketReport: shared across every user, so
+ * whichever request wins the race is what everyone reads for the rest of the day.
+ */
+export async function putStopPlan(code, style, reportDate, stop, basis, model, usage) {
+  const { data, error } = await supabase
+    .from('ai_stop_plans')
+    .upsert(
+      {
+        code,
+        style,
+        report_date: reportDate,
+        stop,
+        basis,
+        model: model ?? null,
+        usage_json: usage ?? null,
+        generated_at: new Date().toISOString(),
+      },
+      { onConflict: 'code,style,report_date', ignoreDuplicates: true },
+    )
+    .select('code');
+  if (error) throw new Error(`putStopPlan: ${error.message}`);
+  return data.length > 0;
+}
+
 /**
  * Records one AI call's cost, tagged by which feature made it — see ai_spend
  * in schema.sql. Called fire-and-forget from clientOpenRouter.js; errors are

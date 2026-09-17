@@ -126,10 +126,11 @@ function ruleBookLines(ps, price) {
   const pp = rb.partialProfit;
   const tg = rb.target;
   const ad = rb.averagingDown;
-  // When the existing stop is already above "X% under price", the ratchet keeps
-  // it — say so instead of attributing that level to the percentage.
-  const stopNote = (level, pct) =>
-    level === rb.stop.level ? `stop stays at ${level} (already above ${pct}% under ${price})` : `stop to ${level} (${pct}% under ${price})`;
+  // When a suggested level is already at or below the current stop, the
+  // ratchet-only guarantee keeps the current one — say so instead of
+  // attributing that level to a formula.
+  const stopNote = (level) =>
+    level <= rb.stop.level ? `stop stays at ${rb.stop.level}` : `stop to ${level} (${n(+(((price - level) / price) * 100).toFixed(2))}% under ${price})`;
   const out = ['  **Rule book (this style, evaluated — quote these numbers, never derive others):**'];
 
   out.push(
@@ -137,22 +138,21 @@ function ruleBookLines(ps, price) {
       (rb.stop.fired ? ` | order: sell all ${rb.stop.sellQty} shares at market next open` : ''),
   );
   out.push(
-    `  R2 Trailing stop ${rb.trailing.trailPct}% (activates at +${rb.trailing.activateAtProfitPct}%, never moves down): ` +
-      (rb.trailing.active
-        ? `ACTIVE, peak ${rb.trailing.peak}${rb.trailing.moved ? `, moved today from ${rb.trailing.from} to ${rb.stop.level}` : ''}`
-        : `inactive — profit ${ps.unrealizedPct}% is below +${rb.trailing.activateAtProfitPct}%`),
+    `  R2 Stop-loss (AI-determined per style, ratchets up only — never moves down): current level ${rb.stop.level}` +
+      (rb.trailing.moved ? `, raised today from ${rb.trailing.from} to ${rb.stop.level}` : ' (unchanged today)') +
+      (rb.trailing.peak != null ? ` | peak since entry ${rb.trailing.peak}` : ''),
   );
   out.push(
     `  R3 Target (${tg.horizon}-term) ${tg.level ?? 'n/a'} → ${mark(tg.fired)}` +
       (tg.level != null
-        ? ` | if fired: sell ${tg.fractionPct}% = ${tg.qty} of ${ps.shares} shares, keep ${tg.remainingShares}, ${stopNote(tg.raisedStop, tg.raiseStopPct)}`
+        ? ` | if fired: sell ${tg.fractionPct}% = ${tg.qty} of ${ps.shares} shares, keep ${tg.remainingShares}, ${stopNote(tg.raisedStop)}`
         : ''),
   );
   out.push(
     `  R4 Partial profit at +${pp.thresholdPct}%: profit ${ps.unrealizedPct}% → ` +
       (pp.alreadyTaken ? 'already taken on this position — does not fire again' : mark(pp.fired)) +
       ` | if fired: sell ${pp.fractionPct}% = ${pp.qty} of ${ps.shares} shares, limit ${pp.limitPrice} (+${pp.limitAbovePricePct}% above ${price}), ` +
-      `≈ ${pp.proceedsEgp} EGP, keep ${pp.remainingShares} shares, trailing ${stopNote(pp.remainingStop, rb.trailing.trailPct)}`,
+      `≈ ${pp.proceedsEgp} EGP, keep ${pp.remainingShares} shares, trailing ${stopNote(pp.remainingStop)}`,
   );
   out.push(
     `  R5 Averaging down (leaders only: loss, trend score > ${ad.trendScoreMin}, above SMA200, max ${ad.maxAdds} add): ` +
@@ -229,7 +229,7 @@ export function briefFor(a) {
   // Entry / risk plan
   lines.push(`**Computed plan:**`);
   lines.push(`  Entry: ${p.entryNote}`);
-  lines.push(`  Stop: ${p.stop.stop} EGP (risk ${p.stop.riskPct}%) — ${p.stop.note}`);
+  lines.push(`  Stop: ${p.stop.stop} EGP (risk ${p.stop.riskPct}%) — ${p.stop.basis}`);
   if (p.targets.mid) {
     lines.push(
       `  Mid-term target: ${p.targets.mid.price} EGP (+${p.targets.mid.upsidePct}%) — ${p.targets.mid.basis} | ` +
@@ -261,8 +261,8 @@ export function briefFor(a) {
     const ps = a.position;
     lines.push(`**Open position:** ${ps.shares} shares at avg ${ps.avgCost} | ` +
       `${ps.unrealizedPct >= 0 ? 'profit' : 'loss'} ${ps.unrealizedPct}% (${ps.unrealizedEgp} EGP) | ` +
-      `effective (binding) stop ${ps.stop}${ps.trailing.active ? ' (trailing active)' : ''}`);
-    if (ps.trailing.moved) lines.push(`  ⬆️ Trailing stop moved from ${ps.trailing.from} to ${ps.stop} (peak ${ps.trailing.peak})`);
+      `effective (binding) stop ${ps.stop}`);
+    if (ps.trailing.moved) lines.push(`  ⬆️ Stop raised today from ${ps.trailing.from} to ${ps.stop} (peak ${ps.trailing.peak})`);
     // Informational only — the mechanical triggers below act on ps.stop, never
     // on this. It exists so a "hold for the long term" verdict can point to a
     // real invalidation level instead of an open-ended "hold and see".

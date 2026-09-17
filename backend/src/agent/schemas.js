@@ -2,10 +2,18 @@
  * Zod schemas for the agents' structured outputs.
  *
  * These are contracts, not suggestions — `output_config.format` constrains the
- * model to them, so the UI can render results without defensive parsing. Note
- * what is deliberately absent: no schema lets the model return an indicator
- * value, a stop, or a target price it invented. Prices it may quote are the
- * ones handed to it; its own fields are judgement, confidence and prose.
+ * model to them, so the UI can render results without defensive parsing. Every
+ * schema below except StopPlanSchema/TrailingStopSchema deliberately excludes
+ * numeric prices: no other schema lets the model return an indicator value, a
+ * stop, or a target price it invented — the prices it may quote there are the
+ * ones handed to it, its own fields are judgement, confidence and prose.
+ *
+ * StopPlanSchema and TrailingStopSchema are the one deliberate exception — by
+ * product decision, the stop-loss itself is AI-determined rather than
+ * mechanically computed (see backend/src/agent/stopPlanner.js). Both are kept
+ * narrow (a number plus a short reason) and their output is still
+ * sanity-clamped server-side before it can reach position sizing or the
+ * mechanical exit trigger — see stopPlanner.js for the clamp.
  */
 
 import { z } from 'zod';
@@ -345,6 +353,27 @@ export const CashPlanReviewSchema = z.object({
   risks: z.array(z.string()).describe('In Egyptian Arabic — at most 4 concrete risks to this deployment: concentration, liquidity, market regime'),
 
   topPriority: z.string().describe('In Egyptian Arabic — the single most important thing to do with this cash next session, one sentence'),
+});
+
+/**
+ * Where to place the initial stop for a fresh entry — AI-determined, shared
+ * across every user for the same (stock, style, trading day). See
+ * getOrGenerateStopPlan in stopPlanner.js.
+ */
+export const StopPlanSchema = z.object({
+  stop: z.number().describe('The stop-loss price in EGP — must be below the given entry/current price and above 0'),
+  basis: z.string().describe('In Egyptian Arabic — one short sentence: why this level specifically (structure, volatility, or a blend)'),
+});
+
+/**
+ * The trailing stop for one user's already-open position — AI-determined,
+ * cached per (user, stock, style, trading day, position state). See
+ * getOrGenerateTrailingStop in stopPlanner.js.
+ */
+export const TrailingStopSchema = z.object({
+  stop: z.number().describe('The stop-loss price in EGP for this open position'),
+  rationale: z.string().describe('In Egyptian Arabic — one short sentence: why this level given the position\'s profit and the stock\'s current structure'),
+  moved: z.boolean().describe('true if you are raising the stop above where it last sat, false if you are keeping it where it was'),
 });
 
 /** Fundamentals gathered from the web for one company. */

@@ -22,7 +22,7 @@ import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/uni
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
 import { PLANS, TIERS, ADDONS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
-import { STYLE_KEYS, rulesForStyle } from '../config/styles.js';
+import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow } from '../portfolio.js';
@@ -325,6 +325,26 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
   });
 }));
 
+// Manual/ops trigger for warmNextStopPlans (see agent/stopPlanWarmer.js) —
+// the recurring job itself runs in-process via startStopPlanScheduler()
+// below, not from this endpoint. Kept secret-gated the same way
+// /api/cron/blog-generate is, for occasional manual backfill or debugging
+// (e.g. `force: true` against a specific day).
+const STOP_PLAN_CRON_SECRET = process.env.STOP_PLAN_CRON_SECRET;
+app.post('/api/cron/stop-plan-generate', wrap(async (req, res) => {
+  if (!STOP_PLAN_CRON_SECRET || req.get('X-Cron-Secret') !== STOP_PLAN_CRON_SECRET) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
+  const { warmNextStopPlans } = await import('../agent/stopPlanWarmer.js');
+  const requestedBatchSize = Number(req.body?.batchSize);
+  const result = await warmNextStopPlans({
+    ...(Number.isFinite(requestedBatchSize) && requestedBatchSize > 0 ? { batchSize: requestedBatchSize } : {}),
+    force: req.body?.force === true,
+  });
+  res.json({ ok: true, ...result });
+}));
+
 // The prices the "اشترك" screen quotes. Payment details are deliberately not
 // here: users ask on the support chat and an admin sends them privately, so
 // no account number is published to anyone who can curl this.
@@ -348,7 +368,8 @@ app.use('/api', async (req, res, next) => {
     req.path === '/sitemap-urls' ||
     req.path === '/billing/plans' ||
     req.path === '/cron/blog-generate' ||
-    req.path === '/cron/daily-close'
+    req.path === '/cron/daily-close' ||
+    req.path === '/cron/stop-plan-generate'
   ) return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
@@ -1236,6 +1257,8 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
     capital: capitalOf(portfolio) || 1_000_000,
     force: req.query.force === '1',
     rules,
+    style,
+    userId: req.user.id,
   });
   const live = (await fetchLatestQuotes([code])).get(code);
   if (live && analysis.snapshot?.price) {
@@ -1355,6 +1378,7 @@ app.get('/api/scan', wrap(async (req, res) => {
   const { payload } = await runScan(portfolio, {
     codes,
     style,
+    userId: req.user.id,
     force: req.query.force === '1',
     focus: req.query.focus,
     cashScansLeftNow,
@@ -1370,7 +1394,7 @@ app.get('/api/scan', wrap(async (req, res) => {
  * exactly the plan the dialog shows. Returns the response payload plus the
  * full analyses its compact rows were cut from.
  */
-async function runScan(portfolio, { codes, style, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
+async function runScan(portfolio, { codes, style, userId, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
   // A cash plan has to see the whole book, even holdings outside the index
   // being browsed: the sector limits it sizes against and the AI cash review
   // both depend on every position, not just the ones in that index.
@@ -1383,9 +1407,15 @@ async function runScan(portfolio, { codes, style, force = false, focus = null, c
   const { results, errors } = await analyzeMany(codes, {
     capital,
     positions: portfolio.positions,
-    concurrency: 5,
+    // AI-backed now (see agent/stopPlanner.js) — lowered from the old
+    // pure-math default (was 5) to match REVIEW_CONCURRENCY elsewhere, so a
+    // whole-universe scan on a cold cache doesn't fire dozens of simultaneous
+    // OpenRouter requests at once.
+    concurrency: 3,
     force,
     rules,
+    style,
+    userId,
   });
   const latestQuotes = await fetchLatestQuotes(results.map((result) => result.code));
 
@@ -1757,7 +1787,21 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
 async function snapshotForUser(userId, date = null) {
   return withPortfolio(userId, async (portfolio) => {
     const codes = Object.keys(portfolio.positions);
-    const { results } = await analyzeMany(codes, { capital: capitalOf(portfolio), positions: portfolio.positions, concurrency: 5 });
+    // Whatever style this account has active — same resolution the admin
+    // panel's "chosen style" column uses — so the ratchet the AI applies here
+    // (see agent/stopPlanner.js) matches what the desk itself would compute
+    // for the same day, rather than defaulting to a style the user never
+    // asked for.
+    const style = STYLE_KEYS.includes(portfolio.settings?.investStyle) ? portfolio.settings.investStyle : DEFAULT_STYLE;
+    const rules = rulesForStyle(RULES, style);
+    const { results } = await analyzeMany(codes, {
+      capital: capitalOf(portfolio),
+      positions: portfolio.positions,
+      concurrency: 3,
+      rules,
+      style,
+      userId,
+    });
     // analyzeMany's price comes from the last data *sync*, not from now — a
     // run mid-session (before that day's sync has run) would otherwise save
     // yesterday's cached close mislabeled as today's, disagreeing with the
@@ -1909,6 +1953,49 @@ function startDailyCloseScheduler() {
     } catch (err) {
       dailyCloseRanFor = null; // retry on the next tick
       console.error('[daily-close] failed:', err.message);
+    }
+  }, 30_000);
+}
+
+/**
+ * Keeps ai_stop_plans warm for the whole tracked universe (see
+ * agent/stopPlanWarmer.js) — the same always-on-process approach as
+ * startDailyCloseScheduler, but simpler: this job is naturally idempotent,
+ * so it just ticks and generates the next missing batch, becoming a fast
+ * no-op once today's set is fully covered. No GitHub Actions backup needed
+ * for the same reason — a restart loses nothing, the next tick resumes from
+ * whatever's already stored.
+ *
+ * Runs hourly during the trading session, anchored at 09:30 Cairo (before
+ * the 10:00 open) through one last run at 13:30, then stops — nothing after
+ * STOP_PLAN_STOP_AT (14:30, the same close-of-session cutoff runDailyClose()
+ * uses). A plain setInterval can't anchor to a wall-clock time, so this
+ * checks the clock every 30s (same cadence as startDailyCloseScheduler) and
+ * fires once per 09:30-anchored hour slot via the in-memory guard below.
+ */
+const STOP_PLAN_START_AT = '09:30';
+const STOP_PLAN_STOP_AT = '14:30';
+const minutesOfDay = (hhmm) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
+let stopPlanRanForSlot = null;
+function startStopPlanScheduler() {
+  setInterval(async () => {
+    if (!aiAvailable()) return;
+    const cairoNow = cairoClock.format(new Date());
+    if (cairoNow < STOP_PLAN_START_AT || cairoNow >= STOP_PLAN_STOP_AT) return;
+    const hourSlot = Math.floor((minutesOfDay(cairoNow) - minutesOfDay(STOP_PLAN_START_AT)) / 60);
+    const slot = `${cairoToday()}:${hourSlot}`;
+    if (stopPlanRanForSlot === slot) return;
+    stopPlanRanForSlot = slot;
+    try {
+      const { warmNextStopPlans } = await import('../agent/stopPlanWarmer.js');
+      const result = await warmNextStopPlans();
+      if (result.generated) console.log('[stop-plan]', JSON.stringify(result));
+    } catch (err) {
+      stopPlanRanForSlot = null; // retry within this same hour slot on the next check
+      console.error('[stop-plan] failed:', err.message);
     }
   }, 30_000);
 }
@@ -2314,8 +2401,10 @@ async function runReview({ userId, style, force }) {
   const { results, errors } = await analyzeMany(codes, {
     capital,
     positions: portfolio.positions,
-    concurrency: 5,
+    concurrency: 3,
     rules,
+    style: effectiveStyle,
+    userId,
   });
 
   const { getOrGenerateReview } = await import('../agent/analyst.js');
@@ -2436,8 +2525,10 @@ app.post('/api/review/stock', wrap(async (req, res) => {
           const { results } = await analyzeMany(Object.keys(portfolio.positions), {
             capital,
             positions: portfolio.positions,
-            concurrency: 5,
+            concurrency: 3,
             rules,
+            style: pre.style ?? 'medium',
+            userId,
           });
           console.log(`[review] ${code} analyzeMany ${Object.keys(portfolio.positions).length} holdings in ${Date.now() - t}ms`);
           return results;
@@ -2498,7 +2589,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       index,
       rules: pre.style ? rulesForStyle(RULES, pre.style) : RULES,
       force: pre.force,
-      runScan: () => runScan(portfolio, { codes: indexCodes, style: pre.style, focus: 'cash' }),
+      runScan: () => runScan(portfolio, { codes: indexCodes, style: pre.style, userId, focus: 'cash' }),
     });
     console.log(`[review] cash ${index} ${source} in ${Date.now() - startedAt}ms`);
     return { review, source, index };
@@ -2576,6 +2667,7 @@ const isDirectRun = Boolean(process.argv[1])
 
 if (isDirectRun) {
   startDailyCloseScheduler();
+  startStopPlanScheduler();
   const PORT = process.env.PORT ?? 3000;
   app.listen(PORT, () => {
     console.log(`Alytic على http://localhost:${PORT}`);

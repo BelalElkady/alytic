@@ -56,6 +56,25 @@ create table if not exists market_reports (
   primary key (report_date, style)
 );
 
+-- One AI-determined stop-loss per (stock, investor style, trading day),
+-- shared by every user — same sharing rationale as market_reports. This is
+-- the entry-plan stop a fresh buy today would use; see
+-- src/agent/stopPlanner.js's getOrGenerateStopPlan and src/analyze.js. Each
+-- open position's own trailing stop is a separate, per-user concern and
+-- lives in portfolio_reviews below instead (it needs the position's average
+-- cost and running high, which no other user shares).
+create table if not exists ai_stop_plans (
+  code text not null,
+  style text not null,
+  report_date text not null,
+  stop numeric not null,
+  basis text,
+  model text,
+  usage_json jsonb,
+  generated_at timestamptz not null default now(),
+  primary key (code, style, report_date)
+);
+
 -- One AI-generated personalized review per (user, trading day, investor
 -- style), keyed additionally by a hash of the inputs that actually change its
 -- content (positions, watchlist, cash). Unlike market_reports this can't be
@@ -64,6 +83,13 @@ create table if not exists market_reports (
 -- paying for another model call. A changed portfolio_hash — a trade, a
 -- watchlist edit, a cash change — naturally busts the cache on lookup. See
 -- src/api/server.js's /api/review.
+--
+-- `style` is free text, not a strict enum, so it also holds other per-user
+-- daily caches that don't deserve their own table — e.g. a cash review keys
+-- on `cash:INDEX`, and an open position's AI-determined trailing stop (see
+-- stopPlanner.js's getOrGenerateTrailingStop) keys on `stop:STYLE:CODE`,
+-- portfolio_hash there covering only that one position (avgCost, shares,
+-- existing stop) rather than the whole book.
 create table if not exists portfolio_reviews (
   user_id text not null references users(id) on delete cascade,
   report_date text not null,

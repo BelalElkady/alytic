@@ -1,11 +1,13 @@
 /**
- * Stop placement, position sizing and risk arithmetic.
- *
- * The guiding idea: a stop belongs where the trade thesis is *wrong*, not at a
- * round percentage. So structure comes first — the stop sits under the support
- * the stock is actually defending — and volatility only sets the floor on how
- * tight that stop may be. When honest structure implies more risk than the book
- * allows, the answer is a smaller position, never a tighter stop.
+ * Position sizing and risk arithmetic — plus computeStop()/computeTrailingStop(),
+ * kept here for their config constants and unit tests but NO LONGER called for
+ * the authoritative stop-loss level: by product decision, that is now
+ * AI-determined (see src/agent/stopPlanner.js), driven by the same guiding
+ * idea these functions encode — a stop belongs where the trade thesis is
+ * *wrong*, not at a round percentage — but decided by the model rather than
+ * this formula. positionSize() below still takes whatever stop it's given
+ * and sizes the position so a smaller position, never a tighter stop, is the
+ * answer when risk runs high.
  */
 
 import RULES from '../config/rules.js';

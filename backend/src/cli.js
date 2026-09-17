@@ -87,7 +87,7 @@ async function cmdAnalyze(code) {
   const position = portfolio.positions[code.toUpperCase()] ?? null;
   const capital = Object.values(portfolio.positions).reduce((a, p) => a + p.shares * p.avgCost, 0) + portfolio.cash;
 
-  const a = await analyzeTicker(code, { position, capital: capital || 1_000_000 });
+  const a = await analyzeTicker(code, { position, capital: capital || 1_000_000, userId: 'local' });
 
   if (!a.usable) {
     console.log(c.red(`\n${a.code}: ${a.error}`));
@@ -110,7 +110,7 @@ async function cmdAnalyze(code) {
 
   console.log(`\n${c.bold('الخطة')}`);
   console.log(`  الدخول     ${p.entryNote}`);
-  console.log(`  الوقف      ${c.red(p.stop.stop)} ج (مخاطرة ${p.stop.riskPct}%) — ${p.stop.note}`);
+  console.log(`  الوقف      ${c.red(p.stop.stop)} ج (مخاطرة ${p.stop.riskPct}%) — ${p.stop.basis}`);
   if (p.targets.mid) {
     console.log(`  هدف متوسط  ${c.green(p.targets.mid.price)} ج (+${p.targets.mid.upsidePct}%) — ${p.targets.mid.basis}`);
     console.log(`             التوقيت: ${p.targets.mid.horizon.ar} · عائد/مخاطرة ${p.targets.mid.riskReward}`);
@@ -142,7 +142,7 @@ async function cmdAnalyze(code) {
     const ps = a.position;
     console.log(`\n${c.bold('مركزك')}`);
     console.log(`  ${ps.shares} سهم بمتوسط ${ps.avgCost} — ${ps.unrealizedPct >= 0 ? c.green(`+${ps.unrealizedPct}%`) : c.red(`${ps.unrealizedPct}%`)} (${ps.unrealizedEgp} ج)`);
-    console.log(`  الوقف الفعلي ${ps.stop}${ps.trailing.active ? c.cyan(' — متحرك مفعّل') : ''}`);
+    console.log(`  الوقف الفعلي ${ps.stop}${ps.trailing.moved ? c.cyan(' — اترفع النهاردة') : ''}`);
     const fired = Object.entries(ps.triggers).filter(([, v]) => v).map(([k]) => k);
     if (fired.length) console.log(`  ${c.yellow('مشغّلات:')} ${fired.join(', ')}`);
   }
@@ -175,6 +175,8 @@ async function cmdReview(styleArg) {
     positions: portfolio.positions,
     concurrency: 5,
     rules,
+    style,
+    userId: 'local',
   });
 
   process.stderr.write(c.dim(`بيراجع مع المحلل (أسلوب: ${styleProfile(style).label})...\n`));

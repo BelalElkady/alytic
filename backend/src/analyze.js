@@ -1,11 +1,17 @@
 /**
- * Analysis orchestrator — the deterministic half of the system.
+ * Analysis orchestrator — the deterministic half of the system, except for
+ * the stop-loss.
  *
- * `analyzeTicker` produces a complete, reproducible verdict with no AI involved:
- * indicators, structure, stop, both targets and a composite score. The agent
- * layer in `src/agent/` consumes this output; it never recomputes any of it.
- * That separation means you can run the whole analyzer with no API key and
- * still get every number — the model only adds narrative and judgment.
+ * `analyzeTicker` produces a reproducible verdict for indicators, structure,
+ * both targets and a composite score with no AI involved — the agent layer in
+ * `src/agent/` consumes this output and never recomputes any of it. The one
+ * deliberate exception, by product decision, is the stop-loss itself: it is
+ * AI-determined (see `src/agent/stopPlanner.js`), cached per (stock, style,
+ * trading day) for a fresh entry and per (user, stock, style, trading day,
+ * position state) for an open position's trailing stop. This means
+ * `analyzeTicker`/`analyzeMany` now require `OPENROUTER_API_KEY` to run at
+ * all — the old "technical endpoints work with no key" guarantee no longer
+ * holds, since every analysis needs a stop.
  */
 
 import { fetchDailyAuto } from './data/yahoo.js';
@@ -15,10 +21,12 @@ import { fetchFundamentals } from './data/tradingview.js';
 import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
-import { computeStop, computeTrailingStop, computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
+import { computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
+import { getOrGenerateStopPlan, getOrGenerateTrailingStop } from './agent/stopPlanner.js';
 import { buildTargets, targetEstimate } from './scoring/targets.js';
 import { classifyStock } from './scoring/classification.js';
 import RULES from './config/rules.js';
+import { DEFAULT_STYLE } from './config/styles.js';
 
 const r2 = (x) => (x == null ? null : +x.toFixed(2));
 
@@ -46,12 +54,15 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       sellQty: shares,
     },
     trailing: {
+      // trailPct/activateAtProfitPct are no longer what sets the actual stop
+      // (see agent/stopPlanner.js) — kept only as the informal reference this
+      // style's raise-on-partial/raise-on-target suggestions below still use.
       trailPct: rules.trailing.trailPct,
       activateAtProfitPct: rules.trailing.activateAtProfitPct,
-      active: trailing.active,
       peak: trailing.peak ?? null,
       moved: trailing.moved,
       from: trailing.from ?? null,
+      rationale: trailing.rationale ?? null,
     },
     partialProfit: {
       thresholdPct: tp.partialAtProfitPct,
@@ -102,9 +113,14 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
  * @param {object} [opts]
  * @param {object} [opts.position] - an open position: { shares, avgCost, stop }
  * @param {number} [opts.capital]  - total book value, for position sizing
+ * @param {string} [opts.style] - the raw style key (see config/styles.js), needed
+ *   alongside `rules` to key the AI stop cache — `rules` alone has already
+ *   merged the style's numbers in and can't be turned back into its key.
+ * @param {string} [opts.userId] - required whenever `position` is set, to key
+ *   that position's own AI trailing-stop cache.
  */
 export async function analyzeTicker(code, opts = {}) {
-  const { range = '2y', force = false, position = null, capital = null, rules = RULES } = opts;
+  const { range = '2y', force = false, position = null, capital = null, rules = RULES, style = DEFAULT_STYLE, userId = null } = opts;
 
   const meta = lookup(code) ?? { code, ar: code, sector: null, shariah: 'review' };
   // Accept either a pre-fetched Map (batch path) or fetch for this one ticker.
@@ -192,12 +208,16 @@ export async function analyzeTicker(code, opts = {}) {
     entryNote = `السهم بعيد ${supportGapPct}% عن أقرب دعم حقيقي (${nearestSupport.price}) — ممتد أوي، استنى تصحيح. أي أمر عند ${r2(nearestSupport.price * 1.005)} غالبًا مش هيتنفذ قريب.`;
   }
 
-  const stopPlan = computeStop(snapshot, suggestedEntry, rules);
+  const stopPlanAi = await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, suggestedEntry, style, rules);
+  const stopPlan = { stop: stopPlanAi.stop, riskPct: r2(((suggestedEntry - stopPlanAi.stop) / suggestedEntry) * 100), basis: stopPlanAi.basis };
   const targets = buildTargets(snapshot, bars, { entry: suggestedEntry, stop: stopPlan.stop }, rules);
 
   // What the trade looks like if you ignored the advice and bought at market —
-  // this is the ratio to judge "should I buy today" by.
-  const stopNow = computeStop(snapshot, price, rules);
+  // this is the ratio to judge "should I buy today" by. Priced at market
+  // rather than the suggested entry, so it needs its own AI stop call.
+  const stopNowAi =
+    price === suggestedEntry ? stopPlanAi : await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, price, style, rules);
+  const stopNow = { stop: stopNowAi.stop, riskPct: r2(((price - stopNowAi.stop) / price) * 100) };
   const buyingNow = {
     entry: r2(price),
     stop: stopNow.stop,
@@ -225,11 +245,18 @@ export async function analyzeTicker(code, opts = {}) {
   let positionState = null;
   if (position?.shares > 0 && position.avgCost > 0) {
     const runningHigh = Math.max(...bars.slice(-120).map((b) => b.h));
-    const trailing = computeTrailingStop(
-      { avgCost: position.avgCost, currentPrice: price, runningHigh, existingStop: position.stop ?? stopPlan.stop },
+    const existingStop = position.stop ?? stopPlan.stop;
+    const trailingAi = await getOrGenerateTrailingStop(
+      userId,
+      code,
+      meta.ar ?? code,
+      snapshot,
+      { avgCost: position.avgCost, shares: position.shares, existingStop },
+      style,
       rules,
     );
-    const effectiveStop = trailing.stop ?? position.stop ?? stopPlan.stop;
+    const trailing = { stop: trailingAi.stop, moved: trailingAi.moved, from: r2(existingStop), peak: r2(runningHigh), rationale: trailingAi.rationale };
+    const effectiveStop = trailing.stop ?? existingStop;
     const plPct = ((price - position.avgCost) / position.avgCost) * 100;
     // A second, wider stop for the long-horizon thesis — see computeLongTermStop
     // for why it shares its invalidation level with the long-term target.
@@ -239,8 +266,6 @@ export async function analyzeTicker(code, opts = {}) {
     // stated guidance to judge by the long-horizon target instead. Falls back
     // to mid when the long target isn't projectable (downtrend, no data).
     const governingTarget = rules.targets?.primary === 'long' && targets.long?.price ? targets.long : targets.mid;
-    // Every style activates its trail below its partial threshold, so gating
-    // the partial on `!trailing.active` (as this used to) meant it never fired.
     const partialTaken = Boolean(position.partialTakenAt);
     const ruleBook = buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, governingTarget, partialTaken }, rules);
 
