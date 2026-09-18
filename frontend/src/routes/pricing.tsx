@@ -102,9 +102,9 @@ const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string;
     { label: "بالجملة", count: 150, priceEgp: 80 },
   ],
   marketAnalysis: [
-    { label: "سريع", count: 20, priceEgp: 1.5 },
-    { label: "الأفضل قيمة", count: 60, priceEgp: 4 },
-    { label: "بالجملة", count: 150, priceEgp: 9 },
+    { label: "سريع", count: 20, priceEgp: 25 },
+    { label: "الأفضل قيمة", count: 60, priceEgp: 50 },
+    { label: "بالجملة", count: 150, priceEgp: 80 },
   ],
 };
 
