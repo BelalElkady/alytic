@@ -1,10 +1,13 @@
 import crypto from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import {
+  DuplicateUserError,
   createUser,
+  getUserByCanonicalEmail,
   getUserByEmail,
   getUserById,
   getUserByGoogleId,
+  getUserByPhone,
   getUserByResetToken,
   getUserByVerificationToken,
   linkGoogleAccount,
@@ -17,6 +20,8 @@ import {
   touchUserLogin,
 } from './db.js';
 import { sendEmail } from './email.js';
+import { isDisposableEmail } from './emailIdentity.js';
+import { INVALID_PHONE_MESSAGE, normalizePhone } from './phone.js';
 import { verificationEmailHtml, resetPasswordEmailHtml, registrationConfirmedEmailHtml, alreadyRegisteredEmailHtml } from './emailTemplates.js';
 
 const SESSION_COOKIE = 'alytic_session';
@@ -53,10 +58,12 @@ const ADMIN_EMAILS = new Set(
     .filter(Boolean),
 );
 
-/** Egyptian mobile numbers: 01[0125] + 8 digits, with or without a +20/0020 prefix or separators. */
-function normalizePhone(phone) {
-  const digits = String(phone ?? '').replace(/[\s-]/g, '').replace(/^(\+20|0020)/, '0');
-  return /^01[0125]\d{8}$/.test(digits) ? digits : null;
+const PHONE_TAKEN_MESSAGE = 'رقم الموبايل ده مسجّل بحساب تاني. لو ده حسابك سجّل دخول بيه.';
+
+/** One account per phone number — the strongest per-person signal we collect, since it can't be minted like an email alias. */
+async function assertPhoneAvailable(phone, exceptUserId = null) {
+  const owner = await getUserByPhone(phone);
+  if (owner && owner.id !== exceptUserId) throw new Error(PHONE_TAKEN_MESSAGE);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -169,18 +176,23 @@ async function sendAlreadyRegisteredEmail(user) {
  * in (it used to hand back a session token here) — the frontend now shows a
  * "check your email" screen and the user logs in afterward like anyone else.
  */
-export async function register({ email, password, name, phone }) {
+export async function register({ email, password, name, phone, ip }) {
   const normalized = String(email).trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normalized)) throw new Error('اكتب بريد إلكتروني صحيح');
   if (String(password).length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف على الأقل');
+  if (isDisposableEmail(normalized)) throw new Error('البريد المؤقت مش مسموح — استخدم بريدك الشخصي');
   const normalizedPhone = normalizePhone(phone);
-  if (!normalizedPhone) throw new Error('اكتب رقم موبايل مصري صحيح (01xxxxxxxxx)');
+  if (!normalizedPhone) throw new Error(INVALID_PHONE_MESSAGE);
 
-  const existing = await getUserByEmail(normalized);
+  // Any spelling of an address that already has an account (m.e@gmail.com,
+  // me+2@gmail.com, ...) is treated exactly like the same address: silent to
+  // the caller, notice to the real owner — see canonicalEmail.
+  const existing = (await getUserByEmail(normalized)) ?? (await getUserByCanonicalEmail(normalized));
   if (existing) {
     await sendAlreadyRegisteredEmail(existing);
     return;
   }
+  await assertPhoneAvailable(normalizedPhone);
 
   const { salt, hash } = await hashPassword(password);
   const token = makeVerificationToken();
@@ -189,6 +201,7 @@ export async function register({ email, password, name, phone }) {
     email: normalized,
     name: String(name ?? '').trim().slice(0, 80),
     phone: normalizedPhone,
+    signupIp: ip,
     passwordSalt: salt,
     passwordHash: hash,
     isAdmin: ADMIN_EMAILS.has(normalized),
@@ -196,20 +209,30 @@ export async function register({ email, password, name, phone }) {
     verificationTokenExpires: new Date(Date.now() + VERIFICATION_TTL).toISOString(),
     createdAt: new Date().toISOString(),
   };
-  await createUser(user);
+  try {
+    await createUser(user);
+  } catch (err) {
+    // Two requests raced past the checks above and the unique index caught
+    // the loser. Same outcomes as the pre-checks: phone is told, email is silent.
+    if (err instanceof DuplicateUserError) {
+      if (err.field === 'phone') throw new Error(PHONE_TAKEN_MESSAGE);
+      return;
+    }
+    throw err;
+  }
   await sendVerificationEmail(user, token);
 }
 
-export async function login({ email, password }) {
+export async function login({ email, password, ip }) {
   const normalized = String(email).trim().toLowerCase();
   const user = await getUserByEmail(normalized);
   if (!user || !(await passwordMatches(password, user))) throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
-  await touchUserLogin(user.id, new Date().toISOString());
+  await touchUserLogin(user.id, new Date().toISOString(), ip);
   return { user: publicUser(user), token: encodeSession(user.id, passwordHashOf(user)) };
 }
 
 /** Verifies a Google ID token and signs the matching Alytic user in, creating or linking an account as needed. */
-export async function googleSignIn({ credential }) {
+export async function googleSignIn({ credential, ip }) {
   if (!googleClient) throw new Error('تسجيل الدخول بجوجل غير مفعّل على الخادم');
   if (!credential) throw new Error('بيانات جوجل غير صالحة');
 
@@ -232,6 +255,10 @@ export async function googleSignIn({ credential }) {
       // confirmed the address, so this also settles verification.
       await linkGoogleAccount(existing.id, payload.sub);
       user = await getUserById(existing.id);
+    } else if (await getUserByCanonicalEmail(normalized)) {
+      // A different spelling of an address that already has an account
+      // (dots, +tag, googlemail) — the same mailbox, so no second account.
+      throw new Error('البريد ده مسجّل بالفعل بشكل تاني. سجّل دخول بالحساب الأصلي.');
     } else {
       // Google accounts never use the password path, but the column is
       // NOT NULL — fill it with a random value nobody is ever given.
@@ -243,6 +270,7 @@ export async function googleSignIn({ credential }) {
         passwordSalt: salt,
         passwordHash: hash,
         googleId: payload.sub,
+        signupIp: ip,
         emailVerified: Boolean(payload.email_verified),
         isAdmin: ADMIN_EMAILS.has(normalized),
         createdAt: new Date().toISOString(),
@@ -252,7 +280,7 @@ export async function googleSignIn({ credential }) {
     }
   }
 
-  await touchUserLogin(user.id, new Date().toISOString());
+  await touchUserLogin(user.id, new Date().toISOString(), ip);
   return { user: publicUser(user), token: encodeSession(user.id, passwordHashOf(user)) };
 }
 
@@ -270,8 +298,14 @@ export async function verifyEmail({ token }) {
 /** Fills in the phone number for an already-signed-in user — the path a Google account (which never collects one) has to take to satisfy the same requirement as a normal registration. */
 export async function updatePhone({ userId, phone }) {
   const normalized = normalizePhone(phone);
-  if (!normalized) throw new Error('اكتب رقم موبايل مصري صحيح (01xxxxxxxxx)');
-  await setUserPhone(userId, normalized);
+  if (!normalized) throw new Error(INVALID_PHONE_MESSAGE);
+  await assertPhoneAvailable(normalized, userId);
+  try {
+    await setUserPhone(userId, normalized);
+  } catch (err) {
+    if (err instanceof DuplicateUserError) throw new Error(PHONE_TAKEN_MESSAGE);
+    throw err;
+  }
   const user = await getUserById(userId);
   return { user: publicUser(user) };
 }

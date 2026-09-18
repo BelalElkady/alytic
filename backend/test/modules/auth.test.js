@@ -1,51 +1,120 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import '../helpers/env.js';
 
 import {
   register, login, userFromRequest, verifyEmail, resendVerification,
-  forgotPassword, resetPassword, sessionCookie, clearSessionCookie,
+  forgotPassword, resetPassword, sessionCookie, clearSessionCookie, updatePhone,
 } from '../../src/auth.js';
 import {
   getUserByEmail, getUserByVerificationToken, getUserByResetToken,
   setVerificationToken, setResetToken,
 } from '../../src/db.js';
-import { uniqueEmail } from '../helpers/server.js';
+import { uniqueEmail, uniquePhone } from '../helpers/server.js';
 
+// Only used where the number is rejected before it is stored — anything that
+// actually registers must use uniquePhone(), since phones are unique per account.
 const PHONE = '01012345678';
 const PASSWORD = 'Passw0rd!123';
 
 const reqWithCookie = (token) => ({ headers: { cookie: token ? `alytic_session=${token}` : '' } });
 
 /** Register through the real engine and read the row back from Supabase. */
-async function registerAndFetch(email = uniqueEmail(), phone = PHONE, password = PASSWORD) {
+async function registerAndFetch(email = uniqueEmail(), phone = uniquePhone(), password = PASSWORD) {
   await register({ email, password, name: 'تجربة', phone });
   return { email, user: await getUserByEmail(email) };
 }
 
-test('register validates email, password and Egyptian phone', async () => {
+test('register validates email, password and phone', async () => {
   await assert.rejects(() => register({ email: 'not-an-email', password: PASSWORD, phone: PHONE }), /بريد/);
   await assert.rejects(() => register({ email: 'ok@x.dev', password: 'short', phone: PHONE }), /8 حروف/);
-  await assert.rejects(() => register({ email: 'ok@x.dev', password: PASSWORD, phone: '12345' }), /موبايل مصري صحيح/);
-  await assert.rejects(() => register({ email: 'ok@x.dev', password: PASSWORD, phone: '0991234567' }), /موبايل مصري صحيح/);
-  await assert.rejects(() => register({ email: 'ok@x.dev', password: PASSWORD }), /موبايل مصري صحيح/);
+  await assert.rejects(() => register({ email: 'ok@x.dev', password: PASSWORD, phone: '12345' }), /رقم موبايل صحيح/);
+  // No country code and not an Egyptian mobile: can't tell where it's from.
+  await assert.rejects(() => register({ email: 'ok@x.dev', password: PASSWORD, phone: '0991234567' }), /رقم موبايل صحيح/);
+  await assert.rejects(() => register({ email: 'ok@x.dev', password: PASSWORD, phone: '+20 22 345 6789' }), /رقم موبايل صحيح/);
+  await assert.rejects(() => register({ email: 'ok@x.dev', password: PASSWORD }), /رقم موبايل صحيح/);
 });
 
-test('register normalises the phone and accepts every Egyptian prefix', async () => {
-  for (const [raw, expected] of [
-    ['+201098765432', '01098765432'],
-    ['00201098765432', '01098765432'],
-    ['010 9876 5432', '01098765432'],
-    ['01198765432', '01198765432'],
-    ['01298765432', '01298765432'],
-    ['01598765432', '01598765432'],
-  ]) {
+test('register stores every phone in E.164 — Egyptian spellings and numbers from other countries', async () => {
+  // A fresh random tail per case: the numbers are stored, so they must be
+  // unique across runs against the shared database.
+  const digits = (count) => String(crypto.randomInt(10 ** count)).padStart(count, '0');
+  const cases = [];
+  for (const prefix of ['010', '011', '012', '015']) {
+    let n = `${prefix}${digits(8)}`;
+    cases.push([n, `+2${n}`]);
+    n = `${prefix}${digits(8)}`;
+    cases.push([`+20${n.slice(1)}`, `+2${n}`]);
+    n = `${prefix}${digits(8)}`;
+    cases.push([`0020${n.slice(1)}`, `+2${n}`]);
+    n = `${prefix}${digits(8)}`;
+    cases.push([`${prefix} ${n.slice(3, 7)} ${n.slice(7)}`, `+2${n}`]);
+  }
+  let tail = digits(8);
+  cases.push([`+966 5${tail.slice(0, 1)} ${tail.slice(1, 4)} ${tail.slice(4)}`, `+9665${tail}`]);
+  tail = digits(9);
+  cases.push([`0044 7${tail}`, `+447${tail}`]);
+  tail = digits(9);
+  cases.push([`+1 (415) 5${tail.slice(0, 2)}-${tail.slice(2, 6)}`, `+14155${tail.slice(0, 6)}`]);
+  for (const [raw, expected] of cases) {
     const email = uniqueEmail();
     await register({ email, password: PASSWORD, name: 'ه', phone: raw });
     const user = await getUserByEmail(email);
     assert.equal(user.phone, expected, `phone ${raw}`);
   }
+});
+
+test('register records the signup IP; login records the latest login IP', async () => {
+  const email = uniqueEmail();
+  await register({ email, password: PASSWORD, name: 'ه', phone: uniquePhone(), ip: '198.51.100.23' });
+  const created = await getUserByEmail(email);
+  assert.equal(created.signup_ip, '198.51.100.23');
+  assert.equal(created.last_login_ip, null, 'registering is not a login');
+
+  await login({ email, password: PASSWORD, ip: '203.0.113.9' });
+  const after = await getUserByEmail(email);
+  assert.equal(after.last_login_ip, '203.0.113.9');
+  assert.equal(after.signup_ip, '198.51.100.23', 'the signup IP never changes');
+
+  // A caller with no IP (a script) must not blank the stored one.
+  await login({ email, password: PASSWORD });
+  assert.equal((await getUserByEmail(email)).last_login_ip, '203.0.113.9');
+});
+
+test('register refuses a phone number that already has an account', async () => {
+  const phone = uniquePhone();
+  await registerAndFetch(uniqueEmail(), phone);
+  // Same number in another spelling is still the same number.
+  await assert.rejects(
+    () => register({ email: uniqueEmail(), password: PASSWORD, name: 'تاني', phone: `+20${phone.slice(1)}` }),
+    /مسجّل بحساب تاني/,
+  );
+});
+
+test('updatePhone refuses another account\'s number but accepts your own', async () => {
+  const { user: owner } = await registerAndFetch();
+  const { user: other } = await registerAndFetch();
+  await assert.rejects(() => updatePhone({ userId: other.id, phone: owner.phone }), /مسجّل بحساب تاني/);
+  await assert.doesNotReject(() => updatePhone({ userId: owner.id, phone: owner.phone }));
+});
+
+test('register treats an alias of an existing email as that account', async () => {
+  const [local, domain] = uniqueEmail().split('@');
+  const { user } = await registerAndFetch(`${local}@${domain}`);
+  await assert.doesNotReject(() =>
+    register({ email: `${local}+again@${domain}`, password: PASSWORD, name: 'مكرر', phone: uniquePhone() }));
+  assert.equal(await getUserByEmail(`${local}+again@${domain}`), null, 'no second account for the alias');
+  const after = await getUserByEmail(`${local}@${domain}`);
+  assert.equal(after.verification_token, user.verification_token, 'the original account is untouched');
+});
+
+test('register refuses disposable-mail addresses', async () => {
+  await assert.rejects(
+    () => register({ email: 'x@mailinator.com', password: PASSWORD, name: 'ه', phone: uniquePhone() }),
+    /مؤقت/,
+  );
 });
 
 test('register stores the account unverified with a verification token', async () => {
@@ -59,7 +128,7 @@ test('register stores the account unverified with a verification token', async (
 test('register never reveals that an email is already taken', async () => {
   const { email, user } = await registerAndFetch();
   // Same email again: identical quiet result, no second row, no token rotation.
-  await assert.doesNotReject(() => register({ email, password: PASSWORD, name: 'مكرر', phone: PHONE }));
+  await assert.doesNotReject(() => register({ email, password: PASSWORD, name: 'مكرر', phone: uniquePhone() }));
   const after = await getUserByEmail(email);
   assert.ok(after, 'the original account is untouched');
   assert.equal(after.id, user.id);

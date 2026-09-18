@@ -1,13 +1,47 @@
 import { supabase } from './supabaseClient.js';
+import { canonicalEmail } from './emailIdentity.js';
 
 function must(result, context) {
   if (result.error) throw new Error(`${context}: ${result.error.message}`);
   return result.data;
 }
 
+/**
+ * Thrown when a write trips one of the users table's one-per-person unique
+ * indexes (phone, email_canonical). The auth layer pre-checks both, so this
+ * only fires when two requests race past the check — it is the backstop that
+ * keeps the rule airtight. `field` is 'phone' or 'email'.
+ */
+export class DuplicateUserError extends Error {
+  constructor(field) {
+    super(`duplicate user ${field}`);
+    this.field = field;
+  }
+}
+
+function mustUnlessDuplicate(result, context) {
+  if (result.error?.code === '23505') {
+    throw new DuplicateUserError(String(result.error.message).includes('phone') ? 'phone' : 'email');
+  }
+  return must(result, context);
+}
+
 export async function getUserByEmail(email) {
   const { data, error } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
   if (error) throw new Error(`getUserByEmail: ${error.message}`);
+  return data;
+}
+
+/** Finds the account that owns any variant of this address (dots, +tags, googlemail) — see canonicalEmail. */
+export async function getUserByCanonicalEmail(email) {
+  const { data, error } = await supabase.from('users').select('*').eq('email_canonical', canonicalEmail(email)).maybeSingle();
+  if (error) throw new Error(`getUserByCanonicalEmail: ${error.message}`);
+  return data;
+}
+
+export async function getUserByPhone(phone) {
+  const { data, error } = await supabase.from('users').select('*').eq('phone', phone).maybeSingle();
+  if (error) throw new Error(`getUserByPhone: ${error.message}`);
   return data;
 }
 
@@ -33,8 +67,10 @@ export async function createUser(user) {
   const row = {
     id: user.id,
     email: user.email,
+    email_canonical: canonicalEmail(user.email),
     name: user.name,
     phone: user.phone ?? null,
+    signup_ip: user.signupIp ?? null,
     password_salt: user.passwordSalt,
     password_hash: user.passwordHash,
     google_id: user.googleId ?? null,
@@ -44,11 +80,14 @@ export async function createUser(user) {
     is_admin: Boolean(user.isAdmin),
     created_at: user.createdAt,
   };
-  must(await supabase.from('users').insert(row), 'createUser');
+  mustUnlessDuplicate(await supabase.from('users').insert(row), 'createUser');
 }
 
-export async function touchUserLogin(id, timestamp) {
-  must(await supabase.from('users').update({ last_login_at: timestamp }).eq('id', id), 'touchUserLogin');
+/** `ip` is the caller's address (see clientIp in server.js); callers without one — scripts, tests — leave the stored value alone. */
+export async function touchUserLogin(id, timestamp, ip) {
+  const update = { last_login_at: timestamp };
+  if (ip) update.last_login_ip = ip;
+  must(await supabase.from('users').update(update).eq('id', id), 'touchUserLogin');
 }
 
 export async function setVerificationToken(id, token, expiresAt) {
@@ -100,7 +139,7 @@ export async function linkGoogleAccount(id, googleId) {
 
 /** Google sign-in never collects a phone number, so an account created that way needs this filled in afterward. */
 export async function setUserPhone(id, phone) {
-  must(await supabase.from('users').update({ phone }).eq('id', id), 'setUserPhone');
+  mustUnlessDuplicate(await supabase.from('users').update({ phone }).eq('id', id), 'setUserPhone');
 }
 
 /** Lets a signed-in account correct its own display name from the profile page. */
@@ -468,7 +507,7 @@ export async function deleteUser(id) {
 export async function getAllUsers() {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, phone, is_admin, email_verified, google_id, created_at, last_login_at')
+    .select('id, email, name, phone, is_admin, email_verified, google_id, created_at, last_login_at, signup_ip, last_login_ip')
     .order('created_at', { ascending: false });
   if (error) throw new Error(`getAllUsers: ${error.message}`);
   return data;

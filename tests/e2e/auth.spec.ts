@@ -57,7 +57,7 @@ test.describe("authentication", () => {
     await page.getByLabel("رقم الموبايل").fill("12345");
     await page.getByLabel("كلمة السر", { exact: true }).fill(PASSWORD);
     await page.getByRole("button", { name: "إنشاء الحساب" }).click();
-    await expect(page.getByRole("alert")).toContainText("موبايل مصري صحيح");
+    await expect(page.getByRole("alert")).toContainText("رقم موبايل صحيح");
     await expect(page.getByText("تحقق من بريدك الإلكتروني")).toHaveCount(0);
   });
 
@@ -84,6 +84,13 @@ test.describe("authentication", () => {
     // The desk stays closed for the signed-out browser.
     await goto(page, "/portfolio");
     await expect(page).toHaveURL(/\/login/);
+  });
+
+  test("an unconfirmed email sees the confirm-your-email wall instead of the desk", async ({ page }) => {
+    await newDeskUser(page, { verified: false });
+    await expect(page.getByRole("heading", { name: "فعّل بريدك عشان تبدأ التجربة" })).toBeVisible();
+    // The trial is running but not usable, so it must not read as "trial ended".
+    await expect(page.getByText("خلصت التجربة المجانية")).toHaveCount(0);
   });
 
   test("/login bounces an already signed-in user back to the home page", async ({ page }) => {

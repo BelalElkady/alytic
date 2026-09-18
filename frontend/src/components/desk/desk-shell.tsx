@@ -180,6 +180,21 @@ function SubscriptionWall() {
   const { user } = useDesk();
   const expired = Boolean(user?.currentPeriodEnd);
 
+  // The trial is running but held back until the email is confirmed —
+  // VerifyEmailBanner above already carries the resend button, so this is only
+  // the explanation; the subscribe panel would be the wrong ask here.
+  if (user?.awaitingEmailVerification) {
+    return (
+      <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+        <h2 className="text-[17px] font-semibold">فعّل بريدك عشان تبدأ التجربة</h2>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+          التجربة المجانية بتشتغل بعد ما تأكد بريدك الإلكتروني. افتح رابط التفعيل اللي اتبعتلك على{" "}
+          {user.email} (شوف كمان الـ Spam) — ولو مش لاقيه، اضغط "إعادة إرسال الرابط" فوق.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
       <h2 className="text-[17px] font-semibold">
@@ -285,13 +300,16 @@ function RequirePhoneDialog() {
               id="require-phone"
               type="tel"
               dir="ltr"
-              placeholder="01xxxxxxxxx"
+              placeholder="+20 10 1234 5678"
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
               required
               autoComplete="tel"
               autoFocus
             />
+            <p className="text-[12px] text-muted-foreground">
+              أي دولة — اكتب الرقم بكود الدولة (مثال: +966 5x xxx xxxx). الأرقام المصرية تتكتب 01xxxxxxxxx.
+            </p>
           </div>
           {error && (
             <p role="alert" className="rounded-md bg-down-soft px-3 py-2 text-[13px] text-down">

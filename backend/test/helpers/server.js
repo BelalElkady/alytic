@@ -74,20 +74,39 @@ export function sessionFrom(setCookies) {
 
 export const uniqueEmail = () => `t-${crypto.randomUUID()}@test.local`;
 
+/**
+ * A random valid Egyptian mobile number. Phones are unique per account (see
+ * idx_users_phone), and the tests share one real database, so a fixed number
+ * would make every registration after the first collide.
+ */
+export const uniquePhone = () =>
+  `01${['0', '1', '2', '5'][crypto.randomInt(4)]}${String(crypto.randomInt(100_000_000)).padStart(8, '0')}`;
+
 /** Register a fresh user over HTTP, then sign in; returns { user, cookie, email, raw }.
  *
  * Registration itself never signs anyone in (and never reveals whether an
  * email was already taken — see auth.js) — it just answers `{ ok: true }`.
  * The session cookie only exists after a successful login, so the helper
  * performs that second step and hands back the cookie it produced.
+ *
+ * The email is confirmed before signing in because the free trial (and so
+ * every paid endpoint) stays locked until it is — pass { verify: false } to
+ * get the raw unverified account instead.
  */
-export async function registerUser(baseUrl, email = uniqueEmail()) {
+export async function registerUser(baseUrl, email = uniqueEmail(), { verify = true } = {}) {
   const raw = await request(baseUrl, 'POST', '/api/auth/register', {
-    body: { email, password: 'Passw0rd!123', name: 'Test User', phone: '01012345678' },
+    body: { email, password: 'Passw0rd!123', name: 'Test User', phone: uniquePhone() },
   });
   assert.equal(raw.status, 201, `register failed: ${raw.text}`);
   assert.deepEqual(raw.body, { ok: true }, 'registration must not leak account state');
   assert.equal(sessionFrom(raw.setCookies), null, 'register must not set a session cookie');
+
+  if (verify) {
+    const { getUserByEmail } = await import('../../src/db.js');
+    const token = (await getUserByEmail(email)).verification_token;
+    const verified = await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } });
+    assert.equal(verified.status, 200, `verify failed: ${verified.text}`);
+  }
 
   const login = await request(baseUrl, 'POST', '/api/auth/login', {
     body: { email, password: 'Passw0rd!123' },

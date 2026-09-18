@@ -88,12 +88,18 @@ async function accessInfo(user) {
   const periodEnd = subscription ? new Date(subscription.current_period_end) : null;
   const subscriptionActive = Boolean(periodEnd && periodEnd.getTime() > Date.now());
   const exempt = Boolean(user.isAdmin) || user.id === 'local';
+  // The free trial only counts once the email is confirmed: an unconfirmed
+  // address costs nothing to invent, so honoring the trial before then would
+  // let anyone mint a fresh one with a throwaway. The clock still runs from
+  // signup (see trialInfo) — this only withholds access until verification.
+  // A paid plan or staff account doesn't depend on it.
+  const trialUsable = trial.trialActive && Boolean(user.emailVerified);
   // Which set of feature caps (see TIERS in src/billing/plans.js) this
   // account's usage should be checked against. Staff/CLI get the top tier
   // rather than a bypass, so the per-feature counters below still mean
   // something for them; a lapsed, non-trial account gets null, which is
   // moot since PAID_PATHS already blocks it before any cap is checked.
-  const tier = exempt ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive ? 'free' : null;
+  const tier = exempt ? 'trader' : subscriptionActive ? subscription.tier : trialUsable ? 'free' : null;
   return {
     trialDaysTotal: trial.trialDaysTotal,
     trialDaysLeft: trial.trialDaysLeft,
@@ -103,7 +109,10 @@ async function accessInfo(user) {
     tier,
     subscriptionActive,
     currentPeriodEnd: periodEnd ? periodEnd.toISOString() : null,
-    hasAccess: exempt || trial.trialActive || subscriptionActive,
+    // True while a still-running trial is being held back by an unconfirmed
+    // email — lets the wall say "confirm your email" instead of "trial ended".
+    awaitingEmailVerification: !exempt && !subscriptionActive && trial.trialActive && !trialUsable,
+    hasAccess: exempt || trialUsable || subscriptionActive,
   };
 }
 
@@ -169,17 +178,27 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(500).json({ error: err.message });
 });
 
+/**
+ * The caller's address as recorded on the users table (signup_ip /
+ * last_login_ip). With 'trust proxy' set above this is the real client behind
+ * nginx, not 127.0.0.1. An IPv4 address that arrived over a dual-stack socket
+ * comes prefixed `::ffff:` — stripped so the same visitor always has the same
+ * string.
+ */
+const clientIp = (req) => (req.ip ?? '').replace(/^::ffff:/, '') || undefined;
+
 // Never logs the caller in directly (unlike login/google) and always
 // answers the same way regardless of whether the email was already taken
 // — see auth.js's register() for why: revealing that here would be exactly
 // the email-enumeration hole rate limiting alone can't close.
+// `ip` goes last in each spread so a client can't supply its own in the body.
 app.post('/api/auth/register', registerLimiter, wrap(async (req, res) => {
-  await register(req.body ?? {});
+  await register({ ...req.body, ip: clientIp(req) });
   res.status(201).json({ ok: true });
 }));
 
 app.post('/api/auth/login', loginLimiter, wrap(async (req, res) => {
-  const result = await login(req.body ?? {});
+  const result = await login({ ...req.body, ip: clientIp(req) });
   // "فضّلني مسجّل دخول" — defaults to remembered (today's behavior) unless
   // the checkbox was explicitly unchecked.
   const remember = req.body?.remember !== false;
@@ -188,7 +207,7 @@ app.post('/api/auth/login', loginLimiter, wrap(async (req, res) => {
 }));
 
 app.post('/api/auth/google', loginLimiter, wrap(async (req, res) => {
-  const result = await googleSignIn(req.body ?? {});
+  const result = await googleSignIn({ ...req.body, ip: clientIp(req) });
   res.setHeader('Set-Cookie', sessionCookie(result.token));
   res.json({ user: result.user });
 }));
@@ -412,6 +431,13 @@ app.use('/api', async (req, res, next) => {
   // that need to know subscription status without a second accessInfo/DB call.
   req.access = access;
   if (access.hasAccess) return next();
+  if (access.awaitingEmailVerification) {
+    return res.status(402).json({
+      error: 'فعّل بريدك الإلكتروني عشان تبدأ التجربة المجانية — افتح رابط التفعيل اللي اتبعتلك.',
+      reason: 'email_unverified',
+      requiresSubscription: false,
+    });
+  }
   const expired = Boolean(access.currentPeriodEnd);
   res.status(402).json({
     error: expired
@@ -877,7 +903,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     const subscriptionActive = Boolean(subscription) && new Date(subscription.current_period_end).getTime() > Date.now();
     // Same resolution as accessInfo() for this user's own request — see its
     // comment on why staff/CLI get the top tier rather than a bypass.
-    const tier = u.is_admin || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive ? 'free' : null;
+    const tier = u.is_admin || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive && u.email_verified ? 'free' : null;
     return {
       id: u.id,
       email: u.email,
@@ -888,6 +914,8 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       googleLinked: Boolean(u.google_id),
       createdAt: u.created_at,
       lastLoginAt: u.last_login_at,
+      signupIp: u.signup_ip,
+      lastLoginIp: u.last_login_ip,
       trialActive: trial.trialActive,
       trialEndsAt: trial.trialEndsAt.toISOString(),
       tier,

@@ -55,6 +55,7 @@ export type User = {
   subscriptionActive?: boolean;
   currentPeriodEnd?: string | null;
   hasAccess?: boolean;
+  awaitingEmailVerification?: boolean;
   [key: string]: any;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -373,9 +374,14 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     await post("/api/auth/resend-verification", { email });
   }, []);
 
+  // The trial only unlocks once the email is confirmed (see accessInfo on the
+  // backend), so flipping the local flag isn't enough — re-read the entitlement
+  // picture too, or a signed-in user would still see the "confirm your email"
+  // wall until the next tab refocus.
   const markEmailVerified = useCallback(() => {
     setUser((previous) => (previous ? { ...previous, emailVerified: true } : previous));
-  }, []);
+    void refreshUser().catch(() => {});
+  }, [refreshUser]);
 
   const updatePhone = useCallback(async (phone: string) => {
     const result = await post("/api/account/phone", { phone });

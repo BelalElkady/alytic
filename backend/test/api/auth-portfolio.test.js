@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import { startServer, request, sessionFrom, registerUser, uniqueEmail } from '../helpers/server.js';
+import { startServer, request, sessionFrom, registerUser, uniqueEmail, uniquePhone } from '../helpers/server.js';
 import { getUserByEmail } from '../../src/db.js';
 import { writeBars, synthBars } from '../helpers/bars.js';
 
@@ -62,7 +62,7 @@ test('every protected endpoint answers 401 in Arabic without a session', async (
 
 test('register confirms quietly: no session, no account state in the response', async () => {
   const res = await request(baseUrl, 'POST', '/api/auth/register', {
-    body: { email: uniqueEmail(), password: 'Passw0rd!123', name: 'حساب', phone: '01012345678' },
+    body: { email: uniqueEmail(), password: 'Passw0rd!123', name: 'حساب', phone: uniquePhone() },
   });
   assert.equal(res.status, 201);
   assert.deepEqual(res.body, { ok: true });
@@ -80,8 +80,8 @@ test('register rejects a bad email with the engine\'s Arabic message', async () 
 
 test('registering the same email twice answers identically — no enumeration', async () => {
   const email = uniqueEmail();
-  const first = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: '01012345678' } });
-  const again = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: '01012345678' } });
+  const first = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: uniquePhone() } });
+  const again = await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', phone: uniquePhone() } });
   assert.equal(first.status, 201);
   assert.equal(again.status, 201);
   assert.deepEqual(again.body, first.body, 'an existing email must get the exact same response');
@@ -91,7 +91,7 @@ test('mass registration from one IP is throttled with the shared 429 message', a
   // One fixed X-Forwarded-For = one limiter bucket (see 'trust proxy 1').
   const ip = '203.0.113.77';
   const register = () => request(baseUrl, 'POST', '/api/auth/register', {
-    body: { email: uniqueEmail(), password: 'Passw0rd!123', phone: '01012345678' },
+    body: { email: uniqueEmail(), password: 'Passw0rd!123', phone: uniquePhone() },
     headers: { 'x-forwarded-for': ip },
   });
   for (let i = 0; i < 8; i++) {
@@ -299,7 +299,7 @@ test('AI-only endpoints degrade to a plain 503 when no key is configured', async
 test('email verification completes over HTTP', async () => {
   const email = uniqueEmail();
   const reg = await request(baseUrl, 'POST', '/api/auth/register', {
-    body: { email, password: 'Passw0rd!123', name: 'ف', phone: '01012345678' },
+    body: { email, password: 'Passw0rd!123', name: 'ف', phone: uniquePhone() },
   });
   assert.equal(reg.status, 201);
   const token = (await getUserByEmail(email)).verification_token;
@@ -307,4 +307,56 @@ test('email verification completes over HTTP', async () => {
   const res = await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } });
   assert.equal(res.status, 200);
   assert.equal(res.body.user.emailVerified ?? res.body.user.email_verified, true);
+});
+
+test('the free trial stays locked until the email is confirmed', async () => {
+  const { cookie } = await registerUser(baseUrl, uniqueEmail(), { verify: false });
+  const me = await request(baseUrl, 'GET', '/api/auth/me', { cookie });
+  assert.equal(me.body.user.trialActive, true, 'the clock still runs from signup');
+  assert.equal(me.body.user.hasAccess, false);
+  assert.equal(me.body.user.awaitingEmailVerification, true);
+
+  const scan = await request(baseUrl, 'GET', '/api/scan?codes=ABUK', { cookie });
+  assert.equal(scan.status, 402);
+  assert.equal(scan.body.reason, 'email_unverified');
+
+  const verified = await registerUser(baseUrl);
+  const after = await request(baseUrl, 'GET', '/api/auth/me', { cookie: verified.cookie });
+  assert.equal(after.body.user.hasAccess, true);
+  assert.equal(after.body.user.awaitingEmailVerification, false);
+});
+
+test('one phone number, one account', async () => {
+  const phone = uniquePhone();
+  const body = (email) => ({ email, password: 'Passw0rd!123', phone });
+  const first = await request(baseUrl, 'POST', '/api/auth/register', { body: body(uniqueEmail()) });
+  assert.equal(first.status, 201);
+  const second = await request(baseUrl, 'POST', '/api/auth/register', { body: body(uniqueEmail()) });
+  assert.equal(second.status, 500);
+  assert.ok(second.body.error.includes('مسجّل بحساب تاني'), second.text);
+});
+
+test('an alias of a registered email is treated as the same account, silently', async () => {
+  // Stays on @test.local so the cleanup script still sweeps the rows up; the
+  // Gmail-specific dot/googlemail rules are covered in unit/emailIdentity.test.js.
+  const [local, domain] = uniqueEmail().split('@');
+  const alias = `${local}+trial2@${domain}`;
+  const first = await request(baseUrl, 'POST', '/api/auth/register', {
+    body: { email: `${local}@${domain}`, password: 'Passw0rd!123', phone: uniquePhone() },
+  });
+  const second = await request(baseUrl, 'POST', '/api/auth/register', {
+    body: { email: alias, password: 'Passw0rd!123', phone: uniquePhone() },
+  });
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 201);
+  assert.deepEqual(second.body, first.body, 'the alias must get the exact same response');
+  assert.equal(await getUserByEmail(alias), null, 'no second account is created');
+});
+
+test('a disposable-mail address is refused at registration', async () => {
+  const res = await request(baseUrl, 'POST', '/api/auth/register', {
+    body: { email: 'someone@mailinator.com', password: 'Passw0rd!123', phone: uniquePhone() },
+  });
+  assert.equal(res.status, 500);
+  assert.ok(res.body.error.includes('مؤقت'), res.text);
 });

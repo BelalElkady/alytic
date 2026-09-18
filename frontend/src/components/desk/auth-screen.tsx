@@ -185,12 +185,15 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
                         id="auth-phone"
                         type="tel"
                         dir="ltr"
-                        placeholder="01xxxxxxxxx"
+                        placeholder="+20 10 1234 5678"
                         value={phone}
                         onChange={(event) => setPhone(event.target.value)}
                         required
                         autoComplete="tel"
                       />
+                      <p className="text-[12px] text-muted-foreground">
+                        أي دولة — اكتب الرقم بكود الدولة (مثال: +966 5x xxx xxxx). الأرقام المصرية تتكتب 01xxxxxxxxx.
+                      </p>
                     </div>
                   )}
                   <div className="space-y-1.5">

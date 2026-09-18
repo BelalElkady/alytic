@@ -10,7 +10,7 @@ import {
 } from '../../src/portfolio.js';
 import { register } from '../../src/auth.js';
 import { getUserByEmail } from '../../src/db.js';
-import { uniqueEmail } from '../helpers/server.js';
+import { uniqueEmail, uniquePhone } from '../helpers/server.js';
 
 const CODE = 'ABUK'; // any real universe code; recordTrade refuses unknown ones
 
@@ -130,7 +130,7 @@ test('withPortfolio serialises concurrent writes — the lost-update regression'
   // portfolios.user_id has a real FK to users, so the queue test needs a user row.
   // register() returns nothing by design — read the created row back by email.
   const email = uniqueEmail();
-  await register({ email, password: 'Passw0rd!123', phone: '01012345678' });
+  await register({ email, password: 'Passw0rd!123', phone: uniquePhone() });
   const userId = (await getUserByEmail(email)).id;
   await withPortfolio(userId, (p) => ({ ...p, cash: 100_000 })); // seed the book
   const jobs = Array.from({ length: 15 }, (_, i) =>

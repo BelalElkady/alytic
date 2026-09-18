@@ -176,9 +176,13 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 - Expect: inline error "كلمة المرور لازم تكون 8 حروف على الأقل"; nothing is created.
 
 **AUTH-04 — Invalid phone number** · P2
-- Steps: register with `12345`, then `0991234567`, then a valid `010…` number.
-- Expect: the first two are refused with "اكتب رقم موبايل مصري صحيح (01xxxxxxxxx)"; the
-  third succeeds. Accepted prefixes are 010 / 011 / 012 / 015.
+- Steps: register with `12345`, then `0991234567`, then a valid `010…` number, then a
+  foreign number such as `+966 51 234 5678`.
+- Expect: the first two are refused with "اكتب رقم موبايل صحيح بكود الدولة …"; the last two
+  succeed. Without a country code only Egyptian mobiles (010 / 011 / 012 / 015) are
+  recognised. Every number is stored in E.164 (`+201012345678`), so `01012345678`,
+  `+20 10 1234 5678` and `0020 10 1234 5678` are the same number — a second account
+  with any of them is refused.
 
 **AUTH-05 — Invalid email format** · P3
 - Steps: register with `abc@`.

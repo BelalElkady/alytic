@@ -49,11 +49,14 @@ function ProfileField({
   label,
   value,
   placeholder,
+  ltr,
   onSave,
 }: {
   label: string;
   value: string;
   placeholder?: string;
+  /** Left-to-right value (a phone number): in an RTL page its leading "+" would otherwise jump to the far end. */
+  ltr?: boolean;
   onSave: (next: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -86,6 +89,7 @@ function ProfileField({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={placeholder}
+            dir={ltr ? "ltr" : undefined}
             className="max-w-xs"
             autoFocus
           />
@@ -107,7 +111,9 @@ function ProfileField({
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <span className="text-[14px]">{value || "—"}</span>
+          <span className="text-[14px]" dir={ltr && value ? "ltr" : undefined}>
+            {value || "—"}
+          </span>
           <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]" onClick={() => setEditing(true)}>
             تعديل
           </Button>
@@ -193,7 +199,8 @@ function SettingsPage() {
           <ProfileField
             label="رقم الموبايل"
             value={user?.phone ?? ""}
-            placeholder="01xxxxxxxxx"
+            placeholder="+20 10 1234 5678"
+            ltr
             onSave={updatePhone}
           />
         </div>

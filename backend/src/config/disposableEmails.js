@@ -1,0 +1,53 @@
+/**
+ * Throwaway-mailbox providers — an address on one of these takes seconds to
+ * make, so it defeats the "one free trial per person" rule that email
+ * verification is meant to back up. Not exhaustive (new ones appear daily);
+ * it covers the services people actually reach for. To go bigger, swap this
+ * set for the `disposable-email-domains` npm package.
+ */
+export const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  '10minutemail.com',
+  '10minutemail.net',
+  '20minutemail.com',
+  'anonbox.net',
+  'burnermail.io',
+  'byom.de',
+  'dispostable.com',
+  'emailondeck.com',
+  'fakeinbox.com',
+  'fakemail.net',
+  'getairmail.com',
+  'getnada.com',
+  'guerrillamail.biz',
+  'guerrillamail.com',
+  'guerrillamail.de',
+  'guerrillamail.net',
+  'guerrillamail.org',
+  'guerrillamailblock.com',
+  'inboxbear.com',
+  'inboxkitten.com',
+  'maildrop.cc',
+  'mailinator.com',
+  'mailnesia.com',
+  'mailsac.com',
+  'minuteinbox.com',
+  'moakt.com',
+  'mohmal.com',
+  'mytemp.email',
+  'sharklasers.com',
+  'spam4.me',
+  'spamgourmet.com',
+  'temp-mail.io',
+  'temp-mail.org',
+  'tempail.com',
+  'tempinbox.com',
+  'tempmail.com',
+  'tempmail.net',
+  'tempmailo.com',
+  'throwawaymail.com',
+  'trashmail.com',
+  'trashmail.net',
+  'yopmail.com',
+  'yopmail.fr',
+  'yopmail.net',
+]);

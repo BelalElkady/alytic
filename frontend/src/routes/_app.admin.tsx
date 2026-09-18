@@ -409,6 +409,9 @@ type AdminUserRow = {
   googleLinked: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  /** Null for accounts that predate IP tracking. */
+  signupIp: string | null;
+  lastLoginIp: string | null;
   trialActive: boolean;
   trialEndsAt: string;
   tier: Tier | null;
@@ -434,7 +437,7 @@ const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
 ) as Record<StyleKey, string>;
 
 const matchesUser = (row: AdminUserRow, query: string) =>
-  [row.email, row.name, row.phone].some((field) => field?.toLowerCase().includes(query));
+  [row.email, row.name, row.phone, row.signupIp, row.lastLoginIp].some((field) => field?.toLowerCase().includes(query));
 
 /** Where a user actually stands for renewal purposes — active/trial/free-and-lapsed are mutually exclusive. */
 type SubStatus = "activeSub" | "trial" | "free";
@@ -469,6 +472,8 @@ const CSV_HEADERS = [
   "البريد الإلكتروني",
   "الاسم",
   "الهاتف",
+  "IP التسجيل",
+  "IP آخر دخول",
   "تاريخ التسجيل",
   "آخر دخول",
   "رأس المال",
@@ -494,6 +499,8 @@ function downloadUsersCsv(rows: AdminUserRow[]) {
       row.email,
       row.name ?? "",
       row.phone ?? "",
+      row.signupIp ?? "",
+      row.lastLoginIp ?? "",
       row.createdAt?.slice(0, 10) ?? "",
       row.lastLoginAt ?? "",
       pf ? pf.cash + pf.positionsValue : "",
@@ -712,17 +719,17 @@ function UsersTab() {
               <Table className="min-w-[1500px] border-collapse">
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[84px] min-w-[84px] whitespace-nowrap border-e py-3 text-start">
+                      <span aria-hidden>#</span>
+                      <span className="sr-only">الرقم والحذف</span>
+                    </TableHead>
                     <TableHead className="min-w-[190px] whitespace-nowrap border-e py-3 text-start">المستخدم</TableHead>
-                    <TableHead className="min-w-[120px] whitespace-nowrap border-e py-3 text-start">الهاتف</TableHead>
+                    <TableHead className="min-w-[160px] whitespace-nowrap border-e py-3 text-start">الهاتف / IP</TableHead>
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">تاريخ التسجيل</TableHead>
                     <TableHead className="min-w-[150px] whitespace-nowrap border-e py-3 text-start">آخر دخول</TableHead>
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">رأس المال</TableHead>
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">ربح محقق</TableHead>
                     <TableHead className="min-w-[210px] whitespace-nowrap border-e py-3 text-start">النشاط الاستثماري</TableHead>
-                    <TableHead className="w-[84px] min-w-[84px] whitespace-nowrap border-e py-3 text-start">
-                      <span aria-hidden>#</span>
-                      <span className="sr-only">الرقم والحذف</span>
-                    </TableHead>
                     <TableHead className="min-w-[250px] whitespace-nowrap border-e py-3 text-start">السلوك الاستثماري</TableHead>
                     <TableHead className="min-w-[180px] whitespace-nowrap border-e py-3 text-start">الرصيد</TableHead>
                     <TableHead className="min-w-[170px] whitespace-nowrap border-e py-3 text-start">الاشتراك</TableHead>
@@ -751,34 +758,44 @@ function UsersTab() {
 
 function UserRow({
   row,
+  number,
   onChanged,
   striped,
 }: {
   row: AdminUserRow;
+  /** 1-based position in the list as currently filtered. */
+  number: number;
   onChanged: () => void;
   striped: boolean;
 }) {
-  number,
   const pf = row.portfolio;
   const capital = pf ? pf.cash + pf.positionsValue : null;
 
   return (
-  /** 1-based position in the list as currently filtered. */
-  number: number;
     <TableRow className={cn(striped && "bg-muted/30")}>
-      <TableCell className="border-e align-top py-3">
-        <div className="min-w-0">
-          <div className="truncate font-medium">{row.email}</div>
-          {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.name}</div>}
-        </div>
-      </TableCell>
-      <TableCell className="num border-e align-top py-3 text-right">{row.phone || "—"}</TableCell>
       {/* First column, so the row number and the delete button are visible without scrolling the wide table sideways. Admin accounts can't be deleted. */}
       <TableCell className="border-e align-top py-3">
         <div className="flex items-center gap-1">
           <span className="num min-w-[2ch] text-[12.5px] font-medium text-muted-foreground">{number}</span>
           {!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}
         </div>
+      </TableCell>
+      <TableCell className="border-e align-top py-3">
+        <div className="min-w-0">
+          <div className="truncate font-medium">{row.email}</div>
+          {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.name}</div>}
+        </div>
+      </TableCell>
+      <TableCell className="num border-e align-top py-3 text-right">
+        <div dir="ltr">{row.phone || "—"}</div>
+        {(row.signupIp || row.lastLoginIp) && (
+          <div dir="ltr" className="mt-1 text-[11px] text-muted-foreground">
+            {row.signupIp && <div title="IP التسجيل">reg {row.signupIp}</div>}
+            {row.lastLoginIp && row.lastLoginIp !== row.signupIp && (
+              <div title="IP آخر دخول">login {row.lastLoginIp}</div>
+            )}
+          </div>
+        )}
       </TableCell>
       <TableCell className="num border-e align-top py-3 text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
       <TableCell className="num border-e align-top py-3 text-right">

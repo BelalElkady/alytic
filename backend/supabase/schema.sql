@@ -31,6 +31,51 @@ alter table users add column if not exists phone text;
 alter table users add column if not exists reset_token text;
 alter table users add column if not exists reset_token_expires timestamptz;
 
+-- One free trial per person. email_canonical collapses the spellings that
+-- reach one mailbox (Gmail dots, +tags, googlemail.com) — the same rule as
+-- canonicalEmail() in src/emailIdentity.js, keep the two in step. Phone is
+-- unique too (already stored normalized as 01xxxxxxxxx).
+--
+-- BEFORE running this section on a database that already has users, check
+-- that neither unique index below will be refused, and merge or clear any
+-- rows these turn up:
+--   select phone, count(*) from users where phone is not null group by phone having count(*) > 1;
+--   select email_canonical, count(*) from users group by email_canonical having count(*) > 1;
+--     (run the second one after the backfill update below)
+alter table users add column if not exists email_canonical text;
+
+update users set email_canonical = (
+  select case
+    when t.d in ('gmail.com', 'googlemail.com') then replace(t.l, '.', '') || '@gmail.com'
+    else t.l || '@' || t.d
+  end
+  from (
+    select coalesce(nullif(split_part(s.lp, '+', 1), ''), s.lp) as l, s.d
+    from (
+      select regexp_replace(lower(users.email), '@[^@]*$', '') as lp,
+             substring(lower(users.email) from '@([^@]*)$') as d
+    ) s
+  ) t
+)
+where email_canonical is null;
+
+-- Phones are stored in E.164 (+201012345678) so a number from any country has
+-- exactly one spelling — see normalizePhone() in src/phone.js. Numbers saved
+-- before that were Egyptian national format (01012345678); this rewrites them
+-- in place (one-to-one, so it cannot create a duplicate) and is a no-op on a
+-- re-run.
+update users set phone = '+2' || phone where phone ~ '^01[0125][0-9]{8}$';
+
+create unique index if not exists idx_users_email_canonical on users(email_canonical) where email_canonical is not null;
+create unique index if not exists idx_users_phone on users(phone) where phone is not null;
+
+-- Where an account came from: the address it signed up from, and the one it
+-- last logged in from. For spotting several accounts behind one connection.
+-- Text rather than inet so IPv4, IPv6 and anything odd a proxy hands over are
+-- all stored as-is. Accounts that existed before this column stay null.
+alter table users add column if not exists signup_ip text;
+alter table users add column if not exists last_login_ip text;
+
 create unique index if not exists idx_users_google_id on users(google_id) where google_id is not null;
 create index if not exists idx_users_verification_token on users(verification_token) where verification_token is not null;
 create index if not exists idx_users_reset_token on users(reset_token) where reset_token is not null;
