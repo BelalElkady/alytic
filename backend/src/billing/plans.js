@@ -48,9 +48,9 @@ export const ADDONS = {
     { key: 'screenshots_bulk', label: 'بالجملة', screenshots: 12, priceEgp: 75 },
   ],
   recommendations: [
-    { key: 'recommendations_quick', label: 'سريع', recommendations: 50, priceEgp: 3.5 },
-    { key: 'recommendations_value', label: 'الأفضل قيمة', recommendations: 150, priceEgp: 9.5 },
-    { key: 'recommendations_bulk', label: 'بالجملة', recommendations: 400, priceEgp: 24 },
+    { key: 'recommendations_quick', label: 'سريع', recommendations: 50, priceEgp: 50 },
+    { key: 'recommendations_value', label: 'الأفضل قيمة', recommendations: 100, priceEgp: 75 },
+    { key: 'recommendations_bulk', label: 'بالجملة', recommendations: 150, priceEgp: 100 },
   ],
   cashScans: [
     { key: 'cashScans_quick', label: 'سريع', cashScans: 20, priceEgp: 1.5 },

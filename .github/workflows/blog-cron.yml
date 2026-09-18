@@ -1,68 +1,68 @@
-name: Generate blog post
+# name: Generate blog post
 
-on:
-  # Twice a day, spread across the EGX trading session (Cairo is UTC+2
-  # year-round). Each run writes at most one article — the next missing slot
-  # in today's 2-article plan — so two runs a day fill the whole batch and
-  # any run past the 2nd is a fast no-op. See getOrGenerateNextBlogArticle.
-  schedule:
-    - cron: '0 9,13 * * *'
-  workflow_dispatch: {}
+# on:
+#   # Twice a day, spread across the EGX trading session (Cairo is UTC+2
+#   # year-round). Each run writes at most one article — the next missing slot
+#   # in today's 2-article plan — so two runs a day fill the whole batch and
+#   # any run past the 2nd is a fast no-op. See getOrGenerateNextBlogArticle.
+#   schedule:
+#     - cron: '0 9,13 * * *'
+#   workflow_dispatch: {}
 
-env:
-  BACKEND_PORT: 3000
+# env:
+#   BACKEND_PORT: 3000
 
-jobs:
-  generate:
-    name: Trigger next blog article generation
-    runs-on: ubuntu-latest
-    environment: production
-    # A single article is far quicker than the old whole-batch run, but a
-    # free-tier model's multi-turn web-search tool loop can still be slow —
-    # observed one run blow past a 10-minute curl timeout on what was
-    # probably the day's first call (discovery + article + a word-count
-    # retry all stacking up). Generous headroom here over tightening it,
-    # since a timeout wastes the whole call's cost without storing anything.
-    timeout-minutes: 30
-    steps:
-      - name: Validate secrets
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          BLOG_CRON_SECRET: ${{ secrets.BLOG_CRON_SECRET }}
-        run: |
-          set -eu
-          missing=0
-          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY BLOG_CRON_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::GitHub secret $name is empty or unavailable in the production environment"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then exit 1; fi
+# jobs:
+#   generate:
+#     name: Trigger next blog article generation
+#     runs-on: ubuntu-latest
+#     environment: production
+#     # A single article is far quicker than the old whole-batch run, but a
+#     # free-tier model's multi-turn web-search tool loop can still be slow —
+#     # observed one run blow past a 10-minute curl timeout on what was
+#     # probably the day's first call (discovery + article + a word-count
+#     # retry all stacking up). Generous headroom here over tightening it,
+#     # since a timeout wastes the whole call's cost without storing anything.
+#     timeout-minutes: 30
+#     steps:
+#       - name: Validate secrets
+#         shell: bash
+#         env:
+#           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+#           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+#           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+#           BLOG_CRON_SECRET: ${{ secrets.BLOG_CRON_SECRET }}
+#         run: |
+#           set -eu
+#           missing=0
+#           for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY BLOG_CRON_SECRET; do
+#             if [ -z "${!name:-}" ]; then
+#               echo "::error::GitHub secret $name is empty or unavailable in the production environment"
+#               missing=1
+#             fi
+#           done
+#           if [ "$missing" -ne 0 ]; then exit 1; fi
 
-      # Calls the backend over the VPS's own loopback interface, the same way
-      # deploy.yml's post-deploy health check does — the cron endpoint is
-      # never exposed on the public internet, so this SSH hop is the trigger
-      # rather than a public HTTPS URL. The endpoint awaits its one article
-      # before responding, so this step (and therefore the workflow run)
-      # only goes green once that article is actually stored (or the run
-      # correctly no-ops because today's 10 already exist).
-      - name: Request next blog article generation over SSH
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          command_timeout: 28m
-          envs: BLOG_CRON_SECRET,BACKEND_PORT
-          script: |
-            curl --fail --silent --show-error --max-time 1620 -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/blog-generate" \
-              -H "X-Cron-Secret: $BLOG_CRON_SECRET" \
-              -H "Content-Type: application/json" \
-              -d '{}'
-        env:
-          BLOG_CRON_SECRET: ${{ secrets.BLOG_CRON_SECRET }}
+#       # Calls the backend over the VPS's own loopback interface, the same way
+#       # deploy.yml's post-deploy health check does — the cron endpoint is
+#       # never exposed on the public internet, so this SSH hop is the trigger
+#       # rather than a public HTTPS URL. The endpoint awaits its one article
+#       # before responding, so this step (and therefore the workflow run)
+#       # only goes green once that article is actually stored (or the run
+#       # correctly no-ops because today's 10 already exist).
+#       - name: Request next blog article generation over SSH
+#         uses: appleboy/ssh-action@v1.2.2
+#         with:
+#           host: ${{ secrets.DEPLOY_HOST }}
+#           username: ${{ secrets.DEPLOY_USER }}
+#           key: ${{ secrets.DEPLOY_SSH_KEY }}
+#           port: ${{ secrets.DEPLOY_PORT || 22 }}
+#           command_timeout: 28m
+#           envs: BLOG_CRON_SECRET,BACKEND_PORT
+#           script: |
+#             curl --fail --silent --show-error --max-time 1620 -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/blog-generate" \
+#               -H "X-Cron-Secret: $BLOG_CRON_SECRET" \
+#               -H "Content-Type: application/json" \
+#               -d '{}'
+#         env:
+#           BLOG_CRON_SECRET: ${{ secrets.BLOG_CRON_SECRET }}

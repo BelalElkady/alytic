@@ -959,9 +959,9 @@ const ADDON_PACKS: Record<CreditKind, { count: number; priceEgp: number }[]> = {
     { count: 12, priceEgp: 75 },
   ],
   recommendations: [
-    { count: 50, priceEgp: 3.5 },
-    { count: 150, priceEgp: 9.5 },
-    { count: 400, priceEgp: 24 },
+    { count: 50, priceEgp: 50 },
+    { count: 100, priceEgp: 75 },
+    { count: 150, priceEgp: 100 },
   ],
   cashScans: [
     { count: 20, priceEgp: 1.5 },

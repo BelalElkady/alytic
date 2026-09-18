@@ -92,9 +92,9 @@ const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string;
     { label: "بالجملة", count: 12, priceEgp: 75 },
   ],
   recommendations: [
-    { label: "سريع", count: 50, priceEgp: 3.5 },
-    { label: "الأفضل قيمة", count: 150, priceEgp: 9.5 },
-    { label: "بالجملة", count: 400, priceEgp: 24 },
+    { label: "سريع", count: 50, priceEgp: 50 },
+    { label: "الأفضل قيمة", count: 100, priceEgp: 75 },
+    { label: "بالجملة", count: 150, priceEgp: 100 },
   ],
   cashScans: [
     { label: "سريع", count: 20, priceEgp: 1.5 },
