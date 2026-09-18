@@ -236,7 +236,10 @@ function PricingPage() {
                     {plan.cta}
                   </Link>
                 ) : (
-                  <Link to="/subscribe">{plan.cta}</Link>
+                  // Carries the plan and the billing tab the visitor was looking at, so /subscribe shows only that tier's prices.
+                  <Link to="/subscribe" search={{ tier: plan.key, period }}>
+                    {plan.cta}
+                  </Link>
                 )}
               </Button>
             </article>

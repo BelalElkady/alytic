@@ -7,7 +7,16 @@ import { Button } from "@/components/ui/button";
 import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
+/** Set by a plan's button on /pricing: which tier to show alone, and which billing period starts selected. Both optional, so plain /subscribe links still offer everything. */
+type SubscribeSearch = { tier?: "long" | "trader"; period?: "monthly" | "yearly" };
+
+const TIER_TITLE = { long: "النفس الطويل", trader: "الحريفة" } as const;
+
 export const Route = createFileRoute("/subscribe")({
+  validateSearch: (search: Record<string, unknown>): SubscribeSearch => ({
+    tier: search["tier"] === "long" || search["tier"] === "trader" ? search["tier"] : undefined,
+    period: search["period"] === "monthly" || search["period"] === "yearly" ? search["period"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "طريقة الاشتراك — EGXpert" },
@@ -28,20 +37,26 @@ export const Route = createFileRoute("/subscribe")({
 });
 
 function SubscribePage() {
+  const { tier, period } = Route.useSearch();
   const { user, authChecked } = useDesk();
 
   return (
     <SiteShell>
       <section className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
         <Badge variant="outline">الاشتراك عن طريق الشات</Badge>
-        <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">طريقة الاشتراك</h1>
+        <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+          {tier ? `الاشتراك في باقة ${TIER_TITLE[tier]}` : "طريقة الاشتراك"}
+        </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
           مفيش دفع بالبطاقة على الموقع. كلّمنا في الشات جوّه التطبيق وقولّنا الباقة اللي عايزها،
           وهنبعتلك بيانات الدفع وكل التفاصيل — وبنفعّل حسابك أول ما نراجع التحويل.
         </p>
 
         <div className="mt-8">
-          <SubscribePanel />
+          <SubscribePanel
+            lockedTier={tier}
+            initialMonths={period === "monthly" ? 1 : period === "yearly" ? 12 : undefined}
+          />
         </div>
 
         {authChecked && !user && (

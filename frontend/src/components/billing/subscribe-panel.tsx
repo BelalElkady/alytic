@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { Check, Loader2, MessageCircle, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -52,7 +53,17 @@ const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
  * sending it in the chat means it only ever reaches a signed-in user we can
  * match a transfer to.
  */
-export function SubscribePanel({ compact = false }: { compact?: boolean }) {
+export function SubscribePanel({
+  compact = false,
+  lockedTier,
+  initialMonths,
+}: {
+  compact?: boolean;
+  /** Show only this tier's card and prices — set when the visitor arrives from that plan's button on /pricing. Omit to offer both tiers. */
+  lockedTier?: Tier;
+  /** Which period starts selected (1 = monthly, 12 = yearly). Defaults to yearly. */
+  initialMonths?: 1 | 12;
+}) {
   const { user, refreshUser } = useDesk();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tiers, setTiers] = useState<Record<Tier, TierLimits> | null>(null);
@@ -60,8 +71,10 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
   // At most one pack selected per feature — a user can top up several
   // different features at once, but only one size of each.
   const [selectedAddons, setSelectedAddons] = useState<Partial<Record<AddonKind, Addon>>>({});
-  const [tier, setTier] = useState<Tier>("long");
-  const [months, setMonths] = useState<1 | 12>(12);
+  const [pickedTier, setPickedTier] = useState<Tier>("long");
+  // Derived rather than copied into state, so it follows the URL if it changes while mounted.
+  const tier = lockedTier ?? pickedTier;
+  const [months, setMonths] = useState<1 | 12>(initialMonths ?? 12);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
@@ -103,38 +116,53 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
     }
   };
 
+  const featureList = (option: Tier) =>
+    tiers?.[option] && (
+      <ul className="mt-2 space-y-1">
+        {FEATURE_ROWS.map((row) => (
+          <li key={row.key} className="flex items-center justify-between text-[12px] text-muted-foreground">
+            <span>{row.label}</span>
+            <span className="num">
+              {tiers[option][row.key]} {row.unit}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+
   return (
     <div className={cn("space-y-4", compact && "space-y-3")}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {(["long", "trader"] as const).map((option) => {
-          const active = option === tier;
-          return (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setTier(option)}
-              className={cn(
-                "rounded-xl border bg-card p-4 text-start transition-colors",
-                active ? "border-primary/60 ring-1 ring-primary/20" : "hover:bg-accent",
-              )}
-            >
-              <span className="text-[14px] font-semibold">{TIER_LABEL[option]}</span>
-              {tiers?.[option] && (
-                <ul className="mt-2 space-y-1">
-                  {FEATURE_ROWS.map((row) => (
-                    <li key={row.key} className="flex items-center justify-between text-[12px] text-muted-foreground">
-                      <span>{row.label}</span>
-                      <span className="num">
-                        {tiers[option][row.key]} {row.unit}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {lockedTier ? (
+        <div className="rounded-xl border border-primary/60 bg-card p-4 ring-1 ring-primary/20">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[14px] font-semibold">باقة {TIER_LABEL[lockedTier]}</span>
+            <Link to="/subscribe" className="text-[12px] text-primary hover:underline">
+              باقة تانية؟ شوف الباقتين
+            </Link>
+          </div>
+          {featureList(lockedTier)}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(["long", "trader"] as const).map((option) => {
+            const active = option === tier;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setPickedTier(option)}
+                className={cn(
+                  "rounded-xl border bg-card p-4 text-start transition-colors",
+                  active ? "border-primary/60 ring-1 ring-primary/20" : "hover:bg-accent",
+                )}
+              >
+                <span className="text-[14px] font-semibold">{TIER_LABEL[option]}</span>
+                {featureList(option)}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {([1, 12] as const).map((m) => {
@@ -168,7 +196,8 @@ export function SubscribePanel({ compact = false }: { compact?: boolean }) {
         })}
       </div>
 
-      {limits && (
+      {/* The locked tier's card above already lists these limits. */}
+      {limits && !lockedTier && (
         <p className="text-[12.5px] leading-relaxed text-muted-foreground">
           باقة {TIER_LABEL[tier]}: {FEATURE_ROWS.map((row) => `${limits[row.key]} ${row.unit}`).join(" · ")}
         </p>
