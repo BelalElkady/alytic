@@ -182,12 +182,11 @@ function PricingPage() {
                     <span className="num text-4xl font-bold tracking-tight">{fmt(price)}</span>
                     <span className="pb-1 text-[12.5px] text-muted-foreground">جنيه / شهر</span>
                     {yearlySaving > 0 && plan.monthlyPrice !== null && (
-                      <s
-                        aria-label={`السعر الشهري ${fmt(plan.monthlyPrice)} جنيه`}
-                        className="num ms-auto pb-1 text-xl font-semibold text-muted-foreground"
-                      >
-                        {fmt(plan.monthlyPrice)}
-                      </s>
+                      // ml-auto (physical) pins it to the left edge of the card in this RTL row.
+                      <span className="ml-auto pb-1 text-[12.5px] text-muted-foreground">
+                        بدلًا من{" "}
+                        <s className="num text-xl font-semibold">{fmt(plan.monthlyPrice)}</s>
+                      </span>
                     )}
                   </>
                 )}
@@ -213,7 +212,7 @@ function PricingPage() {
                 {plan.note}
               </p>
 
-              <ul className="mt-5 space-y-2 border-t pt-4">
+              <ul className="mb-6 mt-5 space-y-2 border-t pt-4">
                 {FEATURE_ROWS.map((row) => (
                   <li key={row.key} className="flex items-center justify-between text-[13px]">
                     <span className="text-muted-foreground">{row.label}</span>
@@ -226,9 +225,10 @@ function PricingPage() {
                 ))}
               </ul>
 
+              {/* mt-auto: the cards stretch to equal height, so this keeps every CTA on the same line. */}
               <Button
                 asChild
-                className="mt-6 w-full"
+                className="mt-auto w-full"
                 variant={plan.highlight ? "default" : "outline"}
               >
                 {plan.key === "free" ? (
