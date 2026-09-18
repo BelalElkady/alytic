@@ -1172,7 +1172,13 @@ app.post('/api/admin/blog-slug', wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'الذكاء الاصطناعي غير متاح دلوقتي' });
   const { generateEnglishSlug } = await import('../agent/blogGenerator.js');
   try {
-    const { slug } = await generateEnglishSlug(title.slice(0, 300));
+    // Free models can sit in rate-limit backoff for a long time — bound the
+    // wait so the form gets an answer (or a clear failure) instead of hanging.
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timed out')), 25_000);
+    });
+    const { slug } = await Promise.race([generateEnglishSlug(title.slice(0, 300)), timeout]).finally(() => clearTimeout(timer));
     res.json({ slug });
   } catch (err) {
     console.error('[blog-slug] generation failed:', err.message);

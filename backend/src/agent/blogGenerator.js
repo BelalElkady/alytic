@@ -272,7 +272,9 @@ const SlugSchema = z.object({
  */
 export async function generateEnglishSlug(title) {
   const { data, raw } = await requestStructuredOR({
-    model: BLOG_REVIEW_MODEL,
+    // A chain, so a saturated or rate-limited free model falls through to the
+    // next one instead of failing the admin's form.
+    model: [BLOG_REVIEW_MODEL, BLOG_MODEL],
     schema: SlugSchema,
     schemaName: 'blog_slug',
     maxTokens: 200,

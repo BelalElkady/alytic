@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ImagePlus, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,12 +12,31 @@ import { post, postRaw } from "@/lib/api";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+// A bit above the backend's own limit for the slug call (see /api/admin/blog-slug).
+const SLUG_TIMEOUT_MS = 30_000;
+
+/** Rejects if `promise` hasn't settled within `ms`, so a hung request can't leave the form waiting forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("توليد الرابط أخد وقت طويل — اكتبه بنفسك")), ms);
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
 /** Keeps only what the backend's slug regex accepts: lowercase English letters, digits and single hyphens. */
 function sanitizeSlug(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+/** The same clean-up for use while typing: keeps a trailing hyphen so "egx-" can grow into "egx-30" — sanitizeSlug runs on submit. */
+function sanitizeSlugInput(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "");
 }
 
 /** Splits free-form article text into the paragraph blocks the site's blog renderer expects — blank lines separate paragraphs. */
@@ -36,8 +55,10 @@ export function NewArticleTab() {
   const [form, setForm] = useState(emptyForm());
   // The slug is generated (translated to English) from the title until the
   // admin edits it directly — same "auto until touched" pattern as most CMS
-  // slug fields.
-  const [slugTouched, setSlugTouched] = useState(false);
+  // slug fields. Refs, not state: the async generation below must see the
+  // latest value when its response lands, not the one from when it started.
+  const slugTouchedRef = useRef(false);
+  const slugRequestRef = useRef(0);
   const [slugLoading, setSlugLoading] = useState(false);
   const [busy, setBusy] = useState<"draft" | "publish" | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -52,19 +73,40 @@ export function NewArticleTab() {
     return null;
   };
 
-  /** Fills the slug with an English translation of the title — unless the admin has typed their own slug in the meantime. */
-  const generateSlug = async (title: string) => {
-    if (!title.trim() || slugTouched) return;
+  /**
+   * Fills the slug with an English translation of the title. Never blocks the
+   * field: the admin can type their own slug at any point, which discards the
+   * pending result. Only the latest request may write to the form or clear the
+   * loading flag.
+   */
+  const generateSlug = useCallback(async (title: string) => {
+    const requestId = ++slugRequestRef.current;
     setSlugLoading(true);
     try {
-      const { slug } = await post<{ slug: string }>("/api/admin/blog-slug", { title: title.trim() });
-      setForm((f) => (f.title === title ? { ...f, slug: sanitizeSlug(slug) } : f));
+      const { slug } = await withTimeout(
+        post<{ slug: string }>("/api/admin/blog-slug", { title }),
+        SLUG_TIMEOUT_MS,
+      );
+      if (requestId === slugRequestRef.current && !slugTouchedRef.current) {
+        setForm((f) => ({ ...f, slug: sanitizeSlug(slug) }));
+      }
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "تعذر توليد الرابط تلقائيًا — اكتبه بنفسك");
+      if (requestId === slugRequestRef.current) {
+        toast.error(caught instanceof Error ? caught.message : "تعذر توليد الرابط تلقائيًا — اكتبه بنفسك");
+      }
     } finally {
-      setSlugLoading(false);
+      if (requestId === slugRequestRef.current) setSlugLoading(false);
     }
-  };
+  }, []);
+
+  // Regenerate about a second after the admin stops typing the title, so the
+  // slug is ready without needing to leave the field first.
+  useEffect(() => {
+    const title = form.title.trim();
+    if (!title || slugTouchedRef.current) return;
+    const timer = setTimeout(() => void generateSlug(title), 1000);
+    return () => clearTimeout(timer);
+  }, [form.title, generateSlug]);
 
   const uploadImage = async (file: File) => {
     if (!IMAGE_TYPES.includes(file.type)) {
@@ -110,7 +152,9 @@ export function NewArticleTab() {
           : "اتحفظت المسودة — هتلاقيها في تبويب قيد المراجعة",
       );
       setForm(emptyForm());
-      setSlugTouched(false);
+      slugTouchedRef.current = false;
+      slugRequestRef.current++;
+      setSlugLoading(false);
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "تعذر حفظ المقالة");
     } finally {
@@ -127,7 +171,6 @@ export function NewArticleTab() {
             rows={2}
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
-            onBlur={(e) => void generateSlug(e.target.value)}
           />
         </div>
         <div className="space-y-1">
@@ -139,15 +182,31 @@ export function NewArticleTab() {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-[12px] text-muted-foreground">الرابط (Slug — إنجليزي)</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-[12px] text-muted-foreground">الرابط (Slug — إنجليزي)</label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[11.5px]"
+              disabled={slugLoading || !form.title.trim()}
+              onClick={() => {
+                slugTouchedRef.current = false;
+                void generateSlug(form.title.trim());
+              }}
+            >
+              {slugLoading ? "بيترجم العنوان..." : "توليد تلقائي من العنوان"}
+            </Button>
+          </div>
           <Input
             dir="ltr"
-            disabled={slugLoading}
-            placeholder={slugLoading ? "بيترجم العنوان للإنجليزي..." : undefined}
             value={form.slug}
             onChange={(e) => {
-              setSlugTouched(true);
-              setForm({ ...form, slug: sanitizeSlug(e.target.value) });
+              // Typing takes over from auto-generation: drop any request still in flight.
+              slugTouchedRef.current = true;
+              slugRequestRef.current++;
+              setSlugLoading(false);
+              setForm({ ...form, slug: sanitizeSlugInput(e.target.value) });
             }}
           />
           <p dir="ltr" className="text-[11.5px] text-muted-foreground">
