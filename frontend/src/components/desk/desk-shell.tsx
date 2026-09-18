@@ -467,7 +467,7 @@ function DeskHeader() {
     user,
     signOut,
     openMarket,
-    setManualOpen,
+    openManual,
     reload,
     lastPriceSync,
     priceError,
@@ -709,7 +709,7 @@ function DeskHeader() {
               {screenshotsHint && <TooltipContent>{screenshotsHint}</TooltipContent>}
             </Tooltip>
           </TooltipProvider>
-          <Button size="sm" variant="outline" onClick={() => setManualOpen(true)}>
+          <Button size="sm" variant="outline" onClick={() => openManual()}>
             <PencilLine className="size-4" />
             إدخال يدوي
           </Button>

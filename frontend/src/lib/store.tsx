@@ -105,6 +105,10 @@ type DeskValue = {
   openMarket: (focus: "market" | "cash" | null) => void;
   manualOpen: boolean;
   setManualOpen: (open: boolean) => void;
+  /** Which tab the manual-entry dialog shows when it opens — see openManual. */
+  manualTab: "edit" | "new";
+  /** Opens the manual-entry dialog on the given tab ("edit" unless asked for "new" — logging a trade). */
+  openManual: (tab?: "edit" | "new") => void;
 };
 
 const DeskContext = createContext<DeskValue | null>(null);
@@ -132,6 +136,11 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [marketFocus, setMarketFocus] = useState<"market" | "cash" | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [manualTab, setManualTab] = useState<"edit" | "new">("edit");
+  const openManual = useCallback((tab: "edit" | "new" = "edit") => {
+    setManualTab(tab);
+    setManualOpen(true);
+  }, []);
 
   const rowsRef = useRef<Row[]>([]);
   rowsRef.current = rows;
@@ -454,6 +463,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     openMarket: setMarketFocus,
     manualOpen,
     setManualOpen,
+    manualTab,
+    openManual,
   };
 
   return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;

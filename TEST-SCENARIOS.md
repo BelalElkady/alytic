@@ -520,6 +520,13 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 **POS-01 — Empty state** · P2
 - Expect: "مفيش مراكز مفتوحة" with a hint pointing at إدخال يدوي → إدخال صفقة جديدة or the screenshot upload.
 
+**POS-01b — Log-a-trade reminder** · P2
+- Steps: open الأسهم with at least one open position.
+- Expect: a highlighted notice at the top — "سجّل أي صفقة جديدة — شراء أو بيع — أول ما
+  تنفّذها" — explaining that recommendations are built on the positions and cash recorded
+  here. It has no dismiss button and stays on every visit. "سجّل صفقة" opens إدخال يدوي
+  already on the "صفقة جديدة" tab, whereas the header's "إدخال يدوي" still opens on "تعديل".
+
 **POS-02 — A position renders completely** · P1
 - Expect: code, company name, share count at average cost, live price, day change %,
   a recommendation badge, the price rail, and five stats — قيمة الشراء, القيمة السوقية,

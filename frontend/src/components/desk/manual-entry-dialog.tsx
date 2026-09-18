@@ -36,7 +36,7 @@ type Draft = Record<string, { shares: string; avgCost: string; stop: string; tar
  * stop and target, and past trades) and "صفقة جديدة" logs a new executed trade.
  */
 export function ManualEntryDialog() {
-  const { manualOpen, setManualOpen, rows, reload, pf } = useDesk();
+  const { manualOpen, setManualOpen, manualTab, rows, reload, pf } = useDesk();
   const [tab, setTab] = useState<"edit" | "new">("edit");
   // Bumped after a trade is logged so the new-trade form comes back empty for the next one.
   const [newTradeKey, setNewTradeKey] = useState(0);
@@ -48,10 +48,15 @@ export function ManualEntryDialog() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Always reopen on the edit tab — kept apart from the effect below, which
+  // Reopen on the tab that was asked for ("edit" for the header button, "new"
+  // for the log-a-trade reminder) — kept apart from the effect below, which
   // reruns whenever the rows reload and must not bounce the user off "new".
+  // manualTab is set in the same batch as manualOpen (see openManual), so this
+  // reads the fresh value and needs no dependency on it: a later change to it
+  // while the dialog is open must not switch tabs under the user.
   useEffect(() => {
-    if (manualOpen) setTab("edit");
+    if (manualOpen) setTab(manualTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manualOpen]);
 
   useEffect(() => {

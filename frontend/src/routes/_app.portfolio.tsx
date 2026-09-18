@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, Trash2 } from "lucide-react";
+import { PencilLine, Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
 import {
@@ -22,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -201,6 +202,36 @@ function useStockReview(code: string, style: StyleKey, positionKey: string) {
   return { verdict: saved?.verdict ?? null, verdictAt: saved?.at ?? null, loading, error, request };
 }
 
+/**
+ * Standing reminder at the top of the dashboard. Nothing here is fed by the
+ * broker: positions, average cost and cash only change when the user records
+ * a trade, and every recommendation is computed from them — so an executed
+ * buy or sell that never gets logged quietly turns the analysis into advice
+ * about a portfolio the user no longer has. Deliberately not dismissible: the
+ * cost of forgetting is a wrong recommendation, not an annoyance. The button
+ * lands straight on the "صفقة جديدة" tab.
+ */
+function TradeReminder() {
+  const { openManual } = useDesk();
+
+  return (
+    <Alert className="flex flex-col gap-3 border-primary/40 bg-primary/10 sm:flex-row sm:items-center sm:justify-between">
+      <AlertDescription className="flex items-start gap-2.5 text-[13px] leading-relaxed">
+        <PencilLine className="mt-0.5 size-4 shrink-0" />
+        <span>
+          <span className="font-semibold">سجّل أي صفقة جديدة — شراء أو بيع — أول ما تنفّذها.</span>{" "}
+          التحليل والتوصيات بتتحسب على المراكز والكاش المسجّلين هنا بس، فأي صفقة نفّذتها عند السمسار
+          ومسجّلتهاش هتخلّي التوصية تتبني على أرقام قديمة.
+        </span>
+      </AlertDescription>
+      <Button size="sm" className="shrink-0" onClick={() => openManual("new")}>
+        <PencilLine className="size-4" />
+        سجّل صفقة
+      </Button>
+    </Alert>
+  );
+}
+
 function PositionsPage() {
   const { rows, loading, error, reload, openDetail, pf, aiAvailable, user } = useDesk();
   const { style } = useActiveInvestStyle(pf?.trades);
@@ -298,6 +329,8 @@ function PositionsPage() {
 
   return (
     <div className="space-y-4">
+      <TradeReminder />
+
       <div className="space-y-2">
         {alerts.length ? (
           alerts.map((alert) => (
