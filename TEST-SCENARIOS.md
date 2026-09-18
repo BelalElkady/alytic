@@ -125,8 +125,21 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 
 **PUB-10 — Blog index** · P2
 - Steps: open `/blog`.
-- Expect: published posts as cards (title, dek, image, date). With none published,
-  the empty state "لسه مفيش مقالات منشورة" — never an endless spinner.
+- Expect: published posts as cards (title, excerpt, image, date like "19 سبتمبر 2026"),
+  9 per page. A post with no dek shows its meta description as the excerpt. With none
+  published, the empty state "لسه مفيش مقالات منشورة" — never an endless spinner.
+
+**PUB-10b — Blog pagination** · P2
+- Pre: more than 9 published posts.
+- Steps: open `/blog`, then follow "التالي", a page number, and "السابق".
+- Expect: the URL becomes `/blog?page=N` (page 1 is plain `/blog`); each page shows the
+  next 9 posts with none repeated; the current page is highlighted and "السابق" /
+  "التالي" are disabled on the first / last page; "صفحة N من M" sits under the pager;
+  with many pages the list collapses to 1 … 4 5 6 … 12. The pager is absent with 9
+  posts or fewer.
+- Also: `/blog?page=99` (past the end) redirects to the last page, and `?page=abc`,
+  `?page=0` or `?page=-2` show the first page. Each page has its own title
+  ("… — الصفحة 2 — EGXpert") and canonical URL.
 
 **PUB-11 — Blog post page** · P2
 - Steps: open a post from the index.

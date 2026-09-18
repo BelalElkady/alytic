@@ -736,16 +736,38 @@ export async function countBlogPosts(status) {
   return count ?? 0;
 }
 
-/** Newest published posts first — for the public /blog list and the header ticker. */
-export async function listPublishedBlogPosts({ limit = 20 } = {}) {
-  const { data, error } = await supabase
+/**
+ * One page of the newest published posts, plus the total across every page —
+ * for the public /blog list (paged), the landing strip and the header ticker
+ * (both just the first page). `slug` is the tie-break so posts sharing a
+ * published_at can't swap between pages and show up twice or not at all.
+ */
+export async function listPublishedBlogPosts({ limit = 20, offset = 0 } = {}) {
+  const { data, error, count } = await supabase
     .from('blog_posts')
-    .select('slug, title, dek, meta_description, tags, image_thumb_url, published_at')
+    .select('slug, title, dek, meta_description, tags, image_thumb_url, published_at', { count: 'exact' })
     .eq('status', 'published')
     .order('published_at', { ascending: false })
-    .limit(limit);
+    .order('slug', { ascending: true })
+    .range(offset, offset + limit - 1);
+  if (error?.code === 'PGRST103') {
+    // The offset is past the last post (a stale or hand-typed ?page=). PostgREST
+    // refuses the range outright, so an empty page still needs its total from
+    // a separate count for the caller to know where the real last page is.
+    const total = await countPublishedBlogPosts();
+    return { posts: [], total };
+  }
   if (error) throw new Error(`listPublishedBlogPosts: ${error.message}`);
-  return data;
+  return { posts: data, total: count ?? data.length };
+}
+
+async function countPublishedBlogPosts() {
+  const { count, error } = await supabase
+    .from('blog_posts')
+    .select('slug', { count: 'exact', head: true })
+    .eq('status', 'published');
+  if (error) throw new Error(`countPublishedBlogPosts: ${error.message}`);
+  return count ?? 0;
 }
 
 /** Every published slug, for /sitemap.xml — unlike listPublishedBlogPosts above, no cap. */

@@ -46,13 +46,19 @@ async function fromBackend<T>(
   }
 }
 
-export const getBlogPosts = createServerFn({ method: "GET" }).handler(async () => {
-  const { data, error } = await fromBackend<{ posts: BlogPostSummary[] }>(
-    "/api/blog?limit=30",
-    "تعذر تحميل المقالات",
-  );
-  return { posts: data?.posts ?? null, error };
-});
+/** Articles per page on /blog — three full rows of the three-column grid. */
+export const BLOG_PAGE_SIZE = 9;
+
+/** One page (1-based) of the published posts, plus how many exist in total so the route can build the pager. */
+export const getBlogPosts = createServerFn({ method: "GET" })
+  .inputValidator((page: number) => page)
+  .handler(async ({ data: page }) => {
+    const { data, error } = await fromBackend<{ posts: BlogPostSummary[]; total: number }>(
+      `/api/blog?limit=${BLOG_PAGE_SIZE}&page=${page}`,
+      "تعذر تحميل المقالات",
+    );
+    return { posts: data?.posts ?? null, total: data?.total ?? 0, error };
+  });
 
 export const getBlogPost = createServerFn({ method: "GET" })
   .inputValidator((slug: string) => slug)

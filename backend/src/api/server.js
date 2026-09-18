@@ -270,8 +270,14 @@ app.post('/api/contact', emailActionLimiter, wrap(async (req, res) => {
 // for how drafts are written and src/db.js for the storage helpers.
 app.get('/api/blog', wrap(async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
-  const posts = await listPublishedBlogPosts({ limit });
+  // 1-based page of `limit` posts; callers that send no page (the landing strip,
+  // the ticker) keep getting the newest `limit`.
+  const page = Math.max(1, Math.floor(Number(req.query.page)) || 1);
+  const { posts, total } = await listPublishedBlogPosts({ limit, offset: (page - 1) * limit });
   res.json({
+    total,
+    page,
+    pageSize: limit,
     // `dek` is the card's excerpt. Articles written by hand from the admin
     // "مقالة جديدة" form have no dek (it's optional there) but always have a
     // meta description, so fall back to that instead of showing a bare card.
