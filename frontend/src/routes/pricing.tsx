@@ -181,6 +181,14 @@ function PricingPage() {
                   <>
                     <span className="num text-4xl font-bold tracking-tight">{fmt(price)}</span>
                     <span className="pb-1 text-[12.5px] text-muted-foreground">جنيه / شهر</span>
+                    {yearlySaving > 0 && plan.monthlyPrice !== null && (
+                      <s
+                        aria-label={`السعر الشهري ${fmt(plan.monthlyPrice)} جنيه`}
+                        className="num ms-auto pb-1 text-xl font-semibold text-muted-foreground"
+                      >
+                        {fmt(plan.monthlyPrice)}
+                      </s>
+                    )}
                   </>
                 )}
               </p>
