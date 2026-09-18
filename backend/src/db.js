@@ -740,7 +740,7 @@ export async function countBlogPosts(status) {
 export async function listPublishedBlogPosts({ limit = 20 } = {}) {
   const { data, error } = await supabase
     .from('blog_posts')
-    .select('slug, title, dek, tags, image_thumb_url, published_at')
+    .select('slug, title, dek, meta_description, tags, image_thumb_url, published_at')
     .eq('status', 'published')
     .order('published_at', { ascending: false })
     .limit(limit);

@@ -46,4 +46,24 @@ export const arDay = (iso?: string | null) => {
   });
 };
 
-export const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));
+/**
+ * A publish timestamp as "19 سبتمبر 2026", in Cairo time. Spelled-out month on
+ * purpose: the numeric `ar-EG` form ("19/9/2026") carries invisible RTL marks
+ * between the numbers that scramble into "192026/9/" as soon as the text sits
+ * in a left-to-right box (the `.num` class). Cairo time is pinned so the
+ * server-rendered page and the browser agree on the day instead of each using
+ * its own timezone.
+ */
+export const arPublishedDate = (iso?: string | null) => {
+  const date = iso ? new Date(iso) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("ar-EG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    numberingSystem: "latn",
+    timeZone: "Africa/Cairo",
+  });
+};
+
+export const clamp =(value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));

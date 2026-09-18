@@ -3,6 +3,7 @@ import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-ro
 import { ErrorState } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
 import { getBlogPost, type BlogContentBlock, type BlogImage, type BlogPost } from "@/lib/blog";
+import { arPublishedDate } from "@/lib/format";
 import { canonical, OG_LOGO_URL, SITE_URL } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/$slug")({
@@ -180,9 +181,7 @@ function BlogPostPage() {
           {post.dek && (
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{post.dek}</p>
           )}
-          <p className="num mt-2 text-[11.5px] text-muted-foreground">
-            {new Date(post.publishedAt).toLocaleDateString("ar-EG", { numberingSystem: "latn" })}
-          </p>
+          <p className="mt-2 text-[11.5px] text-muted-foreground">{arPublishedDate(post.publishedAt)}</p>
           <div className="mt-8">
             <BlogContent blocks={post.content} />
           </div>

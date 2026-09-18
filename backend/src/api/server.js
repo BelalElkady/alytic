@@ -272,7 +272,10 @@ app.get('/api/blog', wrap(async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
   const posts = await listPublishedBlogPosts({ limit });
   res.json({
-    posts: posts.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek, tags: p.tags, imageUrl: p.image_thumb_url, publishedAt: p.published_at })),
+    // `dek` is the card's excerpt. Articles written by hand from the admin
+    // "مقالة جديدة" form have no dek (it's optional there) but always have a
+    // meta description, so fall back to that instead of showing a bare card.
+    posts: posts.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek || p.meta_description || null, tags: p.tags, imageUrl: p.image_thumb_url, publishedAt: p.published_at })),
   });
 }));
 

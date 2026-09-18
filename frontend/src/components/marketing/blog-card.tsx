@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
 import { Badge } from "@/components/ui/badge";
+import { arPublishedDate } from "@/lib/format";
 
 export type BlogPostSummary = {
   slug: string;
@@ -37,9 +38,7 @@ export function BlogCard({ post }: { post: BlogPostSummary }) {
         {post.dek && (
           <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{post.dek}</p>
         )}
-        <p className="num mt-4 text-[11.5px] text-muted-foreground">
-          {new Date(post.publishedAt).toLocaleDateString("ar-EG", { numberingSystem: "latn" })}
-        </p>
+        <p className="mt-4 text-[11.5px] text-muted-foreground">{arPublishedDate(post.publishedAt)}</p>
       </div>
     </Link>
   );
