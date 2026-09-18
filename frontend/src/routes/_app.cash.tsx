@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { api, post } from "@/lib/api";
 import { fmt, int, pct, tone } from "@/lib/format";
+import { INVEST_STYLES, STYLE_RULES, useActiveInvestStyle } from "@/lib/invest-style";
 import { SITE_URL } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
@@ -50,6 +51,137 @@ type FavoriteRow = {
   score?: number;
   signal?: { ar?: string };
 };
+
+// These mirror what backend/src/api/server.js (runScan) and config/rules.js
+// actually do, so the explanation below can't promise more than the plan
+// delivers. The per-style numbers (risk per trade, max position, minimum
+// reward/risk) are read live from STYLE_RULES instead of being copied here.
+const CASH_RESERVE_PCT = 5; // sizing.minCashBufferPct — held back from the cash before anything is spread
+const MAX_PICKS = 6; // MAX_RECOMMENDATIONS in runScan
+const MIN_TICKET_EGP = 5000; // MIN_TICKET_EGP in runScan — fewer names when the cash is small
+const MAX_SECTOR_PCT = 30; // sizing.maxSectorPct
+const MAX_DAILY_TURNOVER_PCT = 10; // liquidity.maxPositionVsDailyTurnover
+
+/**
+ * A plain-language account of exactly what "حلل استخدام الكاش" does, from the
+ * cash you type in to the plan it hands back, and — as importantly — what it
+ * does not do. Collapsed by default so it doesn't crowd the page, but sits
+ * right under the button it explains. A native <details> keeps it keyboard-
+ * and screen-reader-accessible without another dependency.
+ */
+function CashAnalysisExplainer() {
+  const { pf } = useDesk();
+  const { style } = useActiveInvestStyle(pf?.trades);
+  const rules = STYLE_RULES[style];
+  const styleLabel = INVEST_STYLES.find((item) => item.key === style)?.label ?? "متوسط المدى";
+
+  const steps: { title: string; body: React.ReactNode }[] = [
+    {
+      title: "بيسيب احتياطي",
+      body: (
+        <>
+          بيحجز <b className="num">{CASH_RESERVE_PCT}%</b> من الكاش المسجّل عندك كاحتياطي مبيتوزّعش. الباقي هو
+          اللي بيتحلل ويتوزّع.
+        </>
+      ),
+    },
+    {
+      title: "بيفحص الأسهم",
+      body: "بيحلل فنيًا كل الأسهم اللي التطبيق بيتابعها (أو مؤشر واحد لو اخترته من الأزرار فوق): الاتجاه والزخم والدعم والمقاومة والسيولة، ويدي كل سهم تقييم من 100. أسهمك الحالية بتدخل الحساب كمان، بس عشان يعرف كل قطاع واخد كام من محفظتك.",
+    },
+    {
+      title: "بيستبعد اللي مش مناسب",
+      body: (
+        <>
+          بيسيب بس الأسهم اللي: مش موجودة عندك، ودخولها مناسب دلوقتي (شراء فوري أو أمر محدد على تصحيح — مش
+          سهم ممتد فات وقته)، وليها هدف واضح، والهدف بيدفع على الأقل{" "}
+          <b className="num">{fmt(rules.entry.minRiskReward, 1)}</b> ضعف المخاطرة (حسب أسلوبك «{styleLabel}»)،
+          وحجمها حسب القواعد أكبر من صفر.
+        </>
+      ),
+    },
+    {
+      title: "بيرتّب ويختار",
+      body: (
+        <>
+          بيرتّب المرشّحين حسب التقييم والعائد مقابل المخاطرة وقرب الوقف، ويختار لحد{" "}
+          <b className="num">{MAX_PICKS}</b> أسهم — بيفضّل سهم واحد من كل قطاع عشان مايبقاش كله في حتة واحدة.
+          كل ما الكاش يقل عدد الأسهم بيقل، لأنه مبيقسّمش على تذاكر أقل من حوالي{" "}
+          <b className="num">{int(MIN_TICKET_EGP)} ج</b>.
+        </>
+      ),
+    },
+    {
+      title: "بيوزّع الفلوس حسب قوة كل فرصة",
+      body: (
+        <>
+          التوزيع مش بالتساوي: السهم الأقوى ياخد نصيب أكبر. وعدد أسهم كل واحد بيتحدد بأصغر حد من أربعة:
+          ميزانية المخاطرة (<b className="num">{fmt(rules.sizing.riskPerTradePct, 1)}%</b> من رأس المال في
+          الصفقة)، وأقصى وزن للسهم الواحد (<b className="num">{rules.sizing.maxPositionPct}%</b> من محفظتك)،
+          والسيولة (مش أكتر من <b className="num">{MAX_DAILY_TURNOVER_PCT}%</b> من تداوله اليومي)، وحد القطاع (
+          <b className="num">{MAX_SECTOR_PCT}%</b> من المحفظة). سهم نصيبه مايكفيش سهم واحد بيتشال، والفلوس
+          بتتوزّع على الباقي.
+        </>
+      ),
+    },
+    {
+      title: "بيديك خطة جاهزة لكل سهم",
+      body: "سعر الدخول (بأمر محدد)، ووقف الخسارة، والهدف، وعدد الأسهم، والتكلفة، والمتبقي من الكاش بعدها، وأقصى خسارة لو الوقف اتضرب.",
+    },
+    {
+      title: "مراجعة بالذكاء الاصطناعي (لو متاحة)",
+      body: "بتقيّم الخطة نفسها ومتغيّرش فيها رقم: على كل سهم بتقولك اشتري دلوقتي / اشتري على تصحيح / استنى / سيبه، ودرجة ثقة، وتعليق، وهل بيناسب محفظتك، وإيه اللي تراقبه. كل الأرقام بتيجي من الحساب، مش من الذكاء الاصطناعي.",
+    },
+  ];
+
+  return (
+    <details className="group mt-4 rounded-lg border bg-surface">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-[13px] font-semibold marker:hidden [&::-webkit-details-marker]:hidden">
+        تحليل الكاش بيعمل إيه بالظبط؟
+        <span aria-hidden className="text-muted-foreground transition-transform group-open:rotate-180">
+          ▾
+        </span>
+      </summary>
+
+      <div className="space-y-4 border-t px-4 py-4 text-[13px] leading-relaxed">
+        <p>
+          بياخد الكاش المسجّل عندك ويقترحلك تشتري إيه وبكام، على أسهم مش موجودة في محفظتك. كل ده حسابات مباشرة
+          على أسعار وبيانات السوق، مش تخمين.
+        </p>
+
+        <ol className="space-y-3">
+          {steps.map((step, index) => (
+            <li key={step.title} className="flex gap-3">
+              <span className="num mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                {index + 1}
+              </span>
+              <div className="min-w-0">
+                <div className="font-semibold">{step.title}</div>
+                <div className="mt-0.5 text-muted-foreground">{step.body}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        <div className="rounded-md border border-warn/40 bg-warn-soft px-3 py-2.5">
+          <div className="font-semibold">اللي مبيعملوش</div>
+          <ul className="mt-1 list-disc space-y-1 ps-5 text-muted-foreground">
+            <li>
+              مبينفّذش أي أمر ومش متوصّل بالسمسار — إنت اللي بتدخل الأمر عنده، وبعدها سجّل الصفقة من «إدخال
+              يدوي» عشان الكاش والمراكز يتحدّثوا.
+            </li>
+            <li>بيشتغل على الكاش المسجّل هنا، فلو مش محدّثه الأرقام هتطلع غلط.</li>
+            <li>مش توصية مالية مرخّصة — القرار الأخير مسؤوليتك.</li>
+          </ul>
+        </div>
+
+        <p className="text-[12px] text-muted-foreground">
+          فتح التحليل بيخصم محاولة من رصيدك الشهري، ولو فتحته تاني خلال 10 دقايق مبيتحسبش محاولة تانية.
+        </p>
+      </div>
+    </details>
+  );
+}
 
 function CashPage() {
   const { pf, totals, reloadPortfolio, openMarket } = useDesk();
@@ -205,6 +337,8 @@ function CashPage() {
               : `باقي ${cashScansLeft}${cashScansPerMonth && !pf?.credits?.cashScans ? ` من ${cashScansPerMonth}` : ""} ${cashScansLeft === 1 ? "محاولة" : "محاولات"} الشهر ده.`}
           </p>
         )}
+
+        <CashAnalysisExplainer />
       </Panel>
 
       <Panel

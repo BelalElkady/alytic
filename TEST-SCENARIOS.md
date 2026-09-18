@@ -690,6 +690,18 @@ of that dialog.
 - Expect: four distinct advice texts — no cash / قليل / نسبة صحية / عالي — and the
   percentage quoted matches the نسبة الكاش من الإجمالي stat.
 
+**CASH-03b — "تحليل الكاش بيعمل إيه بالظبط؟"** · P2
+- Steps: on الكاش, open the collapsed "تحليل الكاش بيعمل إيه بالظبط؟" section under the
+  "حلل استخدام الكاش" button.
+- Expect: an intro, seven numbered steps (احتياطي 5%, فحص الأسهم, استبعاد, ترتيب واختيار لحد 6,
+  توزيع حسب القوة, خطة لكل سهم, مراجعة الذكاء الاصطناعي), an "اللي مبيعملوش" box (no orders,
+  no broker link, uses the recorded cash, not licensed advice) and the note that opening
+  the analysis costs one monthly attempt, free again for 10 minutes.
+- Also: the numbers that depend on the investment style (minimum reward/risk, risk per
+  trade, max position) follow the active style — مضارب 1.5 / 1% / 10%, متوسط المدى
+  1.8 / 1.5% / 15%, طويل المدى 2.2 / 2% / 20% — and change when the style is changed
+  in الإعدادات.
+
 **CASH-04 — Capital stats are consistent** · P2
 - Expect: value + cash = إجمالي رأس المال, and نسبة الكاش matches that arithmetic.
 
