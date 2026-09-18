@@ -719,18 +719,25 @@ function UsersTab() {
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">رأس المال</TableHead>
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">ربح محقق</TableHead>
                     <TableHead className="min-w-[210px] whitespace-nowrap border-e py-3 text-start">النشاط الاستثماري</TableHead>
+                    <TableHead className="w-[84px] min-w-[84px] whitespace-nowrap border-e py-3 text-start">
+                      <span aria-hidden>#</span>
+                      <span className="sr-only">الرقم والحذف</span>
+                    </TableHead>
                     <TableHead className="min-w-[250px] whitespace-nowrap border-e py-3 text-start">السلوك الاستثماري</TableHead>
                     <TableHead className="min-w-[180px] whitespace-nowrap border-e py-3 text-start">الرصيد</TableHead>
                     <TableHead className="min-w-[170px] whitespace-nowrap border-e py-3 text-start">الاشتراك</TableHead>
-                    <TableHead className="min-w-[140px] whitespace-nowrap border-e py-3 text-start">الحالة</TableHead>
-                    <TableHead className="py-3">
-                      <span className="sr-only">حذف</span>
-                    </TableHead>
+                    <TableHead className="min-w-[140px] whitespace-nowrap py-3 text-start">الحالة</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((row, index) => (
-                    <UserRow key={row.id} row={row} onChanged={load} striped={index % 2 === 1} />
+                    <UserRow
+                      key={row.id}
+                      row={row}
+                      number={index + 1}
+                      onChanged={load}
+                      striped={index % 2 === 1}
+                    />
                   ))}
                 </TableBody>
               </Table>
@@ -751,10 +758,13 @@ function UserRow({
   onChanged: () => void;
   striped: boolean;
 }) {
+  number,
   const pf = row.portfolio;
   const capital = pf ? pf.cash + pf.positionsValue : null;
 
   return (
+  /** 1-based position in the list as currently filtered. */
+  number: number;
     <TableRow className={cn(striped && "bg-muted/30")}>
       <TableCell className="border-e align-top py-3">
         <div className="min-w-0">
@@ -763,6 +773,13 @@ function UserRow({
         </div>
       </TableCell>
       <TableCell className="num border-e align-top py-3 text-right">{row.phone || "—"}</TableCell>
+      {/* First column, so the row number and the delete button are visible without scrolling the wide table sideways. Admin accounts can't be deleted. */}
+      <TableCell className="border-e align-top py-3">
+        <div className="flex items-center gap-1">
+          <span className="num min-w-[2ch] text-[12.5px] font-medium text-muted-foreground">{number}</span>
+          {!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}
+        </div>
+      </TableCell>
       <TableCell className="num border-e align-top py-3 text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
       <TableCell className="num border-e align-top py-3 text-right">
         {row.lastLoginAt
@@ -801,15 +818,12 @@ function UserRow({
       <TableCell className="border-e align-top py-3">
         <SubscriptionCell row={row} onChanged={onChanged} />
       </TableCell>
-      <TableCell className="border-e align-top py-3">
+      <TableCell className="align-top py-3">
         <div className="flex flex-wrap gap-1">
           {row.isAdmin && <Badge>مشرف</Badge>}
           {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
           {row.googleLinked && <Badge variant="secondary">Google</Badge>}
         </div>
-      </TableCell>
-      <TableCell className="align-top py-3">
-        {!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}
       </TableCell>
     </TableRow>
   );
