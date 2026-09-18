@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  PASSWORD, PHONE, goto, loginViaUi, newDeskUser, registerViaUi,
+  PASSWORD, PHONE, chooseInvestStyleViaUi, goto, loginViaUi, newDeskUser, registerViaUi,
   signOutViaUi, uniqueEmail,
 } from "./helpers";
 
@@ -91,6 +91,26 @@ test.describe("authentication", () => {
     await expect(page.getByRole("heading", { name: "فعّل بريدك عشان تبدأ التجربة" })).toBeVisible();
     // The trial is running but not usable, so it must not read as "trial ended".
     await expect(page.getByText("خلصت التجربة المجانية")).toHaveCount(0);
+  });
+
+  test("a new account must pick an investment style before using the desk", async ({ page }) => {
+    await newDeskUser(page, { chooseStyle: false });
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog.getByText("اختار سلوكك الاستثماري")).toBeVisible();
+
+    // Nothing is preselected, so saving is impossible until a card is picked...
+    await expect(dialog.getByRole("button", { name: "حفظ ومتابعة" })).toBeDisabled();
+    // ...and the dialog can't be dismissed around the choice.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+
+    await chooseInvestStyleViaUi(page, "مضارب");
+
+    // The pick is saved on the account, so it is not asked for again.
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByText("سلوكك الاستثماري: مضارب")).toBeVisible();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
   });
 
   test("/login bounces an already signed-in user back to the home page", async ({ page }) => {

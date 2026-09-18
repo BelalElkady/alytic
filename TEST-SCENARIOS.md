@@ -815,22 +815,26 @@ of that dialog.
 **IDX-04 — Load failure** · P3
 - Expect: an error state with a working "حاول تاني".
 
-**SET-01 — Automatic invest style** · P2
-- Steps: open الإعدادات on an account with few trades, then on one with real history.
-- Expect: the notice explains either that there aren't enough trades (defaulting to
-  متوسط المدى) or which style was inferred from the trades.
+**SET-01 — Mandatory style choice** · P1
+- Steps: sign in with an account that has never chosen a style (verified email, phone on
+  record, access active).
+- Expect: a blocking dialog "اختار سلوكك الاستثماري" with three cards (مضارب / متوسط المدى /
+  طويل المدى) and nothing preselected. "حفظ ومتابعة" stays disabled until a card is picked,
+  and Escape / clicking outside do not close it. An account whose trade history points to a
+  style shows "مقترح من صفقاتك" on that card. After saving, the desk opens and the dialog
+  does not come back on reload or on another device.
+- Also: an account with no access (trial ended, or email not yet confirmed) sees its
+  subscribe/verify wall instead of this dialog, and a second person signing in on the same
+  browser is asked too rather than inheriting the previous person's pick.
 
-**SET-02 — Pin a style manually** · P1
-- Steps: click مضارب.
-- Expect: toast "تم تفعيل قواعد …", the card marked active, the notice switching to
-  "مثبّت يدويًا", and the header badge losing "(تلقائي)".
-
-**SET-03 — Back to automatic** · P2
-- Steps: click "رجّعه تلقائي".
-- Expect: a toast and the inferred style in force again.
+**SET-02 — Change the style later** · P1
+- Steps: in الإعدادات click مضارب.
+- Expect: toast "تم تفعيل قواعد …" and the card marked active; there is no "رجّعه تلقائي"
+  — the choice can be changed but never cleared. If trade history points to a different
+  style, a notice mentions it without overriding the pick.
 
 **SET-04 — The style choice survives a reload** · P2
-- Expect: a pinned style is still pinned after a refresh.
+- Expect: the chosen style is still in force after a refresh.
 
 **SET-05 — Reset requires two clicks** · P1
 - Steps: click "مسح كل البيانات" once.

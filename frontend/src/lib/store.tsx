@@ -11,6 +11,7 @@ import {
 
 import { ApiError, api, post } from "./api";
 import {
+  clearInvestStyle,
   explicitInvestStyle,
   isStyleKey,
   setInvestStyle,
@@ -355,13 +356,22 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   // Registration no longer logs the caller in directly (the backend never
   // reveals whether the email was already taken, so it can't hand back a
   // session for either case) — only "login" actually establishes one here.
+  // The style pick lives in localStorage, which belongs to the browser, not the
+  // account — so whoever signs in starts from a clean slate and gets the saved
+  // server copy adopted (see the sync effect above) or, with none, is asked to
+  // choose. Otherwise a second person on a shared device would silently inherit
+  // the previous person's pick and skip the mandatory choice.
   const signIn = useCallback(async (mode: "login" | "register", body: Record<string, unknown>) => {
     const result = await post(`/api/auth/${mode}`, body);
-    if (mode === "login") setUser(result.user);
+    if (mode === "login") {
+      clearInvestStyle();
+      setUser(result.user);
+    }
   }, []);
 
   const signInWithGoogle = useCallback(async (credential: string) => {
     const result = await post("/api/auth/google", { credential });
+    clearInvestStyle();
     setUser(result.user);
   }, []);
 

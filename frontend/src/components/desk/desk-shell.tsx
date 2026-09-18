@@ -48,9 +48,15 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
+import { api, post } from "@/lib/api";
 import { arDay, int, signed, tone } from "@/lib/format";
-import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
+import {
+  INVEST_STYLES,
+  isStyleKey,
+  setInvestStyle,
+  useActiveInvestStyle,
+  type StyleKey,
+} from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -97,6 +103,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <DeskHeader />
       <BlogTicker />
       <RequirePhoneDialog />
+      <RequireInvestStyleDialog />
       <VerifyEmailBanner />
       <ExpiryBanner />
       {!locked && <HeroBar />}
@@ -323,6 +330,111 @@ function RequirePhoneDialog() {
             </Button>
           </AlertDialogFooter>
         </form>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/**
+ * Every account has to pick its investment style before using the desk — it
+ * sets the stop, profit-taking and sizing rules every recommendation is judged
+ * by, so guessing "medium" for someone who never chose is worse than asking.
+ * Blocks like RequirePhoneDialog (no cancel, no Escape / outside-click dismiss).
+ *
+ * "Has chosen" is the copy saved on the server (portfolio.settings.investStyle),
+ * not the browser's: localStorage is shared by everyone who signs in on this
+ * device, so trusting it would let a second person inherit the first one's
+ * pick without ever being asked. The store clears the local copy on login, and
+ * a server copy is adopted back into it once the portfolio loads — so `auto`
+ * (no local pick) with nothing saved on the server means "never chose".
+ *
+ * Held back until there is something to protect: the phone dialog goes first,
+ * and an account with no access (trial ended, email unconfirmed) sees the
+ * subscribe/verify wall instead — the recommendations the style feeds are
+ * locked for it anyway, and asking there would only stand between it and
+ * paying.
+ */
+function RequireInvestStyleDialog() {
+  const { user, pf } = useDesk();
+  const { auto, inferred } = useActiveInvestStyle(pf?.trades);
+  const [picked, setPicked] = useState<StyleKey | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // No `pf` yet means the portfolio hasn't loaded, so whether a style is
+  // saved isn't known — showing the dialog now would flash it at users who did choose.
+  if (!user || !user.phone || user.hasAccess === false || !pf) return null;
+  if (!auto || isStyleKey(pf.settings?.investStyle)) return null;
+
+  const confirm = async () => {
+    if (!picked) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Server first: the dialog only closes once the choice is really saved,
+      // so a failed request can't leave the account "chosen" locally only.
+      await post("/api/settings/style", { style: picked });
+      setInvestStyle(picked);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "تعذر حفظ اختيارك");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AlertDialog open onOpenChange={() => {}}>
+      <AlertDialogContent>
+        <AlertDialogHeader className="text-start">
+          <AlertDialogTitle>اختار سلوكك الاستثماري</AlertDialogTitle>
+          <AlertDialogDescription className="leading-relaxed">
+            اختيارك بيحدد قواعد التوصيات: مسافة وقف الخسارة، وجني الأرباح، وحجم الصفقة. تقدر تغيّره
+            في أي وقت من الإعدادات.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div role="radiogroup" aria-label="السلوك الاستثماري" className="grid gap-2">
+          {INVEST_STYLES.map((item) => {
+            const active = picked === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setPicked(item.key)}
+                className={cn(
+                  "rounded-lg border px-4 py-3 text-start transition-colors",
+                  active
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : "border-border bg-surface hover:bg-muted",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[14px] font-semibold">
+                    {item.label} <span className="font-normal text-muted-foreground">({item.horizon})</span>
+                  </span>
+                  {inferred === item.key && (
+                    <Badge variant="outline" className="whitespace-nowrap text-[11px]">
+                      مقترح من صفقاتك
+                    </Badge>
+                  )}
+                </div>
+                <div className="mt-0.5 text-[12.5px] text-muted-foreground">{item.description}</div>
+              </button>
+            );
+          })}
+        </div>
+        {error && (
+          <p role="alert" className="rounded-md bg-down-soft px-3 py-2 text-[13px] text-down">
+            {error}
+          </p>
+        )}
+        <AlertDialogFooter className="sm:justify-start">
+          <Button type="button" onClick={() => void confirm()} disabled={!picked || busy}>
+            {busy && <Spinner />}
+            حفظ ومتابعة
+          </Button>
+        </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );

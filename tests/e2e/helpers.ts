@@ -90,14 +90,33 @@ export async function loginViaUi(page: Page, email: string, password = PASSWORD)
 }
 
 /**
- * The full journey a new user takes: register, confirm the email, then sign in
- * to the desk. Pass { verified: false } for the account as it is straight
- * after registering — trial locked behind the "confirm your email" wall.
+ * Answer the mandatory "اختار سلوكك الاستثماري" dialog a new account meets on
+ * its first visit to the desk. It blocks everything behind it, so any spec
+ * that wants to use the desk has to get past it.
  */
-export async function newDeskUser(page: Page, { verified = true }: { verified?: boolean } = {}) {
+export async function chooseInvestStyleViaUi(page: Page, label = "متوسط المدى") {
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog.getByText("اختار سلوكك الاستثماري")).toBeVisible();
+  await dialog.getByRole("radio", { name: new RegExp(label) }).click();
+  await dialog.getByRole("button", { name: "حفظ ومتابعة" }).click();
+  await expect(dialog).toBeHidden();
+}
+
+/**
+ * The full journey a new user takes: register, confirm the email, sign in to
+ * the desk and pick an investment style. Pass { verified: false } for the
+ * account as it is straight after registering — trial locked behind the
+ * "confirm your email" wall (no style dialog there), or { chooseStyle: false }
+ * to stop with the style dialog still open.
+ */
+export async function newDeskUser(
+  page: Page,
+  { verified = true, chooseStyle = true }: { verified?: boolean; chooseStyle?: boolean } = {},
+) {
   const email = await registerViaUi(page);
   if (verified) await markEmailVerifiedInDb(email);
   await loginViaUi(page, email);
+  if (verified && chooseStyle) await chooseInvestStyleViaUi(page);
   return email;
 }
 

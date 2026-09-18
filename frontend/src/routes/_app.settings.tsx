@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { post } from "@/lib/api";
 import {
-  clearInvestStyle,
   INVEST_STYLES,
   setInvestStyle,
   useActiveInvestStyle,
@@ -152,18 +151,12 @@ function SettingsPage() {
   const { reload, pf, user, updateName, updatePhone } = useDesk();
   const [armed, setArmed] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const { style, auto, inferred } = useActiveInvestStyle(pf?.trades);
+  const { style, inferred } = useActiveInvestStyle(pf?.trades);
 
   const chooseStyle = (next: StyleKey) => {
     setInvestStyle(next);
     void post("/api/settings/style", { style: next }).catch(() => {});
     toast.success(`تم تفعيل قواعد ${INVEST_STYLES.find((item) => item.key === next)!.label}`);
-  };
-
-  const resetToAuto = () => {
-    clearInvestStyle();
-    void post("/api/settings/style", { style: null }).catch(() => {});
-    toast.success("رجّعنا الأسلوب لسلوكك التلقائي في التداول");
   };
 
   const resetAll = async () => {
@@ -247,24 +240,12 @@ function SettingsPage() {
         title="اختار سلوكك الاستثماري لتحديد قواعد التوصيات"
         description="الاختيار بيغيّر قواعد التوصيات وتوصية كل سهم في صفحة المراكز فورًا."
       >
-        {auto ? (
+        {/* The choice itself is mandatory (see RequireInvestStyleDialog), so there is no "back to auto" —
+            the trade-history reading is only offered as a hint next to the pick. */}
+        {inferred && inferred !== style && (
           <Notice tone="info" className="mb-3">
-            {inferred
-              ? `الأسلوب دلوقتي مستنتج تلقائيًا من صفقاتك السابقة: ${
-                  INVEST_STYLES.find((item) => item.key === inferred)!.label
-                }. اختار سلوك من تحت لو عايز تثبّته بدل الاستنتاج التلقائي.`
-              : "مفيش صفقات كفاية لسه لاستنتاج أسلوبك تلقائيًا، فمُفعّل حاليًا أسلوب متوسط المدى كافتراضي. اختار سلوك من تحت أو خلّي التطبيق يستنتجه لما تتراكم صفقاتك."}
-          </Notice>
-        ) : (
-          <Notice tone="info" className="mb-3">
-            سلوكك الاستثماري مثبّت يدويًا دلوقتي، مش مستنتج من سلوكك في التداول.{" "}
-            <button
-              type="button"
-              onClick={resetToAuto}
-              className="font-semibold underline underline-offset-2"
-            >
-              رجّعه تلقائي
-            </button>
+            صفقاتك السابقة بتشير لأسلوب {INVEST_STYLES.find((item) => item.key === inferred)!.label}،
+            بس اختيارك أنت هو اللي بيحدد القواعد.
           </Notice>
         )}
         <div className="grid gap-2 sm:grid-cols-3">
