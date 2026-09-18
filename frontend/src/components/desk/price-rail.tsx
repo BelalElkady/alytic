@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { fmt } from "@/lib/format";
 import { mergedTargetPrice } from "@/lib/targets";
@@ -19,7 +19,7 @@ type Mark = { value: number; label: string; dot: string; text: string };
 /**
  * Price vs stop / cost / targets, on one line.
  * Same four levels the previous rail showed, labelled with pills under the
- * rail — or above it, when two would otherwise overlap on a narrow screen.
+ * rail — or above it, when two would otherwise overlap below.
  *
  * `stop` is deliberately the only stop shown: it is the one the active
  * style's mechanical rules actually enforce (session-close trailing stop —
@@ -37,6 +37,22 @@ export function PriceRail({
   className,
   compact = false,
 }: RailProps) {
+  // The rail's rendered width, so label overlap can be judged in pixels rather
+  // than as a fixed share of a rail that is 300px wide on a phone and 1000px on
+  // a desktop card. A callback ref (state) rather than useRef: the component
+  // can render null first and mount the rail later. 0 until measured, which
+  // falls back to percentage thresholds.
+  const [railEl, setRailEl] = useState<HTMLDivElement | null>(null);
+  const [railWidth, setRailWidth] = useState(0);
+  useEffect(() => {
+    if (!railEl) return;
+    const update = () => setRailWidth(railEl.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(railEl);
+    return () => observer.disconnect();
+  }, [railEl]);
+
   const lows = [stop, cost, price].filter((v): v is number => v != null);
   const highs = [target, longTarget, price].filter((v): v is number => v != null);
   if (!lows.length || !highs.length || price == null) return null;
@@ -128,21 +144,33 @@ export function PriceRail({
       : `linear-gradient(to right, var(--down-soft) 0%, var(--down-soft) ${at(stop ?? lo)}, var(--up-soft) ${at(stop ?? lo)}, var(--up-soft) 100%)`;
 
   // Pills closer than this (in % of the rail) would overlap. A pill that
-  // would collide with its neighbour below the rail moves above it instead —
-  // unless it would hit the "now" price tag or another pill up there too, in
-  // which case it drops to a second row below as a last resort.
+  // can't sit directly below the rail goes above it instead — never onto a
+  // second row below. Right above the rail it shares a row with the "now"
+  // price tag, so when it would actually overlap that tag (or another pill
+  // up there) it moves to a raised row above the tag ("aboveHigh").
   const thresholdPct = 14;
   const priceAt = parseFloat(at(price));
+  // Rough rendered widths in px (11px text): a pill is its longer line — the
+  // dot + label or the number — plus padding; the tag is "الآن" + the number.
+  const pillWidth = (m: Mark) =>
+    Math.max(12 + m.label.replace(/\s[\d.,]+$/, "").length * 6.3, fmt(m.value).length * 6.5) + 26;
+  const tagWidth = 42 + fmt(price).length * 6.5;
+  // Centre-to-centre distance (in % of the rail) two things of these widths
+  // need to clear each other, with a small gap. Before the rail is measured,
+  // the old fixed threshold stands in.
+  const clearancePct = (a: number, b: number) =>
+    railWidth > 0 ? (((a + b) / 2 + 6) / railWidth) * 100 : thresholdPct;
   const sorted = marks
-    .map((m) => ({ key: m.label, at: parseFloat(at(m.value)) }))
+    .map((m) => ({ key: m.label, at: parseFloat(at(m.value)), width: pillWidth(m) }))
     .sort((a, b) => a.at - b.at);
-  const placementByKey = new Map<string, "below" | "above" | "second">();
+  const placementByKey = new Map<string, "below" | "above" | "aboveHigh">();
   let lastBelow = -Infinity;
   let lastAbove = -Infinity;
   for (const item of sorted) {
     const clashBelow = item.at - lastBelow < thresholdPct;
     const clashAbove =
-      item.at - lastAbove < thresholdPct || Math.abs(item.at - priceAt) < thresholdPct;
+      item.at - lastAbove < clearancePct(item.width, item.width) ||
+      Math.abs(item.at - priceAt) < clearancePct(item.width, tagWidth);
     if (!clashBelow) {
       placementByKey.set(item.key, "below");
       lastBelow = item.at;
@@ -150,12 +178,12 @@ export function PriceRail({
       placementByKey.set(item.key, "above");
       lastAbove = item.at;
     } else {
-      placementByKey.set(item.key, "second");
+      placementByKey.set(item.key, "aboveHigh");
     }
   }
   const placement = marks.map((m) => placementByKey.get(m.label) ?? "below");
-  const anyAbove = placement.includes("above");
-  const needsSecondRow = placement.includes("second");
+  const anyAboveHigh = placement.includes("aboveHigh");
+  const anyAbove = anyAboveHigh || placement.includes("above");
 
   const pill = (mark: Mark, style: CSSProperties) => {
     const labelText = mark.label.replace(/\s[\d.,]+$/, "");
@@ -179,15 +207,25 @@ export function PriceRail({
     );
   };
   const pillsBelow = marks.flatMap((mark, i) =>
-    placement[i] === "above" ? [] : [pill(mark, { top: placement[i] === "second" ? "3rem" : 0 })],
+    placement[i] === "below" ? [pill(mark, { top: 0 })] : [],
   );
   const pillsAbove = marks.flatMap((mark, i) =>
-    placement[i] === "above" ? [pill(mark, { bottom: "calc(100% + 10px)" })] : [],
+    placement[i] === "above"
+      ? [pill(mark, { bottom: "calc(100% + 10px)" })]
+      : placement[i] === "aboveHigh"
+        ? // Clear of the "now" tag, which sits about 14-40px above the rail.
+          [pill(mark, { bottom: "calc(100% + 60px)" })]
+        : [],
   );
 
   const railLine = (
-    <div className={cn("relative", !compact && (anyAbove ? "pt-[4.25rem]" : "pt-10"))}>
-      <div className="relative">
+    <div
+      className={cn(
+        "relative",
+        !compact && (anyAboveHigh ? "pt-[7.5rem]" : anyAbove ? "pt-[4.25rem]" : "pt-10"),
+      )}
+    >
+      <div ref={setRailEl} className="relative">
         <div
           className="relative h-2.5 w-full overflow-hidden rounded-full border"
           style={{ background: gradient }}
@@ -233,9 +271,7 @@ export function PriceRail({
     <div className={cn("space-y-4 px-2", className)}>
       {railLine}
       {!compact && (
-        <div className={cn("relative text-[11px]", needsSecondRow ? "h-[5.75rem]" : "h-11")}>
-          {pillsBelow}
-        </div>
+        <div className="relative h-11 text-[11px]">{pillsBelow}</div>
       )}
     </div>
   );
