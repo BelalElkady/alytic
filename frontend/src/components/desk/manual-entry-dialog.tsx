@@ -1,8 +1,8 @@
-import { ChevronDown, Pencil, Plus } from "lucide-react";
+import { ChevronDown, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { NewTradeDialog, type LoggedTrade } from "@/components/desk/new-trade-dialog";
+import { NewTradeDialog, TradeForm, type LoggedTrade } from "@/components/desk/new-trade-dialog";
 import { EmptyState, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -30,16 +31,28 @@ import { cn } from "@/lib/utils";
 
 type Draft = Record<string, { shares: string; avgCost: string; stop: string; target: string }>;
 
-/** Correct share counts, average cost, stop and target — same endpoints. */
+/**
+ * Two tabs: "تعديل" corrects what's already there (share counts, average cost,
+ * stop and target, and past trades) and "صفقة جديدة" logs a new executed trade.
+ */
 export function ManualEntryDialog() {
   const { manualOpen, setManualOpen, rows, reload, pf } = useDesk();
+  const [tab, setTab] = useState<"edit" | "new">("edit");
+  // Bumped after a trade is logged so the new-trade form comes back empty for the next one.
+  const [newTradeKey, setNewTradeKey] = useState(0);
   const [tradeOpen, setTradeOpen] = useState(false);
-  // The logged trade being corrected; null while the dialog adds a new one.
+  // The logged trade being corrected in its own dialog (opened from the trade log).
   const [editingTrade, setEditingTrade] = useState<LoggedTrade | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Always reopen on the edit tab — kept apart from the effect below, which
+  // reruns whenever the rows reload and must not bounce the user off "new".
+  useEffect(() => {
+    if (manualOpen) setTab("edit");
+  }, [manualOpen]);
 
   useEffect(() => {
     if (!manualOpen) return;
@@ -117,106 +130,114 @@ export function ManualEntryDialog() {
       <DialogContent className="max-h-[88vh] gap-4 overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="text-start">
           <DialogTitle className="text-base">إدخال يدوي</DialogTitle>
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-            الأسعار بتتحدث تلقائيًا من السوق. استعمل ده لو عايز تصحّح عدد الأسهم أو متوسط الشراء، أو
-            تعدّل وقف وهدف بنفسك. ولو نفّذت بيع أو شراء، سجّله كصفقة جديدة.
-          </p>
-          <Button
-            size="sm"
-            className="mt-1 w-fit"
-            onClick={() => {
-              setEditingTrade(null);
-              setTradeOpen(true);
-            }}
-          >
-            <Plus className="size-4" />
-            إدخال صفقة جديدة
-          </Button>
         </DialogHeader>
 
-        {anyEstimated && (
-          <Notice tone="warn">
-            الأسهم المعلّمة بـ ⚠️ عددها اتحسب تقديريًا من صورة المحفظة (القيمة السوقية ÷ آخر سعر) —
-            صححها من هنا.
-          </Notice>
-        )}
+        <Tabs value={tab} onValueChange={(value) => setTab(value as "edit" | "new")}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="edit">تعديل</TabsTrigger>
+            <TabsTrigger value="new">صفقة جديدة</TabsTrigger>
+          </TabsList>
 
-        {rows.length === 0 ? (
-          <EmptyState title="مفيش مراكز." hint="سجّل أول صفقة من زرار «إدخال صفقة جديدة»." />
-        ) : (
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 text-[12.5px] font-medium">
-              <Checkbox checked={allSelected} onCheckedChange={(v) => toggleAll(v === true)} />
-              تحديد الكل
-            </label>
+          <TabsContent value="edit" className="mt-4 space-y-4">
+            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+              الأسعار بتتحدث تلقائيًا من السوق. استعمل ده لو عايز تصحّح عدد الأسهم أو متوسط الشراء،
+              أو تعدّل وقف وهدف بنفسك، أو تصحّح صفقة اتسجلت غلط. ولو نفّذت بيع أو شراء جديد، سجّله
+              من تبويب «صفقة جديدة».
+            </p>
 
-            {rows.map((row) => {
-              const entry = draft[row.code];
-              if (!entry) return null;
-              return (
-                <div key={row.code} className="rounded-lg border bg-surface p-3">
-                  <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold">
-                    <Checkbox
-                      checked={selected[row.code] ?? false}
-                      onCheckedChange={(v) => toggleSelected(row.code, v === true)}
-                    />
-                    {row.code}
-                    {row.position.sharesEstimated && <span title="عدد تقديري">⚠️</span>}
-                    <span className="truncate text-[12px] font-normal text-muted-foreground">
-                      {row.name}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <Field
-                      label="عدد الأسهم"
-                      value={entry.shares}
-                      step="1"
-                      onChange={(v) => set(row.code, "shares", v)}
-                    />
-                    <Field
-                      label="متوسط الشراء"
-                      value={entry.avgCost}
-                      step="0.0001"
-                      onChange={(v) => set(row.code, "avgCost", v)}
-                    />
-                    <Field
-                      label="وقف"
-                      value={entry.stop}
-                      step="0.01"
-                      onChange={(v) => set(row.code, "stop", v)}
-                    />
-                    <Field
-                      label="هدف"
-                      value={entry.target}
-                      step="0.01"
-                      onChange={(v) => set(row.code, "target", v)}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+            {anyEstimated && (
+              <Notice tone="warn">
+                الأسهم المعلّمة بـ ⚠️ عددها اتحسب تقديريًا من صورة المحفظة (القيمة السوقية ÷ آخر سعر) —
+                صححها من هنا.
+              </Notice>
+            )}
 
-        {error && <p className="text-[13px] text-down">{error}</p>}
+            {rows.length === 0 ? (
+              <EmptyState title="مفيش مراكز." hint="سجّل أول صفقة من تبويب «صفقة جديدة»." />
+            ) : (
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-[12.5px] font-medium">
+                  <Checkbox checked={allSelected} onCheckedChange={(v) => toggleAll(v === true)} />
+                  تحديد الكل
+                </label>
 
-        {rows.length > 0 && (
-          <DialogFooter className="sm:justify-start">
-            <Button onClick={save} disabled={busy || noneSelected}>
-              {busy && <Spinner />}
-              حفظ التعديلات
-            </Button>
-          </DialogFooter>
-        )}
+                {rows.map((row) => {
+                  const entry = draft[row.code];
+                  if (!entry) return null;
+                  return (
+                    <div key={row.code} className="rounded-lg border bg-surface p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold">
+                        <Checkbox
+                          checked={selected[row.code] ?? false}
+                          onCheckedChange={(v) => toggleSelected(row.code, v === true)}
+                        />
+                        {row.code}
+                        {row.position.sharesEstimated && <span title="عدد تقديري">⚠️</span>}
+                        <span className="truncate text-[12px] font-normal text-muted-foreground">
+                          {row.name}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <Field
+                          label="عدد الأسهم"
+                          value={entry.shares}
+                          step="1"
+                          onChange={(v) => set(row.code, "shares", v)}
+                        />
+                        <Field
+                          label="متوسط الشراء"
+                          value={entry.avgCost}
+                          step="0.0001"
+                          onChange={(v) => set(row.code, "avgCost", v)}
+                        />
+                        <Field
+                          label="وقف"
+                          value={entry.stop}
+                          step="0.01"
+                          onChange={(v) => set(row.code, "stop", v)}
+                        />
+                        <Field
+                          label="هدف"
+                          value={entry.target}
+                          step="0.01"
+                          onChange={(v) => set(row.code, "target", v)}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-        <TradeLog
-          trades={pf?.trades ?? []}
-          realized={pf?.realizedPnl ?? 0}
-          onEdit={(trade) => {
-            setEditingTrade(trade);
-            setTradeOpen(true);
-          }}
-        />
+            {error && <p className="text-[13px] text-down">{error}</p>}
+
+            {rows.length > 0 && (
+              <DialogFooter className="sm:justify-start">
+                <Button onClick={save} disabled={busy || noneSelected}>
+                  {busy && <Spinner />}
+                  حفظ التعديلات
+                </Button>
+              </DialogFooter>
+            )}
+
+            <TradeLog
+              trades={pf?.trades ?? []}
+              realized={pf?.realizedPnl ?? 0}
+              onEdit={(trade) => {
+                setEditingTrade(trade);
+                setTradeOpen(true);
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value="new" className="mt-4 space-y-4">
+            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+              أي بيع أو شراء اتنفذ فعليًا. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا.
+            </p>
+            <TradeForm key={newTradeKey} onDone={() => setNewTradeKey((key) => key + 1)} />
+          </TabsContent>
+        </Tabs>
+
         <NewTradeDialog open={tradeOpen} onOpenChange={setTradeOpen} trade={editingTrade} />
       </DialogContent>
     </Dialog>

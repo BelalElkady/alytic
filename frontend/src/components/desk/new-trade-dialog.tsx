@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 
 import { Spinner } from "@/components/desk/state-blocks";
@@ -37,40 +37,34 @@ export type LoggedTrade = {
 };
 
 /**
- * Log an executed buy/sell — shares, average cost and cash update server-side.
- * Given `trade`, corrects or deletes that logged trade instead.
+ * The trade fields and their save button. Without `trade` it logs a new
+ * executed buy/sell — shares, average cost and cash update server-side. Given
+ * `trade`, it corrects or deletes that logged trade instead. `onDone` fires
+ * after a successful save or delete (before the desk reloads).
  */
-export function NewTradeDialog({
-  open,
-  onOpenChange,
+export function TradeForm({
   trade = null,
+  onDone,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   trade?: LoggedTrade | null;
+  onDone: () => void;
 }) {
   const { reload } = useDesk();
-  const [form, setForm] = useState(EMPTY);
+  const id = useId();
+  const [form, setForm] = useState(
+    trade
+      ? {
+          code: trade.code,
+          side: trade.side,
+          shares: String(trade.shares),
+          price: String(trade.price),
+          date: trade.date,
+        }
+      : EMPTY,
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setForm(
-      trade
-        ? {
-            code: trade.code,
-            side: trade.side,
-            shares: String(trade.shares),
-            price: String(trade.price),
-            date: trade.date,
-          }
-        : EMPTY,
-    );
-    setError(null);
-    setDeleteArmed(false);
-  }, [open, trade]);
 
   // Echoed back so the server can tell the log hasn't shifted under this row.
   const original = trade && {
@@ -91,7 +85,7 @@ export function NewTradeDialog({
     setError(null);
     try {
       await post(`/api/portfolio/trades/${trade.index}/delete`, { original });
-      onOpenChange(false);
+      onDone();
       await reload();
       toast.success("تم حذف الصفقة وتحديث المحفظة");
     } catch (caught) {
@@ -118,7 +112,7 @@ export function NewTradeDialog({
       };
       if (trade) await post(`/api/portfolio/trades/${trade.index}`, { ...body, original });
       else await post("/api/portfolio/trade", body);
-      onOpenChange(false);
+      onDone();
       await reload();
       toast.success(trade ? "تم تعديل الصفقة وتحديث المحفظة" : "تم تسجيل الصفقة وتحديث المحفظة");
     } catch (caught) {
@@ -135,6 +129,96 @@ export function NewTradeDialog({
   };
 
   return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>السهم</Label>
+          <StockPicker
+            value={form.code}
+            onChange={(code) => setForm((previous) => ({ ...previous, code }))}
+            className="sm:w-full"
+            modal
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>النوع</Label>
+          <Select
+            value={form.side}
+            onValueChange={(side) => setForm((previous) => ({ ...previous, side }))}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="buy">شراء</SelectItem>
+              <SelectItem value="sell">بيع</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${id}-date`}>التاريخ</Label>
+          <Input
+            id={`${id}-date`}
+            className="num"
+            type="date"
+            value={form.date}
+            onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${id}-shares`}>العدد</Label>
+          <Input
+            id={`${id}-shares`}
+            className="num"
+            type="number"
+            value={form.shares}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, shares: event.target.value }))
+            }
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${id}-price`}>سعر التنفيذ</Label>
+          <Input
+            id={`${id}-price`}
+            className="num"
+            type="number"
+            step="0.01"
+            value={form.price}
+            onChange={(event) => setForm((previous) => ({ ...previous, price: event.target.value }))}
+          />
+        </div>
+      </div>
+
+      {error && <p className="text-[13px] text-down">{error}</p>}
+
+      <DialogFooter className="gap-2 sm:justify-start">
+        <Button onClick={() => void submit()} disabled={busy}>
+          {busy && <Spinner />}
+          {trade ? "حفظ التعديل" : "تسجيل الصفقة"}
+        </Button>
+        {trade && (
+          <Button variant="destructive" onClick={() => void remove()} disabled={busy}>
+            <Trash2 className="size-4" />
+            {deleteArmed ? "اضغط تاني لتأكيد الحذف" : "حذف الصفقة"}
+          </Button>
+        )}
+      </DialogFooter>
+    </>
+  );
+}
+
+/** Corrects or deletes a logged trade in its own dialog — opened from the trade log. */
+export function NewTradeDialog({
+  open,
+  onOpenChange,
+  trade = null,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  trade?: LoggedTrade | null;
+}) {
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] gap-4 overflow-y-auto sm:max-w-md">
         <DialogHeader className="text-start">
@@ -147,85 +231,12 @@ export function NewTradeDialog({
               : "أي بيع أو شراء اتنفذ فعليًا. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا."}
           </p>
         </DialogHeader>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>السهم</Label>
-            <StockPicker
-              value={form.code}
-              onChange={(code) => setForm((previous) => ({ ...previous, code }))}
-              className="sm:w-full"
-              modal
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>النوع</Label>
-            <Select
-              value={form.side}
-              onValueChange={(side) => setForm((previous) => ({ ...previous, side }))}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="buy">شراء</SelectItem>
-                <SelectItem value="sell">بيع</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="t-date">التاريخ</Label>
-            <Input
-              id="t-date"
-              className="num"
-              type="date"
-              value={form.date}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, date: event.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="t-shares">العدد</Label>
-            <Input
-              id="t-shares"
-              className="num"
-              type="number"
-              value={form.shares}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, shares: event.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="t-price">سعر التنفيذ</Label>
-            <Input
-              id="t-price"
-              className="num"
-              type="number"
-              step="0.01"
-              value={form.price}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, price: event.target.value }))
-              }
-            />
-          </div>
-        </div>
-
-        {error && <p className="text-[13px] text-down">{error}</p>}
-
-        <DialogFooter className="gap-2 sm:justify-start">
-          <Button onClick={() => void submit()} disabled={busy}>
-            {busy && <Spinner />}
-            {trade ? "حفظ التعديل" : "تسجيل الصفقة"}
-          </Button>
-          {trade && (
-            <Button variant="destructive" onClick={() => void remove()} disabled={busy}>
-              <Trash2 className="size-4" />
-              {deleteArmed ? "اضغط تاني لتأكيد الحذف" : "حذف الصفقة"}
-            </Button>
-          )}
-        </DialogFooter>
+        {/* Keyed on the trade so switching rows starts from that row's values. The dialog's content unmounts on close, so a reopen starts fresh too. */}
+        <TradeForm
+          key={trade ? `${trade.index}-${trade.date}-${trade.code}` : "new"}
+          trade={trade}
+          onDone={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );
