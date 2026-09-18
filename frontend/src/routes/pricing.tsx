@@ -201,11 +201,22 @@ function PricingPage() {
                   </p>
                 </div>
               )}
+              {/* The free card has no yearly total or saving, but the paid cards' two-line block above
+                  pushes their feature list down — an invisible copy of the same two lines keeps
+                  every card's divider, feature rows and CTA on the same lines. */}
+              {plan.key === "free" && period === "yearly" && (
+                <div aria-hidden className="invisible mt-1 space-y-0.5 text-[12.5px]">
+                  <p>&nbsp;</p>
+                  <p>&nbsp;</p>
+                </div>
+              )}
               <p
                 className={cn(
                   "mt-2 text-[12.5px]",
+                  // The free note carries the pill's vertical padding and border (transparent) so
+                  // it is as tall as the paid cards' pill, not just their text.
                   plan.key === "free"
-                    ? "text-muted-foreground"
+                    ? "border border-transparent py-1 text-muted-foreground"
                     : "w-fit rounded-md border border-primary/30 bg-secondary px-2 py-1 font-semibold text-foreground",
                 )}
               >
