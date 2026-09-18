@@ -756,6 +756,9 @@ function UsersTab() {
   );
 }
 
+/** The built-in CLI/dev account (local@alytic.local) — not a real user, and the backend refuses to delete it. */
+const SYSTEM_USER_ID = "local";
+
 function UserRow({
   row,
   number,
@@ -777,7 +780,7 @@ function UserRow({
       <TableCell className="border-e align-top py-3">
         <div className="flex items-center gap-1">
           <span className="num min-w-[2ch] text-[12.5px] font-medium text-muted-foreground">{number}</span>
-          {!row.isAdmin && <DeleteUserButton row={row} onDeleted={onChanged} />}
+          {!row.isAdmin && row.id !== SYSTEM_USER_ID && <DeleteUserButton row={row} onDeleted={onChanged} />}
         </div>
       </TableCell>
       <TableCell className="border-e align-top py-3">
@@ -838,6 +841,7 @@ function UserRow({
       <TableCell className="align-top py-3">
         <div className="flex flex-wrap gap-1">
           {row.isAdmin && <Badge>مشرف</Badge>}
+          {row.id === SYSTEM_USER_ID && <Badge variant="outline">حساب النظام</Badge>}
           {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
           {row.googleLinked && <Badge variant="secondary">Google</Badge>}
         </div>

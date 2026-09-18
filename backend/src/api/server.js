@@ -1063,7 +1063,12 @@ app.delete('/api/admin/users/:id/subscription', wrap(async (req, res) => {
 app.delete('/api/admin/users/:id', wrap(async (req, res) => {
   const target = await getUserById(req.params.id);
   if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
-  if (target.is_admin || target.id === req.user.id || target.id === 'local') {
+  // The built-in CLI/dev account: not a person, exempt from billing, and the
+  // owner of the CLI's portfolio. schema.sql re-creates it on every run anyway.
+  if (target.id === 'local') {
+    return res.status(400).json({ error: 'ده حساب النظام الداخلي (للـ CLI) — مش مستخدم حقيقي ومينفعش يتحذف' });
+  }
+  if (target.is_admin || target.id === req.user.id) {
     return res.status(400).json({ error: 'مينفعش تحذف حساب مشرف' });
   }
   await removeSupportImagesFor(target.id);
