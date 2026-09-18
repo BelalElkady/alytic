@@ -8,7 +8,7 @@
  * trial itself is a one-time window.
  */
 export const TIERS = {
-  free: { key: 'free', label: 'الباقة المجانية', screenshots: 2, recommendations: 4, cashScans: 1, marketAnalysis: 1 },
+  free: { key: 'free', label: 'الباقة المجانية', screenshots: 2, recommendations: 15, cashScans: 3, marketAnalysis: 3 },
   long: { key: 'long', label: 'باقة النفس الطويل', screenshots: 7, recommendations: 230, cashScans: 10, marketAnalysis: 30 },
   trader: { key: 'trader', label: 'باقة الحريفة', screenshots: 12, recommendations: 550, cashScans: 20, marketAnalysis: 70 },
 };

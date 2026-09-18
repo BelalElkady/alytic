@@ -95,7 +95,7 @@ export const BlogPostSchema = z.object({
   title: z.string().describe('Arabic H1 headline, specific and newsy — not generic — naturally including the primary keyword'),
   slug: z
     .string()
-    .describe('URL slug: lowercase Latin letters, numbers and hyphens only, transliterated/English (e.g. "comi-q3-earnings-egx30"), no Arabic script'),
+    .describe('URL slug: lowercase English words, numbers and hyphens only, translated into English — never Arabic written in Latin letters (e.g. "comi-q3-earnings-egx30"), no Arabic script'),
   metaDescription: z
     .string()
     .describe('Arabic meta description, 140-160 characters exactly, including the primary keyword'),
@@ -257,6 +257,33 @@ export async function reviewBlogPost(post) {
   });
 
   return { review: data, raw };
+}
+
+const SlugSchema = z.object({
+  slug: z.string().describe('Lowercase English words, numbers and single hyphens only, e.g. "egx30-hits-record-high"'),
+});
+
+/**
+ * Translates an article title into a short English URL slug for the admin's
+ * manual-article form (see /api/admin/blog-slug). Translation, not
+ * transliteration: an Arabic title becomes English words, never Arabic written
+ * in Latin letters. Throws if the model returns nothing usable, so the form can
+ * leave the field for the admin to fill by hand.
+ */
+export async function generateEnglishSlug(title) {
+  const { data, raw } = await requestStructuredOR({
+    model: BLOG_REVIEW_MODEL,
+    schema: SlugSchema,
+    schemaName: 'blog_slug',
+    maxTokens: 200,
+    system:
+      'You write URL slugs for an English-language SEO audience. Translate the given article title into English, then reduce it to a short slug: 3-8 meaningful lowercase English words joined by hyphens, digits allowed, no other characters. Translate the meaning — never transliterate Arabic words into Latin letters. Keep well-known tickers and names as they are written in English (EGX30, CIB, Talaat Moustafa).',
+    messages: [{ role: 'user', content: title }],
+    feature: 'blog_slug',
+  });
+  const slug = data.slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug) throw new Error('the model returned an empty slug');
+  return { slug, raw };
 }
 
 /** Appends the exact required CTA as its own paragraph block — never through the model, so it can never be paraphrased or altered. */

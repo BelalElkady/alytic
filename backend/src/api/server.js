@@ -1162,6 +1162,24 @@ app.post('/api/admin/blog-drafts/image', express.raw({ type: BLOG_IMAGE_TYPES, l
   res.status(201).json({ url });
 }));
 
+// English URL slug for a manual article's title — translated by a model, since
+// a phonetic Arabic→Latin map reads as gibberish ("alborsa" instead of "stock
+// exchange"). The admin form fills the slug field from this and leaves it for
+// the admin to type by hand if it fails.
+app.post('/api/admin/blog-slug', wrap(async (req, res) => {
+  const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+  if (!title) return res.status(400).json({ error: 'العنوان مطلوب' });
+  if (!aiAvailable()) return res.status(503).json({ error: 'الذكاء الاصطناعي غير متاح دلوقتي' });
+  const { generateEnglishSlug } = await import('../agent/blogGenerator.js');
+  try {
+    const { slug } = await generateEnglishSlug(title.slice(0, 300));
+    res.json({ slug });
+  } catch (err) {
+    console.error('[blog-slug] generation failed:', err.message);
+    res.status(502).json({ error: 'تعذر توليد الرابط تلقائيًا — اكتبه بنفسك' });
+  }
+}));
+
 // Lets an admin write and publish an article by hand, alongside the
 // auto-generated pipeline above — see insertManualBlogPost for how it avoids
 // colliding with the cron job's (post_date, batch_index) numbering.

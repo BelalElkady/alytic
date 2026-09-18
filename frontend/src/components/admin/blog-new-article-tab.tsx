@@ -12,26 +12,9 @@ import { post, postRaw } from "@/lib/api";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-/** Rough phonetic Arabic → Latin map so an Arabic title still produces a readable slug instead of collapsing to nothing. */
-const ARABIC_TRANSLITERATION: Record<string, string> = {
-  ا: "a", أ: "a", إ: "a", آ: "a", ى: "a", ة: "a", ء: "",
-  ب: "b", ت: "t", ث: "th", ج: "j", ح: "h", خ: "kh",
-  د: "d", ذ: "th", ر: "r", ز: "z", س: "s", ش: "sh",
-  ص: "s", ض: "d", ط: "t", ظ: "z", ع: "a", غ: "gh",
-  ف: "f", ق: "q", ك: "k", ل: "l", م: "m", ن: "n",
-  ه: "h", و: "w", ي: "y",
-  "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
-  "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
-};
-
-/** Transliterates Arabic letters/digits phonetically; leaves any already-Latin text untouched. */
-function transliterateArabic(value: string): string {
-  return value.replace(/[؀-ۿ]/g, (ch) => ARABIC_TRANSLITERATION[ch] ?? "");
-}
-
 /** Keeps only what the backend's slug regex accepts: lowercase English letters, digits and single hyphens. */
 function sanitizeSlug(value: string): string {
-  return transliterateArabic(value)
+  return value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -51,9 +34,11 @@ const emptyForm = () => ({ title: "", metaTitle: "", slug: "", content: "", meta
 /** Lets an admin write and publish (or save as a draft for review) an article by hand, alongside the auto-generated pipeline. */
 export function NewArticleTab() {
   const [form, setForm] = useState(emptyForm());
-  // Slug auto-follows the title until the admin edits it directly — same
-  // "auto until touched" pattern as most CMS slug fields.
+  // The slug is generated (translated to English) from the title until the
+  // admin edits it directly — same "auto until touched" pattern as most CMS
+  // slug fields.
   const [slugTouched, setSlugTouched] = useState(false);
+  const [slugLoading, setSlugLoading] = useState(false);
   const [busy, setBusy] = useState<"draft" | "publish" | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -65,6 +50,20 @@ export function NewArticleTab() {
     if (!form.metaDescription.trim()) return "الوصف التعريفي مطلوب";
     if (toContentBlocks(form.content).length === 0) return "المقالة لازم تحتوي على محتوى";
     return null;
+  };
+
+  /** Fills the slug with an English translation of the title — unless the admin has typed their own slug in the meantime. */
+  const generateSlug = async (title: string) => {
+    if (!title.trim() || slugTouched) return;
+    setSlugLoading(true);
+    try {
+      const { slug } = await post<{ slug: string }>("/api/admin/blog-slug", { title: title.trim() });
+      setForm((f) => (f.title === title ? { ...f, slug: sanitizeSlug(slug) } : f));
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر توليد الرابط تلقائيًا — اكتبه بنفسك");
+    } finally {
+      setSlugLoading(false);
+    }
   };
 
   const uploadImage = async (file: File) => {
@@ -127,10 +126,8 @@ export function NewArticleTab() {
           <Textarea
             rows={2}
             value={form.title}
-            onChange={(e) => {
-              const title = e.target.value;
-              setForm((f) => ({ ...f, title, slug: slugTouched ? f.slug : sanitizeSlug(title) }));
-            }}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            onBlur={(e) => void generateSlug(e.target.value)}
           />
         </div>
         <div className="space-y-1">
@@ -145,6 +142,8 @@ export function NewArticleTab() {
           <label className="text-[12px] text-muted-foreground">الرابط (Slug — إنجليزي)</label>
           <Input
             dir="ltr"
+            disabled={slugLoading}
+            placeholder={slugLoading ? "بيترجم العنوان للإنجليزي..." : undefined}
             value={form.slug}
             onChange={(e) => {
               setSlugTouched(true);

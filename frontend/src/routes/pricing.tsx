@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { canonical, SITE_URL } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
@@ -14,12 +16,12 @@ export const Route = createFileRoute("/pricing")({
       {
         name: "description",
         content:
-          "٣ باقات: تجربة مجانية ٤ أيام تداول، باقة النفس الطويل من ٢٩٩ جنيه شهريًا، وباقة الحريفة من ٤٩٩ جنيه شهريًا.",
+          "3 باقات: تجربة مجانية 4 أيام تداول، باقة النفس الطويل من 299 جنيه شهريًا، وباقة الحريفة من 499 جنيه شهريًا.",
       },
       { property: "og:title", content: "الأسعار — EGXpert" },
       {
         property: "og:description",
-        content: "تجربة مجانية ٤ أيام تداول، ثم اختار باقة النفس الطويل أو الحريفة حسب نشاطك.",
+        content: "تجربة مجانية 4 أيام تداول، ثم اختار باقة النفس الطويل أو الحريفة حسب نشاطك.",
       },
       { property: "og:url", content: `${SITE_URL}/pricing` },
     ],
@@ -35,41 +37,42 @@ const BASE_INCLUDED = [
   "إدارة الكاش والصفقات والعمولات",
 ];
 
-/** كل رقم شهري — يتجدد أول كل شهر ميلادي، بلا علاقة بمدة الاشتراك (شهري أو سنوي). */
+type Period = "monthly" | "yearly";
+
+/** English (Western) digits with thousands separators — the site's Arabic copy still quotes prices as 2,990, not ٢٬٩٩٠. */
+const fmt = (n: number) => n.toLocaleString("en-US");
+
+/** كل رقم شهري — يتجدد أول كل شهر ميلادي، بلا علاقة بمدة الاشتراك (شهري أو سنوي). الأسعار مطابقة لـ PLANS في backend/src/billing/plans.js. */
 const PLANS = [
   {
     key: "free",
     name: "الباقة المجانية",
-    price: "مجانًا",
-    unit: "لمدة ٤ أيام تداول",
-    yearlyNote: null,
+    monthlyPrice: null,
+    yearlyPrice: null,
+    freeUnit: "لمدة 4 أيام تداول",
     note: "بدون بطاقة، بكل المزايا بحدود التجربة.",
     cta: "ابدأ التجربة",
     highlight: false,
-    limits: { screenshots: 2, recommendations: 4, cashScans: 1, marketAnalysis: 1 },
+    limits: { screenshots: 2, recommendations: 15, cashScans: 3, marketAnalysis: 3 },
   },
   {
     key: "long",
     name: "باقة النفس الطويل",
-    price: "٢٩٩",
-    unit: "جنيه / شهر",
-    yearlyNote: "أو ٢٩٩٠ جنيه سنويًا",
+    monthlyPrice: 299,
+    yearlyPrice: 2990,
     note: "لمستثمر متوسط وطويل المدى.",
     cta: "اشترك في النفس الطويل",
     highlight: true,
-    tag: "الأكثر اختيارًا",
     limits: { screenshots: 7, recommendations: 230, cashScans: 10, marketAnalysis: 30 },
   },
   {
     key: "trader",
     name: "باقة الحريفة",
-    price: "٤٩٩",
-    unit: "جنيه / شهر",
-    yearlyNote: "أو ٤٩٩٠ جنيه سنويًا",
+    monthlyPrice: 499,
+    yearlyPrice: 4990,
     note: "للمضارب النشط ومتوسط وطويل المدى.",
     cta: "اشترك في الحريفة",
     highlight: false,
-    tag: "أعلى الحدود",
     limits: { screenshots: 12, recommendations: 550, cashScans: 20, marketAnalysis: 70 },
   },
 ] as const;
@@ -106,20 +109,37 @@ const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string;
 };
 
 function PricingPage() {
+  // Monthly first: it's the lower entry price, and the yearly tab is the opt-in upsell.
+  const [period, setPeriod] = useState<Period>("monthly");
+
   return (
     <SiteShell>
       <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
         <div className="max-w-2xl">
-          <Badge variant="outline">٣ باقات — اختار اللي يناسب نشاطك</Badge>
+          <Badge variant="outline">3 باقات — اختار اللي يناسب نشاطك</Badge>
           <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">أسعار واضحة لكل مستوى</h1>
           <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            نفس الأدوات في كل الباقات — الفرق في عدد مرات استخدام كل ميزة شهريًا. ابدأ بـ ٤ أيام
+            نفس الأدوات في كل الباقات — الفرق في عدد مرات استخدام كل ميزة شهريًا. ابدأ بـ 4 أيام
             تداول مجانًا وقرّر بعد كده.
           </p>
         </div>
 
-        <div className="mt-10 grid gap-4 lg:grid-cols-3">
-          {PLANS.map((plan) => (
+        <Tabs value={period} onValueChange={(value) => setPeriod(value as Period)} className="mt-8">
+          <TabsList>
+            <TabsTrigger value="monthly">شهري</TabsTrigger>
+            <TabsTrigger value="yearly">سنوي</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          {PLANS.map((plan) => {
+            const price = period === "monthly" ? plan.monthlyPrice : plan.yearlyPrice;
+            // Same saving the backend's PLANS comment quotes: twelve monthly payments vs the yearly price.
+            const yearlySaving =
+              period === "yearly" && plan.monthlyPrice !== null && plan.yearlyPrice !== null
+                ? plan.monthlyPrice * 12 - plan.yearlyPrice
+                : 0;
+            return (
             <article
               key={plan.key}
               className={cn(
@@ -127,32 +147,45 @@ function PricingPage() {
                 plan.highlight && "border-primary/60 ring-1 ring-primary/20",
               )}
             >
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-[16px] font-semibold">{plan.name}</h2>
-                {"tag" in plan && plan.tag && (
-                  <Badge
-                    variant="outline"
-                    className={plan.highlight ? "border-primary/40 bg-secondary" : ""}
-                  >
-                    {plan.tag}
-                  </Badge>
-                )}
-              </div>
+              <h2 className="text-[16px] font-semibold">{plan.name}</h2>
               <p className="mt-5 flex items-end gap-2">
-                <span className="num text-4xl font-bold tracking-tight">{plan.price}</span>
-                <span className="pb-1 text-[12.5px] text-muted-foreground">{plan.unit}</span>
+                {price === null ? (
+                  <>
+                    <span className="text-4xl font-bold tracking-tight">مجانًا</span>
+                    <span className="pb-1 text-[12.5px] text-muted-foreground">{plan.freeUnit}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="num text-4xl font-bold tracking-tight">{fmt(price)}</span>
+                    <span className="pb-1 text-[12.5px] text-muted-foreground">
+                      {period === "monthly" ? "جنيه / شهر" : "جنيه / سنة"}
+                    </span>
+                  </>
+                )}
               </p>
-              {plan.yearlyNote && (
-                <p className="mt-1 text-[12.5px] text-muted-foreground">{plan.yearlyNote}</p>
+              {yearlySaving > 0 && (
+                <p className="mt-1 text-[12.5px] text-muted-foreground">
+                  توفير <span className="num">{fmt(yearlySaving)}</span> جنيه مقارنة بالدفع شهريًا
+                </p>
               )}
-              <p className="mt-2 text-[12.5px] text-muted-foreground">{plan.note}</p>
+              <p
+                className={cn(
+                  "mt-2 text-[12.5px]",
+                  plan.key === "free"
+                    ? "text-muted-foreground"
+                    : "w-fit rounded-md border border-primary/30 bg-secondary px-2 py-1 font-semibold text-foreground",
+                )}
+              >
+                {plan.note}
+              </p>
 
               <ul className="mt-5 space-y-2 border-t pt-4">
                 {FEATURE_ROWS.map((row) => (
                   <li key={row.key} className="flex items-center justify-between text-[13px]">
                     <span className="text-muted-foreground">{row.label}</span>
-                    <span className="num font-semibold">
-                      {plan.limits[row.key]} {row.unit}
+                    {/* Only the digits are isolated LTR — the row itself stays RTL so the number sits on the right of its unit word. */}
+                    <span className="font-semibold">
+                      <span className="num">{plan.limits[row.key]}</span> {row.unit}
                       {plan.limits[row.key] === 1 ? "" : plan.key === "free" ? "" : "/شهر"}
                     </span>
                   </li>
@@ -173,7 +206,8 @@ function PricingPage() {
                 )}
               </Button>
             </article>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm">
@@ -195,7 +229,9 @@ function PricingPage() {
                       <span className="text-muted-foreground">
                         {pack.label} · {pack.count} {row.unit}
                       </span>
-                      <span className="num font-semibold">{pack.priceEgp} ج</span>
+                      <span className="font-semibold">
+                        <span className="num">{pack.priceEgp}</span> ج
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -223,7 +259,7 @@ function PricingPage() {
           {[
             {
               q: "هل التجربة محتاجة بطاقة؟",
-              a: "لا. تعمل حساب وتستخدم الباقة المجانية ٤ أيام تداول بحدودها (صورتين، ٤ توصيات، تحليل كاش وتحليل سوق مرة لكل واحد)، وبعدها تختار باقة النفس الطويل أو الحريفة.",
+              a: "لا. تعمل حساب وتستخدم الباقة المجانية 4 أيام تداول بحدودها (صورتين، 15 توصية، و3 مرات تحليل كاش و3 مرات تحليل سوق)، وبعدها تختار باقة النفس الطويل أو الحريفة.",
             },
             {
               q: "الحدود دي بتتجدد إزاي؟",
