@@ -77,6 +77,18 @@ const PLANS = [
   },
 ] as const;
 
+/**
+ * The headline yearly discount: the smallest saving across the paid plans
+ * (today both work out to the same 16.7%), so the label never overstates one.
+ */
+const YEARLY_DISCOUNT_PCT = Math.min(
+  ...PLANS.flatMap((plan) =>
+    plan.monthlyPrice !== null && plan.yearlyPrice !== null
+      ? [Math.round((1 - plan.yearlyPrice / (plan.monthlyPrice * 12)) * 100)]
+      : [],
+  ),
+);
+
 const FEATURE_ROWS = [
   { key: "screenshots", label: "رفع سكرين شوت للمحفظة", unit: "صورة" },
   { key: "recommendations", label: "توصيات الأسهم", unit: "توصية" },
@@ -109,8 +121,8 @@ const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string;
 };
 
 function PricingPage() {
-  // Monthly first: it's the lower entry price, and the yearly tab is the opt-in upsell.
-  const [period, setPeriod] = useState<Period>("monthly");
+  // Yearly by default: it's the better deal, and it's the price quoted per month below.
+  const [period, setPeriod] = useState<Period>("yearly");
 
   return (
     <SiteShell>
@@ -124,21 +136,32 @@ function PricingPage() {
           </p>
         </div>
 
-        <Tabs value={period} onValueChange={(value) => setPeriod(value as Period)} className="mt-8">
+        {/* mt-12: room for the discount label that sits above the yearly tab. */}
+        <Tabs value={period} onValueChange={(value) => setPeriod(value as Period)} className="mt-12">
           <TabsList>
             <TabsTrigger value="monthly">شهري</TabsTrigger>
-            <TabsTrigger value="yearly">سنوي</TabsTrigger>
+            <TabsTrigger value="yearly" className="relative">
+              سنوي
+              <span className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[12px] font-semibold text-up">
+                وفّر <span className="num">{YEARLY_DISCOUNT_PCT}%</span>
+              </span>
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {PLANS.map((plan) => {
-            const price = period === "monthly" ? plan.monthlyPrice : plan.yearlyPrice;
-            // Same saving the backend's PLANS comment quotes: twelve monthly payments vs the yearly price.
-            const yearlySaving =
-              period === "yearly" && plan.monthlyPrice !== null && plan.yearlyPrice !== null
-                ? plan.monthlyPrice * 12 - plan.yearlyPrice
-                : 0;
+            // The yearly tab quotes the yearly price as a per-month figure (2,990 → 249), whole
+            // pounds only, with the real one-time total and the saving spelled out beneath it.
+            let price: number | null = plan.monthlyPrice;
+            let yearlyTotal = 0;
+            let yearlySaving = 0;
+            if (period === "yearly" && plan.monthlyPrice !== null && plan.yearlyPrice !== null) {
+              price = Math.round(plan.yearlyPrice / 12);
+              yearlyTotal = plan.yearlyPrice;
+              // Same saving the backend's PLANS comment quotes: twelve monthly payments vs the yearly price.
+              yearlySaving = plan.monthlyPrice * 12 - plan.yearlyPrice;
+            }
             return (
             <article
               key={plan.key}
@@ -157,16 +180,19 @@ function PricingPage() {
                 ) : (
                   <>
                     <span className="num text-4xl font-bold tracking-tight">{fmt(price)}</span>
-                    <span className="pb-1 text-[12.5px] text-muted-foreground">
-                      {period === "monthly" ? "جنيه / شهر" : "جنيه / سنة"}
-                    </span>
+                    <span className="pb-1 text-[12.5px] text-muted-foreground">جنيه / شهر</span>
                   </>
                 )}
               </p>
               {yearlySaving > 0 && (
-                <p className="mt-1 text-[12.5px] text-muted-foreground">
-                  توفير <span className="num">{fmt(yearlySaving)}</span> جنيه مقارنة بالدفع شهريًا
-                </p>
+                <div className="mt-1 space-y-0.5 text-[12.5px]">
+                  <p className="text-muted-foreground">
+                    بتدفع <span className="num">{fmt(yearlyTotal)}</span> جنيه مرة واحدة في السنة
+                  </p>
+                  <p className="font-semibold text-up">
+                    هتوفّر <span className="num">{fmt(yearlySaving)}</span> جنيه في السنة
+                  </p>
+                </div>
               )}
               <p
                 className={cn(
