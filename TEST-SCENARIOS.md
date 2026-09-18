@@ -399,6 +399,16 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 
 ## 6. Support chat (the subscription path)
 
+**CHAT-00 — "اسألنا" nudge** · P2
+- Steps: open any page (marketing or desk) in a fresh tab and wait ~4 seconds without touching
+  the chat.
+- Expect: a pulsing ring swells and fades behind the chat button, and a small bubble above it
+  says "محتاج تستفسر عن حاجة؟ / اسألنا — إحنا هنا نساعدك". Clicking the bubble opens the chat;
+  clicking its ✕ or the chat button just stops the nudge. Once dismissed or opened it does not
+  come back on other pages or a reload in the same tab, and returns in a new session.
+- Also: it never shows while the chat is open, while there are unread replies (the red badge
+  covers that), or to an admin; with "reduce motion" on, the ring is gone but the bubble stays.
+
 **CHAT-01 — Visitor sees a sign-in prompt** · P2
 - Steps: as `VISITOR`, open the chat bubble on a marketing page.
 - Expect: an explanation plus "دخول" / "حساب جديد" buttons and a link to `/contact`. No

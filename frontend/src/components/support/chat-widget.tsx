@@ -42,6 +42,30 @@ type SubscribeInfo = {
 };
 
 const POLL_MS = 15 * 1000;
+
+// The "اسألنا" nudge: a pulsing ring on the launcher plus a small bubble above
+// it. It waits a few seconds so it doesn't land on top of a page that's still
+// loading, and it runs once per browser session — opening the chat or closing
+// the bubble both count as "seen". sessionStorage (not localStorage) so a
+// returning visitor gets one fresh nudge per visit, not one forever.
+const NUDGE_KEY = "alytic-chat-nudge-seen";
+const NUDGE_DELAY_MS = 4000;
+
+const nudgeAlreadySeen = () => {
+  try {
+    return window.sessionStorage.getItem(NUDGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const markNudgeSeen = () => {
+  try {
+    window.sessionStorage.setItem(NUDGE_KEY, "1");
+  } catch {
+    // Storage blocked (private mode): the nudge simply comes back next mount.
+  }
+};
 const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 const time = (iso: string) =>
@@ -130,6 +154,9 @@ export function ChatWidget() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
+  // Starts false and only flips in an effect, so the server-rendered markup and
+  // the first client render agree (sessionStorage doesn't exist on the server).
+  const [nudge, setNudge] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const modeInitialized = useRef(false);
   // How many real messages existed when the current bot "session" started —
@@ -172,6 +199,20 @@ export function ChatWidget() {
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ block: "end" });
   }, [open, messages, bot, mode]);
+
+  useEffect(() => {
+    if (nudgeAlreadySeen()) return;
+    const timer = setTimeout(() => setNudge(true), NUDGE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const stopNudge = () => {
+    setNudge(false);
+    markNudgeSeen();
+  };
+  // Unread replies already have the red badge, which matters more than an
+  // invitation to ask; staff don't need inviting to their own inbox.
+  const showNudge = nudge && !open && unread === 0 && !user?.isAdmin;
 
   const say = (side: "user" | "admin", text: string, node?: React.ReactNode) =>
     setBot((previous) => [
@@ -295,8 +336,47 @@ export function ChatWidget() {
 
   return (
     <>
+      {showNudge && (
+        <>
+          {/* Same spot and size as the launcher, one layer below it: the ring
+              swells and fades behind the button, over and over. Dropped for
+              anyone who asked their system for less motion — the bubble
+              below still tells them. */}
+          <span
+            aria-hidden
+            className="pointer-events-none fixed bottom-20 start-4 z-40 size-12 animate-ping rounded-full bg-primary/40 md:bottom-6 motion-reduce:hidden"
+          />
+          <div
+            role="status"
+            className="animate-in fade-in slide-in-from-bottom-2 fixed bottom-36 start-4 z-50 flex w-[min(15rem,calc(100vw-2rem))] items-start gap-1 rounded-2xl border bg-card p-2 shadow-xl duration-300 md:bottom-22"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                stopNudge();
+                setOpen(true);
+              }}
+              className="flex-1 rounded-lg px-2 py-1 text-start text-[13px] leading-relaxed hover:bg-muted"
+            >
+              <span className="block font-semibold">محتاج تستفسر عن حاجة؟</span>
+              <span className="text-muted-foreground">اسألنا — إحنا هنا نساعدك.</span>
+            </button>
+            <button
+              type="button"
+              onClick={stopNudge}
+              aria-label="إخفاء التنبيه"
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </>
+      )}
       <Button
-        onClick={() => setOpen((previous) => !previous)}
+        onClick={() => {
+          stopNudge();
+          setOpen((previous) => !previous);
+        }}
         aria-label={open ? "إغلاق الدردشة" : "تواصل معانا"}
         className="fixed bottom-20 start-4 z-50 size-12 rounded-full p-0 shadow-lg md:bottom-6"
       >
