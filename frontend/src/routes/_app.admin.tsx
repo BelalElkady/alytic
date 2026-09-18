@@ -100,9 +100,11 @@ const LABELS: Record<string, string> = {
  * so a new message is visible from any admin tab, not just while the support
  * tab happens to be open. Cleared back to the plain title once every thread
  * is read (or reads zero) and restored on unmount so it never leaks onto a
- * different page's tab title.
+ * different page's tab title. Returns the same count, for the badge on the
+ * "الدعم" tab.
  */
-function useUnreadTitleBadge(enabled: boolean) {
+function useUnreadTitleBadge(enabled: boolean): number {
+  const [unread, setUnread] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -111,6 +113,7 @@ function useUnreadTitleBadge(enabled: boolean) {
         const { threads } = await api("/api/admin/support");
         if (cancelled) return;
         const total = threads.reduce((sum: number, t: { unread: number }) => sum + t.unread, 0);
+        setUnread(total);
         document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
       } catch {
         // Best-effort badge — a failed poll just leaves the last count showing.
@@ -124,11 +127,12 @@ function useUnreadTitleBadge(enabled: boolean) {
       document.title = BASE_TITLE;
     };
   }, [enabled]);
+  return unread;
 }
 
 function AdminPage() {
   const { user } = useDesk();
-  useUnreadTitleBadge(Boolean(user?.isAdmin));
+  const supportUnread = useUnreadTitleBadge(Boolean(user?.isAdmin));
 
   if (!user?.isAdmin) {
     return <ErrorState message="الصفحة دي للمشرفين بس." />;
@@ -136,10 +140,21 @@ function AdminPage() {
 
   return (
     <Tabs defaultValue="indices" className="space-y-4">
-      <TabsList>
+      {/* mt-3: room for the unread badge that sits on top of the "الدعم" tab. */}
+      <TabsList className="mt-3">
         <TabsTrigger value="indices">المؤشرات</TabsTrigger>
         <TabsTrigger value="users">المستخدمين</TabsTrigger>
-        <TabsTrigger value="support">الدعم</TabsTrigger>
+        <TabsTrigger value="support" className="relative">
+          الدعم
+          {supportUnread > 0 && (
+            <span
+              aria-label={`${supportUnread} رسائل غير مقروءة`}
+              className="num pointer-events-none absolute -top-3 left-1/2 flex h-[18px] min-w-[18px] -translate-x-1/2 items-center justify-center rounded-full bg-down px-1 text-[10px] font-bold leading-none text-white shadow"
+            >
+              {supportUnread > 9 ? "9+" : supportUnread}
+            </span>
+          )}
+        </TabsTrigger>
         <TabsTrigger value="blog">المدونة</TabsTrigger>
       </TabsList>
       <TabsContent value="indices">
