@@ -53,9 +53,9 @@ export const ADDONS = {
     { key: 'recommendations_bulk', label: 'بالجملة', recommendations: 150, priceEgp: 100 },
   ],
   cashScans: [
-    { key: 'cashScans_quick', label: 'سريع', cashScans: 20, priceEgp: 1.5 },
-    { key: 'cashScans_value', label: 'الأفضل قيمة', cashScans: 60, priceEgp: 4 },
-    { key: 'cashScans_bulk', label: 'بالجملة', cashScans: 150, priceEgp: 9 },
+    { key: 'cashScans_quick', label: 'سريع', cashScans: 20, priceEgp: 25 },
+    { key: 'cashScans_value', label: 'الأفضل قيمة', cashScans: 60, priceEgp: 50 },
+    { key: 'cashScans_bulk', label: 'بالجملة', cashScans: 150, priceEgp: 80 },
   ],
   marketAnalysis: [
     { key: 'marketAnalysis_quick', label: 'سريع', marketAnalysis: 20, priceEgp: 1.5 },

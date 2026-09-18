@@ -964,9 +964,9 @@ const ADDON_PACKS: Record<CreditKind, { count: number; priceEgp: number }[]> = {
     { count: 150, priceEgp: 100 },
   ],
   cashScans: [
-    { count: 20, priceEgp: 1.5 },
-    { count: 60, priceEgp: 4 },
-    { count: 150, priceEgp: 9 },
+    { count: 20, priceEgp: 25 },
+    { count: 60, priceEgp: 50 },
+    { count: 150, priceEgp: 80 },
   ],
   marketAnalysis: [
     { count: 20, priceEgp: 1.5 },
