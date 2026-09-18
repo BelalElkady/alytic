@@ -96,8 +96,10 @@ const AI_ACTION_TONE: Record<string, string> = {
 // it plays no part in what's billed. How many uses an account has left this
 // month is TIERS-based (backend/src/billing/plans.js), reflected in
 // pf.recommendationsLeft.
-const todayKey = () => new Date().toDateString();
 const reviewStorageKey = (code: string) => `alytic-stock-review:${code}`;
+/** The calendar day (Cairo) of a timestamp, as YYYY-MM-DD — what arDay() takes. */
+const cairoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(ms);
+const isFromToday = (at: number | null | undefined) => at != null && cairoDay(at) === cairoDay(Date.now());
 // Short on purpose: /api/review/status already holds each request open until
 // the job finishes (up to 15s), so this is only the gap between long-polls.
 const REVIEW_POLL_MS = 1000;
@@ -124,15 +126,21 @@ async function withReviewSlot<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-// A trade on the position (e.g. acting on the verdict) makes the locally
-// remembered verdict stale, so it's only shown back for the same day, style
-// and position — this is purely a "what to display on reload" convenience,
-// not a billing cache (see the block comment above).
-function readStoredVerdict(code: string, style: StyleKey, positionKey: string): Verdict | null {
+type StoredVerdict = { verdict: Verdict; /** When it was generated (ms); null for an entry saved before this was recorded and undatable. */ at: number | null };
+
+// The last verdict the user asked for stays on the card — across days and
+// reloads — until they press the button again; nothing refreshes it by
+// itself. Only a change to what it was written about drops it: a trade on the
+// position (e.g. acting on the verdict — its "sell 223 shares" order would be
+// stale) or a different investor style. This is purely a "what to display"
+// convenience, not a billing cache (see the block comment above).
+function readStoredVerdict(code: string, style: StyleKey, positionKey: string): StoredVerdict | null {
   try {
     const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
-    if (!stored || stored.style !== style) return null;
-    return stored.day === todayKey() && stored.positionKey === positionKey ? stored.verdict : null;
+    if (!stored || stored.style !== style || stored.positionKey !== positionKey || !stored.verdict) return null;
+    // Entries saved before `at` existed only carry `day` (a Date.toDateString()).
+    const at = Number.isFinite(stored.at) ? stored.at : Date.parse(stored.day);
+    return { verdict: stored.verdict, at: Number.isFinite(at) ? at : null };
   } catch {
     return null;
   }
@@ -140,12 +148,12 @@ function readStoredVerdict(code: string, style: StyleKey, positionKey: string): 
 
 function useStockReview(code: string, style: StyleKey, positionKey: string) {
   const { refreshUser, reloadPortfolio } = useDesk();
-  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [saved, setSaved] = useState<StoredVerdict | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setVerdict(readStoredVerdict(code, style, positionKey));
+    setSaved(readStoredVerdict(code, style, positionKey));
   }, [code, style, positionKey]);
 
   const request = useCallback(
@@ -165,11 +173,12 @@ function useStockReview(code: string, style: StyleKey, positionKey: string) {
           }
           return res;
         });
-        setVerdict(result.verdict);
+        const at = Date.now();
+        setSaved({ verdict: result.verdict, at });
         try {
           window.localStorage.setItem(
             reviewStorageKey(code),
-            JSON.stringify({ day: todayKey(), style, positionKey, verdict: result.verdict }),
+            JSON.stringify({ at, style, positionKey, verdict: result.verdict }),
           );
         } catch {
           /* storage unavailable — the verdict still shows for this session */
@@ -189,7 +198,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string) {
     [code, style, positionKey, refreshUser, reloadPortfolio],
   );
 
-  return { verdict, loading, error, request };
+  return { verdict: saved?.verdict ?? null, verdictAt: saved?.at ?? null, loading, error, request };
 }
 
 function PositionsPage() {
@@ -200,9 +209,10 @@ function PositionsPage() {
   const recommendationsLeft =
     typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
 
-  // "All stocks" button: a batch is just every card without a verdict running
-  // its own per-stock review (queued through withReviewSlot). Only fills in
-  // missing verdicts — never regenerates one, not even for an admin.
+  // "All stocks" button: a batch is just every card without a verdict from
+  // today running its own per-stock review (queued through withReviewSlot).
+  // Only fills in what's missing or left over from an earlier day — never
+  // regenerates today's, not even for an admin.
   const [batch, setBatch] = useState<{ id: number; codes: Set<string> }>({ id: 0, codes: new Set() });
   const [batchPending, setBatchPending] = useState<Set<string>>(new Set());
   const [batchConfirm, setBatchConfirm] = useState<string[] | null>(null);
@@ -218,10 +228,13 @@ function PositionsPage() {
 
   const openBatchConfirm = () => {
     const missing = rows
-      .filter((row) => !readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`))
+      .filter(
+        (row) =>
+          !isFromToday(readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`)?.at),
+      )
       .map((row) => row.code);
     if (missing.length === 0) {
-      toast.info("كل الأسهم عندها توصية بالفعل");
+      toast.info("كل الأسهم عندها توصية النهاردة بالفعل");
       return;
     }
     setBatchConfirm(missing);
@@ -376,29 +389,34 @@ function PositionCard({
   // admins included, though their tier's allowance is generous. Requesting
   // this stock's cached same-day verdict again costs nothing.
   const isAdmin = Boolean(user?.isAdmin);
-  const { verdict, loading: reviewLoading, error: reviewError, request: requestReview } = useStockReview(
-    row.code,
-    style,
-    `${p.shares}@${p.avgCost}`,
-  );
+  const {
+    verdict,
+    verdictAt,
+    loading: reviewLoading,
+    error: reviewError,
+    request: requestReview,
+  } = useStockReview(row.code, style, `${p.shares}@${p.avgCost}`);
+  // A verdict stays on the card until the next request, so it can be from an earlier day.
+  const verdictIsToday = isFromToday(verdictAt);
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
   const recommendationsLeft =
     typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
   const recommendationsExhausted = recommendationsLeft !== null && recommendationsLeft <= 0;
 
-  // Run this card's review once per page batch it's part of. Already has a
-  // verdict, or a single-card request is already running: nothing to add, so
-  // it counts as settled straight away.
+  // Run this card's review once per page batch it's part of. Already has
+  // today's verdict, or a single-card request is already running: nothing to
+  // add, so it counts as settled straight away. A verdict from an earlier day
+  // doesn't count — the batch is "today's recommendation for every stock".
   const handledBatchId = useRef(0);
   useEffect(() => {
     if (!batchId || handledBatchId.current === batchId) return;
     handledBatchId.current = batchId;
-    if (verdict || reviewLoading) {
+    if (verdictIsToday || reviewLoading) {
       onBatchSettled(row.code);
       return;
     }
     void requestReview(false).finally(() => onBatchSettled(row.code));
-  }, [batchId, verdict, reviewLoading, requestReview, onBatchSettled, row.code]);
+  }, [batchId, verdictIsToday, reviewLoading, requestReview, onBatchSettled, row.code]);
 
   // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
   // over the badge and recommendation box when one has been fetched for this
@@ -574,6 +592,12 @@ function PositionCard({
       {aiAvailable && (
         <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">
           {reviewError && <span className="text-[12px] text-down">{reviewError}</span>}
+          {/* The date it was generated — fixed, so it never moves until a new one is requested. */}
+          {verdict && verdictAt != null && (
+            <span className="text-[11.5px] text-muted-foreground">
+              آخر توصية: {arDay(cairoDay(verdictAt))}
+            </span>
+          )}
           {!isAdmin && recommendationsLeft !== null && (
             <span className="text-[11.5px] text-muted-foreground">
               {recommendationsExhausted
