@@ -48,7 +48,7 @@ function SubscribePage() {
           <div className="mt-8 rounded-xl border bg-surface p-5">
             <h2 className="text-[15px] font-semibold">لسه معندكش حساب؟</h2>
             <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-              اعمل حساب الأول وجرّب المنتج ٤ أيام تداول مجانًا — تقدر تشترك بعدها أو خلال التجربة، والأيام
+              اعمل حساب الأول وجرّب المنتج ٥ أيام تداول مجانًا — تقدر تشترك بعدها أو خلال التجربة، والأيام
               الباقية بتتضاف لاشتراكك.
             </p>
             <Button asChild className="mt-4">

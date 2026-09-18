@@ -7,7 +7,7 @@ test.describe("marketing site", () => {
     await goto(page, "/");
     await expect(page).toHaveTitle(/EGXpert/);
     await expect(page.getByRole("heading", { name: "خبير البورصة المصرية في جيبك" })).toBeVisible();
-    await expect(page.getByText("تجربة مجانية ٤ أيام تداول — بدون بطاقة")).toBeVisible();
+    await expect(page.getByText("تجربة مجانية ٥ أيام تداول — بدون بطاقة")).toBeVisible();
     await expect(page.getByRole("link", { name: "ابدأ التجربة المجانية" })).toBeVisible();
 
     // the advertised features actually exist
@@ -16,10 +16,11 @@ test.describe("marketing site", () => {
     await expect(page.getByText("توصيات تتغيّر مع سلوكك")).toBeVisible();
   });
 
-  test("both hero CTAs lead to the pricing page", async ({ page }) => {
+  test("the trial CTA opens registration and the prices CTA opens the pricing page", async ({ page }) => {
     await goto(page, "/");
+    await expect(page.getByText("لمدة 5 أيام تداول")).toBeVisible();
     await page.getByRole("link", { name: "ابدأ التجربة المجانية" }).click();
-    await expect(page).toHaveURL(/\/pricing/);
+    await expect(page).toHaveURL(/\/login/);
 
     await goto(page, "/");
     await page.getByRole("link", { name: "شوف الأسعار" }).click();
@@ -32,7 +33,7 @@ test.describe("marketing site", () => {
 
     // Three plans with the exact figures the chat bot quotes too.
     await expect(page.getByText("تجربة مجانية", { exact: true })).toBeVisible();
-    await expect(page.getByText("لمدة ٤ أيام تداول")).toBeVisible();
+    await expect(page.getByText("لمدة ٥ أيام تداول")).toBeVisible();
     await expect(page.getByText("١٤٩", { exact: true })).toBeVisible();
     await expect(page.getByText("١٥٩٩", { exact: true })).toBeVisible();
     await expect(page.getByText("بتوفّر ١٨٩ جنيه مقارنة بالشهري.")).toBeVisible();

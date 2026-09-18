@@ -50,8 +50,8 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 | --- | --- |
 | `VISITOR` | Not signed in. |
 | `NEW` | A brand new account, email not yet verified. |
-| `TRIAL` | Account created today — inside the 4-trading-day free trial. |
-| `LAPSED` | Account created ≥ 10 days ago (4 trading days can span a weekend plus a holiday), never subscribed. |
+| `TRIAL` | Account created today — inside the 5-trading-day free trial. |
+| `LAPSED` | Account created ≥ 10 days ago (5 trading days can span a weekend plus a holiday), never subscribed. |
 | `EXPIRED` | Had a paid period that has already ended. |
 | `PAID` | Live subscription (granted by an admin). |
 | `GOOGLE` | Created via Google sign-in, so it has no phone number yet. |
@@ -73,9 +73,9 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 **PUB-01 — Landing page renders and sells the product** · P2
 - Pre: `VISITOR`
 - Steps: open `/`.
-- Expect: hero "خبير البورصة المصرية في جيبك", the "تجربة مجانية ٤ أيام تداول — بدون بطاقة"
+- Expect: hero "خبير البورصة المصرية في جيبك", the "تجربة مجانية ٥ أيام تداول — بدون بطاقة"
   badge, 8 feature cards, the 3-step section, the tool explainer and a latest-posts
-  strip. Both hero CTAs go to `/pricing`.
+  strip. The trial CTA ("ابدأ التجربة المجانية", captioned "لمدة 5 أيام تداول") goes to `/login` in register mode; "شوف الأسعار" goes to `/pricing`.
 
 **PUB-02 — Marketing navigation** · P3
 - Steps: from `/`, visit every header link — الرئيسية, تابع اخبار البورصة, طريقة الاستخدام,
@@ -91,7 +91,7 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 
 **PUB-04 — Pricing page content** · P2
 - Steps: open `/pricing`.
-- Expect: three cards — تجربة مجانية (مجانًا / ٤ أيام تداول), شهري (١٤٩), سنوي (١٥٩٩ with
+- Expect: three cards — تجربة مجانية (مجانًا / ٥ أيام تداول), شهري (١٤٩), سنوي (١٥٩٩ with
   "وفّر ١٨٩ جنيه"). The trial CTA goes to registration; both paid CTAs go to
   `/subscribe`. The "كل الخطط بتشمل" list and four FAQ cards render, and the
   first FAQ answer says تحليل الكاش is available twice for the whole trial

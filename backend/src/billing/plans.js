@@ -1,5 +1,5 @@
 /**
- * The per-feature caps for each tier. 'free' is the 4-trading-day trial
+ * The per-feature caps for each tier. 'free' is the 5-trading-day trial
  * (see TRIAL_DAYS/trialInfo in src/api/server.js) — it needs no purchase, so
  * it has no matching PLANS entry below. 'long' and 'trader' are the two paid
  * tiers, each sold at a monthly and a yearly price (see PLANS). Every count

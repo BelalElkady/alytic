@@ -86,7 +86,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "١", title: "اعمل حساب", text: "دقيقة واحدة، وتجربة مجانية ٤ أيام تداول بدون أي التزام." },
+  { n: "١", title: "اعمل حساب", text: "دقيقة واحدة، وتجربة مجانية ٥ أيام تداول بدون أي التزام." },
   { n: "٢", title: "ضيف أسهمك", text: "إدخال يدوي سريع أو رفع صورة محفظتك ويتقرأ تلقائيًا." },
   {
     n: "٣",
@@ -103,7 +103,7 @@ function LandingPage() {
         <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 py-14 sm:py-20 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
             <Badge variant="outline" className="border-up/40 bg-up-soft text-up">
-              تجربة مجانية ٤ أيام تداول — بدون بطاقة
+              تجربة مجانية ٥ أيام تداول — بدون بطاقة
             </Badge>
             <h1 className="mt-4 text-3xl font-bold leading-[1.25] tracking-tight sm:text-4xl lg:text-[42px]">
               خبير البورصة المصرية في جيبك
@@ -112,10 +112,15 @@ function LandingPage() {
               EGXpert بيتابع أسهمك لحظة بلحظة، بيحسب وقف الخسارة والأهداف، وبيقول لك تعمل إيه في كل
               سهم النهاردة — بقواعد واضحة تقدر تشوفها وتعدّلها، مش كلام عام.
             </p>
-            <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Button asChild size="lg">
-                <Link to="/pricing">ابدأ التجربة المجانية</Link>
-              </Button>
+            <div className="mt-7 flex flex-wrap items-start gap-3">
+              <div className="flex flex-col items-center gap-1.5">
+                <Button asChild size="lg">
+                  <Link to="/login" search={{ mode: "register" }}>
+                    ابدأ التجربة المجانية
+                  </Link>
+                </Button>
+                <span className="text-[12.5px] text-muted-foreground">لمدة 5 أيام تداول</span>
+              </div>
               <Button asChild size="lg" variant="outline">
                 <Link to="/pricing">شوف الأسعار</Link>
               </Button>
@@ -184,11 +189,13 @@ function LandingPage() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight">جرّبها على محفظتك الحقيقية</h2>
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
-              ٤ أيام تداول مجانًا بكل المزايا. لو مش عاجبتك، سيبها بدون أي خصم.
+              ٥ أيام تداول مجانًا بكل المزايا. لو مش عاجبتك، سيبها بدون أي خصم.
             </p>
           </div>
           <Button asChild size="lg">
-            <Link to="/pricing">ابدأ تجربتك المجانية</Link>
+            <Link to="/login" search={{ mode: "register" }}>
+              ابدأ تجربتك المجانية
+            </Link>
           </Button>
         </div>
       </section>

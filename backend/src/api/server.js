@@ -47,13 +47,13 @@ import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'belal.elkady4@gmail.com';
 
-// Every account is on a 4-trading-day free trial from the moment it's created
+// Every account is on a 5-trading-day free trial from the moment it's created
 // — the window is derived from users.created_at rather than stored, so there
 // is nothing to reset or backfill. The trial runs in 24-hour slices from the
 // signup moment; a slice that starts on a Friday, Saturday or EGX bank holiday
 // (isTradingDay) doesn't count and just pushes the end out by a day, so
 // signing up before a weekend doesn't burn trial days on a closed market.
-const TRIAL_DAYS = 4;
+const TRIAL_DAYS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 function trialInfo(user) {
   const now = Date.now();

@@ -188,7 +188,7 @@ function SubscriptionWall() {
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
         {expired
           ? `اشتراكك انتهى${user?.currentPeriodEnd ? ` يوم ${arDay(user.currentPeriodEnd.slice(0, 10))}` : ""}. `
-          : "جرّبت EGXpert ٤ أيام تداول كاملة بكل المزايا. "}
+          : "جرّبت EGXpert ٥ أيام تداول كاملة بكل المزايا. "}
         محفظتك وصفقاتك وكل بياناتك زي ما هي ومحدش هيمسّها — التحليل والأسعار اللحظية بس اللي واقفة
         لحد ما تشترك.
       </p>

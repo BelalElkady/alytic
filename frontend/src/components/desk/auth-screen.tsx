@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { useDesk } from "@/lib/store";
 
 const PERKS = [
-  "تجربة مجانية ٤ أيام تداول بكل المزايا",
+  "تجربة مجانية ٥ أيام تداول بكل المزايا",
   "أسعار لحظية لأسهم البورصة المصرية",
   "وقف خسارة وأهداف وتوصية لكل سهم",
 ];
@@ -129,7 +129,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
                 </h1>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
                   {register
-                    ? "ابدأ تجربة مجانية ٤ أيام تداول — بدون بطاقة."
+                    ? "ابدأ تجربة مجانية ٥ أيام تداول — بدون بطاقة."
                     : "أهلًا بيك تاني. ادخل بياناتك للمتابعة."}
                 </p>
               </div>
