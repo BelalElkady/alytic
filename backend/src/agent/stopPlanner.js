@@ -58,6 +58,26 @@ function clampPositiveBelow(value, ceiling) {
   return r2(value);
 }
 
+// Stored plans are write-once (putStopPlan inserts only if absent), so a hit
+// never changes and can be remembered here: without this, every market scan
+// paid one or two Supabase round trips per stock (~12s for the universe)
+// just to re-read numbers it already had. Only hits are kept — a miss is
+// about to be generated and stored.
+const stopPlanMemo = new Map();
+const STOP_PLAN_MEMO_LIMIT = 5000;
+
+async function readStopPlan(code, style, asOf) {
+  const key = `${code}|${style}|${asOf}`;
+  const memoed = stopPlanMemo.get(key);
+  if (memoed) return memoed;
+  const stored = await getStopPlan(code, style, asOf);
+  if (stored) {
+    if (stopPlanMemo.size >= STOP_PLAN_MEMO_LIMIT) stopPlanMemo.clear();
+    stopPlanMemo.set(key, stored);
+  }
+  return stored;
+}
+
 /**
  * The entry-plan stop for a fresh buy today, shared across every user for
  * this (code, style, trading day) — see the module comment.
@@ -66,7 +86,7 @@ function clampPositiveBelow(value, ceiling) {
  */
 export async function getOrGenerateStopPlan(code, name, snapshot, entry, style = DEFAULT_STYLE, rules = RULES) {
   const asOf = snapshot.meta.asOf;
-  const cached = await getStopPlan(code, style, asOf);
+  const cached = await readStopPlan(code, style, asOf);
   if (cached) return cached;
 
   const userMessage = `${briefSnapshot(code, name, snapshot)}
@@ -86,7 +106,7 @@ A fresh buy today would enter at ${entry} EGP. Where should the stop-loss sit?`;
   await putStopPlan(code, style, asOf, stop, data.basis, raw.model, raw.usage);
   // Re-read so a concurrent request that won the insert race is what this
   // call (and everyone after it) actually sees, same pattern as market_reports.
-  return (await getStopPlan(code, style, asOf)) ?? { stop, basis: data.basis };
+  return (await readStopPlan(code, style, asOf)) ?? { stop, basis: data.basis };
 }
 
 /**

@@ -62,21 +62,46 @@ export async function writeBars(code, payload) {
 }
 
 /**
- * Is a cached entry still good?
- *
- * The session closes at 14:30 Cairo, and Yahoo lags a little, so before 16:00
- * we don't expect today's bar and yesterday's data is fine. After that, on a
- * trading day, a cache whose last bar isn't today is stale.
+ * The latest session whose close should already be published. The session
+ * closes at 14:30 Cairo and Yahoo lags a little, so no new bar is expected
+ * before 16:00: until then (and on weekends and holidays) it is the last
+ * trading day before today, and from 16:00 on a trading day it is today.
+ * Calendar-only — it knows weekends and the hand-kept holiday list, not
+ * surprise closures.
+ */
+export function expectedLastSession() {
+  const today = cairoToday();
+  if (isTradingDay(today) && cairoHour() >= 16) return today;
+  const day = new Date(`${today}T12:00:00Z`);
+  do {
+    day.setUTCDate(day.getUTCDate() - 1);
+  } while (!isTradingDay(day.toISOString().slice(0, 10)));
+  return day.toISOString().slice(0, 10);
+}
+
+/**
+ * How long a cache that is behind the calendar is trusted before the source is
+ * asked again. Yahoo can trail EGX by several sessions, and re-downloading a
+ * series that comes back unchanged is what made a market scan (~200 series)
+ * take tens of seconds every time it was opened.
+ */
+const RECHECK_AFTER_MS = 60 * 60 * 1000;
+
+/**
+ * Is a cached entry still good? Yes if it already holds the latest session
+ * that should exist, or if the source was asked less than an hour ago and had
+ * nothing newer (a lagging feed, not a stale cache). This used to answer "yes"
+ * whenever today's own close couldn't exist yet (before 16:00, or on a
+ * weekend) however old the cache was, so a cache left untouched for a week
+ * kept being served as current — and then failed the staleness gate as if the
+ * stock were suspended. The age check keeps that case refetching: a week-old
+ * cache is far past the hour.
  */
 export function isFresh(cached) {
   if (!cached?.bars?.length) return false;
-  const today = cairoToday();
-  const lastBar = cached.bars[cached.bars.length - 1].date;
-
-  if (lastBar >= today) return true;
-  if (!isTradingDay(today)) return true;      // weekend — no new close is coming
-  if (cairoHour() < 16) return true;          // today's close isn't published yet
-  return false;
+  if (cached.bars[cached.bars.length - 1].date >= expectedLastSession()) return true;
+  const age = Date.now() - Date.parse(cached.cachedAt);
+  return age >= 0 && age < RECHECK_AFTER_MS;
 }
 
 /** Cached bars if fresh, otherwise fetch, store and return. */

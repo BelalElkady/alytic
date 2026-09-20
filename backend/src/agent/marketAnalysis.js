@@ -16,7 +16,7 @@
 
 import { analyzeMany } from '../analyze.js';
 import { ALL_CODES } from '../config/universe.js';
-import { cairoToday, cairoHour, isTradingDay } from '../data/cache.js';
+import { expectedLastSession } from '../data/cache.js';
 import { MODEL_CHAIN, requestStructuredOR } from './clientOpenRouter.js';
 import { MarketAnalysisSchema, MarketReframeSchema } from './schemas.js';
 import { briefFor, crossCheckTool } from './analyst.js';
@@ -46,26 +46,6 @@ const RESEARCH_STYLE = DEFAULT_STYLE;
 async function scanMarket() {
   const { results, errors } = await analyzeMany(ALL_CODES, { capital: 1_000_000, concurrency: 6 });
   return { results, errors };
-}
-
-/**
- * A cheap, calendar-only guess at today's asOf — no network call — used
- * purely as a fast-path cache probe (see getOrGenerateMarketAnalysis). It
- * mirrors src/data/cache.js's isFresh() reasoning (session closes 14:30
- * Cairo, Yahoo lags, so no new bar is expected before ~16:00) but only knows
- * weekends and the hand-kept holiday list, not surprise closures — so a wrong guess is
- * expected occasionally and must never be trusted as the real asOf. It is
- * only ever used to check the cache; generation always falls back to
- * scanMarket()'s real, authoritative asOf.
- */
-function likelyAsOf() {
-  const today = cairoToday();
-  if (isTradingDay(today) && cairoHour() >= 16) return today;
-  let d = new Date(`${today}T12:00:00Z`);
-  do {
-    d.setUTCDate(d.getUTCDate() - 1);
-  } while (!isTradingDay(d.toISOString().slice(0, 10)));
-  return d.toISOString().slice(0, 10);
 }
 
 function rankCandidates(results) {
@@ -268,7 +248,7 @@ export async function getOrGenerateMarketAnalysis({ model = MODEL_CHAIN, rules =
     // nothing left for the scan to tell us. A wrong guess (an EGX holiday
     // this calendar doesn't know about) just falls through to the real scan
     // below exactly as before — this can only skip work, never skip correctness.
-    const guessed = await getMarketReport(likelyAsOf(), style);
+    const guessed = await getMarketReport(expectedLastSession(), style);
     if (guessed) return guessed;
   }
 
