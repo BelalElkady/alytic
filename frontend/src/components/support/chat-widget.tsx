@@ -49,6 +49,28 @@ const POLL_MS = 15 * 1000;
 // bubble only dismisses it until the next load, nothing is remembered.
 const NUDGE_DELAY_MS = 4000;
 
+// The X on the launcher stack folds the WhatsApp and chat buttons away into a
+// slim tab on the screen edge. Remembered across visits so a person who hid
+// them doesn't have to do it on every page; the tab is always there to undo it.
+const COLLAPSED_KEY = "alytic-chat-collapsed";
+
+const readCollapsed = () => {
+  try {
+    return window.localStorage.getItem(COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const writeCollapsed = (collapsed: boolean) => {
+  try {
+    if (collapsed) window.localStorage.setItem(COLLAPSED_KEY, "1");
+    else window.localStorage.removeItem(COLLAPSED_KEY);
+  } catch {
+    // Storage blocked (private mode): it simply resets on the next visit.
+  }
+};
+
 // Digits only, country code first — the form wa.me links require.
 const WHATSAPP_NUMBER = "201099284928";
 
@@ -150,6 +172,9 @@ export function ChatWidget() {
   // Starts false and only flips in an effect, so the server-rendered markup and
   // the first client render agree.
   const [nudge, setNudge] = useState(false);
+  // null until the saved choice is read on the client, so nothing flashes in
+  // the wrong state (localStorage doesn't exist on the server).
+  const [collapsed, setCollapsed] = useState<boolean | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const modeInitialized = useRef(false);
   // How many real messages existed when the current bot "session" started —
@@ -198,7 +223,21 @@ export function ChatWidget() {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => setCollapsed(readCollapsed()), []);
+
   const stopNudge = () => setNudge(false);
+  const collapse = () => {
+    stopNudge();
+    setCollapsed(true);
+    writeCollapsed(true);
+  };
+  const expand = () => {
+    // The nudge timer keeps running while collapsed; don't greet the person
+    // with a bubble the moment they bring the buttons back themselves.
+    stopNudge();
+    setCollapsed(false);
+    writeCollapsed(false);
+  };
   // Unread replies already have the red badge, which matters more than an
   // invitation to ask; staff don't need inviting to their own inbox.
   const showNudge = nudge && !open && unread === 0 && !user?.isAdmin;
@@ -323,6 +362,26 @@ export function ChatWidget() {
     }
   };
 
+  if (collapsed === null) return null;
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={expand}
+        aria-label="إظهار أزرار التواصل"
+        className="fixed bottom-20 start-0 z-50 flex h-14 w-9 items-center justify-center rounded-e-2xl bg-primary text-primary-foreground shadow-lg transition-[width] hover:w-11 md:bottom-6"
+      >
+        <MessageCircle className="size-5" />
+        {unread > 0 && (
+          <span className="num absolute -end-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-down text-[11px] font-semibold text-white">
+            {unread}
+          </span>
+        )}
+      </button>
+    );
+  }
+
   return (
     <>
       {showNudge && (
@@ -387,6 +446,16 @@ export function ChatWidget() {
       >
         <WhatsAppIcon className="size-8" />
       </a>
+      {!open && (
+        <button
+          type="button"
+          onClick={collapse}
+          aria-label="إخفاء أزرار التواصل"
+          className="fixed bottom-[11.375rem] start-[3.125rem] z-[51] grid size-7 place-items-center rounded-full border bg-card text-muted-foreground shadow-md transition-colors hover:bg-muted hover:text-foreground md:bottom-[7.875rem]"
+        >
+          <X className="size-4" />
+        </button>
+      )}
 
       {open && (
         <section
