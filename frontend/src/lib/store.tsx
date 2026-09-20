@@ -155,8 +155,8 @@ type DeskValue = {
   refreshPrices: (options?: { force?: boolean }) => Promise<void>;
   detailCode: string | null;
   openDetail: (code: string | null) => void;
-  marketFocus: "market" | "cash" | null;
-  openMarket: (focus: "market" | "cash" | null) => void;
+  marketFocus: "cash" | null;
+  openMarket: (focus: "cash" | null) => void;
   manualOpen: boolean;
   setManualOpen: (open: boolean) => void;
   /** Which tab the manual-entry dialog shows when it opens — see openManual. */
@@ -188,7 +188,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [lastPriceSync, setLastPriceSync] = useState<string | null>(null);
   const [priceError, setPriceError] = useState(false);
   const [detailCode, setDetailCode] = useState<string | null>(null);
-  const [marketFocus, setMarketFocus] = useState<"market" | "cash" | null>(null);
+  const [marketFocus, setMarketFocus] = useState<"cash" | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualTab, setManualTab] = useState<"edit" | "new">("edit");
   const openManual = useCallback((tab: "edit" | "new" = "edit") => {

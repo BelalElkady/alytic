@@ -27,12 +27,14 @@ import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
 import { Route as AppCashRouteImport } from './routes/_app.cash'
 import { Route as AppChartsRouteImport } from './routes/_app.charts'
 import { Route as AppIndicesRouteImport } from './routes/_app.indices'
+import { Route as AppMarketRouteImport } from './routes/_app.market'
 import { Route as AppPortfolioRouteImport } from './routes/_app.portfolio'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppTargetsRouteImport } from './routes/_app.targets'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as BlogIndexRouteImport } from './routes/blog.index'
 import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
+import { Route as AppStockCodeRouteImport } from './routes/_app.stock.$code'
 import { Route as ApiPublicSplatRouteImport } from './routes/api/public/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -124,6 +126,11 @@ const AppIndicesRoute = AppIndicesRouteImport.update({
   path: '/indices',
   getParentRoute: () => AppRoute,
 } as any)
+const AppMarketRoute = AppMarketRouteImport.update({
+  id: '/market',
+  path: '/market',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPortfolioRoute = AppPortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
@@ -154,6 +161,11 @@ const BlogSlugRoute = BlogSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => BlogRoute,
 } as any)
+const AppStockCodeRoute = AppStockCodeRouteImport.update({
+  id: '/stock/$code',
+  path: '/stock/$code',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiPublicSplatRoute = ApiPublicSplatRouteImport.update({
   id: '/api/public/$',
   path: '/api/public/$',
@@ -178,12 +190,14 @@ export interface FileRoutesByFullPath {
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
   '/indices': typeof AppIndicesRoute
+  '/market': typeof AppMarketRoute
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/': typeof BlogIndexRoute
+  '/stock/$code': typeof AppStockCodeRoute
   '/api/public/$': typeof ApiPublicSplatRoute
 }
 export interface FileRoutesByTo {
@@ -203,12 +217,14 @@ export interface FileRoutesByTo {
   '/cash': typeof AppCashRoute
   '/charts': typeof AppChartsRoute
   '/indices': typeof AppIndicesRoute
+  '/market': typeof AppMarketRoute
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog': typeof BlogIndexRoute
+  '/stock/$code': typeof AppStockCodeRoute
   '/api/public/$': typeof ApiPublicSplatRoute
 }
 export interface FileRoutesById {
@@ -231,12 +247,14 @@ export interface FileRoutesById {
   '/_app/cash': typeof AppCashRoute
   '/_app/charts': typeof AppChartsRoute
   '/_app/indices': typeof AppIndicesRoute
+  '/_app/market': typeof AppMarketRoute
   '/_app/portfolio': typeof AppPortfolioRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/targets': typeof AppTargetsRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/': typeof BlogIndexRoute
+  '/_app/stock/$code': typeof AppStockCodeRoute
   '/api/public/$': typeof ApiPublicSplatRoute
 }
 export interface FileRouteTypes {
@@ -259,12 +277,14 @@ export interface FileRouteTypes {
     | '/cash'
     | '/charts'
     | '/indices'
+    | '/market'
     | '/portfolio'
     | '/settings'
     | '/targets'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog/'
+    | '/stock/$code'
     | '/api/public/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -284,12 +304,14 @@ export interface FileRouteTypes {
     | '/cash'
     | '/charts'
     | '/indices'
+    | '/market'
     | '/portfolio'
     | '/settings'
     | '/targets'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog'
+    | '/stock/$code'
     | '/api/public/$'
   id:
     | '__root__'
@@ -311,12 +333,14 @@ export interface FileRouteTypes {
     | '/_app/cash'
     | '/_app/charts'
     | '/_app/indices'
+    | '/_app/market'
     | '/_app/portfolio'
     | '/_app/settings'
     | '/_app/targets'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog/'
+    | '/_app/stock/$code'
     | '/api/public/$'
   fileRoutesById: FileRoutesById
 }
@@ -466,6 +490,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndicesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/market': {
+      id: '/_app/market'
+      path: '/market'
+      fullPath: '/market'
+      preLoaderRoute: typeof AppMarketRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/portfolio': {
       id: '/_app/portfolio'
       path: '/portfolio'
@@ -508,6 +539,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogSlugRouteImport
       parentRoute: typeof BlogRoute
     }
+    '/_app/stock/$code': {
+      id: '/_app/stock/$code'
+      path: '/stock/$code'
+      fullPath: '/stock/$code'
+      preLoaderRoute: typeof AppStockCodeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/public/$': {
       id: '/api/public/$'
       path: '/api/public/$'
@@ -524,9 +562,11 @@ interface AppRouteChildren {
   AppCashRoute: typeof AppCashRoute
   AppChartsRoute: typeof AppChartsRoute
   AppIndicesRoute: typeof AppIndicesRoute
+  AppMarketRoute: typeof AppMarketRoute
   AppPortfolioRoute: typeof AppPortfolioRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTargetsRoute: typeof AppTargetsRoute
+  AppStockCodeRoute: typeof AppStockCodeRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -535,9 +575,11 @@ const AppRouteChildren: AppRouteChildren = {
   AppCashRoute: AppCashRoute,
   AppChartsRoute: AppChartsRoute,
   AppIndicesRoute: AppIndicesRoute,
+  AppMarketRoute: AppMarketRoute,
   AppPortfolioRoute: AppPortfolioRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTargetsRoute: AppTargetsRoute,
+  AppStockCodeRoute: AppStockCodeRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

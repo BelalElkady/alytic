@@ -24,9 +24,9 @@ import { toast } from "sonner";
 
 import { SubscribePanel } from "@/components/billing/subscribe-panel";
 import { LogoMark } from "@/components/brand/logo";
+import { CashDialog } from "@/components/desk/cash-dialog";
 import { DetailDialog } from "@/components/desk/detail-dialog";
 import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
-import { MarketDialog } from "@/components/desk/market-dialog";
 import { Spinner, Stat } from "@/components/desk/state-blocks";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
 import { SiteFooter } from "@/components/marketing/site-footer";
@@ -115,7 +115,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <MobileNav />
       <ChatWidget />
       <DetailDialog />
-      <MarketDialog />
+      <CashDialog />
       <ManualEntryDialog />
     </div>
   );
@@ -446,7 +446,6 @@ function DeskHeader() {
   const {
     user,
     signOut,
-    openMarket,
     openManual,
     reload,
     lastPriceSync,
@@ -503,6 +502,18 @@ function DeskHeader() {
       : marketAnalysisExhausted
         ? "خلصت محاولات تحليل السوق المتاحة الشهر ده — تتجدد الشهر الجاي"
         : `باقي ${marketAnalysisLeft}${marketAnalysisPerMonth && !pf?.credits?.marketAnalysis ? ` من ${marketAnalysisPerMonth}` : ""} ${marketAnalysisLeft === 1 ? "محاولة" : "محاولات"} الشهر ده`;
+
+  const marketButtonLabel = (
+    <>
+      <Radar className="size-4" />
+      تحليل السوق
+      {marketAnalysisHint && (
+        <span id="market-analysis-left-hint" className="sr-only">
+          {marketAnalysisHint}
+        </span>
+      )}
+    </>
+  );
 
   const importFiles = async (files: File[], replaceAll: boolean) => {
     setUploading(true);
@@ -634,19 +645,15 @@ function DeskHeader() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="relative inline-flex">
+                  {/* A link to the page while attempts remain; a disabled
+                      button once they are gone, as it was before it was a page. */}
                   <Button
                     size="sm"
-                    onClick={() => openMarket("market")}
+                    asChild={!marketAnalysisExhausted}
                     disabled={marketAnalysisExhausted}
                     aria-describedby={marketAnalysisHint ? "market-analysis-left-hint" : undefined}
                   >
-                    <Radar className="size-4" />
-                    تحليل السوق
-                    {marketAnalysisHint && (
-                      <span id="market-analysis-left-hint" className="sr-only">
-                        {marketAnalysisHint}
-                      </span>
-                    )}
+                    {marketAnalysisExhausted ? marketButtonLabel : <Link to="/market">{marketButtonLabel}</Link>}
                   </Button>
                 </span>
               </TooltipTrigger>
