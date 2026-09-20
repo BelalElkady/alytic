@@ -76,6 +76,12 @@ create unique index if not exists idx_users_phone on users(phone) where phone is
 alter table users add column if not exists signup_ip text;
 alter table users add column if not exists last_login_ip text;
 
+-- Last time a browser tab of this account reported in (the site pings
+-- POST /api/presence about once a minute while a tab is visible). Unlike
+-- last_login_at, which only moves at sign-in, this is what "online now" in
+-- the admin panel counts.
+alter table users add column if not exists last_seen_at timestamptz;
+
 create unique index if not exists idx_users_google_id on users(google_id) where google_id is not null;
 create index if not exists idx_users_verification_token on users(verification_token) where verification_token is not null;
 create index if not exists idx_users_reset_token on users(reset_token) where reset_token is not null;

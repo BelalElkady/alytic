@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
 import { PLANS, TIERS, ADDONS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -382,6 +382,47 @@ app.get('/api/billing/plans', (_req, res) => {
   // top-ups (see ADDONS) shown alongside the plans, one list per credit kind.
   res.json({ plans: Object.values(PLANS), tiers: TIERS, addons: ADDONS });
 });
+
+// ---- Live presence ----------------------------------------------------------
+// The site pings POST /api/presence about once a minute from every visible
+// tab (see PresenceBeacon in the frontend). Signed-in accounts are stamped on
+// users.last_seen_at, so "online" survives a restart and doubles as a "last
+// seen" column. Visitors with no session have no row to stamp, so they live
+// in memory only, keyed by a random id the browser keeps in localStorage —
+// which counts browsers, not people, and starts from zero after a restart.
+const PRESENCE_WINDOW_MS = 3 * 60 * 1000;
+const PRESENCE_DB_WRITE_MS = 60 * 1000;
+const PRESENCE_MAX_VISITORS = 50_000;
+const VISITOR_ID = /^[A-Za-z0-9-]{8,64}$/;
+const anonSeen = new Map(); // visitor id -> ms of last ping
+const userSeenWritten = new Map(); // user id -> ms of last last_seen_at write
+let anonPrunedAt = 0;
+
+const pruneAnonSeen = (now) => {
+  if (now - anonPrunedAt < 60 * 1000) return;
+  anonPrunedAt = now;
+  for (const [vid, at] of anonSeen) if (now - at >= PRESENCE_WINDOW_MS) anonSeen.delete(vid);
+};
+
+const presenceLimiter = rateLimited(120, 1);
+
+app.post('/api/presence', presenceLimiter, wrap(async (req, res) => {
+  const now = Date.now();
+  const vid = typeof req.body?.vid === 'string' && VISITOR_ID.test(req.body.vid) ? req.body.vid : null;
+  const user = await userFromRequest(req);
+  if (user) {
+    // A visitor who signs in mid-visit must not also count as an anonymous one.
+    if (vid) anonSeen.delete(vid);
+    if (now - (userSeenWritten.get(user.id) ?? 0) >= PRESENCE_DB_WRITE_MS) {
+      userSeenWritten.set(user.id, now);
+      await touchUserSeen(user.id, new Date(now).toISOString());
+    }
+  } else if (vid) {
+    pruneAnonSeen(now);
+    if (anonSeen.has(vid) || anonSeen.size < PRESENCE_MAX_VISITORS) anonSeen.set(vid, now);
+  }
+  res.json({ ok: true });
+}));
 
 app.use('/api', async (req, res, next) => {
   if (
@@ -892,6 +933,16 @@ app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
 // watchlist, trades) for the admin users list. `behavior` is the same
 // behaviorProfile() the AI cash review reads, cut down to what the table
 // shows, next to the style the user picked in settings (if any).
+// Who is on the site right now: accounts that pinged within the window, plus
+// anonymous browsers counted in memory (see the presence block above).
+app.get('/api/admin/online', wrap(async (_req, res) => {
+  const now = Date.now();
+  const signedIn = await countUsersSeenSince(new Date(now - PRESENCE_WINDOW_MS).toISOString());
+  let visitors = 0;
+  for (const at of anonSeen.values()) if (now - at < PRESENCE_WINDOW_MS) visitors += 1;
+  res.json({ signedIn, visitors, windowSeconds: PRESENCE_WINDOW_MS / 1000, asOf: new Date(now).toISOString() });
+}));
+
 app.get('/api/admin/users', wrap(async (req, res) => {
   const [users, portfolios, subscriptions] = await Promise.all([
     getAllUsers(),
@@ -923,6 +974,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       googleLinked: Boolean(u.google_id),
       createdAt: u.created_at,
       lastLoginAt: u.last_login_at,
+      lastSeenAt: u.last_seen_at,
       signupIp: u.signup_ip,
       lastLoginIp: u.last_login_ip,
       trialActive: trial.trialActive,

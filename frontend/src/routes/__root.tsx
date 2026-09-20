@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { PresenceBeacon } from "@/components/presence-beacon";
 import { Toaster } from "@/components/ui/sonner";
 import { OG_LOGO_URL, SITE_URL } from "@/lib/seo";
 import { DeskProvider } from "@/lib/store";
@@ -161,6 +162,7 @@ function RootComponent() {
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
       </DeskProvider>
+      <PresenceBeacon />
       <Toaster position="top-center" richColors />
     </QueryClientProvider>
   );

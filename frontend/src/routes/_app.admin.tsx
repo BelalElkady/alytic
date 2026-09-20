@@ -424,6 +424,8 @@ type AdminUserRow = {
   googleLinked: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  /** Last presence ping from any tab; null until the account is first seen after tracking began. */
+  lastSeenAt: string | null;
   /** Null for accounts that predate IP tracking. */
   signupIp: string | null;
   lastLoginIp: string | null;
@@ -547,7 +549,29 @@ function downloadUsersCsv(rows: AdminUserRow[]) {
   URL.revokeObjectURL(url);
 }
 
+type OnlineNow = { signedIn: number; visitors: number; windowSeconds: number; asOf: string };
+
+/** Polls who is on the site now. Failures keep the last good numbers rather than blanking the card. */
+function useOnlineNow() {
+  const [online, setOnline] = useState<OnlineNow | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const poll = () =>
+      api<OnlineNow>("/api/admin/online")
+        .then((result) => alive && setOnline(result))
+        .catch(() => {});
+    poll();
+    const timer = window.setInterval(poll, 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+  return online;
+}
+
 function UsersTab() {
+  const online = useOnlineNow();
   const [rows, setRows] = useState<AdminUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -631,6 +655,23 @@ function UsersTab() {
   if (!rows || !stats) return <LoadingBlock rows={3} />;
 
   const statRows: { label: string; value: ReactNode; sub?: string; valueClassName?: string }[][] = [
+    [
+      {
+        label: "متصلون الآن",
+        value: online ? int(online.signedIn + online.visitors) : "…",
+        sub: online ? `آخر ${Math.round(online.windowSeconds / 60)} دقايق` : undefined,
+        valueClassName: "text-up",
+      },
+      { label: "مسجّلون متصلون", value: online ? int(online.signedIn) : "…" },
+      { label: "زوّار غير مسجّلين", value: online ? int(online.visitors) : "…", sub: "متصفحات — تُصفَّر مع إعادة تشغيل السيرفر" },
+      {
+        label: "آخر تحديث",
+        value: online
+          ? new Date(online.asOf).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit", numberingSystem: "latn" })
+          : "…",
+        sub: "يتجدد كل ٣٠ ثانية",
+      },
+    ],
     [
       { label: "إجمالي المستخدمين", value: int(stats.total) },
       { label: "نشط (تجربة سارية أو اشتراك فعال)", value: int(stats.active), sub: `من ${stats.total}` },
@@ -741,7 +782,7 @@ function UsersTab() {
                     <TableHead className="min-w-[190px] whitespace-nowrap border-e py-3 text-start">المستخدم</TableHead>
                     <TableHead className="min-w-[160px] whitespace-nowrap border-e py-3 text-start">الهاتف / IP</TableHead>
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">تاريخ التسجيل</TableHead>
-                    <TableHead className="min-w-[150px] whitespace-nowrap border-e py-3 text-start">آخر دخول</TableHead>
+                    <TableHead className="min-w-[150px] whitespace-nowrap border-e py-3 text-start">آخر دخول / ظهور</TableHead>
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">رأس المال</TableHead>
                     <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">ربح محقق</TableHead>
                     <TableHead className="min-w-[210px] whitespace-nowrap border-e py-3 text-start">النشاط الاستثماري</TableHead>
@@ -827,6 +868,23 @@ function UserRow({
               numberingSystem: "latn",
             })
           : "—"}
+        {row.lastSeenAt && (
+          <div className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+            {Date.now() - new Date(row.lastSeenAt).getTime() < 3 * 60 * 1000 && (
+              <span className="size-1.5 rounded-full bg-up" aria-label="متصل الآن" />
+            )}
+            <span title="آخر ظهور على الموقع">
+              ظهر{" "}
+              {new Date(row.lastSeenAt).toLocaleString("ar-EG", {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+                numberingSystem: "latn",
+              })}
+            </span>
+          </div>
+        )}
       </TableCell>
       <TableCell className="num border-e align-top py-3 text-right">
         {capital != null ? `${int(capital)} ج` : "—"}

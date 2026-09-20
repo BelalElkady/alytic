@@ -90,6 +90,21 @@ export async function touchUserLogin(id, timestamp, ip) {
   must(await supabase.from('users').update(update).eq('id', id), 'touchUserLogin');
 }
 
+/** Stamps the account as seen at `timestamp` — the presence heartbeat, throttled by the caller. */
+export async function touchUserSeen(id, timestamp) {
+  must(await supabase.from('users').update({ last_seen_at: timestamp }).eq('id', id), 'touchUserSeen');
+}
+
+/** How many accounts reported in at or after `sinceIso` — the admin panel's signed-in "online now". */
+export async function countUsersSeenSince(sinceIso) {
+  const { count, error } = await supabase
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .gte('last_seen_at', sinceIso);
+  if (error) throw new Error(`countUsersSeenSince: ${error.message}`);
+  return count ?? 0;
+}
+
 export async function setVerificationToken(id, token, expiresAt) {
   must(
     await supabase.from('users').update({ verification_token: token, verification_token_expires: expiresAt }).eq('id', id),
@@ -507,7 +522,7 @@ export async function deleteUser(id) {
 export async function getAllUsers() {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, phone, is_admin, email_verified, google_id, created_at, last_login_at, signup_ip, last_login_ip')
+    .select('id, email, name, phone, is_admin, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip')
     .order('created_at', { ascending: false });
   if (error) throw new Error(`getAllUsers: ${error.message}`);
   return data;
