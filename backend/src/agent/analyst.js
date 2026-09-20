@@ -147,7 +147,9 @@ function ruleBookLines(ps, price) {
     `  R3 Target (${tg.horizon}-term) ${tg.level ?? 'n/a'} → ${mark(tg.fired)}` +
       (tg.level != null
         ? ` | if fired: sell ${tg.fractionPct}% = ${tg.qty} of ${ps.shares} shares, keep ${tg.remainingShares}, ${stopNote(tg.raisedStop)}`
-        : ''),
+        : '') +
+      // Once the price passes a target a new one is set for what is kept.
+      (tg.next != null ? ` | new target for the remainder: ${tg.next}` : ''),
   );
   out.push(
     `  R4 Partial profit at +${pp.thresholdPct}%: profit ${ps.unrealizedPct}% → ` +
@@ -248,7 +250,7 @@ export function briefFor(a) {
   lines.push(`  Stop: ${p.stop.stop} EGP (risk ${p.stop.riskPct}%) — ${p.stop.basis}`);
   if (p.targets.mid) {
     lines.push(
-      `  Mid-term target: ${p.targets.mid.price} EGP (${signed(away(p.targets.mid.price))}% from price${price >= p.targets.mid.price ? ' — ALREADY REACHED' : ''}) — ${p.targets.mid.basis} | ` +
+      `  Mid-term target: ${p.targets.mid.price} EGP (${signed(away(p.targets.mid.price))}% from price${price >= p.targets.mid.price ? ' — ALREADY REACHED' : ''}${p.targets.mid.previous ? ` — NEW target, set because price passed the earlier ${p.targets.mid.previous.price}` : ''}) — ${p.targets.mid.basis} | ` +
         `Timing: ${p.targets.mid.horizon.ar} | reward/risk ${p.targets.mid.riskReward}` +
         `${p.targets.mid.meetsMinRR === false ? ' ⚠️ below minimum' : ''}`,
     );
@@ -257,7 +259,7 @@ export function briefFor(a) {
   }
   if (p.targets.long?.price) {
     lines.push(
-      `  Long-term target: ${p.targets.long.price} EGP (${signed(away(p.targets.long.price))}% from price${price >= p.targets.long.price ? ' — ALREADY REACHED' : ''}) — ${p.targets.long.basis} | Timing: ${p.targets.long.horizon.ar}`,
+      `  Long-term target: ${p.targets.long.price} EGP (${signed(away(p.targets.long.price))}% from price${price >= p.targets.long.price ? ' — ALREADY REACHED' : ''}${p.targets.long.previous ? ` — NEW target, set because price passed the earlier ${p.targets.long.previous.price}` : ''}) — ${p.targets.long.basis} | Timing: ${p.targets.long.horizon.ar}`,
     );
   } else {
     lines.push(`  Long-term target: ${p.targets.long?.note ?? 'n/a'}`);
@@ -284,7 +286,8 @@ export function briefFor(a) {
       `  Where price stands now (${ps.pricedAt === 'live' ? 'live quote' : 'last close'}): price ${price} | ` +
         `stop ${ps.stop} (${ps.distanceToStopPct}% below price${ps.distanceToStopPct < 0 ? ' — PRICE IS UNDER THE STOP right now' : ''}) | ` +
         (ps.targetLevel != null
-          ? `target ${ps.targetLevel} (${ps.distanceToTargetPct >= 0 ? `${ps.distanceToTargetPct}% above price` : `price is ${Math.abs(ps.distanceToTargetPct)}% PAST it`})`
+          ? `target ${ps.targetLevel} (${ps.distanceToTargetPct >= 0 ? `${ps.distanceToTargetPct}% above price` : `price is ${Math.abs(ps.distanceToTargetPct)}% PAST it`}` +
+            `${ps.reachedTarget?.next != null ? `; this is the NEW target — price already passed the earlier ${ps.reachedTarget.price}` : ''})`
           : 'no target'),
     );
     if (ps.trailing.moved) lines.push(`  ⬆️ Stop raised today from ${ps.trailing.from} to ${ps.stop} (peak ${ps.trailing.peak})`);

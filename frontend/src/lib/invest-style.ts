@@ -243,6 +243,10 @@ export function styleRecommendation(
     unrealizedPct?: number;
     distanceToStopPct?: number;
     stopBreached?: boolean;
+    /** The level the target actually shown now sits at — the new one, once a passed target was replaced. */
+    targetLevel?: number | null;
+    /** Set while the live price is past the target the analysis first picked; `next` is what replaced it. */
+    reachedTarget?: { price: number; next?: number | null } | null;
     trailing?: { active?: boolean } | null;
     partialTaken?: boolean;
     recommendation?: Recommendation | null;
@@ -264,7 +268,12 @@ export function styleRecommendation(
   // Mirrors the server's governingTarget (analyze.js, driven by
   // config/styles.js OVERRIDES.long) — the long style judges "reached
   // target" by the long-horizon target, every other style by the mid one.
-  const target = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
+  // Once the price passes a target the server sets a new one and the row's
+  // targets move up to it — the level that was passed is still the one this
+  // rule judges "reached" by, so it is read from `reachedTarget` first.
+  const target =
+    position.reachedTarget?.price ??
+    (style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price);
   if (price == null || shares == null || !shares || profitPct == null) return fallback;
 
   // 1. Stop breached — nothing else matters.
@@ -276,9 +285,11 @@ export function styleRecommendation(
     return {
       action: "take_target",
       label: "جني أرباح",
-      text: `وصل الهدف ${r2(target)}. بيع ${qty} سهم وارفع الوقف للباقي لـ ${r2(
-        price * (1 - rules.takeProfit.raiseStopAfterTargetPct / 100),
-      )}.`,
+      text:
+        `وصل الهدف ${r2(target)}. بيع ${qty} سهم وارفع الوقف للباقي لـ ${r2(
+          price * (1 - rules.takeProfit.raiseStopAfterTargetPct / 100),
+        )}.` +
+        (position.reachedTarget?.next != null ? ` الهدف الجديد للباقي: ${r2(position.reachedTarget.next)}.` : ""),
       order: { side: "sell", qty, price: r2(price) },
     };
   }

@@ -148,14 +148,18 @@ function verdictStaleReason(
   then: number | null,
   now: number | undefined,
   stop: number | null | undefined,
-  target: number | null | undefined,
+  // Every target level in play — the current one and, once a passed target was
+  // replaced, the one that was passed.
+  targets: (number | null | undefined)[],
 ): string | null {
   if (then == null || !(then > 0) || now == null || !(now > 0)) return null;
   if (typeof stop === "number" && then >= stop !== now >= stop) {
     return now < stop ? "السعر نزل تحت الوقف بعد التوصية" : "السعر رجع فوق الوقف بعد التوصية";
   }
-  if (typeof target === "number" && then < target !== now < target) {
-    return now >= target ? "السعر عدّى الهدف بعد التوصية" : "السعر رجع تحت الهدف بعد التوصية";
+  for (const target of targets) {
+    if (typeof target === "number" && then < target !== now < target) {
+      return now >= target ? "السعر عدّى الهدف بعد التوصية" : "السعر رجع تحت الهدف بعد التوصية";
+    }
   }
   const movePct = ((now - then) / then) * 100;
   if (Math.abs(movePct) >= VERDICT_STALE_MOVE_PCT) {
@@ -368,10 +372,16 @@ function PositionsPage() {
           text: `${row.code}: قريب من الوقف (${fmt(p.distanceToStopPct, 1)}%)`,
         };
       if (p.triggers?.atTarget) {
-        const reachedTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
+        // The row's targets have already moved up to the new one by now, so the
+        // level that was reached comes from reachedTarget.
+        const reachedTarget =
+          p.reachedTarget?.price ??
+          (style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price);
         return {
           tone: "success" as const,
-          text: `${row.code}: وصل الهدف ${fmt(reachedTarget)}`,
+          text: `${row.code}: وصل الهدف ${fmt(reachedTarget)}${
+            p.reachedTarget?.next != null ? ` — الهدف الجديد ${fmt(p.reachedTarget.next)}` : ""
+          }`,
         };
       }
       return null;
@@ -485,7 +495,9 @@ function PositionCard({
     error: reviewError,
     request: requestReview,
   } = useStockReview(row.code, style, `${p.shares}@${p.avgCost}`, row.price);
-  const staleReason = verdict ? verdictStaleReason(verdictPrice, row.price, p.stop, primaryTarget) : null;
+  const staleReason = verdict
+    ? verdictStaleReason(verdictPrice, row.price, p.stop, [primaryTarget, p.reachedTarget?.price])
+    : null;
   // A verdict stays on the card until the next request, so it can be from an earlier day.
   const verdictIsToday = isFromToday(verdictAt);
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);

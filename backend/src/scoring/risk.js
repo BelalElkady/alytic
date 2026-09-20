@@ -206,7 +206,7 @@ export function riskReward(entry, stop, target) {
  * because the one discipline that must never be negotiated is the stop. The AI
  * analyst may add colour on top of this, but it cannot contradict it.
  */
-export function positionRecommendation({ snapshot, position, trailing, midTarget, partialTaken = false, stopBreached }, rules = RULES) {
+export function positionRecommendation({ snapshot, position, trailing, midTarget, nextTarget = null, partialTaken = false, stopBreached }, rules = RULES) {
   const price = snapshot.price.close;
   const { avgCost, shares } = position;
   const stop = trailing.stop;
@@ -231,7 +231,8 @@ export function positionRecommendation({ snapshot, position, trailing, midTarget
     return {
       action: 'take_target',
       label: 'جني أرباح',
-      text: `وصل الهدف ${r2(midTarget)}. بيع ${qty} سهم وارفع الوقف للباقي لـ ${r2(price * (1 - rules.takeProfit.raiseStopAfterTargetPct / 100))}.`,
+      text: `وصل الهدف ${r2(midTarget)}. بيع ${qty} سهم وارفع الوقف للباقي لـ ${r2(price * (1 - rules.takeProfit.raiseStopAfterTargetPct / 100))}.` +
+        (nextTarget != null ? ` الهدف الجديد للباقي: ${r2(nextTarget)}.` : ''),
       order: { side: 'sell', qty, price: r2(price) },
     };
   }

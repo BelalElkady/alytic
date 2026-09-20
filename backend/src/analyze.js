@@ -36,7 +36,7 @@ const r2 = (x) => (x == null ? null : +x.toFixed(2));
  * each evaluated against one open position with the exact quantities and
  * prices its order would use. The analyst quotes these; it never derives them.
  */
-function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, governingTarget, partialTaken }, rules) {
+function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, governingTarget, nextTarget = null, partialTaken }, rules) {
   const { shares } = position;
   const tp = rules.takeProfit;
   const trailFromPrice = price * (1 - rules.trailing.trailPct / 100);
@@ -82,6 +82,9 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       level: governingTarget?.price ?? null,
       horizon: rules.targets?.primary === 'long' && governingTarget?.price ? 'long' : 'mid',
       fired: governingTarget?.price != null && price >= governingTarget.price && targetQty >= 1,
+      // The new target set once the price passed `level`, so the order below can
+      // name where the rest of the position is now aiming.
+      next: nextTarget?.price ?? null,
       fractionPct: r2(tp.atTargetFraction * 100),
       qty: targetQty,
       remainingShares: shares - targetQty,
@@ -248,6 +251,9 @@ export async function analyzeTicker(code, opts = {}) {
   // What the caller sees as this analysis's snapshot: the daily-close one,
   // unless an open position is being valued at a live quote (see below).
   let resultSnapshot = snapshot;
+  // Likewise the targets: the close-based ones, unless the live price has
+  // passed one and a new one had to be set (see below).
+  let resultTargets = targets;
   if (position?.shares > 0 && position.avgCost > 0) {
     // The cached bars stop at the last completed session, so on their own
     // they value a position at a price that can be days old — a recommendation
@@ -324,9 +330,38 @@ export async function analyzeTicker(code, opts = {}) {
     // for every style except long (config/styles.js), which follows its own
     // stated guidance to judge by the long-horizon target instead. Falls back
     // to mid when the long target isn't projectable (downtrend, no data).
-    const governingTarget = rules.targets?.primary === 'long' && targets.long?.price ? targets.long : targets.mid;
+    const governingOf = (t) => (rules.targets?.primary === 'long' && t.long?.price ? t.long : t.mid);
+    const passed = (t) => t?.price != null && posPrice >= t.price;
+
+    // The targets above were derived off the last close, so a live price can
+    // run past one — and a target already behind the price is not a target the
+    // position can still aim at. When that happens, the passed horizon is
+    // rebuilt against the live price (same structure-first rules as any other
+    // target, so the next resistance up, else a measured move, else a
+    // volatility projection) and the old level is kept as `previous`.
+    let heldTargets = targets;
+    if (livePrice && (passed(targets.mid) || passed(targets.long))) {
+      const fresh = buildTargets(posSnapshot, bars, { entry: null, stop: effectiveStop }, rules);
+      const retarget = (old, next) =>
+        passed(old) && next?.price != null && next.price > posPrice
+          ? { ...next, previous: { price: old.price, basis: old.basis ?? null } }
+          : old;
+      heldTargets = { ...targets, mid: retarget(targets.mid, fresh.mid), long: retarget(targets.long, fresh.long) };
+    }
+    resultTargets = heldTargets;
+    const governingTarget = governingOf(heldTargets);
+    // The target the price has just passed, if it is the one that governs — the
+    // R3 "reached target → take profit" trigger keeps judging against it, so
+    // setting a new target never silently drops the signal to bank some. When
+    // no new target could be set, it is simply the governing target itself.
+    const originalGoverning = governingOf(targets);
+    const reachedTarget = passed(originalGoverning) ? originalGoverning : null;
+    const nextTarget = reachedTarget && governingTarget !== reachedTarget ? governingTarget : null;
     const partialTaken = Boolean(position.partialTakenAt);
-    const ruleBook = buildRuleBook({ snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired, governingTarget, partialTaken }, rules);
+    const ruleBook = buildRuleBook(
+      { snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired, governingTarget: reachedTarget ?? governingTarget, nextTarget, partialTaken },
+      rules,
+    );
 
     positionState = {
       shares: position.shares,
@@ -360,6 +395,10 @@ export async function analyzeTicker(code, opts = {}) {
       // The level distanceToTargetPct is measured to — so the UI draws the
       // same target it quotes a distance to, whatever style it is showing.
       targetLevel: governingTarget?.price ?? null,
+      // Set only while the live price is past the target the day's analysis
+      // picked: that level, and (in targetLevel above) the new one that
+      // replaced it. Null once the price is back under, or when nothing passed.
+      reachedTarget: reachedTarget ? { price: reachedTarget.price, next: nextTarget?.price ?? null } : null,
       distanceToTargetPct: governingTarget?.price ? r2(((governingTarget.price - posPrice) / posPrice) * 100) : null,
       riskRewardFromHere: governingTarget?.price ? riskReward(posPrice, effectiveStop, governingTarget.price) : null,
       // The targets-table badge: a week range plus a momentum marker.
@@ -373,7 +412,15 @@ export async function analyzeTicker(code, opts = {}) {
       partialTaken,
       // What the desk view shows on this position's card.
       recommendation: positionRecommendation(
-        { snapshot: posSnapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: governingTarget?.price ?? null, partialTaken, stopBreached: stopFired },
+        {
+          snapshot: posSnapshot,
+          position,
+          trailing: { ...trailing, stop: effectiveStop },
+          midTarget: (reachedTarget ?? governingTarget)?.price ?? null,
+          nextTarget: nextTarget?.price ?? null,
+          partialTaken,
+          stopBreached: stopFired,
+        },
         rules,
       ),
       // The rule set, applied. These are the mechanical triggers the AI must respect.
@@ -429,7 +476,7 @@ export async function analyzeTicker(code, opts = {}) {
       actionable: entryStatus === 'buy_now' || entryStatus === 'limit_pullback',
       buyingNow,
       stop: stopPlan,
-      targets,
+      targets: resultTargets,
       sizing,
     },
 

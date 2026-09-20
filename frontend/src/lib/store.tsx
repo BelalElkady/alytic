@@ -99,6 +99,8 @@ export const PRICE_REFRESH_MS = 20 * 1000;
  * reaches the card when the analysis is fetched again.
  */
 const LEVELS_REFRESH_MS = 5 * 60 * 1000;
+/** The shortest gap before a price crossing a target re-reads the levels early. */
+const LEVELS_SOON_MS = 30 * 1000;
 
 /** Sun–Thu, 09:30–15:00 Cairo — a little wider than EGX's own 10:00–14:30 session. */
 function egxSessionLikelyOpen(now = new Date()): boolean {
@@ -297,6 +299,52 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /**
+   * Re-reads the held stocks' analysis so stops and targets follow the market
+   * during the session: the server re-sets a stop upward as the price climbs,
+   * and sets a new target once the price passes one. Runs quietly — no loading
+   * state — and keeps the newer live price the quote poll may already have put
+   * on the row rather than the one the scan saw. `soon` is for a price that
+   * just crossed a target: it waits only LEVELS_SOON_MS since the last read,
+   * not the full interval.
+   */
+  // Starts at "now": the desk's own load has just read the levels.
+  const lastLevelsAt = useRef(Date.now());
+  const refreshLevels = useCallback(
+    async ({ soon = false }: { soon?: boolean } = {}) => {
+      const current = rowsRef.current;
+      if (!current.length || document.hidden || !egxSessionLikelyOpen()) return;
+      const minGap = soon ? LEVELS_SOON_MS : LEVELS_REFRESH_MS - 1000;
+      if (Date.now() - lastLevelsAt.current < minGap) return;
+      lastLevelsAt.current = Date.now();
+      try {
+        const codes = current.map((row) => row.code).join(",");
+        const { results } = await api(`/api/scan?codes=${encodeURIComponent(codes)}&style=${style}`);
+        const fresh = new Map<string, Row>(
+          (results as Row[]).filter((r) => r.position).map((r) => [r.code, r]),
+        );
+        setRows((previous) =>
+          previous.map((row) => {
+            const next = fresh.get(row.code);
+            if (!next) return row;
+            if (!(row.price && next.position)) return next;
+            return {
+              ...next,
+              price: row.price,
+              lastTradePrice: row.lastTradePrice,
+              lastTradeTime: row.lastTradeTime,
+              changePct: row.changePct,
+              position: repricePosition(next.position, row.price),
+            };
+          }),
+        );
+      } catch (caught) {
+        await handledExpiry(caught);
+      }
+    },
+    [style, handledExpiry],
+  );
+
   const refreshPrices = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
       const current = rowsRef.current;
@@ -306,6 +354,15 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       try {
         const codes = current.map((row) => row.code).join(",");
         const { quotes } = await api(`/api/quotes?codes=${encodeURIComponent(codes)}`);
+        // A price that has just run past a stock's target needs a new one, and
+        // only the server sets it — don't wait out the interval for that.
+        // `reachedTarget` being set means the server already handled this one.
+        const crossedTarget = current.some((row) => {
+          const q = quotes?.[row.code]?.price;
+          const p = row.position;
+          return q && p && typeof p.targetLevel === "number" && q >= p.targetLevel && !p.reachedTarget;
+        });
+        if (crossedTarget) void refreshLevels({ soon: true });
         setRows((previous) =>
           previous.map((row) => {
             const quote = quotes?.[row.code];
@@ -334,47 +391,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         setPriceError(true);
       }
     },
-    [handledExpiry],
+    [handledExpiry, refreshLevels],
   );
-
-  /**
-   * Re-reads the held stocks' analysis so stops and targets follow the market
-   * during the session (the server re-sets a stop upward as the price climbs).
-   * Runs quietly — no loading state — and keeps the newer live price the quote
-   * poll may already have put on the row rather than the one the scan saw.
-   */
-  // Starts at "now": the desk's own load has just read the levels.
-  const lastLevelsAt = useRef(Date.now());
-  const refreshLevels = useCallback(async () => {
-    const current = rowsRef.current;
-    if (!current.length || document.hidden || !egxSessionLikelyOpen()) return;
-    if (Date.now() - lastLevelsAt.current < LEVELS_REFRESH_MS - 1000) return;
-    lastLevelsAt.current = Date.now();
-    try {
-      const codes = current.map((row) => row.code).join(",");
-      const { results } = await api(`/api/scan?codes=${encodeURIComponent(codes)}&style=${style}`);
-      const fresh = new Map<string, Row>(
-        (results as Row[]).filter((r) => r.position).map((r) => [r.code, r]),
-      );
-      setRows((previous) =>
-        previous.map((row) => {
-          const next = fresh.get(row.code);
-          if (!next) return row;
-          if (!(row.price && next.position)) return next;
-          return {
-            ...next,
-            price: row.price,
-            lastTradePrice: row.lastTradePrice,
-            lastTradeTime: row.lastTradeTime,
-            changePct: row.changePct,
-            position: repricePosition(next.position, row.price),
-          };
-        }),
-      );
-    } catch (caught) {
-      await handledExpiry(caught);
-    }
-  }, [style, handledExpiry]);
 
   /* Session check on mount — unchanged endpoint and cookie behaviour. */
   useEffect(() => {
