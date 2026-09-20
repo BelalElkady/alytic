@@ -474,6 +474,18 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "free", label: "مجاني — محتاج تجديد" },
 ];
 
+type UserSort = "createdAt" | "lastLoginAt" | "lastSeenAt";
+
+const USER_SORTS: { key: UserSort; label: string }[] = [
+  { key: "createdAt", label: "آخر تسجيل" },
+  { key: "lastLoginAt", label: "آخر دخول" },
+  { key: "lastSeenAt", label: "آخر ظهور" },
+];
+
+/** Newest first; accounts with no such timestamp (never logged in / seen) sink to the bottom. */
+const byRecent = (key: UserSort) => (a: AdminUserRow, b: AdminUserRow) =>
+  (b[key] ? Date.parse(b[key]) : -Infinity) - (a[key] ? Date.parse(a[key]) : -Infinity) || 0;
+
 const STATUS_LABEL: Record<SubStatus, string> = {
   activeSub: "مشترك فعال",
   trial: "تجربة سارية",
@@ -576,6 +588,7 @@ function UsersTab() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortBy, setSortBy] = useState<UserSort>("createdAt");
 
   const load = () => {
     api("/api/admin/users")
@@ -634,12 +647,14 @@ function UsersTab() {
   const query = search.trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!rows) return [];
-    return rows.filter(
-      (row) =>
-        (statusFilter === "all" || statusOf(row) === statusFilter) &&
-        (!query || matchesUser(row, query)),
-    );
-  }, [rows, query, statusFilter]);
+    return rows
+      .filter(
+        (row) =>
+          (statusFilter === "all" || statusOf(row) === statusFilter) &&
+          (!query || matchesUser(row, query)),
+      )
+      .sort(byRecent(sortBy));
+  }, [rows, query, statusFilter, sortBy]);
 
   if (error)
     return (
@@ -745,6 +760,19 @@ function UsersTab() {
               onClick={() => setStatusFilter(key)}
             >
               {label} ({key === "all" ? stats.total : stats.statusCounts[key]})
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[12px] text-muted-foreground">الترتيب:</span>
+          {USER_SORTS.map(({ key, label }) => (
+            <Button
+              key={key}
+              size="sm"
+              variant={sortBy === key ? "default" : "outline"}
+              onClick={() => setSortBy(key)}
+            >
+              {label}
             </Button>
           ))}
         </div>
