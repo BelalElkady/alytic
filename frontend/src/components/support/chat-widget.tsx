@@ -45,27 +45,20 @@ const POLL_MS = 15 * 1000;
 
 // The "اسألنا" nudge: a pulsing ring on the launcher plus a small bubble above
 // it. It waits a few seconds so it doesn't land on top of a page that's still
-// loading, and it runs once per browser session — opening the chat or closing
-// the bubble both count as "seen". sessionStorage (not localStorage) so a
-// returning visitor gets one fresh nudge per visit, not one forever.
-const NUDGE_KEY = "alytic-chat-nudge-seen";
+// loading, and it shows on every page load — opening the chat or closing the
+// bubble only dismisses it until the next load, nothing is remembered.
 const NUDGE_DELAY_MS = 4000;
 
-const nudgeAlreadySeen = () => {
-  try {
-    return window.sessionStorage.getItem(NUDGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
+// Digits only, country code first — the form wa.me links require.
+const WHATSAPP_NUMBER = "201099284928";
 
-const markNudgeSeen = () => {
-  try {
-    window.sessionStorage.setItem(NUDGE_KEY, "1");
-  } catch {
-    // Storage blocked (private mode): the nudge simply comes back next mount.
-  }
-};
+// lucide-react ships no brand icons, so the WhatsApp glyph is inlined.
+const WhatsAppIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+  </svg>
+);
+
 const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 const time = (iso: string) =>
@@ -155,7 +148,7 @@ export function ChatWidget() {
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
   // Starts false and only flips in an effect, so the server-rendered markup and
-  // the first client render agree (sessionStorage doesn't exist on the server).
+  // the first client render agree.
   const [nudge, setNudge] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const modeInitialized = useRef(false);
@@ -201,15 +194,11 @@ export function ChatWidget() {
   }, [open, messages, bot, mode]);
 
   useEffect(() => {
-    if (nudgeAlreadySeen()) return;
     const timer = setTimeout(() => setNudge(true), NUDGE_DELAY_MS);
     return () => clearTimeout(timer);
   }, []);
 
-  const stopNudge = () => {
-    setNudge(false);
-    markNudgeSeen();
-  };
+  const stopNudge = () => setNudge(false);
   // Unread replies already have the red badge, which matters more than an
   // invitation to ask; staff don't need inviting to their own inbox.
   const showNudge = nudge && !open && unread === 0 && !user?.isAdmin;
@@ -344,11 +333,11 @@ export function ChatWidget() {
               below still tells them. */}
           <span
             aria-hidden
-            className="pointer-events-none fixed bottom-20 start-4 z-40 size-12 animate-ping rounded-full bg-primary/40 md:bottom-6 motion-reduce:hidden"
+            className="pointer-events-none fixed bottom-20 start-4 z-40 size-14 animate-ping rounded-full bg-primary/40 md:bottom-6 motion-reduce:hidden"
           />
           <div
             role="status"
-            className="animate-in fade-in slide-in-from-bottom-2 fixed bottom-36 start-4 z-50 flex w-[min(15rem,calc(100vw-2rem))] items-start gap-1 rounded-2xl border bg-card p-2 shadow-xl duration-300 md:bottom-22"
+            className="animate-in fade-in slide-in-from-bottom-2 fixed bottom-[13.75rem] start-4 z-50 flex w-[min(15rem,calc(100vw-2rem))] items-start gap-1 rounded-2xl border bg-card p-2 shadow-xl duration-300 md:bottom-[10.25rem]"
           >
             <button
               type="button"
@@ -378,19 +367,30 @@ export function ChatWidget() {
           setOpen((previous) => !previous);
         }}
         aria-label={open ? "إغلاق الدردشة" : "تواصل معانا"}
-        className="fixed bottom-20 start-4 z-50 size-12 rounded-full p-0 shadow-lg md:bottom-6"
+        className="fixed bottom-20 start-4 z-50 size-14 rounded-full p-0 shadow-lg md:bottom-6"
       >
-        {open ? <X className="size-5" /> : <MessageCircle className="size-5" />}
+        {open ? <X className="size-9" /> : <MessageCircle className="size-9" />}
         {!open && unread > 0 && (
           <span className="num absolute -end-1 -top-1 flex size-5 items-center justify-center rounded-full bg-down text-[11px] font-semibold text-white">
             {unread}
           </span>
         )}
       </Button>
+      {/* Stacked above the launcher; the nudge bubble and chat panel sit above
+          this in turn. */}
+      <a
+        href={`https://wa.me/${WHATSAPP_NUMBER}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="تواصل معانا على واتساب"
+        className="fixed bottom-[9.25rem] start-4 z-50 grid size-14 place-items-center rounded-full bg-[#25D366] text-white shadow-lg transition-transform hover:scale-105 md:bottom-[5.75rem]"
+      >
+        <WhatsAppIcon className="size-8" />
+      </a>
 
       {open && (
         <section
-          className="fixed bottom-36 start-4 z-50 flex max-h-[70vh] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl md:bottom-22"
+          className="fixed bottom-[13.75rem] start-4 z-50 flex max-h-[70vh] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl md:bottom-[10.25rem]"
           aria-label="الدردشة مع الدعم"
         >
           <header className="flex items-center gap-2 border-b px-4 py-3">
