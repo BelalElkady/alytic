@@ -2,7 +2,7 @@
 function layout(bodyHtml) {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
-  <body style="margin:0;padding:32px 16px;background:#0f172a;font-family:Tahoma,Arial,sans-serif;">
+  <body dir="rtl" style="margin:0;padding:32px 16px;background:#0f172a;font-family:Tahoma,Arial,sans-serif;direction:rtl;">
     <table role="presentation" width="100%" style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:12px;overflow:hidden;">
       <tr>
         <td style="padding:24px 32px;background:#0b1220;">
@@ -10,7 +10,7 @@ function layout(bodyHtml) {
         </td>
       </tr>
       <tr>
-        <td style="padding:32px;color:#e2e8f0;font-size:15px;line-height:1.8;text-align:right;">
+        <td dir="rtl" style="padding:32px;color:#e2e8f0;font-size:15px;line-height:1.8;text-align:right;direction:rtl;">
           ${bodyHtml}
         </td>
       </tr>
@@ -26,6 +26,17 @@ function button(href, label) {
 /** User-submitted text (contact form) must never inject markup into the sent email. */
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+/**
+ * " يا <name>" for a greeting, or nothing without a name. Names are often Latin
+ * script inside an Arabic sentence, which mail clients reorder unless the name
+ * is isolated — U+2068/U+2069 (first-strong isolate) do that as plain text, so
+ * it holds even where HTML dir attributes are dropped, and still lets an
+ * Arabic name keep its own word order. Escaped: the name is user-supplied.
+ */
+function addressedTo(name) {
+  return name ? ` يا ⁨${escapeHtml(name)}⁩` : '';
 }
 
 export function verificationEmailHtml(link) {
@@ -49,7 +60,7 @@ export function resetPasswordEmailHtml(link) {
 
 export function registrationConfirmedEmailHtml(name, appUrl) {
   return layout(`
-    <p>مبروك${name ? ` يا ${name}` : ''} 🎉</p>
+    <p>مبروك${addressedTo(name)} 🎉</p>
     <p>حسابك في EGXpert اتفعّل بنجاح وتسجيلك خلص. جاهز تبدأ تتابع محفظتك وتحلل أسهم البورصة المصرية.</p>
     <div style="text-align:center;">${button(appUrl, 'روح للمنصة')}</div>
   `);
@@ -58,7 +69,7 @@ export function registrationConfirmedEmailHtml(name, appUrl) {
 /** Sent to the real account owner when someone tries to register with an email that's already taken — see auth.js's register(). */
 export function alreadyRegisteredEmailHtml(name, appUrl) {
   return layout(`
-    <p>حد حاول يعمل حساب جديد في EGXpert بإيميلك ده${name ? ` يا ${name}` : ''}.</p>
+    <p>حد حاول يعمل حساب جديد في EGXpert بإيميلك ده${addressedTo(name)}.</p>
     <p>لو انت اللي عملت المحاولة دي، يبقى عندك حساب بالفعل — سجّل دخولك عادي، أو لو نسيت كلمة السر استخدم "نسيت كلمة السر" من صفحة الدخول.</p>
     <div style="text-align:center;">${button(`${appUrl}/login`, 'تسجيل الدخول')}</div>
     <p style="font-size:13px;color:#94a3b8;">لو مش انت اللي حاول، تجاهل الإيميل ده — حسابك بأمان ومفيش حاجة اتغيرت.</p>
