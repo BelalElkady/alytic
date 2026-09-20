@@ -1318,6 +1318,9 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
   // stop/targets could disagree with the same stock's row elsewhere (scan,
   // alerts, position cards) which already passes ?style= — see /api/scan.
   const rules = style ? rulesForStyle(RULES, style) : RULES;
+  // Fetched first so an open position's P&L, stop distance and rule triggers
+  // are priced at it (see analyzeTicker), not just the price shown beside them.
+  const live = (await fetchLatestQuotes([code]).catch(() => new Map())).get(code);
   const analysis = await analyzeTicker(code, {
     position: portfolio.positions[code] ?? null,
     capital: capitalOf(portfolio) || 1_000_000,
@@ -1325,12 +1328,13 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
     rules,
     style,
     userId: req.user.id,
+    live,
   });
-  const live = (await fetchLatestQuotes([code])).get(code);
   if (live && analysis.snapshot?.price) {
     analysis.snapshot.price = {
       ...analysis.snapshot.price,
-      dailyClose: analysis.snapshot.price.close,
+      // Already set when the analysis itself was priced live (an open position).
+      dailyClose: analysis.snapshot.price.dailyClose ?? analysis.snapshot.price.close,
       close: live.price,
       changePct: live.changePct ?? analysis.snapshot.price.changePct,
       lastTradePrice: live.price,

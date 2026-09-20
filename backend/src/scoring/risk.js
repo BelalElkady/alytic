@@ -206,15 +206,17 @@ export function riskReward(entry, stop, target) {
  * because the one discipline that must never be negotiated is the stop. The AI
  * analyst may add colour on top of this, but it cannot contradict it.
  */
-export function positionRecommendation({ snapshot, position, trailing, midTarget, partialTaken = false }, rules = RULES) {
+export function positionRecommendation({ snapshot, position, trailing, midTarget, partialTaken = false, stopBreached }, rules = RULES) {
   const price = snapshot.price.close;
   const { avgCost, shares } = position;
   const stop = trailing.stop;
   const profitPct = ((price - avgCost) / avgCost) * 100;
   const toStopPct = ((price - stop) / price) * 100;
 
-  // 1. Stop breached — nothing else matters.
-  if (price < stop) {
+  // 1. Stop breached — nothing else matters. The caller may say it is not
+  // (stops are honored on a close, and `price` can be a live quote that dipped
+  // under the stop mid-session); left undefined, the price alone decides.
+  if (stopBreached ?? price < stop) {
     return {
       action: 'exit_stop',
       label: 'خروج — وقف',
@@ -247,6 +249,15 @@ export function positionRecommendation({ snapshot, position, trailing, midTarget
   }
 
   // 4. Close to the stop — a warning, not an action.
+  if (toStopPct < 0) {
+    // Under the stop right now but not on a close — not an exit yet.
+    return {
+      action: 'hold',
+      label: 'احتفاظ',
+      text: `السعر نازل تحت الوقف ${r2(stop)} دلوقتي، بس لسه ما اتأكدش بإغلاق. إغلاق تحت ${r2(stop)} يبقى خروج كامل.`,
+      order: null,
+    };
+  }
   if (toStopPct <= 3) {
     return {
       action: 'hold',

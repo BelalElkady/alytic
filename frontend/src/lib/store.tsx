@@ -36,6 +36,36 @@ export type Row = {
   [key: string]: any;
 };
 export type Portfolio = any;
+
+const round2 = (x: number) => +x.toFixed(2);
+
+/**
+ * Re-derives every price-dependent field of an open position at a live price.
+ * The server prices a position once, at fetch time; the live quote then keeps
+ * moving, and if only the P&L followed it the stop and target tiles would
+ * describe a price the rail above them no longer shows. Mirrors analyze.js:
+ * a stop is only breached when the last completed close AND the live price
+ * are both under it (stops are honored on a close, not an intraday wick).
+ */
+export function repricePosition(position: Position, price: number): Position {
+  const { shares, avgCost, stop, stopAtClose, targetLevel, closePrice } = position;
+  const next = {
+    ...position,
+    marketValue: round2(shares * price),
+    unrealizedEgp: round2(shares * (price - avgCost)),
+    unrealizedPct: round2(((price - avgCost) / avgCost) * 100),
+  };
+  if (typeof stop === "number") {
+    next.distanceToStopPct = round2(((price - stop) / price) * 100);
+    // The close is judged against the stop that was in force then, which a
+    // stop raised during the session doesn't change.
+    if (typeof closePrice === "number") next.stopBreached = closePrice < (stopAtClose ?? stop) && price < stop;
+  }
+  if (typeof targetLevel === "number") {
+    next.distanceToTargetPct = round2(((targetLevel - price) / price) * 100);
+  }
+  return next;
+}
 export type LogEntry = any;
 /** One AI stock verdict — mirrors backend/src/agent/schemas.js StockVerdictSchema. */
 export type Verdict = any;
@@ -62,6 +92,28 @@ export type User = {
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export const PRICE_REFRESH_MS = 20 * 1000;
+/**
+ * How often an open desk re-reads each position's stop and target while the
+ * session is on. Live prices arrive every PRICE_REFRESH_MS, but the stop is
+ * set by the server (and re-set upward as the price climbs), so it only
+ * reaches the card when the analysis is fetched again.
+ */
+const LEVELS_REFRESH_MS = 5 * 60 * 1000;
+
+/** Sun–Thu, 09:30–15:00 Cairo — a little wider than EGX's own 10:00–14:30 session. */
+function egxSessionLikelyOpen(now = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Cairo",
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  if (get("weekday") === "Fri" || get("weekday") === "Sat") return false;
+  const minutes = Number(get("hour")) * 60 + Number(get("minute"));
+  return minutes >= 9 * 60 + 30 && minutes <= 15 * 60;
+}
 
 type Totals = {
   cost: number;
@@ -258,20 +310,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
           previous.map((row) => {
             const quote = quotes?.[row.code];
             if (!quote?.price) return row;
-            const position = row.position
-              ? {
-                  ...row.position,
-                  marketValue: +(row.position.shares * quote.price).toFixed(2),
-                  unrealizedEgp: +(
-                    row.position.shares *
-                    (quote.price - row.position.avgCost)
-                  ).toFixed(2),
-                  unrealizedPct: +(
-                    ((quote.price - row.position.avgCost) / row.position.avgCost) *
-                    100
-                  ).toFixed(2),
-                }
-              : row.position;
+            const position = row.position ? repricePosition(row.position, quote.price) : row.position;
             return {
               ...row,
               price: quote.price,
@@ -297,6 +336,45 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     },
     [handledExpiry],
   );
+
+  /**
+   * Re-reads the held stocks' analysis so stops and targets follow the market
+   * during the session (the server re-sets a stop upward as the price climbs).
+   * Runs quietly — no loading state — and keeps the newer live price the quote
+   * poll may already have put on the row rather than the one the scan saw.
+   */
+  // Starts at "now": the desk's own load has just read the levels.
+  const lastLevelsAt = useRef(Date.now());
+  const refreshLevels = useCallback(async () => {
+    const current = rowsRef.current;
+    if (!current.length || document.hidden || !egxSessionLikelyOpen()) return;
+    if (Date.now() - lastLevelsAt.current < LEVELS_REFRESH_MS - 1000) return;
+    lastLevelsAt.current = Date.now();
+    try {
+      const codes = current.map((row) => row.code).join(",");
+      const { results } = await api(`/api/scan?codes=${encodeURIComponent(codes)}&style=${style}`);
+      const fresh = new Map<string, Row>(
+        (results as Row[]).filter((r) => r.position).map((r) => [r.code, r]),
+      );
+      setRows((previous) =>
+        previous.map((row) => {
+          const next = fresh.get(row.code);
+          if (!next) return row;
+          if (!(row.price && next.position)) return next;
+          return {
+            ...next,
+            price: row.price,
+            lastTradePrice: row.lastTradePrice,
+            lastTradeTime: row.lastTradeTime,
+            changePct: row.changePct,
+            position: repricePosition(next.position, row.price),
+          };
+        }),
+      );
+    } catch (caught) {
+      await handledExpiry(caught);
+    }
+  }, [style, handledExpiry]);
 
   /* Session check on mount — unchanged endpoint and cookie behaviour. */
   useEffect(() => {
@@ -333,15 +411,20 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || !hasAccess) return;
     const timer = setInterval(() => void refreshPrices(), PRICE_REFRESH_MS);
+    const levelsTimer = setInterval(() => void refreshLevels(), LEVELS_REFRESH_MS);
     const onVisible = () => {
-      if (!document.hidden) void refreshPrices({ force: true });
+      if (!document.hidden) {
+        void refreshPrices({ force: true });
+        void refreshLevels();
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(timer);
+      clearInterval(levelsTimer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [user, hasAccess, refreshPrices]);
+  }, [user, hasAccess, refreshPrices, refreshLevels]);
 
   // Activation is a manual admin action from a separate session, so a tab
   // that's been open since before the grant never learns about it on its

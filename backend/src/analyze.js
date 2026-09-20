@@ -18,11 +18,12 @@ import { fetchDailyAuto } from './data/yahoo.js';
 import { getBars } from './data/cache.js';
 import { checkQuality } from './data/quality.js';
 import { fetchFundamentals } from './data/tradingview.js';
+import { fetchLatestQuotes } from './data/tv-history.js';
 import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
 import { computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
-import { getOrGenerateStopPlan, getOrGenerateTrailingStop } from './agent/stopPlanner.js';
+import { getOrGenerateStopPlan, getOrGenerateTrailingStop, getLiveTrailingStop } from './agent/stopPlanner.js';
 import { buildTargets, targetEstimate } from './scoring/targets.js';
 import { classifyStock } from './scoring/classification.js';
 import RULES from './config/rules.js';
@@ -35,7 +36,7 @@ const r2 = (x) => (x == null ? null : +x.toFixed(2));
  * each evaluated against one open position with the exact quantities and
  * prices its order would use. The analyst quotes these; it never derives them.
  */
-function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, governingTarget, partialTaken }, rules) {
+function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, governingTarget, partialTaken }, rules) {
   const { shares } = position;
   const tp = rules.takeProfit;
   const trailFromPrice = price * (1 - rules.trailing.trailPct / 100);
@@ -50,7 +51,7 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       level: effectiveStop,
       distancePct: r2(((price - effectiveStop) / price) * 100),
       honorOn: rules.stop.honorOn,
-      fired: price < effectiveStop,
+      fired: stopFired,
       sellQty: shares,
     },
     trailing: {
@@ -61,6 +62,7 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       activateAtProfitPct: rules.trailing.activateAtProfitPct,
       peak: trailing.peak ?? null,
       moved: trailing.moved,
+      raisedLive: trailing.raisedLive ?? false,
       from: trailing.from ?? null,
       rationale: trailing.rationale ?? null,
     },
@@ -243,7 +245,33 @@ export async function analyzeTicker(code, opts = {}) {
   // If a position is already open, the live stop and P&L matter more than the
   // hypothetical entry plan.
   let positionState = null;
+  // What the caller sees as this analysis's snapshot: the daily-close one,
+  // unless an open position is being valued at a live quote (see below).
+  let resultSnapshot = snapshot;
   if (position?.shares > 0 && position.avgCost > 0) {
+    // The cached bars stop at the last completed session, so on their own
+    // they value a position at a price that can be days old — a recommendation
+    // then talks about a stop or target the live price has long since left
+    // behind. When the caller has a live quote, everything about the open
+    // position (P&L, distances, rule triggers, and the snapshot the AI brief
+    // quotes) is priced at it instead; entry planning above stays on the close.
+    const closePrice = price;
+    const livePrice = opts.live?.price > 0 ? opts.live.price : null;
+    const posPrice = livePrice ?? closePrice;
+    const posSnapshot = livePrice
+      ? {
+          ...snapshot,
+          price: {
+            ...snapshot.price,
+            dailyClose: closePrice,
+            close: livePrice,
+            changePct: opts.live.changePct ?? snapshot.price.changePct,
+            lastTradePrice: livePrice,
+            lastTradeTime: opts.live.time ?? null,
+          },
+        }
+      : snapshot;
+    resultSnapshot = posSnapshot;
     const runningHigh = Math.max(...bars.slice(-120).map((b) => b.h));
     const existingStop = position.stop ?? stopPlan.stop;
     const trailingAi = await getOrGenerateTrailingStop(
@@ -255,19 +283,50 @@ export async function analyzeTicker(code, opts = {}) {
       style,
       rules,
     );
-    const trailing = { stop: trailingAi.stop, moved: trailingAi.moved, from: r2(existingStop), peak: r2(runningHigh), rationale: trailingAi.rationale };
-    const effectiveStop = trailing.stop ?? existingStop;
-    const plPct = ((price - position.avgCost) / position.avgCost) * 100;
+    // The stop set off the last completed close — the one in force when that
+    // session ended, and so the one a "did it close under its stop" check is
+    // judged against.
+    const stopAtClose = trailingAi.stop ?? existingStop;
+    // During the session the stop follows the live price up: once it has
+    // climbed enough past where the stop was set, the stop is re-set against
+    // it (ratchet-only — see getLiveTrailingStop). A failure there just leaves
+    // the close-based stop in force.
+    const liveStop = livePrice
+      ? await getLiveTrailingStop(userId, code, meta.ar ?? code, posSnapshot, { avgCost: position.avgCost, shares: position.shares }, stopAtClose, style, rules).catch((err) => {
+          console.error(`[stop] live re-set failed for ${code}:`, err.message);
+          return null;
+        })
+      : null;
+    const effectiveStop = Math.max(stopAtClose, liveStop?.stop ?? 0);
+    const raisedLive = effectiveStop > stopAtClose + 0.001;
+    const trailing = {
+      stop: effectiveStop,
+      moved: trailingAi.moved || raisedLive,
+      from: r2(existingStop),
+      peak: r2(runningHigh),
+      rationale: raisedLive ? liveStop.rationale : trailingAi.rationale,
+      stopAtClose: r2(stopAtClose),
+      raisedLive,
+    };
+    const plPct = ((posPrice - position.avgCost) / position.avgCost) * 100;
+    // Stops are honored on a session close, not an intraday wick
+    // (rules.stop.honorOn) — so a breach needs the last completed close under
+    // the stop that was in force at that close AND the live price still under
+    // the current one. A price that has since recovered above the stop re-arms
+    // it; a live dip under it with the last close still above shows as a
+    // negative distance but isn't an exit yet; and a stop raised today never
+    // retroactively makes yesterday's close a breach.
+    const stopFired = closePrice < stopAtClose && posPrice < effectiveStop;
     // A second, wider stop for the long-horizon thesis — see computeLongTermStop
     // for why it shares its invalidation level with the long-term target.
-    const longTermStop = computeLongTermStop(snapshot, effectiveStop, rules);
+    const longTermStop = computeLongTermStop(posSnapshot, effectiveStop, rules);
     // Which computed target governs "reached target" for this position — mid
     // for every style except long (config/styles.js), which follows its own
     // stated guidance to judge by the long-horizon target instead. Falls back
     // to mid when the long target isn't projectable (downtrend, no data).
     const governingTarget = rules.targets?.primary === 'long' && targets.long?.price ? targets.long : targets.mid;
     const partialTaken = Boolean(position.partialTakenAt);
-    const ruleBook = buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, governingTarget, partialTaken }, rules);
+    const ruleBook = buildRuleBook({ snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired, governingTarget, partialTaken }, rules);
 
     positionState = {
       shares: position.shares,
@@ -278,10 +337,17 @@ export async function analyzeTicker(code, opts = {}) {
       sharesEstimated: position.derivedFromScreenshot === true,
       avgCost: r2(position.avgCost),
       purchaseValue: r2(position.shares * position.avgCost),
-      marketValue: r2(position.shares * price),
+      marketValue: r2(position.shares * posPrice),
       unrealizedPct: r2(plPct),
-      unrealizedEgp: r2(position.shares * (price - position.avgCost)),
+      unrealizedEgp: r2(position.shares * (posPrice - position.avgCost)),
+      // What all of the above is priced at — the live quote when there was one,
+      // else the last close — and that last completed close on its own. The UI
+      // needs the close to re-derive stopBreached as the live price moves.
+      pricedAt: livePrice ? 'live' : 'close',
+      closePrice: r2(closePrice),
       stop: effectiveStop,
+      // The stop in force at that close, before any raise during the session.
+      stopAtClose: r2(stopAtClose),
       trailing,
       // Wider stop for the long-term hold — null when there's no long-term
       // uptrend left to protect (see computeLongTermStop). Distinct from
@@ -289,22 +355,25 @@ export async function analyzeTicker(code, opts = {}) {
       // session close; this one is informational context for the long
       // horizon, never the trigger the AI or the recommendation rules act on.
       longTermStop,
-      stopBreached: price < effectiveStop,
-      distanceToStopPct: r2(((price - effectiveStop) / price) * 100),
-      distanceToTargetPct: governingTarget?.price ? r2(((governingTarget.price - price) / price) * 100) : null,
-      riskRewardFromHere: governingTarget?.price ? riskReward(price, effectiveStop, governingTarget.price) : null,
+      stopBreached: stopFired,
+      distanceToStopPct: r2(((posPrice - effectiveStop) / posPrice) * 100),
+      // The level distanceToTargetPct is measured to — so the UI draws the
+      // same target it quotes a distance to, whatever style it is showing.
+      targetLevel: governingTarget?.price ?? null,
+      distanceToTargetPct: governingTarget?.price ? r2(((governingTarget.price - posPrice) / posPrice) * 100) : null,
+      riskRewardFromHere: governingTarget?.price ? riskReward(posPrice, effectiveStop, governingTarget.price) : null,
       // The targets-table badge: a week range plus a momentum marker.
       estimate: targetEstimate({
-        price,
+        price: posPrice,
         target: governingTarget?.price ?? null,
-        dayChangePct: snapshot.price.changePct ?? 0,
+        dayChangePct: posSnapshot.price.changePct ?? 0,
         sector: meta.sector,
         sessions: governingTarget?.horizon?.sessions ?? null,
       }, rules),
       partialTaken,
       // What the desk view shows on this position's card.
       recommendation: positionRecommendation(
-        { snapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: governingTarget?.price ?? null, partialTaken },
+        { snapshot: posSnapshot, position, trailing: { ...trailing, stop: effectiveStop }, midTarget: governingTarget?.price ?? null, partialTaken, stopBreached: stopFired },
         rules,
       ),
       // The rule set, applied. These are the mechanical triggers the AI must respect.
@@ -347,7 +416,7 @@ export async function analyzeTicker(code, opts = {}) {
     // absence is normal and must not be read as a negative signal.
     fundamentals: fundamentals ?? null,
 
-    snapshot,
+    snapshot: resultSnapshot,
     technical,
     liquidity,
     classification,
@@ -385,7 +454,15 @@ export async function analyzeMany(codes, opts = {}) {
   // One screener call covers every ticker, so fundamentals are fetched once
   // here rather than per-stock. Failure is non-fatal — coverage is partial even
   // when it succeeds, so callers already handle missing fundamentals.
-  const fundamentals = opts.fundamentals ?? (opts.withFundamentals === false ? new Map() : await fetchFundamentals());
+  // Live quotes are fetched only for held codes — those are the only analyses
+  // that value anything at the current price (see analyzeTicker) — in one
+  // batch, alongside the fundamentals call. A failed or empty fetch just leaves
+  // those positions priced at the last close, as before.
+  const heldCodes = codes.filter((code) => positions[code.toUpperCase()] ?? opts.position);
+  const [fundamentals, liveQuotes] = await Promise.all([
+    opts.fundamentals ?? (opts.withFundamentals === false ? new Map() : fetchFundamentals()),
+    opts.liveQuotes ?? (heldCodes.length ? fetchLatestQuotes(heldCodes).catch(() => new Map()) : new Map()),
+  ]);
 
   async function worker() {
     while (queue.length) {
@@ -395,6 +472,7 @@ export async function analyzeMany(codes, opts = {}) {
           ...opts,
           position: positions[code.toUpperCase()] ?? opts.position ?? null,
           fundamentals,
+          live: liveQuotes.get(code.toUpperCase()) ?? null,
         });
         if (r.usable) results.push(r);
         else errors.push({ code, error: r.error, quality: r.quality });

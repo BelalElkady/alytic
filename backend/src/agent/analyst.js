@@ -140,6 +140,7 @@ function ruleBookLines(ps, price) {
   out.push(
     `  R2 Stop-loss (AI-determined per style, ratchets up only — never moves down): current level ${rb.stop.level}` +
       (rb.trailing.moved ? `, raised today from ${rb.trailing.from} to ${rb.stop.level}` : ' (unchanged today)') +
+      (rb.trailing.raisedLive ? ' — re-set upward against the live price during this session' : '') +
       (rb.trailing.peak != null ? ` | peak since entry ${rb.trailing.peak}` : ''),
   );
   out.push(
@@ -182,10 +183,21 @@ export function briefFor(a) {
   const p = a.plan;
   const lines = [];
 
+  // An open position's snapshot carries the LIVE quote as price.close, with the
+  // last completed close kept in dailyClose (analyze.js). Every level-to-price
+  // distance below is measured from that price here — the engine's own
+  // distancePct/upsidePct fields were computed off the daily close and would
+  // disagree with the price the verdict is about. Plain arithmetic on engine
+  // numbers, so the model still never derives one itself.
+  const price = s.price.close;
+  const isLive = s.price.dailyClose != null;
+  const away = (level) => +(((level - price) / price) * 100).toFixed(2);
+  const signed = (x) => `${x >= 0 ? '+' : ''}${x}`;
+
   lines.push(`### ${a.code} — ${a.name} (${a.sectorAr ?? '?'})`);
   lines.push(
-    `Price ${s.price.close} EGP (${s.price.changePct >= 0 ? '+' : ''}${s.price.changePct}% today) | ` +
-      `from 52w high ${s.price.pctFrom52wHigh}% | return 3m ${n(s.returns.m3, '%')} · 1y ${n(s.returns.y1, '%')}`,
+    `Price ${price} EGP${isLive ? ` — LIVE now (last completed close ${s.price.dailyClose})` : ''} (${signed(s.price.changePct)}% today) | ` +
+      `from 52w high ${s.price.high52w ? away(s.price.high52w) : s.price.pctFrom52wHigh}% | return 3m ${n(s.returns.m3, '%')} · 1y ${n(s.returns.y1, '%')}`,
   );
   lines.push(
     `Trend: ${s.trend.label} (${s.trend.score}/100) | ${s.strength.trendQuality} (ADX ${n(s.strength.adx)}) | ` +
@@ -205,8 +217,8 @@ export function briefFor(a) {
       (s.volatility.squeeze ? ' | Bollinger squeeze — a strong move is likely coming' : ''),
   );
 
-  const sup = s.levels.supports.slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, ${l.distancePct}%)`).join(' · ');
-  const res = s.levels.resistances.slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, +${l.distancePct}%)`).join(' · ');
+  const sup = s.levels.supports.slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, ${signed(away(l.price))}%)`).join(' · ');
+  const res = s.levels.resistances.slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, ${signed(away(l.price))}%)`).join(' · ');
   lines.push(`Support: ${sup || 'none clear'}`);
   lines.push(`Resistance: ${res || 'none above price — open space'}`);
 
@@ -227,12 +239,16 @@ export function briefFor(a) {
   if (t.reasons.neutral.length) lines.push(`  Notes: ${t.reasons.neutral.join(' · ')}`);
 
   // Entry / risk plan
-  lines.push(`**Computed plan:**`);
+  lines.push(
+    a.position
+      ? `**Computed plan** (a fresh entry, sized off the last completed close ${s.price.dailyClose ?? price} — for the held position use the Open position block below):`
+      : `**Computed plan:**`,
+  );
   lines.push(`  Entry: ${p.entryNote}`);
   lines.push(`  Stop: ${p.stop.stop} EGP (risk ${p.stop.riskPct}%) — ${p.stop.basis}`);
   if (p.targets.mid) {
     lines.push(
-      `  Mid-term target: ${p.targets.mid.price} EGP (+${p.targets.mid.upsidePct}%) — ${p.targets.mid.basis} | ` +
+      `  Mid-term target: ${p.targets.mid.price} EGP (${signed(away(p.targets.mid.price))}% from price${price >= p.targets.mid.price ? ' — ALREADY REACHED' : ''}) — ${p.targets.mid.basis} | ` +
         `Timing: ${p.targets.mid.horizon.ar} | reward/risk ${p.targets.mid.riskReward}` +
         `${p.targets.mid.meetsMinRR === false ? ' ⚠️ below minimum' : ''}`,
     );
@@ -241,7 +257,7 @@ export function briefFor(a) {
   }
   if (p.targets.long?.price) {
     lines.push(
-      `  Long-term target: ${p.targets.long.price} EGP (+${p.targets.long.upsidePct}%) — ${p.targets.long.basis} | Timing: ${p.targets.long.horizon.ar}`,
+      `  Long-term target: ${p.targets.long.price} EGP (${signed(away(p.targets.long.price))}% from price${price >= p.targets.long.price ? ' — ALREADY REACHED' : ''}) — ${p.targets.long.basis} | Timing: ${p.targets.long.horizon.ar}`,
     );
   } else {
     lines.push(`  Long-term target: ${p.targets.long?.note ?? 'n/a'}`);
@@ -262,6 +278,15 @@ export function briefFor(a) {
     lines.push(`**Open position:** ${ps.shares} shares at avg ${ps.avgCost} | ` +
       `${ps.unrealizedPct >= 0 ? 'profit' : 'loss'} ${ps.unrealizedPct}% (${ps.unrealizedEgp} EGP) | ` +
       `effective (binding) stop ${ps.stop}`);
+    // The three numbers the card the user is looking at shows, restated at the
+    // price this brief is about, so the verdict speaks about the same picture.
+    lines.push(
+      `  Where price stands now (${ps.pricedAt === 'live' ? 'live quote' : 'last close'}): price ${price} | ` +
+        `stop ${ps.stop} (${ps.distanceToStopPct}% below price${ps.distanceToStopPct < 0 ? ' — PRICE IS UNDER THE STOP right now' : ''}) | ` +
+        (ps.targetLevel != null
+          ? `target ${ps.targetLevel} (${ps.distanceToTargetPct >= 0 ? `${ps.distanceToTargetPct}% above price` : `price is ${Math.abs(ps.distanceToTargetPct)}% PAST it`})`
+          : 'no target'),
+    );
     if (ps.trailing.moved) lines.push(`  ⬆️ Stop raised today from ${ps.trailing.from} to ${ps.stop} (peak ${ps.trailing.peak})`);
     // Informational only — the mechanical triggers below act on ps.stop, never
     // on this. It exists so a "hold for the long term" verdict can point to a
@@ -539,7 +564,8 @@ export async function reviewStock(analyses, code, ctx = {}, { model = MODEL_CHAI
   if (!target) throw new Error(`مفيش مركز مفتوح في ${code}`);
   const { text: contextText } = portfolioContext(analyses, ctx, rules);
 
-  const userMessage = `# Single-stock review — ${code}, close of ${target.asOf ?? 'today'}
+  const pricedLive = target.position.pricedAt === 'live';
+  const userMessage = `# Single-stock review — ${code}, ${pricedLive ? `priced at the live quote right now (last completed close ${target.asOf ?? 'n/a'})` : `close of ${target.asOf ?? 'today'}`}
 
 This request covers ONE holding only: return a single verdict for ${code}. Instructions about marketRead, cashAdvice, topPriority, portfolioAssessment, portfolioRisks or verdicts for other stocks do not apply here. The portfolio sections below are context for portfolioView, positionSizing and betterAlternative only.
 

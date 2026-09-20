@@ -127,7 +127,42 @@ async function withReviewSlot<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-type StoredVerdict = { verdict: Verdict; /** When it was generated (ms); null for an entry saved before this was recorded and undatable. */ at: number | null };
+type StoredVerdict = {
+  verdict: Verdict;
+  /** When it was generated (ms); null for an entry saved before this was recorded and undatable. */
+  at: number | null;
+  /** The live price on the card when it was requested; null for an entry saved before this was recorded. */
+  price: number | null;
+};
+
+/** A move this large since a verdict was written is enough to call it outdated on its own. */
+const VERDICT_STALE_MOVE_PCT = 3;
+
+/**
+ * Why a saved verdict no longer describes the position, or null while it still
+ * does. A verdict is a snapshot of the price it was written at, and it can say
+ * "far from the stop" or "still below the target" long after the price has
+ * crossed either — so crossing a level, or simply moving a lot, retires it.
+ */
+function verdictStaleReason(
+  then: number | null,
+  now: number | undefined,
+  stop: number | null | undefined,
+  target: number | null | undefined,
+): string | null {
+  if (then == null || !(then > 0) || now == null || !(now > 0)) return null;
+  if (typeof stop === "number" && then >= stop !== now >= stop) {
+    return now < stop ? "السعر نزل تحت الوقف بعد التوصية" : "السعر رجع فوق الوقف بعد التوصية";
+  }
+  if (typeof target === "number" && then < target !== now < target) {
+    return now >= target ? "السعر عدّى الهدف بعد التوصية" : "السعر رجع تحت الهدف بعد التوصية";
+  }
+  const movePct = ((now - then) / then) * 100;
+  if (Math.abs(movePct) >= VERDICT_STALE_MOVE_PCT) {
+    return `السعر اتحرك ${pct(movePct, 1)} من وقت التوصية`;
+  }
+  return null;
+}
 
 // The last verdict the user asked for stays on the card — across days and
 // reloads — until they press the button again; nothing refreshes it by
@@ -141,17 +176,25 @@ function readStoredVerdict(code: string, style: StyleKey, positionKey: string): 
     if (!stored || stored.style !== style || stored.positionKey !== positionKey || !stored.verdict) return null;
     // Entries saved before `at` existed only carry `day` (a Date.toDateString()).
     const at = Number.isFinite(stored.at) ? stored.at : Date.parse(stored.day);
-    return { verdict: stored.verdict, at: Number.isFinite(at) ? at : null };
+    return {
+      verdict: stored.verdict,
+      at: Number.isFinite(at) ? at : null,
+      price: typeof stored.price === "number" ? stored.price : null,
+    };
   } catch {
     return null;
   }
 }
 
-function useStockReview(code: string, style: StyleKey, positionKey: string) {
+function useStockReview(code: string, style: StyleKey, positionKey: string, livePrice: number | undefined) {
   const { refreshUser, reloadPortfolio } = useDesk();
   const [saved, setSaved] = useState<StoredVerdict | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Read when the request is *sent*: the server prices the analysis at its own
+  // live quote then, which is the price on the card at that moment.
+  const livePriceRef = useRef(livePrice);
+  livePriceRef.current = livePrice;
 
   useEffect(() => {
     setSaved(readStoredVerdict(code, style, positionKey));
@@ -161,6 +204,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string) {
     async (force: boolean) => {
       setLoading(true);
       setError(null);
+      const priceAtRequest = livePriceRef.current ?? null;
       try {
         // Usually answered inline; a slow model call becomes a server-side
         // job that this polls, so no request outlives nginx's 180s timeout.
@@ -175,11 +219,11 @@ function useStockReview(code: string, style: StyleKey, positionKey: string) {
           return res;
         });
         const at = Date.now();
-        setSaved({ verdict: result.verdict, at });
+        setSaved({ verdict: result.verdict, at, price: priceAtRequest });
         try {
           window.localStorage.setItem(
             reviewStorageKey(code),
-            JSON.stringify({ at, style, positionKey, verdict: result.verdict }),
+            JSON.stringify({ at, style, positionKey, price: priceAtRequest, verdict: result.verdict }),
           );
         } catch {
           /* storage unavailable — the verdict still shows for this session */
@@ -199,7 +243,14 @@ function useStockReview(code: string, style: StyleKey, positionKey: string) {
     [code, style, positionKey, refreshUser, reloadPortfolio],
   );
 
-  return { verdict: saved?.verdict ?? null, verdictAt: saved?.at ?? null, loading, error, request };
+  return {
+    verdict: saved?.verdict ?? null,
+    verdictAt: saved?.at ?? null,
+    verdictPrice: saved?.price ?? null,
+    loading,
+    error,
+    request,
+  };
 }
 
 /**
@@ -416,7 +467,11 @@ function PositionCard({
   const near = !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
-  const primaryTarget = style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price;
+  // The server reports the exact level its own target distance is measured to
+  // (p.targetLevel); preferring it keeps the rail and the "للهدف" tile on one
+  // target even if the row was scanned under a different style than this card's.
+  const primaryTarget =
+    p.targetLevel ?? (style === "long" ? (row.longTarget?.price ?? row.midTarget?.price) : row.midTarget?.price);
   // Every fresh (non-cached) verdict spends from that account's monthly
   // recommendations allowance (see TIERS in backend/src/billing/plans.js) —
   // admins included, though their tier's allowance is generous. Requesting
@@ -425,10 +480,12 @@ function PositionCard({
   const {
     verdict,
     verdictAt,
+    verdictPrice,
     loading: reviewLoading,
     error: reviewError,
     request: requestReview,
-  } = useStockReview(row.code, style, `${p.shares}@${p.avgCost}`);
+  } = useStockReview(row.code, style, `${p.shares}@${p.avgCost}`, row.price);
+  const staleReason = verdict ? verdictStaleReason(verdictPrice, row.price, p.stop, primaryTarget) : null;
   // A verdict stays on the card until the next request, so it can be from an earlier day.
   const verdictIsToday = isFromToday(verdictAt);
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
@@ -621,6 +678,12 @@ function PositionCard({
           </>
         )}
       </div>
+
+      {staleReason && (
+        <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
+          ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
+        </p>
+      )}
 
       {aiAvailable && (
         <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">

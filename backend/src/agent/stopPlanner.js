@@ -36,8 +36,14 @@ const r2 = (x) => (x == null ? null : +x.toFixed(2));
 
 function briefSnapshot(code, name, snapshot) {
   const s = snapshot;
-  const sup = (s.levels.supports ?? []).slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, ${l.distancePct}%)`).join(' · ');
-  const res = (s.levels.resistances ?? []).slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, +${l.distancePct}%)`).join(' · ');
+  // Measured from the price the brief states — the engine's own distancePct is
+  // off the daily close, which a live-priced snapshot has moved away from.
+  const away = (level) => {
+    const pct = +(((level - s.price.close) / s.price.close) * 100).toFixed(2);
+    return `${pct >= 0 ? '+' : ''}${pct}`;
+  };
+  const sup = (s.levels.supports ?? []).slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, ${away(l.price)}%)`).join(' · ');
+  const res = (s.levels.resistances ?? []).slice(0, 3).map((l) => `${l.price} (strength ${l.strength}, ${away(l.price)}%)`).join(' · ');
   return `${code} — ${name}
 Price ${s.price.close} EGP | Trend: ${s.trend.label} (${s.trend.score}/100), ADX ${s.strength?.adx ?? 'n/a'}
 ATR14 ${s.volatility.atr14} (${s.volatility.atrPct}% daily)
@@ -129,4 +135,81 @@ Where should the stop sit now?`;
 
   await putPortfolioReview(userId, asOf, cacheStyle, hash, { stop, rationale: data.rationale, moved }, raw.model, raw.usage);
   return { stop, rationale: data.rationale, moved };
+}
+
+// The live layer (getLiveTrailingStop) re-asks the model only when the price
+// has climbed this far above the price the last stop was set at, and no more
+// often than the interval. A stop that only ever moves up has nothing to
+// reconsider on a fall, so falls never trigger a call.
+const LIVE_STOP_MIN_RISE_PCT = 1.5;
+const LIVE_STOP_MIN_INTERVAL_MS = 10 * 60 * 1000;
+const liveStopInFlight = new Map();
+
+/**
+ * An open position's stop, re-set against the LIVE price during the session.
+ *
+ * getOrGenerateTrailingStop sets the stop once per completed session, off that
+ * session's close. This sits on top of it: once the live price has climbed
+ * meaningfully past where the current stop was last set, it asks the model
+ * again with the live snapshot and lets the stop follow — never below `baseStop`
+ * (the close-based stop) nor below the last live level, so the ratchet holds.
+ * Stored beside the base stop under its own `stoplive:` key for the same
+ * (user, style, stock, session), so it can never overwrite or move the base
+ * stop — the one a "did it close under its stop" check is judged against.
+ *
+ * @param {object} liveSnapshot - the snapshot with price.close set to the live quote and price.dailyClose to the last close
+ * @param {number} baseStop - the close-based stop from getOrGenerateTrailingStop
+ * @returns {Promise<{stop: number, rationale: string}|null>} null while the live price hasn't earned a re-set
+ */
+export async function getLiveTrailingStop(userId, code, name, liveSnapshot, position, baseStop, style = DEFAULT_STYLE, rules = RULES) {
+  const asOf = liveSnapshot.meta.asOf;
+  const cacheStyle = `stoplive:${style}:${code}`;
+  const hash = portfolioHash({
+    positions: { [code]: { shares: position.shares, avgCost: position.avgCost, stop: baseStop ?? null } },
+    watchlist: {},
+    cash: 0,
+  });
+  const price = liveSnapshot.price.close;
+
+  const stored = await getPortfolioReview(userId, asOf, cacheStyle);
+  const cached = stored && stored.portfolioHash === hash ? stored : null;
+  const reused = cached ? { stop: cached.stop, rationale: cached.rationale } : null;
+
+  const referencePrice = cached?.pricedAt ?? liveSnapshot.price.dailyClose ?? price;
+  const ageMs = cached ? Date.now() - Date.parse(cached._meta?.generatedAt) : Infinity;
+  const earnedReset = price >= referencePrice * (1 + LIVE_STOP_MIN_RISE_PCT / 100);
+  if (!earnedReset || ageMs < LIVE_STOP_MIN_INTERVAL_MS) return reused;
+
+  const key = `${userId}:${cacheStyle}:${asOf}`;
+  if (liveStopInFlight.has(key)) return liveStopInFlight.get(key);
+
+  const task = (async () => {
+    const floor = Math.max(baseStop ?? 0, cached?.stop ?? 0);
+    const plPct = ((price - position.avgCost) / position.avgCost) * 100;
+    const userMessage = `${briefSnapshot(code, name, liveSnapshot)}
+Position: bought at ${r2(position.avgCost)} EGP, now ${r2(plPct)}% ${plPct >= 0 ? 'profit' : 'loss'} at the LIVE price (last completed close ${liveSnapshot.price.dailyClose} EGP). Current stop: ${r2(floor)} EGP.
+The price above is a live intraday quote, not a close, and the stop only ever moves up — so raise it only if the structure and the profit already earned justify it, not on an intraday spike alone. Where should the stop sit now?`;
+
+    const { data, raw } = await requestStructuredOR({
+      model: MODEL_CHAIN,
+      schema: TrailingStopSchema,
+      schemaName: 'trailing_stop',
+      maxTokens: 300,
+      system: trailingStopSystemPrompt(rules, style),
+      messages: [{ role: 'user', content: userMessage }],
+      feature: 'trailing_stop_live',
+    });
+
+    const stop = Math.max(clampPositiveBelow(data.stop, price), floor);
+    // Stored even when the model kept the stop where it was, so `pricedAt`
+    // moves up and the same price doesn't re-ask.
+    await putPortfolioReview(userId, asOf, cacheStyle, hash, { stop, rationale: data.rationale, pricedAt: price }, raw.model, raw.usage);
+    return { stop, rationale: data.rationale };
+  })();
+  liveStopInFlight.set(key, task);
+  try {
+    return await task;
+  } finally {
+    liveStopInFlight.delete(key);
+  }
 }
