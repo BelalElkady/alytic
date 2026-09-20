@@ -1,0 +1,100 @@
+name: Security
+
+# Runs on every push and pull request, and weekly so a newly published advisory
+# against an unchanged dependency still gets noticed.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  repo-checks:
+    name: Repository and source guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      # Committed .env files, secret-shaped strings, and guards that fail if a
+      # refactor removes one of the protections (case-sensitive routing, the
+      # origin guard, the admin email check, RLS in the schema, ...).
+      - name: Run the security check
+        working-directory: backend
+        run: node scripts/security-check.mjs
+
+  unit:
+    name: Security unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Pure functions only (headers, origin guard, upload sniffing, error
+      # exposure) — no database, no network, no API keys.
+      - name: Run
+        working-directory: backend
+        run: node --test test/unit/security.test.js
+
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # Only what ships to the server. The xlsx package comes from SheetJS's
+      # own CDN (pinned to 0.20.3, the first release with the prototype-pollution
+      # and ReDoS fixes) and is not in the npm advisory database, so npm audit
+      # cannot see it: keep that pin and update it by hand.
+      - name: Audit backend production dependencies
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      # Advisory only for now: it reports frontend/dev-tool findings that
+      # rarely reach production, and `bun audit` output is still maturing.
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: bun audit --audit-level=high
+        continue-on-error: true
+
+  secrets:
+    name: Secret scan (full history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan history with gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,6 +6,7 @@ import { Logo } from "@/components/brand/logo";
 const LINKS = [
   { to: "/blog", label: "تابع اخبار البورصة" },
   { to: "/how-to-use", label: "طريقة الاستخدام" },
+  { to: "/about", label: "من نحن" },
   { to: "/contact", label: "تواصل معنا" },
   { to: "/privacy", label: "سياسة الخصوصية" },
 ] as const;

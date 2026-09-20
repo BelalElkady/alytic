@@ -2,6 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { SITE_URL } from "./lib/seo";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -48,27 +49,86 @@ function isH3SwallowedErrorBody(body: string): boolean {
 // count as duplicate content. nginx forwards the original Host header, so the
 // redirect lives here and ships with every deploy instead of in the VPS's
 // hand-maintained nginx config.
+// Only the site's own www host is redirected, and always to the canonical
+// origin from lib/seo — never to whatever the Host header happens to say, which
+// a client controls (that would make this an open redirect for any request
+// nginx forwards with a foreign Host).
 function wwwRedirect(request: Request): Response | null {
-  const host = request.headers.get("host") ?? "";
-  if (!host.toLowerCase().startsWith("www.")) return null;
+  const host = (request.headers.get("host") ?? "").toLowerCase().replace(/:\d+$/, "");
+  if (host !== `www.${new URL(SITE_URL).host}`) return null;
   const url = new URL(request.url);
-  return Response.redirect(`https://${host.slice(4)}${url.pathname}${url.search}`, 301);
+  return Response.redirect(`${SITE_URL}${url.pathname}${url.search}`, 301);
+}
+
+// What the browser is told about every page.
+//
+// The enforced policy only carries the directives that can never break the
+// site: no plugins, no <base> hijack, forms only post home, and nobody else
+// may frame us (clickjacking). The full source allow-list rides along
+// report-only — violations show up in the browser console without blocking
+// anything — so it can be tuned against the real Google sign-in, Tag Manager
+// and AdSense traffic and then promoted to the enforced header.
+const ENFORCED_CSP = ["frame-ancestors 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'"].join("; ");
+const REPORT_ONLY_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://accounts.google.com https://www.googletagmanager.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self' https://accounts.google.com https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://*.googlesyndication.com https://*.doubleclick.net",
+  "frame-src https://accounts.google.com https://*.googlesyndication.com https://*.doubleclick.net",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+].join("; ");
+
+function withSecurityHeaders(request: Request, response: Response): Response {
+  // A 1xx/webSocket response can't be rebuilt; nothing to add to it anyway.
+  if (response.status < 200 || response.status > 599) return response;
+
+  const headers = new Headers(response.headers);
+  const setDefault = (name: string, value: string) => {
+    if (!headers.has(name)) headers.set(name, value);
+  };
+  const { pathname, protocol } = new URL(request.url);
+  const isApi = pathname.startsWith("/api/");
+
+  headers.set("X-Content-Type-Options", "nosniff");
+  // Behind nginx the request reaches this process as http; the original scheme
+  // is in X-Forwarded-Proto (see deploy/nginx/egxpert.conf).
+  const secure = protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
+  if (secure) setDefault("Strict-Transport-Security", "max-age=31536000");
+
+  // Proxied API responses already carry the backend's own (stricter) headers,
+  // which setDefault leaves alone; pages get the page policy below.
+  setDefault("Referrer-Policy", "strict-origin-when-cross-origin");
+  setDefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  setDefault("X-Frame-Options", "SAMEORIGIN");
+  setDefault("Content-Security-Policy", ENFORCED_CSP);
+  if (!isApi) setDefault("Content-Security-Policy-Report-Only", REPORT_ONLY_CSP);
+
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function handle(request: Request, env: unknown, ctx: unknown): Promise<Response> {
+  const redirect = wwwRedirect(request);
+  if (redirect) return redirect;
+  try {
+    const handler = await getServerEntry();
+    const response = await handler.fetch(request, env, ctx);
+    return await normalizeCatastrophicSsrResponse(response);
+  } catch (error) {
+    console.error(error);
+    return new Response(renderErrorPage(), {
+      status: 500,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
 }
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    const redirect = wwwRedirect(request);
-    if (redirect) return redirect;
-    try {
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
-    } catch (error) {
-      console.error(error);
-      return new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    }
+    return withSecurityHeaders(request, await handle(request, env, ctx));
   },
 };

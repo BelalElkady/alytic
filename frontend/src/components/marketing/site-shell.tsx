@@ -15,6 +15,7 @@ const LINKS = [
   { to: "/blog", label: "تابع اخبار البورصة" },
   { to: "/how-to-use", label: "طريقة الاستخدام" },
   { to: "/pricing", label: "الأسعار" },
+  { to: "/about", label: "من نحن" },
   { to: "/contact", label: "تواصل معنا" },
 ] as const;
 
