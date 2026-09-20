@@ -744,48 +744,52 @@ function UsersTab() {
         </table>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="ابحث بالبريد الإلكتروني أو الاسم أو رقم الهاتف…"
-          className="sm:max-w-sm"
-        />
-        <div className="flex flex-wrap gap-1.5">
-          {STATUS_FILTERS.map(({ key, label }) => (
-            <Button
-              key={key}
-              size="sm"
-              variant={statusFilter === key ? "default" : "outline"}
-              onClick={() => setStatusFilter(key)}
-            >
-              {label} ({key === "all" ? stats.total : stats.statusCounts[key]})
-            </Button>
-          ))}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="ابحث بالبريد الإلكتروني أو الاسم أو رقم الهاتف…"
+            className="sm:max-w-sm sm:flex-1"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="sm:ms-auto"
+            disabled={filtered.length === 0}
+            onClick={() => downloadUsersCsv(filtered)}
+          >
+            <Download className="size-4" />
+            تصدير CSV ({filtered.length})
+          </Button>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[12px] text-muted-foreground">الترتيب:</span>
-          {USER_SORTS.map(({ key, label }) => (
-            <Button
-              key={key}
-              size="sm"
-              variant={sortBy === key ? "default" : "outline"}
-              onClick={() => setSortBy(key)}
-            >
-              {label}
-            </Button>
-          ))}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_FILTERS.map(({ key, label }) => (
+              <Button
+                key={key}
+                size="sm"
+                variant={statusFilter === key ? "default" : "outline"}
+                onClick={() => setStatusFilter(key)}
+              >
+                {label} ({key === "all" ? stats.total : stats.statusCounts[key]})
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[12px] text-muted-foreground">الترتيب:</span>
+            {USER_SORTS.map(({ key, label }) => (
+              <Button
+                key={key}
+                size="sm"
+                variant={sortBy === key ? "default" : "outline"}
+                onClick={() => setSortBy(key)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          className="sm:ms-auto"
-          disabled={filtered.length === 0}
-          onClick={() => downloadUsersCsv(filtered)}
-        >
-          <Download className="size-4" />
-          تصدير CSV ({filtered.length})
-        </Button>
       </div>
 
       <div className="relative left-1/2 w-screen -translate-x-1/2 px-3 sm:px-5">
