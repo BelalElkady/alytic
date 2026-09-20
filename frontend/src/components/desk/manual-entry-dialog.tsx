@@ -1,4 +1,4 @@
-import { ChevronDown, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -6,7 +6,6 @@ import { NewTradeDialog, TradeForm, type LoggedTrade } from "@/components/desk/n
 import { EmptyState, Notice, Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -32,12 +31,13 @@ import { cn } from "@/lib/utils";
 type Draft = Record<string, { shares: string; avgCost: string; stop: string; target: string }>;
 
 /**
- * Two tabs: "تعديل" corrects what's already there (share counts, average cost,
- * stop and target, and past trades) and "صفقة جديدة" logs a new executed trade.
+ * Three tabs: "تعديل" corrects what's already there (share counts, average cost,
+ * stop and target), "صفقة جديدة" logs a new executed trade, and "سجل الصفقات"
+ * lists every executed trade (where a wrongly logged one is corrected).
  */
 export function ManualEntryDialog() {
   const { manualOpen, setManualOpen, manualTab, rows, reload, pf } = useDesk();
-  const [tab, setTab] = useState<"edit" | "new">("edit");
+  const [tab, setTab] = useState<"edit" | "new" | "trades">("edit");
   // Bumped after a trade is logged so the new-trade form comes back empty for the next one.
   const [newTradeKey, setNewTradeKey] = useState(0);
   const [tradeOpen, setTradeOpen] = useState(false);
@@ -137,17 +137,18 @@ export function ManualEntryDialog() {
           <DialogTitle className="text-base">إدخال يدوي</DialogTitle>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(value) => setTab(value as "edit" | "new")}>
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs value={tab} onValueChange={(value) => setTab(value as "edit" | "new" | "trades")}>
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="edit">تعديل</TabsTrigger>
             <TabsTrigger value="new">صفقة جديدة</TabsTrigger>
+            <TabsTrigger value="trades">سجل الصفقات</TabsTrigger>
           </TabsList>
 
           <TabsContent value="edit" className="mt-4 space-y-4">
             <p className="text-[12.5px] leading-relaxed text-muted-foreground">
               الأسعار بتتحدث تلقائيًا من السوق. استعمل ده لو عايز تصحّح عدد الأسهم أو متوسط الشراء،
-              أو تعدّل وقف وهدف بنفسك، أو تصحّح صفقة اتسجلت غلط. ولو نفّذت بيع أو شراء جديد، سجّله
-              من تبويب «صفقة جديدة».
+              أو تعدّل وقف وهدف بنفسك. ولو نفّذت بيع أو شراء جديد، سجّله من تبويب «صفقة جديدة»،
+              ولتصحيح صفقة اتسجلت غلط افتح تبويب «سجل الصفقات».
             </p>
 
             {anyEstimated && (
@@ -224,7 +225,19 @@ export function ManualEntryDialog() {
                 </Button>
               </DialogFooter>
             )}
+          </TabsContent>
 
+          <TabsContent value="new" className="mt-4 space-y-4">
+            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+              أي بيع أو شراء اتنفذ فعليًا. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا.
+            </p>
+            <TradeForm key={newTradeKey} onDone={() => setNewTradeKey((key) => key + 1)} />
+          </TabsContent>
+
+          <TabsContent value="trades" className="mt-4 space-y-4">
+            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+              كل الصفقات اللي اتنفذت، الأحدث أول. اضغط على القلم لتصحيح صفقة اتسجلت غلط.
+            </p>
             <TradeLog
               trades={pf?.trades ?? []}
               realized={pf?.realizedPnl ?? 0}
@@ -233,13 +246,6 @@ export function ManualEntryDialog() {
                 setTradeOpen(true);
               }}
             />
-          </TabsContent>
-
-          <TabsContent value="new" className="mt-4 space-y-4">
-            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-              أي بيع أو شراء اتنفذ فعليًا. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا.
-            </p>
-            <TradeForm key={newTradeKey} onDone={() => setNewTradeKey((key) => key + 1)} />
           </TabsContent>
         </Tabs>
 
@@ -268,19 +274,18 @@ function TradeLog({
   realized: number;
   onEdit: (trade: LoggedTrade) => void;
 }) {
-  if (trades.length === 0) return null;
+  if (trades.length === 0) {
+    return <EmptyState title="مفيش صفقات متسجلة لسه." hint="سجّل أول صفقة من تبويب «صفقة جديدة»." />;
+  }
   return (
-    <Collapsible className="rounded-lg border">
-      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-3 py-2.5 text-[13px] font-semibold">
-        <span className="flex items-center gap-1.5">
-          <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
-          سجل الصفقات ({int(trades.length)})
-        </span>
+    <div className="rounded-lg border">
+      <div className="flex items-center justify-between gap-2 border-b bg-surface px-3 py-2.5 text-[13px] font-semibold">
+        <span>عدد الصفقات: {int(trades.length)}</span>
         <span className={cn("num text-[12.5px]", tone(realized))}>
           ربح محقق: {signed(realized)} ج
         </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="scrollbar-slim overflow-x-auto border-t">
+      </div>
+      <div className="scrollbar-slim overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -331,8 +336,8 @@ function TradeLog({
             })}
           </TableBody>
         </Table>
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+    </div>
   );
 }
 

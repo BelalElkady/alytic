@@ -16,10 +16,10 @@ test.describe("desk flows", () => {
 
     await recordTrade(page, "ABUK", "100", "45");
 
-    // The trade log lives, collapsed, at the bottom of the manual-entry dialog.
+    // The trade log is its own tab of the manual-entry dialog.
     const manual = page.getByRole("dialog");
+    await manual.getByRole("tab", { name: "سجل الصفقات" }).click();
     await expect(manual.getByText("ربح محقق")).toBeVisible();
-    await manual.getByRole("button", { name: /سجل الصفقات/ }).click();
     await expect(manual.getByRole("row").filter({ hasText: "ABUK" }).first()).toBeVisible();
 
     // The portfolio tab now carries the holding.

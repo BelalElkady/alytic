@@ -619,9 +619,10 @@ Recommended pass order: §4 accounts → §5 access & billing → §7–§15 the
 
 ## 9. Trades (إدخال يدوي → إدخال صفقة جديدة)
 
-There is no trades tab: trades are entered from the "إدخال صفقة جديدة" button inside
-the إدخال يدوي dialog, and the history is the collapsible "سجل الصفقات" at the bottom
-of that dialog.
+The إدخال يدوي dialog has three tabs: "تعديل" (holdings, stop, target), "صفقة جديدة"
+(log a trade) and "سجل الصفقات" — a table of every executed trade, newest first, with a
+realised-P&L summary and a pencil on each row to correct it. The edit tab no longer
+carries the history.
 
 **TRD-01 — Record a buy** · P1
 - Steps: إدخال يدوي → إدخال صفقة جديدة; pick a stock, النوع = شراء, shares, price,
