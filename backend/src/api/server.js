@@ -36,6 +36,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
 import { readBars, cairoToday, cairoDateOf, isTradingDay } from '../data/cache.js';
+import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
@@ -457,6 +458,7 @@ const PAID_PATHS = [
   '/review',
   '/market-analysis',
   '/analyze/',
+  '/history/',
   '/fundamentals/',
   '/portfolio/import-screenshot',
 ];
@@ -1394,6 +1396,21 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
     };
   }
   res.status(analysis.usable ? 200 : 422).json(analysis);
+}));
+
+// The price chart in the stock detail dialog: ?range= 1d, 1w, 1m, 6m, 1y or 5y
+// (default 5y). Known tickers only, which also bounds the in-memory caches to
+// the universe.
+app.get('/api/history/:code', wrap(async (req, res) => {
+  const code = req.params.code.toUpperCase();
+  const range = req.query.range ?? '5y';
+  if (!lookup(code)) return res.status(404).json({ error: 'السهم مش موجود' });
+  if (!HISTORY_RANGES.includes(range)) return res.status(400).json({ error: `فترة غير معروفة: ${range}` });
+  try {
+    res.json(await getPriceHistory(code, range));
+  } catch (err) {
+    res.status(502).json({ error: `تعذر جلب تاريخ الأسعار: ${err.message}` });
+  }
 }));
 
 app.get('/api/quotes', wrap(async (req, res) => {

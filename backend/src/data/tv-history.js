@@ -41,7 +41,22 @@ const toCairoDate = (unix) =>
  * @returns {Promise<{symbol:string,currency:string,bars:Array}>}
  */
 export function fetchDailyTV(code, { bars = 1500, timeoutMs = 20000 } = {}) {
+  return fetchSeriesTV(code, { resolution: '1D', bars, timeoutMs });
+}
+
+/**
+ * Fetch bars of any timeframe for one EGX symbol — the shared core behind
+ * fetchDailyTV, and what the chart's "today" / "1 week" views use.
+ * @param {string} code - plain ticker, e.g. 'QNBE'
+ * @param {object} opts
+ * @param {string} opts.resolution - TradingView timeframe: '1D', or minutes as a string ('5', '15', '60')
+ * @param {number} opts.bars - how many bars to request
+ * @returns {Promise<{symbol:string,currency:string,bars:Array}>} for an intraday
+ *   resolution every bar is kept; for '1D' a repeated session is collapsed.
+ */
+export function fetchSeriesTV(code, { resolution, bars, timeoutMs = 20000 }) {
   const symbol = `EGX:${String(code).toUpperCase().replace(/^EGX:/, '')}`;
+  const intraday = resolution !== '1D';
 
   return new Promise((resolve, reject) => {
     let ws;
@@ -67,7 +82,7 @@ export function fetchDailyTV(code, { bars = 1500, timeoutMs = 20000 } = {}) {
       ws.send(frame({ m: 'set_auth_token', p: ['unauthorized_user_token'] }));
       ws.send(frame({ m: 'chart_create_session', p: [chart, ''] }));
       ws.send(frame({ m: 'resolve_symbol', p: [chart, 'sym_1', `={"symbol":"${symbol}","adjustment":"splits"}`] }));
-      ws.send(frame({ m: 'create_series', p: [chart, 's1', 's1', 'sym_1', '1D', bars, ''] }));
+      ws.send(frame({ m: 'create_series', p: [chart, 's1', 's1', 'sym_1', resolution, bars, ''] }));
     };
 
     ws.onmessage = (event) => {
@@ -110,10 +125,11 @@ export function fetchDailyTV(code, { bars = 1500, timeoutMs = 20000 } = {}) {
 
           out.sort((a, b) => a.t - b.t);
 
-          // Collapse any repeated session, keeping the later print.
+          // Collapse any repeated session, keeping the later print. Intraday
+          // bars share a date by design, so they are all kept.
           const deduped = [];
           for (const bar of out) {
-            if (deduped.length && deduped.at(-1).date === bar.date) deduped[deduped.length - 1] = bar;
+            if (!intraday && deduped.length && deduped.at(-1).date === bar.date) deduped[deduped.length - 1] = bar;
             else deduped.push(bar);
           }
 
