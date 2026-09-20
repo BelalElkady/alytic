@@ -15,7 +15,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import * as XLSX from 'xlsx';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
@@ -43,6 +43,7 @@ import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
 import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
 import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
+import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
 
 // Where the public contact form's messages land. Same default as
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
@@ -133,14 +134,27 @@ async function periodStartFor(userId) {
   return new Date(Math.max(...candidates));
 }
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const app = express();
 // Behind nginx (see the systemd deploy), the real client IP arrives in
 // X-Forwarded-For — without this, every request looks like it came from
 // nginx itself (127.0.0.1), which would make the rate limiters below share
 // one bucket across every visitor instead of limiting per-IP.
 app.set('trust proxy', 1);
-app.use(express.json());
+// Express matches routes case-insensitively by default, but every gate below
+// (the login wall, the paywall's PAID_PATHS, the admin check) compares
+// req.path case-sensitively. With the default, GET /api/SCAN skipped the
+// paywall check and still reached the /api/scan handler. Case-sensitive
+// routing makes "which handler runs" and "which gate applies" the same question.
+app.set('case sensitive routing', true);
+app.disable('x-powered-by');
+app.use(securityHeaders);
+// Refuses browser writes that come from a page that isn't ours — defense in
+// depth behind the SameSite=Lax cookie. ALLOWED_ORIGINS is an optional
+// comma-separated extra list (see security.js for what is always allowed).
+app.use(originGuard({
+  allowedOrigins: [process.env.FRONTEND_URL, process.env.APP_URL, ...(process.env.ALLOWED_ORIGINS ?? '').split(',')],
+}));
+app.use(express.json({ limit: '100kb' }));
 
 // Brute-force / abuse guards on the endpoints an attacker would actually
 // want to hammer: password guessing, mass account creation, and using the
@@ -163,6 +177,11 @@ const rateLimited = (max, windowMinutes) => (skipLimits
 const loginLimiter = rateLimited(10, 15);
 const registerLimiter = rateLimited(8, 60);
 const emailActionLimiter = rateLimited(6, 60); // forgot-password, resend-verification, contact
+const cronLimiter = rateLimited(20, 15);
+// A flood guard over the whole API, per IP. Generous on purpose: mobile
+// carriers put many real users behind one address, and a desk page load fans
+// out into a dozen calls. It stops a script, not a crowd.
+const apiFloodLimiter = rateLimited(1200, 1);
 
 // The vanilla-JS UI (formerly public/index.html) is retired in favor of the
 // EGXpert frontend in frontend/ (TanStack Start, its own dev/build process).
@@ -171,12 +190,20 @@ const emailActionLimiter = rateLimited(6, 60); // forgot-password, resend-verifi
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:8080';
 app.get('/', (_req, res) => res.redirect(FRONTEND_URL));
 
-app.use(express.static(path.join(ROOT, 'public')));
+// No static files are served from this process: the repo has no backend/public
+// directory and the release bundle never ships one, so a file dropped there by
+// accident (a backup, an .env copy) would otherwise become world-readable.
+app.use('/api', apiFloodLimiter);
 
 /** Wrap an async handler so a rejection becomes a 500 instead of an unhandled rejection. */
+// Only messages this app wrote for users (Arabic) reach the client; database,
+// network and programming errors are logged in full and answered generically —
+// see publicError in security.js.
 const wrap = (fn) => (req, res) => fn(req, res).catch((err) => {
   console.error(err);
-  res.status(500).json({ error: err.message });
+  if (res.headersSent) return;
+  const { status, message } = publicError(err);
+  res.status(status).json({ error: message });
 });
 
 /**
@@ -213,7 +240,7 @@ app.post('/api/auth/google', loginLimiter, wrap(async (req, res) => {
   res.json({ user: result.user });
 }));
 
-app.post('/api/auth/verify', wrap(async (req, res) => {
+app.post('/api/auth/verify', loginLimiter, wrap(async (req, res) => {
   const result = await verifyEmail(req.body ?? {});
   res.json(result);
 }));
@@ -282,7 +309,7 @@ app.get('/api/blog', wrap(async (req, res) => {
     // `dek` is the card's excerpt. Articles written by hand from the admin
     // "مقالة جديدة" form have no dek (it's optional there) but always have a
     // meta description, so fall back to that instead of showing a bare card.
-    posts: posts.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek || p.meta_description || null, tags: p.tags, imageUrl: p.image_thumb_url, publishedAt: p.published_at })),
+    posts: posts.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek || p.meta_description || null, tags: p.tags, imageUrl: safeHttpsUrl(p.image_thumb_url), publishedAt: p.published_at })),
   });
 }));
 
@@ -298,12 +325,14 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
       dek: post.dek,
       content: post.content_json,
       tags: post.tags,
-      image: post.image_url
+      // Rendered as <img src> and <a href> on the public site, so only https
+      // URLs are passed on — never a javascript: or data: value from the row.
+      image: safeHttpsUrl(post.image_url)
         ? {
-            url: post.image_url,
-            sourceUrl: post.image_source_url,
+            url: safeHttpsUrl(post.image_url),
+            sourceUrl: safeHttpsUrl(post.image_source_url),
             creditName: post.image_credit_name,
-            creditUrl: post.image_credit_url,
+            creditUrl: safeHttpsUrl(post.image_credit_url),
           }
         : null,
       publishedAt: post.published_at,
@@ -327,8 +356,8 @@ app.get('/api/sitemap-urls', wrap(async (req, res) => {
 // slot in today's 2-article plan) so the day's batch lands spread out
 // rather than all at once; once 2 exist for the day this is a fast no-op.
 const BLOG_CRON_SECRET = process.env.BLOG_CRON_SECRET;
-app.post('/api/cron/blog-generate', wrap(async (req, res) => {
-  if (!BLOG_CRON_SECRET || req.get('X-Cron-Secret') !== BLOG_CRON_SECRET) {
+app.post('/api/cron/blog-generate', cronLimiter, wrap(async (req, res) => {
+  if (!safeEqual(req.get('X-Cron-Secret'), BLOG_CRON_SECRET)) {
     return res.status(403).json({ error: 'forbidden' });
   }
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
@@ -360,8 +389,8 @@ app.post('/api/cron/blog-generate', wrap(async (req, res) => {
 // /api/cron/blog-generate is, for occasional manual backfill or debugging
 // (e.g. `force: true` against a specific day).
 const STOP_PLAN_CRON_SECRET = process.env.STOP_PLAN_CRON_SECRET;
-app.post('/api/cron/stop-plan-generate', wrap(async (req, res) => {
-  if (!STOP_PLAN_CRON_SECRET || req.get('X-Cron-Secret') !== STOP_PLAN_CRON_SECRET) {
+app.post('/api/cron/stop-plan-generate', cronLimiter, wrap(async (req, res) => {
+  if (!safeEqual(req.get('X-Cron-Secret'), STOP_PLAN_CRON_SECRET)) {
     return res.status(403).json({ error: 'forbidden' });
   }
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
@@ -500,6 +529,30 @@ app.use('/api', async (req, res, next) => {
   });
 });
 
+// Per-account throttles on the endpoints that cost real money or CPU per call
+// (model calls, whole-universe scans, upstream price-feed sockets). The tier
+// allowances cap how many *charged* uses an account gets a month; these cap
+// how fast any one account can hammer the same endpoints, including the
+// uncharged ones (force=1 re-analysis, cached reads that still hit the feed).
+// Keyed by user id, not IP, so a shared mobile-carrier address doesn't make
+// unrelated users throttle each other. The status endpoints are long-polls and
+// are deliberately left out.
+const perUserLimiter = (max, windowMinutes) => (skipLimits
+  ? (_req, _res, next) => next()
+  : rateLimit({
+    windowMs: windowMinutes * 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => `user:${req.user?.id ?? 'anon'}`,
+    message: { error: 'محاولات كتير في وقت قصير — استنى شوية وجرّب تاني' },
+  }));
+const analysisLimiter = perUserLimiter(240, 1);
+const aiLimiter = perUserLimiter(15, 1);
+app.use(['/api/scan', '/api/analyze', '/api/history', '/api/quotes'], analysisLimiter);
+app.post(['/api/review', '/api/review/stock', '/api/review/cash', '/api/portfolio/import-screenshot'], aiLimiter);
+app.get(['/api/fundamentals/:code', '/api/market-analysis'], aiLimiter);
+
 // ---- Support chat ----------------------------------------------------------
 // Deliberately outside PAID_PATHS: this is how a user asks to subscribe and
 // how a lapsed account asks to renew, so locking it behind the paywall would
@@ -507,6 +560,15 @@ app.use('/api', async (req, res, next) => {
 
 const MAX_MESSAGE_LENGTH = 2000;
 const chatLimiter = rateLimited(40, 15);
+
+// An upload is accepted only when its bytes really are the image type the
+// client declared — the Content-Type header alone is attacker-controlled.
+// Returns the verified type, or null.
+const NOT_AN_IMAGE_MESSAGE = 'الملف ده مش صورة صالحة — ارفع JPEG أو PNG أو WebP.';
+function checkedImageType(req) {
+  const actual = sniffImageType(req.body);
+  return actual && actual === mediaTypeOf(req.headers['content-type']) ? actual : null;
+}
 
 const publicMessage = (row) => ({
   id: row.id,
@@ -600,11 +662,13 @@ app.post('/api/support/messages', chatLimiter, wrap(async (req, res) => {
 // fields.
 app.post('/api/support/messages/image', chatLimiter, express.raw({ type: SUPPORT_IMAGE_TYPES, limit: '8mb' }), wrap(async (req, res) => {
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة الأول' });
+  const imageType = checkedImageType(req);
+  if (!imageType) return res.status(415).json({ error: NOT_AN_IMAGE_MESSAGE });
 
   const existing = await listSupportMessages(req.user.id);
   const imagePath = await uploadSupportImage({
     userId: req.user.id,
-    mediaType: req.headers['content-type'],
+    mediaType: imageType,
     buffer: req.body,
   });
   const message = await insertSupportMessage({ userId: req.user.id, sender: 'user', body: '', imagePath });
@@ -762,8 +826,12 @@ app.get('/api/indices/performance', wrap(async (_req, res) => {
 
 // ---- Admin ------------------------------------------------------------------
 
+// isAdmin is granted at signup to any address listed in ADMIN_EMAILS, before
+// that address has proved it owns the mailbox — so an unconfirmed account
+// registered with an admin's email must not get admin powers until the
+// confirmation link (which only the real owner receives) has been used.
 app.use('/api/admin', (req, res, next) => {
-  if (!req.user?.isAdmin) return res.status(403).json({ error: 'للمشرفين فقط' });
+  if (!req.user?.isAdmin || !req.user.emailVerified) return res.status(403).json({ error: 'للمشرفين فقط' });
   next();
 });
 
@@ -1254,7 +1322,9 @@ app.get('/api/admin/blog-drafts', wrap(async (req, res) => {
 // admin form can preview it and send its public URL along with the post.
 app.post('/api/admin/blog-drafts/image', express.raw({ type: BLOG_IMAGE_TYPES, limit: '8mb' }), wrap(async (req, res) => {
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة الأول' });
-  const url = await uploadBlogImage({ mediaType: req.headers['content-type'], buffer: req.body });
+  const imageType = checkedImageType(req);
+  if (!imageType) return res.status(415).json({ error: NOT_AN_IMAGE_MESSAGE });
+  const url = await uploadBlogImage({ mediaType: imageType, buffer: req.body });
   res.status(201).json({ url });
 }));
 
@@ -1300,7 +1370,7 @@ app.post('/api/admin/blog-drafts', wrap(async (req, res) => {
   if (dek !== undefined && dek !== null && typeof dek !== 'string') return res.status(400).json({ error: 'المقدمة لازم تكون نص' });
   if (!Array.isArray(content) || content.length === 0) return res.status(400).json({ error: 'المقالة لازم تحتوي على محتوى' });
   if (tags !== undefined && !Array.isArray(tags)) return res.status(400).json({ error: 'الوسوم لازم تكون قائمة' });
-  if (imageUrl !== undefined && imageUrl !== null && typeof imageUrl !== 'string') {
+  if (imageUrl !== undefined && imageUrl !== null && imageUrl !== '' && !safeHttpsUrl(imageUrl)) {
     return res.status(400).json({ error: 'رابط الصورة غير صالح' });
   }
 
@@ -1363,8 +1433,12 @@ app.delete('/api/admin/blog-drafts/:id', wrap(async (req, res) => {
 // ---- Analysis --------------------------------------------------------------
 
 app.get('/api/analyze/:code', wrap(async (req, res) => {
-  const portfolio = await loadPortfolio(req.user.id);
   const code = req.params.code.toUpperCase();
+  // An unknown ticker used to flow on into price-feed lookups, a cache file
+  // named after it, and an AI stop-loss call — all attacker-chosen. Only
+  // tickers in the universe are analyzable.
+  if (!lookup(code)) return res.status(404).json({ error: 'السهم مش موجود' });
+  const portfolio = await loadPortfolio(req.user.id);
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
   // Without this, the detail dialog silently analyzed every stock with the
@@ -1409,14 +1483,25 @@ app.get('/api/history/:code', wrap(async (req, res) => {
   try {
     res.json(await getPriceHistory(code, range));
   } catch (err) {
-    res.status(502).json({ error: `تعذر جلب تاريخ الأسعار: ${err.message}` });
+    console.error('[history] fetch failed:', err.message);
+    res.status(502).json({ error: 'تعذر جلب تاريخ الأسعار دلوقتي — جرّب تاني بعد شوية.' });
   }
 }));
+
+// A ?codes= list from the client, cut down to tickers the universe knows and
+// capped at its size. Every code fans out into a price-feed request, a cache
+// file and possibly a model call, so an arbitrary or huge list is a way to
+// spend the server's money and get its address banned upstream.
+const MAX_CODES_PER_REQUEST = 300;
+function knownCodesFrom(raw) {
+  const codes = String(raw).split(',').map((code) => code.trim().toUpperCase()).filter((code) => code && lookup(code));
+  return [...new Set(codes)].slice(0, MAX_CODES_PER_REQUEST);
+}
 
 app.get('/api/quotes', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(req.user.id);
   const requested = req.query.codes
-    ? String(req.query.codes).split(',').map((code) => code.trim().toUpperCase()).filter(Boolean)
+    ? knownCodesFrom(req.query.codes)
     : Object.keys(portfolio.positions);
   const quotes = await fetchLatestQuotes(requested);
   res.json({ asOf: new Date().toISOString(), quotes: Object.fromEntries(quotes) });
@@ -1509,7 +1594,7 @@ app.get('/api/scan', wrap(async (req, res) => {
   const indexCodes = req.query.index ? await codesForIndex(req.query.index) : null;
   if (req.query.index && !indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${req.query.index}` });
   const codes = req.query.codes
-    ? String(req.query.codes).split(',').map((s) => s.trim().toUpperCase())
+    ? knownCodesFrom(req.query.codes)
     : indexCodes ?? ALL_CODES;
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
@@ -1784,11 +1869,36 @@ app.get('/api/portfolio', wrap(async (req, res) => {
   });
 }));
 
+// Bounds on numbers and text a user types into the book. Generous for any real
+// EGX portfolio, tight enough that nothing can overflow the arithmetic or bloat
+// the portfolio row that every request for that user has to load.
+const MAX_SHARES = 1e10;
+const MAX_PRICE = 1e6;
+const MAX_MONEY = 1e13;
+const MAX_TRADE_NOTE = 500;
+const MAX_DAY_NOTE = 2000;
+const MAX_WATCH_NOTE = 300;
+const isDayString = (value) => typeof value === 'string' && value.length <= 40 && isIsoDate(value.slice(0, 10));
+
+function tradeInputError({ code, side, shares, price, date, note }) {
+  if (typeof code !== 'string') return 'الكود لازم يكون نص';
+  if (side !== 'buy' && side !== 'sell') return 'نوع الصفقة لازم يكون buy أو sell';
+  const s = Number(shares);
+  const p = Number(price);
+  if (!Number.isFinite(s) || s <= 0 || s > MAX_SHARES) return 'عدد الأسهم غير صالح';
+  if (!Number.isFinite(p) || p <= 0 || p > MAX_PRICE) return 'السعر غير صالح';
+  if (date != null && date !== '' && !isDayString(date)) return 'التاريخ لازم يكون بصيغة YYYY-MM-DD';
+  if (note != null && (typeof note !== 'string' || note.length > MAX_TRADE_NOTE)) return `الملاحظة لازم تكون نص (حد أقصى ${MAX_TRADE_NOTE} حرف)`;
+  return null;
+}
+
 app.post('/api/portfolio/trade', wrap(async (req, res) => {
   const { code, side, shares, price, date, note } = req.body ?? {};
   if (!code || !side || !shares || !price) {
     return res.status(400).json({ error: 'محتاج code و side و shares و price' });
   }
+  const invalid = tradeInputError({ code, side, shares, price, date, note });
+  if (invalid) return res.status(400).json({ error: invalid });
   const updated = await withPortfolio(req.user.id, (portfolio) =>
     recordTrade(portfolio, { code, side, shares: Number(shares), price: Number(price), date, note }),
   );
@@ -1814,6 +1924,8 @@ app.post('/api/portfolio/trades/:index', wrap(async (req, res) => {
   if (!code || !side || !shares || !price) {
     return res.status(400).json({ error: 'محتاج code و side و shares و price' });
   }
+  const invalid = tradeInputError({ code, side, shares, price, date, note });
+  if (invalid) return res.status(400).json({ error: invalid });
   const updated = await withPortfolio(req.user.id, (portfolio) =>
     editTrade(portfolio, tradeAt(portfolio, req), { code, side, shares, price, date, note }),
   );
@@ -1829,7 +1941,7 @@ app.post('/api/portfolio/trades/:index/delete', wrap(async (req, res) => {
 
 app.post('/api/portfolio/cash', wrap(async (req, res) => {
   const amount = Number(req.body?.cash);
-  if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'مبلغ غير صالح' });
+  if (!Number.isFinite(amount) || amount < 0 || amount > MAX_MONEY) return res.status(400).json({ error: 'مبلغ غير صالح' });
   const updated = await withPortfolio(req.user.id, (portfolio) =>
     recordCashFlow({ ...portfolio, cash: amount }, amount - (portfolio.cash ?? 0), 'cash'),
   );
@@ -1853,6 +1965,12 @@ async function currentPrices(codes) {
 
 app.post('/api/portfolio/levels', wrap(async (req, res) => {
   const { code, stop, target } = req.body ?? {};
+  if (typeof code !== 'string' || !code) return res.status(400).json({ error: 'محتاج code' });
+  for (const level of [stop, target]) {
+    if (level != null && (!Number.isFinite(Number(level)) || Number(level) < 0 || Number(level) > MAX_PRICE)) {
+      return res.status(400).json({ error: 'مستوى الوقف أو الهدف غير صالح' });
+    }
+  }
   const updated = await withPortfolio(req.user.id, (portfolio) =>
     setLevels(portfolio, code, { stop: stop == null ? null : Number(stop), target: target == null ? null : Number(target) }),
   );
@@ -1875,10 +1993,10 @@ app.post('/api/portfolio/holding', wrap(async (req, res) => {
 
   const nextShares = shares == null || shares === '' ? null : Number(shares);
   const nextAvgCost = avgCost == null || avgCost === '' ? null : Number(avgCost);
-  if (nextShares != null && (!Number.isFinite(nextShares) || nextShares < 0)) {
+  if (nextShares != null && (!Number.isFinite(nextShares) || nextShares < 0 || nextShares > MAX_SHARES)) {
     return res.status(400).json({ error: 'عدد الأسهم لازم يكون رقم موجب' });
   }
-  if (nextAvgCost != null && (!Number.isFinite(nextAvgCost) || nextAvgCost <= 0)) {
+  if (nextAvgCost != null && (!Number.isFinite(nextAvgCost) || nextAvgCost <= 0 || nextAvgCost > MAX_PRICE)) {
     return res.status(400).json({ error: 'متوسط الشراء لازم يكون أكبر من صفر' });
   }
 
@@ -1910,6 +2028,15 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
   const { code, note, remove } = req.body ?? {};
   if (!code) return res.status(400).json({ error: 'محتاج code' });
   const c = String(code).toUpperCase();
+  // Removing is always allowed (so a stale entry can be cleared); adding
+  // needs a real ticker and a bounded note, or the watchlist becomes a way to
+  // store arbitrary data in the portfolio row.
+  if (!remove) {
+    if (!lookup(c)) return res.status(400).json({ error: 'السهم مش موجود' });
+    if (note != null && (typeof note !== 'string' || note.length > MAX_WATCH_NOTE)) {
+      return res.status(400).json({ error: `الملاحظة لازم تكون نص (حد أقصى ${MAX_WATCH_NOTE} حرف)` });
+    }
+  }
   const updated = await withPortfolio(req.user.id, (portfolio) => {
     const watchlist = { ...portfolio.watchlist };
     if (remove) delete watchlist[c];
@@ -2036,8 +2163,8 @@ const cairoClock = new Intl.DateTimeFormat('en-GB', {
   hourCycle: 'h23',
 });
 
-app.post('/api/cron/daily-close', wrap(async (req, res) => {
-  if (!DAILY_CLOSE_CRON_SECRET || req.get('X-Cron-Secret') !== DAILY_CLOSE_CRON_SECRET) {
+app.post('/api/cron/daily-close', cronLimiter, wrap(async (req, res) => {
+  if (!safeEqual(req.get('X-Cron-Secret'), DAILY_CLOSE_CRON_SECRET)) {
     return res.status(403).json({ error: 'forbidden' });
   }
   res.json(await runDailyClose());
@@ -2231,6 +2358,9 @@ app.get('/api/log', wrap(async (req, res) => {
 app.post('/api/log/note', wrap(async (req, res) => {
   const { date, note } = req.body ?? {};
   if (!date) return res.status(400).json({ error: 'محتاج date' });
+  if (!isDayString(date) || (note != null && (typeof note !== 'string' || note.length > MAX_DAY_NOTE))) {
+    return res.status(400).json({ error: 'التاريخ أو الملاحظة غير صالحة' });
+  }
   const updated = await withPortfolio(req.user.id, (portfolio) => setNote(portfolio, date, note ?? ''));
   res.json({ ok: true, entry: updated.log[date] });
 }));
@@ -2271,6 +2401,7 @@ app.post('/api/settings/style', wrap(async (req, res) => {
 /** Wipe the log and trades, keeping positions. Destructive and irreversible. */
 app.post('/api/reset', wrap(async (req, res) => {
   const scope = req.body?.scope ?? 'log';
+  if (scope !== 'log' && scope !== 'all') return res.status(400).json({ error: 'نطاق المسح غير معروف' });
   await withPortfolio(req.user.id, (portfolio) =>
     scope === 'all'
       // imports survives the wipe — behaviorProfile() reads it to know
@@ -2358,7 +2489,8 @@ app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 
     return res.status(429).json({ error: SCREENSHOT_LIMIT_MESSAGE, reason: 'screenshot_limit', screenshotImportsLeft: 0 });
   }
 
-  const mediaType = req.headers['content-type'];
+  const mediaType = checkedImageType(req);
+  if (!mediaType) return res.status(415).json({ error: NOT_AN_IMAGE_MESSAGE });
   const response = await callWithRetry(() => getOpenRouterClient().chat.completions.create({
     model: SCREENSHOT_VISION_MODEL,
     max_tokens: 4000,
@@ -2591,7 +2723,9 @@ async function startReviewJob(res, key, run) {
     .then((result) => Object.assign(job, { status: 'done', result, finishedAt: Date.now() }))
     .catch((err) => {
       console.error(`[review] ${key} failed:`, err);
-      Object.assign(job, { status: 'error', error: err.message || 'تعذر تحليل المحفظة', finishedAt: Date.now() });
+      // A model-provider or database error's text can name endpoints, keys' owners
+      // or tables — only this app's own (Arabic) messages are shown to the user.
+      Object.assign(job, { status: 'error', error: publicError(err).message || 'تعذر تحليل المحفظة', finishedAt: Date.now() });
     });
   reviewJobs.set(key, job);
 
@@ -2778,6 +2912,9 @@ app.get('/api/market-analysis', wrap(async (req, res) => {
 
 app.get('/api/fundamentals/:code', wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
+  // The ticker is interpolated into a web-search prompt and used as a cache
+  // key, so it has to be one we know — not free text.
+  if (!lookup(req.params.code)) return res.status(404).json({ error: 'السهم مش موجود' });
   const { getFundamentals } = await import('../agent/fundamentals.js');
   const data = await getFundamentals(req.params.code, { force: req.query.force === '1' });
   if (!data) return res.status(404).json({ error: 'ما لقيتش بيانات أساسية موثوقة' });
@@ -2787,6 +2924,33 @@ app.get('/api/fundamentals/:code', wrap(async (req, res) => {
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, aiAvailable: aiAvailable(), universeSize: ALL_CODES.length });
 });
+
+// Unknown API paths answer in JSON like every other API response.
+app.use('/api', (_req, res) => res.status(404).json({ error: 'المسار مش موجود' }));
+
+// Last resort for anything that reaches Express's own error path — malformed
+// JSON, an oversized body, an unreadable encoding. Without this those get the
+// framework's HTML error page (with a stack trace outside production).
+app.use((err, _req, res, next) => {
+  if (res.headersSent) return next(err);
+  const { status, message } = publicError(err);
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: message });
+});
+
+/** Production-only nags about weak or default settings. Warn, never refuse to boot: a misjudged check must not take the site down. */
+function warnAboutWeakConfig() {
+  if (process.env.NODE_ENV !== 'production') return;
+  const problems = [];
+  for (const name of ['BLOG_CRON_SECRET', 'STOP_PLAN_CRON_SECRET', 'DAILY_CLOSE_CRON_SECRET']) {
+    const value = process.env[name];
+    if (value && value.length < 24) problems.push(`${name} قصير — استخدم 32 حرف عشوائي على الأقل`);
+  }
+  if (!process.env.ADMIN_EMAILS) problems.push('ADMIN_EMAILS مش مضبوط — بيستخدم الإيميل الافتراضي المكتوب في الكود');
+  if (!process.env.FRONTEND_URL && !process.env.APP_URL) problems.push('FRONTEND_URL / APP_URL مش مضبوطين');
+  if (!process.env.RESEND_API_KEY) problems.push('RESEND_API_KEY مش مضبوط — إيميلات التفعيل وإعادة التعيين مش هتتبعت');
+  for (const problem of problems) console.warn(`[security] ${problem}`);
+}
 
 // Admin-added stocks (see registerCustomStocks) live only in memory once
 // merged in — reload them from Supabase before anything can serve a request,
@@ -2805,6 +2969,7 @@ const isDirectRun = Boolean(process.argv[1])
   && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (isDirectRun) {
+  warnAboutWeakConfig();
   startDailyCloseScheduler();
   startStopPlanScheduler();
   const PORT = process.env.PORT ?? 3000;

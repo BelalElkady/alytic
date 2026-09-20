@@ -23,6 +23,7 @@ import { sendEmail } from './email.js';
 import { isDisposableEmail } from './emailIdentity.js';
 import { INVALID_PHONE_MESSAGE, normalizePhone } from './phone.js';
 import { verificationEmailHtml, resetPasswordEmailHtml, registrationConfirmedEmailHtml, alreadyRegisteredEmailHtml } from './emailTemplates.js';
+import { canonicalEmail } from './emailIdentity.js';
 
 const SESSION_COOKIE = 'alytic_session';
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 30;
@@ -38,6 +39,9 @@ if (!process.env.SESSION_SECRET) {
     throw new Error('SESSION_SECRET غير مضبوط — لازم قيمة عشوائية طويلة في .env قبل تشغيل الإنتاج (مثلاً: openssl rand -hex 32)');
   }
   console.warn('[auth] SESSION_SECRET غير مضبوط — بيستخدم قيمة افتراضية غير آمنة (مقبول في التطوير المحلي بس، أبدًا في الإنتاج)');
+}
+if (process.env.NODE_ENV === 'production' && process.env.SESSION_SECRET && process.env.SESSION_SECRET.length < 32) {
+  console.warn('[security] SESSION_SECRET أقصر من 32 حرف — استخدم قيمة عشوائية أطول (openssl rand -hex 32). تغييرها بيسجّل خروج كل المستخدمين مرة واحدة.');
 }
 const SESSION_SECRET = process.env.SESSION_SECRET ?? 'change-this-session-secret-in-env';
 
@@ -64,6 +68,74 @@ const PHONE_TAKEN_MESSAGE = 'رقم الموبايل ده مسجّل بحساب 
 async function assertPhoneAvailable(phone, exceptUserId = null) {
   const owner = await getUserByPhone(phone);
   if (owner && owner.id !== exceptUserId) throw new Error(PHONE_TAKEN_MESSAGE);
+}
+
+// scrypt is deliberately expensive, so an unbounded password is a cheap way to
+// burn server CPU; and anything that isn't a string must never reach it.
+const MAX_PASSWORD_LENGTH = 128;
+const MIN_PASSWORD_LENGTH = 8;
+const PASSWORD_LENGTH_MESSAGE = 'كلمة المرور لازم تكون 8 حروف على الأقل ومتزيدش عن 128 حرف';
+const isPasswordShapeOk = (password) => typeof password === 'string' && password.length <= MAX_PASSWORD_LENGTH;
+const isPasswordLengthOk = (password) => isPasswordShapeOk(password) && password.length >= MIN_PASSWORD_LENGTH;
+
+// Logging in as an address with no account used to return as soon as the
+// lookup missed, while a real address then paid for a scrypt run — a
+// measurable difference that tells an attacker which emails are registered.
+// A miss now spends the same work against a throwaway salt/hash.
+const DUMMY_SALT = crypto.randomBytes(16).toString('hex');
+const DUMMY_HASH = crypto.randomBytes(64).toString('hex');
+
+// Per-account brute-force throttle, on top of the per-IP limiter in server.js:
+// that one is defeated by rotating addresses, this one follows the *target*.
+// Failed attempts only; a success clears the count. In-memory on purpose — this
+// is one process behind nginx — so a restart forgets it, which is acceptable
+// for a throttle. Keyed by canonical email so dotted/+tag spellings of one
+// mailbox share a counter.
+const LOGIN_FAILURE_LIMIT = 10;
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const failedLogins = new Map(); // key -> { count, since }
+const TOO_MANY_ATTEMPTS = 'محاولات دخول كتير على الحساب ده — استنى 15 دقيقة أو استخدم "نسيت كلمة السر".';
+const tooManyAttempts = () => Object.assign(new Error(TOO_MANY_ATTEMPTS), { status: 429, expose: true, userMessage: TOO_MANY_ATTEMPTS });
+
+function loginKey(email) {
+  return canonicalEmail(email) ?? email;
+}
+function loginLocked(key, now = Date.now()) {
+  const entry = failedLogins.get(key);
+  if (!entry) return false;
+  if (now - entry.since > LOGIN_FAILURE_WINDOW_MS) {
+    failedLogins.delete(key);
+    return false;
+  }
+  return entry.count >= LOGIN_FAILURE_LIMIT;
+}
+function noteLoginFailure(key, now = Date.now()) {
+  const entry = failedLogins.get(key);
+  if (!entry || now - entry.since > LOGIN_FAILURE_WINDOW_MS) failedLogins.set(key, { count: 1, since: now });
+  else entry.count += 1;
+  // Bounded: an attacker cycling through made-up addresses must not grow this forever.
+  if (failedLogins.size > 50_000) {
+    for (const [k, v] of failedLogins) if (now - v.since > LOGIN_FAILURE_WINDOW_MS) failedLogins.delete(k);
+    if (failedLogins.size > 50_000) failedLogins.clear();
+  }
+}
+
+// One mail per recipient per cooldown for the mails a stranger can trigger by
+// typing someone else's address (verification, reset, "someone tried to
+// register with your email"). The per-IP limiter doesn't stop a botnet from
+// mail-bombing one inbox through this app.
+const MAIL_COOLDOWN_MS = 2 * 60 * 1000;
+const mailSentAt = new Map(); // `${kind}:${email}` -> ms
+function mailAllowed(kind, email, now = Date.now()) {
+  const key = `${kind}:${email}`;
+  const last = mailSentAt.get(key);
+  if (last && now - last < MAIL_COOLDOWN_MS) return false;
+  mailSentAt.set(key, now);
+  if (mailSentAt.size > 50_000) {
+    for (const [k, at] of mailSentAt) if (now - at >= MAIL_COOLDOWN_MS) mailSentAt.delete(k);
+    if (mailSentAt.size > 50_000) mailSentAt.clear();
+  }
+  return true;
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -126,7 +198,10 @@ function decodeSession(value) {
 }
 
 function parseCookies(header = '') {
-  return Object.fromEntries(header.split(';').map((part) => part.trim().split('=').map(decodeURIComponent)).filter(([key, value]) => key && value));
+  const decode = (s) => {
+    try { return decodeURIComponent(s); } catch { return s; }
+  };
+  return Object.fromEntries(header.split(';').map((part) => part.trim().split('=').map(decode)).filter(([key, value]) => key && value));
 }
 
 function makeVerificationToken() {
@@ -178,8 +253,8 @@ async function sendAlreadyRegisteredEmail(user) {
  */
 export async function register({ email, password, name, phone, ip }) {
   const normalized = String(email).trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(normalized)) throw new Error('اكتب بريد إلكتروني صحيح');
-  if (String(password).length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف على الأقل');
+  if (normalized.length > 254 || !/^\S+@\S+\.\S+$/.test(normalized)) throw new Error('اكتب بريد إلكتروني صحيح');
+  if (!isPasswordLengthOk(password)) throw new Error(PASSWORD_LENGTH_MESSAGE);
   if (isDisposableEmail(normalized)) throw new Error('البريد المؤقت مش مسموح — استخدم بريدك الشخصي');
   const normalizedPhone = normalizePhone(phone);
   if (!normalizedPhone) throw new Error(INVALID_PHONE_MESSAGE);
@@ -189,7 +264,7 @@ export async function register({ email, password, name, phone, ip }) {
   // the caller, notice to the real owner — see canonicalEmail.
   const existing = (await getUserByEmail(normalized)) ?? (await getUserByCanonicalEmail(normalized));
   if (existing) {
-    await sendAlreadyRegisteredEmail(existing);
+    if (mailAllowed('exists', existing.email)) await sendAlreadyRegisteredEmail(existing);
     return;
   }
   await assertPhoneAvailable(normalizedPhone);
@@ -224,9 +299,20 @@ export async function register({ email, password, name, phone, ip }) {
 }
 
 export async function login({ email, password, ip }) {
-  const normalized = String(email).trim().toLowerCase();
+  const normalized = String(email ?? '').trim().toLowerCase();
+  const BAD_CREDENTIALS = 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+  if (!isPasswordShapeOk(password) || !normalized || normalized.length > 254) throw new Error(BAD_CREDENTIALS);
+  const key = loginKey(normalized);
+  if (loginLocked(key)) throw tooManyAttempts();
   const user = await getUserByEmail(normalized);
-  if (!user || !(await passwordMatches(password, user))) throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
+  const ok = user
+    ? await passwordMatches(password, user)
+    : (await passwordMatches(password, { password_salt: DUMMY_SALT, password_hash: DUMMY_HASH }), false);
+  if (!ok) {
+    noteLoginFailure(key);
+    throw new Error(BAD_CREDENTIALS);
+  }
+  failedLogins.delete(key);
   await touchUserLogin(user.id, new Date().toISOString(), ip);
   return { user: publicUser(user), token: encodeSession(user.id, passwordHashOf(user)) };
 }
@@ -244,6 +330,9 @@ export async function googleSignIn({ credential, ip }) {
     throw new Error('تعذر التحقق من حساب جوجل');
   }
   if (!payload?.email || !payload.sub) throw new Error('تعذر التحقق من حساب جوجل');
+  // Google vouching for the token is not the same as Google vouching that the
+  // holder owns the address; only an email_verified account may sign in or link.
+  if (payload.email_verified !== true) throw new Error('بريد جوجل ده مش متأكد منه — أكّده من حساب جوجل الأول.');
 
   const normalized = payload.email.toLowerCase();
   let user = await getUserByGoogleId(payload.sub);
@@ -253,6 +342,17 @@ export async function googleSignIn({ credential, ip }) {
       // Same email already has a password account — attach this Google
       // identity to it instead of creating a duplicate. Google has already
       // confirmed the address, so this also settles verification.
+      //
+      // If that password account was never email-verified, whoever created it
+      // may not own the address (someone could have registered a victim's email
+      // ahead of time, planning to inherit the account once the victim signs in
+      // with Google). Its password and any pending links are discarded so only
+      // the Google identity — which does prove ownership — can open it.
+      if (!existing.email_verified) {
+        const { salt, hash } = await hashPassword(crypto.randomBytes(32).toString('hex'));
+        await setUserPassword(existing.id, { salt, hash });
+        await setVerificationToken(existing.id, null, null);
+      }
       await linkGoogleAccount(existing.id, payload.sub);
       user = await getUserById(existing.id);
     } else if (await getUserByCanonicalEmail(normalized)) {
@@ -271,7 +371,7 @@ export async function googleSignIn({ credential, ip }) {
         passwordHash: hash,
         googleId: payload.sub,
         signupIp: ip,
-        emailVerified: Boolean(payload.email_verified),
+        emailVerified: true,
         isAdmin: ADMIN_EMAILS.has(normalized),
         createdAt: new Date().toISOString(),
       };
@@ -324,6 +424,7 @@ export async function resendVerification({ email }) {
   const normalized = String(email ?? '').trim().toLowerCase();
   const user = await getUserByEmail(normalized);
   if (!user || user.email_verified) return;
+  if (!mailAllowed('verify', user.email)) return;
   const token = makeVerificationToken();
   const expiresAt = new Date(Date.now() + VERIFICATION_TTL).toISOString();
   await setVerificationToken(user.id, token, expiresAt);
@@ -335,6 +436,7 @@ export async function forgotPassword({ email }) {
   const normalized = String(email ?? '').trim().toLowerCase();
   const user = await getUserByEmail(normalized);
   if (!user) return;
+  if (!mailAllowed('reset', user.email)) return;
   const token = makeResetToken();
   const expiresAt = new Date(Date.now() + RESET_TTL).toISOString();
   await setResetToken(user.id, token, expiresAt);
@@ -347,7 +449,7 @@ export async function resetPassword({ token, password }) {
   if (user.reset_token_expires && new Date(user.reset_token_expires).getTime() < Date.now()) {
     throw new Error('رابط إعادة التعيين منتهي الصلاحية، اطلب رابط جديد');
   }
-  if (String(password).length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف على الأقل');
+  if (!isPasswordLengthOk(password)) throw new Error(PASSWORD_LENGTH_MESSAGE);
   const { salt, hash } = await hashPassword(password);
   await setUserPassword(user.id, { salt, hash });
 }
@@ -381,4 +483,10 @@ export function sessionCookie(token, remember = true) {
 
 export function clearSessionCookie() {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${COOKIE_SECURE}; Max-Age=0`;
+}
+
+/** Test hook: forgets the in-memory login-failure and mail-cooldown counters. */
+export function resetThrottlesForTests() {
+  failedLogins.clear();
+  mailSentAt.clear();
 }

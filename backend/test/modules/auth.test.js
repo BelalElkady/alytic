@@ -7,6 +7,7 @@ import '../helpers/env.js';
 import {
   register, login, userFromRequest, verifyEmail, resendVerification,
   forgotPassword, resetPassword, sessionCookie, clearSessionCookie, updatePhone,
+  resetThrottlesForTests,
 } from '../../src/auth.js';
 import {
   getUserByEmail, getUserByVerificationToken, getUserByResetToken,
@@ -236,15 +237,63 @@ test('a password reset signs out every session issued before it', async () => {
   assert.ok(await userFromRequest(reqWithCookie(newSession)));
 });
 
-test('reset tokens are one-per-email — a second request replaces the first', async () => {
+test('a second reset request inside the mail cooldown is ignored, so one address cannot be mail-bombed', async () => {
+  resetThrottlesForTests();
   const { user } = await registerAndFetch();
   await forgotPassword({ email: user.email });
   const first = (await getUserByEmail(user.email)).reset_token;
   await forgotPassword({ email: user.email });
   const second = (await getUserByEmail(user.email)).reset_token;
+  assert.equal(second, first, 'no new token (and no new email) while the cooldown runs');
+});
+
+test('reset tokens are one-per-email — a second request replaces the first', async () => {
+  resetThrottlesForTests();
+  const { user } = await registerAndFetch();
+  await forgotPassword({ email: user.email });
+  const first = (await getUserByEmail(user.email)).reset_token;
+  resetThrottlesForTests(); // as if the cooldown had elapsed
+  await forgotPassword({ email: user.email });
+  const second = (await getUserByEmail(user.email)).reset_token;
   assert.notEqual(first, second);
   await assert.rejects(() => resetPassword({ token: first, password: 'NewPassword!42' }), /غير صالح|مستخدم/);
   await assert.doesNotReject(() => resetPassword({ token: second, password: 'NewPassword!42' }));
+});
+
+test('login locks an account after repeated failures, whatever address they come from', async () => {
+  resetThrottlesForTests();
+  const { email } = await registerAndFetch();
+  for (let i = 0; i < 10; i += 1) {
+    await assert.rejects(() => login({ email, password: 'wrong-password', ip: `198.51.100.${i}` }), /غير صحيحة/);
+  }
+  // The right password is refused too while the lock is on, and the error says why.
+  await assert.rejects(() => login({ email, password: PASSWORD }), (err) => err.status === 429 && /محاولات دخول كتير/.test(err.message));
+  resetThrottlesForTests();
+  await assert.doesNotReject(() => login({ email, password: PASSWORD }));
+});
+
+test('a successful login clears the failure count', async () => {
+  resetThrottlesForTests();
+  const { email } = await registerAndFetch();
+  for (let i = 0; i < 9; i += 1) await assert.rejects(() => login({ email, password: 'wrong-password' }), /غير صحيحة/);
+  await login({ email, password: PASSWORD });
+  for (let i = 0; i < 9; i += 1) await assert.rejects(() => login({ email, password: 'wrong-password' }), /غير صحيحة/);
+  await assert.doesNotReject(() => login({ email, password: PASSWORD }));
+});
+
+test('login and register refuse passwords that are not strings or are absurdly long', async () => {
+  const { email } = await registerAndFetch();
+  await assert.rejects(() => login({ email, password: { $ne: '' } }), /غير صحيحة/);
+  await assert.rejects(() => login({ email, password: 'x'.repeat(5000) }), /غير صحيحة/);
+  await assert.rejects(() => register({ email: uniqueEmail(), password: 'x'.repeat(129), phone: uniquePhone() }), /128/);
+  await assert.rejects(() => register({ email: uniqueEmail(), password: ['12345678'], phone: uniquePhone() }), /8 حروف/);
+});
+
+test('an unknown address and a wrong password give the same error', async () => {
+  const { email } = await registerAndFetch();
+  const unknown = await login({ email: uniqueEmail(), password: PASSWORD }).catch((e) => e.message);
+  const wrong = await login({ email, password: 'wrong-password' }).catch((e) => e.message);
+  assert.equal(unknown, wrong);
 });
 
 test('a verification token survives a password reset (they are independent flows)', async () => {

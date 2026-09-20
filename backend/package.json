@@ -19,7 +19,9 @@
     "test:watch": "node --test --watch \"test/**/*.test.js\"",
     "test:unit": "node --test \"test/unit/*.test.js\"",
     "test:api": "node scripts/run-tests.mjs \"test/api/*.test.js\"",
-    "cleanup:test-data": "node scripts/cleanup-test-data.js"
+    "cleanup:test-data": "node scripts/cleanup-test-data.js",
+    "security:check": "node scripts/security-check.mjs",
+    "security:audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

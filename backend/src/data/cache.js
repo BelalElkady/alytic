@@ -46,7 +46,16 @@ async function ensureDir() {
   await fs.mkdir(BARS_DIR, { recursive: true });
 }
 
-const fileFor = (code) => path.join(BARS_DIR, `${code.toUpperCase()}.json`);
+// The ticker becomes part of a file path. Every ticker this app knows is 2-10
+// letters/digits, so anything else (a "../" from a URL parameter, a path
+// separator, a NUL byte) is refused outright rather than sanitized — readBars
+// treats the throw as a cache miss, writeBars surfaces it.
+const SAFE_CACHE_KEY = /^[A-Z0-9]{1,16}$/;
+function fileFor(code) {
+  const key = String(code).toUpperCase();
+  if (!SAFE_CACHE_KEY.test(key)) throw new Error('invalid ticker for a cache file');
+  return path.join(BARS_DIR, `${key}.json`);
+}
 
 export async function readBars(code) {
   try {

@@ -410,3 +410,46 @@ create table if not exists blog_daily_topics (
 insert into users (id, email, name, password_salt, password_hash, email_verified, created_at)
 values ('local', 'local@alytic.local', 'Local CLI', 'local', 'local', true, now())
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Lock the tables away from Supabase's public API.
+--
+-- Every table above lives in the `public` schema, which Supabase exposes over
+-- PostgREST (https://<project>.supabase.co/rest/v1/...). Without row level
+-- security, anyone holding the project's *anon* key can read and write those
+-- tables directly, bypassing this app entirely — including users.password_hash,
+-- session-adjacent tokens and every user's portfolio. The anon key is public by
+-- design (it ships in any Supabase-backed frontend and shows up in network
+-- logs), so it must never be enough to reach this data.
+--
+-- The backend connects with the service_role key, which bypasses RLS, so
+-- enabling RLS with no policies denies the anon/authenticated roles everything
+-- and changes nothing for the app. The revokes are a second, independent layer.
+-- Both are idempotent; re-running this file is safe.
+--
+-- If anything else ever reads these tables with the anon key, it will stop
+-- working — add an explicit, narrow policy for it rather than turning RLS off.
+do $$
+declare
+  t record;
+begin
+  for t in select tablename from pg_tables where schemaname = 'public' loop
+    execute format('alter table public.%I enable row level security', t.tablename);
+  end loop;
+
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on all tables in schema public from anon;
+    revoke all on all sequences in schema public from anon;
+    alter default privileges in schema public revoke all on tables from anon;
+    alter default privileges in schema public revoke all on sequences from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on all tables in schema public from authenticated;
+    revoke all on all sequences in schema public from authenticated;
+    alter default privileges in schema public revoke all on tables from authenticated;
+    alter default privileges in schema public revoke all on sequences from authenticated;
+  end if;
+end $$;
+
+-- To check the result (every row should show rowsecurity = true):
+--   select tablename, rowsecurity from pg_tables where schemaname = 'public' order by 1;

@@ -20,7 +20,21 @@ async function forward(request: Request): Promise<Response> {
   const upstreamPath = url.pathname.replace(/^\/api\/public/, "");
   const upstream = `${target}${upstreamPath}${url.search}`;
 
-  const isLovablePreview = request.headers.get("x-lovable-preview") === "1";
+  // This proxy is the public door to the backend, so it only opens onto the
+  // backend's /api surface. The cron triggers (/api/cron/*) are meant to be
+  // called over loopback by the deploy host's own jobs, never from the
+  // internet — the backend still checks a shared secret, but there is no
+  // reason to let strangers reach the endpoint and guess at it.
+  if (!upstreamPath.startsWith("/api/") || /^\/api\/cron(\/|$)/i.test(upstreamPath)) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // The Lovable editor preview (an iframe on another site) needs its cookie
+  // re-issued as SameSite=None, which weakens the cross-site protection the
+  // cookie normally has. It is therefore opt-in per deployment, never
+  // something any visitor can switch on by sending a header.
+  const isLovablePreview =
+    process.env["ALLOW_LOVABLE_PREVIEW"] === "1" && request.headers.get("x-lovable-preview") === "1";
 
   const headers = new Headers();
   request.headers.forEach((value, key) => {
