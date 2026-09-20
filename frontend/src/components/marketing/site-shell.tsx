@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
+import { SiteFooter } from "@/components/marketing/site-footer";
 import { ChatWidget } from "@/components/support/chat-widget";
 import { useDesk } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
@@ -75,40 +76,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
       <main className="flex-1">{children}</main>
 
-      <footer className="border-t bg-surface">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-start gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between">
-          <Logo />
-          <p className="text-[14.5px] font-medium leading-relaxed text-muted-foreground">
-            EGXpert أداة تحليل ومساعدة في القرار — وليست توصية مالية مرخّصة. القرار الأخير مسؤوليتك.
-          </p>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Link
-              to="/blog"
-              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              تابع اخبار البورصة
-            </Link>
-            <Link
-              to="/how-to-use"
-              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              طريقة الاستخدام
-            </Link>
-            <Link
-              to="/contact"
-              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              تواصل معنا
-            </Link>
-            <Link
-              to="/privacy"
-              className="text-[12.5px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              سياسة الخصوصية
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
 
       {/* Signed-in only (it renders nothing otherwise) — but it belongs here
           as well as in the desk, because the subscribe and pricing pages are
