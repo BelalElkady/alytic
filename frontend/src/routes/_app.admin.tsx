@@ -47,23 +47,25 @@ import { api, del, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
+import { PlatformTab } from "@/components/admin/platform-tab";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
+import { useTenant } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
 
-const BASE_TITLE = "الإدارة — EGXpert";
+const baseTitle = (name: string) => `الإدارة — ${name}`;
 
 export const Route = createFileRoute("/_app/admin")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: BASE_TITLE },
+      { title: baseTitle(siteName(matches)) },
       { name: "description", content: "إدارة قوائم المؤشرات والمستخدمين المسجّلين." },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: BASE_TITLE },
-      { property: "og:url", content: `${SITE_URL}/admin` },
+      { property: "og:title", content: baseTitle(siteName(matches)) },
+      { property: "og:url", content: `${siteUrl(matches)}/admin` },
     ],
   }),
   component: AdminPage,
@@ -105,6 +107,7 @@ const LABELS: Record<string, string> = {
  */
 function useUnreadTitleBadge(enabled: boolean): number {
   const [unread, setUnread] = useState(0);
+  const title = baseTitle(useTenant().name);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -114,7 +117,7 @@ function useUnreadTitleBadge(enabled: boolean): number {
         if (cancelled) return;
         const total = threads.reduce((sum: number, t: { unread: number }) => sum + t.unread, 0);
         setUnread(total);
-        document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
+        document.title = total > 0 ? `(${total}) ${title}` : title;
       } catch {
         // Best-effort badge — a failed poll just leaves the last count showing.
       }
@@ -124,9 +127,9 @@ function useUnreadTitleBadge(enabled: boolean): number {
     return () => {
       cancelled = true;
       clearInterval(timer);
-      document.title = BASE_TITLE;
+      document.title = title;
     };
-  }, [enabled]);
+  }, [enabled, title]);
   return unread;
 }
 
@@ -138,11 +141,16 @@ function AdminPage() {
     return <ErrorState message="الصفحة دي للمشرفين بس." />;
   }
 
+  // The index lists are market data shared by every white-label site, so
+  // only the platform owner edits them; a client site's admins start on
+  // their users. The clients tab is the platform owner's alone as well.
+  const isPlatformAdmin = Boolean(user.isPlatformAdmin);
+
   return (
-    <Tabs defaultValue="indices" className="space-y-4">
+    <Tabs defaultValue={isPlatformAdmin ? "indices" : "users"} className="space-y-4">
       {/* mt-3: room for the unread badge that sits on top of the "الدعم" tab. */}
       <TabsList className="mt-3">
-        <TabsTrigger value="indices">المؤشرات</TabsTrigger>
+        {isPlatformAdmin && <TabsTrigger value="indices">المؤشرات</TabsTrigger>}
         <TabsTrigger value="users">المستخدمين</TabsTrigger>
         <TabsTrigger value="support" className="relative">
           الدعم
@@ -156,10 +164,18 @@ function AdminPage() {
           )}
         </TabsTrigger>
         <TabsTrigger value="blog">المدونة</TabsTrigger>
+        {isPlatformAdmin && <TabsTrigger value="platform">العملاء</TabsTrigger>}
       </TabsList>
-      <TabsContent value="indices">
-        <IndicesTab />
-      </TabsContent>
+      {isPlatformAdmin && (
+        <TabsContent value="indices">
+          <IndicesTab />
+        </TabsContent>
+      )}
+      {isPlatformAdmin && (
+        <TabsContent value="platform">
+          <PlatformTab />
+        </TabsContent>
+      )}
       <TabsContent value="users">
         <UsersTab />
       </TabsContent>

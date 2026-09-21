@@ -76,6 +76,8 @@ export type User = {
   phone?: string | null;
   emailVerified?: boolean;
   isAdmin?: boolean;
+  /** Can manage the white-label sites (see backend isPlatformAdmin). Only ever true on the main site. */
+  isPlatformAdmin?: boolean;
   createdAt?: string;
   trialDaysLeft?: number;
   trialDaysTotal?: number;

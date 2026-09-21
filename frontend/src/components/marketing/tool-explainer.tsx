@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { useTenant, withBrand } from "@/lib/tenant";
 
 /**
  * The long-form "what this actually does" section. The FEATURES grid on the
@@ -50,6 +51,7 @@ const SECTIONS = [
 ];
 
 export function ToolExplainer() {
+  const { name: brandName } = useTenant();
   return (
     <section id="how-it-works" className="scroll-mt-16 border-t bg-surface">
       <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
@@ -58,7 +60,7 @@ export function ToolExplainer() {
           الأداة بتشتغل إزاي بالظبط؟
         </h2>
         <p className="mt-3 max-w-3xl text-[14.5px] leading-relaxed text-muted-foreground">
-          EGXpert مش موقع أخبار ولا مجموعة توصيات جاهزة. هو محرّك بيقرأ محفظتك الحقيقية وأسعار
+          {brandName} مش موقع أخبار ولا مجموعة توصيات جاهزة. هو محرّك بيقرأ محفظتك الحقيقية وأسعار
           البورصة المصرية اللحظية، وبيطلّع لك لكل سهم: تعمل إيه النهاردة، تخرج عند كام، وتستنى لحد
           كام — بقواعد ثابتة تقدر تشوفها، مش إحساس.
         </p>
@@ -70,7 +72,9 @@ export function ToolExplainer() {
                 <Icon className="size-5" />
               </span>
               <h3 className="mt-4 text-[16px] font-semibold">{title}</h3>
-              <p className="mt-2 text-[13.5px] leading-[1.9] text-muted-foreground">{body}</p>
+              <p className="mt-2 text-[13.5px] leading-[1.9] text-muted-foreground">
+                {withBrand(body, brandName)}
+              </p>
             </article>
           ))}
         </div>
@@ -80,8 +84,8 @@ export function ToolExplainer() {
           <div>
             <h3 className="text-[15px] font-semibold">وحاجة مهمة: الأداة مش بتقرّر بدالك</h3>
             <p className="mt-1.5 text-[13.5px] leading-relaxed">
-              EGXpert أداة تحليل ومساعدة في القرار، وليست توصية مالية مرخّصة. بيوريك الأرقام والأساس
-              اللي اتبنت عليه بوضوح، عشان تقرّر إنت وإنت شايف كل حاجة قدامك — والقرار الأخير
+              {brandName} أداة تحليل ومساعدة في القرار، وليست توصية مالية مرخّصة. بيوريك الأرقام
+              والأساس اللي اتبنت عليه بوضوح، عشان تقرّر إنت وإنت شايف كل حاجة قدامك — والقرار الأخير
               ومسؤوليته عليك.
             </p>
           </div>

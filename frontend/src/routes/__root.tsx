@@ -11,7 +11,9 @@ import { useEffect, type ReactNode } from "react";
 
 import { PresenceBeacon } from "@/components/presence-beacon";
 import { Toaster } from "@/components/ui/sonner";
-import { OG_LOGO_URL, SITE_URL } from "@/lib/seo";
+import { ogLogoUrl, siteUrl } from "@/lib/seo";
+import { DEFAULT_TENANT, brandCss } from "@/lib/tenant";
+import { getTenant } from "@/lib/tenant-server";
 import { DeskProvider } from "@/lib/store";
 
 import appCss from "../styles.css?url";
@@ -78,60 +80,89 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Alytic — EGXpert" },
-      {
-        name: "description",
-        content:
-          "مكتب تحليل وإدارة محفظة البورصة المصرية: مراكزك، وقف الخسارة، الأهداف والتوصيات اليومية.",
-      },
-      { name: "robots", content: "index, follow" },
-      { property: "og:title", content: "Alytic — EGXpert" },
-      {
-        property: "og:description",
-        content:
-          "مكتب تحليل وإدارة محفظة البورصة المصرية: مراكزك، وقف الخسارة، الأهداف والتوصيات اليومية.",
-      },
-      { property: "og:type", content: "website" },
-      { property: "og:url", content: SITE_URL },
-      { property: "og:image", content: OG_LOGO_URL },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-    links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap",
-      },
-    ],
-    scripts: [
-      {
-        src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8353018708854851",
-        async: true,
-        crossOrigin: "anonymous",
-      },
-      {
-        src: "https://www.googletagmanager.com/gtag/js?id=G-789W810GMB",
-        async: true,
-      },
-      {
-        children: `window.dataLayer = window.dataLayer || [];
+  // Which white-label site this is, asked once per page load on the server
+  // (see lib/tenant.ts). It never changes within a visit, so client-side
+  // navigation doesn't ask again.
+  loader: async () => ({ tenant: await getTenant() }),
+  staleTime: Infinity,
+  shouldReload: false,
+  head: ({ loaderData }) => {
+    const tenant = loaderData?.tenant ?? DEFAULT_TENANT;
+    const { brand } = tenant;
+    const description = brand.description ?? DEFAULT_TENANT.brand.description ?? "";
+    const title = brand.tagline ? `${tenant.name} — ${brand.tagline}` : tenant.name;
+    const css = brandCss(brand);
+    // Re-checked here as well as on save: gaId is written into an inline script.
+    const gaId = /^G-[A-Z0-9]{4,20}$/.test(brand.analytics?.gaId ?? "") ? brand.analytics?.gaId : undefined;
+    const adsClient = /^ca-pub-\d{10,20}$/.test(brand.analytics?.adsClient ?? "")
+      ? brand.analytics?.adsClient
+      : undefined;
+    return {
+      meta: [
+        { charSet: "utf-8" },
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { title },
+        { name: "description", content: description },
+        { name: "robots", content: "index, follow" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:type", content: "website" },
+        { property: "og:url", content: siteUrl([{ loaderData }]) },
+        { property: "og:image", content: ogLogoUrl([{ loaderData }]) },
+        { name: "twitter:card", content: "summary_large_image" },
+      ],
+      links: [
+        {
+          rel: "stylesheet",
+          href: appCss,
+        },
+        ...(brand.faviconUrl
+          ? [
+              {
+                rel: "icon",
+                href: brand.faviconUrl,
+                ...(brand.faviconUrl.endsWith(".svg") ? { type: "image/svg+xml" } : {}),
+              },
+            ]
+          : []),
+        ...(tenant.id === DEFAULT_TENANT.id
+          ? [{ rel: "icon", href: "/favicon.ico", type: "image/x-icon" }]
+          : []),
+        { rel: "preconnect", href: "https://fonts.googleapis.com" },
+        { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+        {
+          rel: "stylesheet",
+          href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap",
+        },
+      ],
+      styles: css ? [{ children: css }] : [],
+      // Each site reports to its own AdSense / Analytics account, or to none:
+      // a client's traffic must never land in someone else's reports. The
+      // IDs are format-checked by the backend before they are saved.
+      scripts: [
+        ...(adsClient
+          ? [
+              {
+                src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsClient}`,
+                async: true,
+                crossOrigin: "anonymous" as const,
+              },
+            ]
+          : []),
+        ...(gaId
+          ? [
+              { src: `https://www.googletagmanager.com/gtag/js?id=${gaId}`, async: true },
+              {
+                children: `window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
-gtag('config', 'G-789W810GMB');`,
-      },
-    ],
-  }),
+gtag('config', '${gaId}');`,
+              },
+            ]
+          : []),
+      ],
+    };
+  },
   shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,

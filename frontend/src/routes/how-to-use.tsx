@@ -21,25 +21,25 @@ import {
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { canonical, SITE_URL } from "@/lib/seo";
+import { canonical, siteUrl, siteName } from "@/lib/seo";
+import { useTenant, withBrand } from "@/lib/tenant";
 
 export const Route = createFileRoute("/how-to-use")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "طريقة الاستخدام — EGXpert" },
+      { title: `طريقة الاستخدام — ${siteName(matches)}` },
       {
         name: "description",
-        content:
-          "شرح مبسّط لطريقة استخدام EGXpert خطوة بخطوة: عمل الحساب، إضافة أسهمك، استخدام التوصيات وتحليل الكاش، وفهم كل شاشة في لوحة التحكم.",
+        content: `شرح مبسّط لطريقة استخدام ${siteName(matches)} خطوة بخطوة: عمل الحساب، إضافة أسهمك، استخدام التوصيات وتحليل الكاش، وفهم كل شاشة في لوحة التحكم.`,
       },
-      { property: "og:title", content: "طريقة الاستخدام — EGXpert" },
+      { property: "og:title", content: `طريقة الاستخدام — ${siteName(matches)}` },
       {
         property: "og:description",
         content: "شرح مبسّط لكل خطوة، من عمل الحساب لحد فهم التوصية اليومية لكل سهم.",
       },
-      { property: "og:url", content: `${SITE_URL}/how-to-use` },
+      { property: "og:url", content: `${siteUrl(matches)}/how-to-use` },
     ],
-    links: [canonical("/how-to-use")],
+    links: [canonical(matches, "/how-to-use")],
   }),
   component: HowToUsePage,
 });
@@ -204,7 +204,7 @@ const SCREENS = [
     icon: BarChart3,
     to: "/charts",
     label: "الرسوم",
-    text: 'رسوم بيانية لتوزيع محفظتك بين الأسهم، ومساهمة كل سهم في الربح أو الخسارة، وتطوّر قيمة المحفظة يوم بيوم — مبنية على سجل الإغلاق اليومي اللي بيتحفظ تلقائيًا. لو بدأت متأخر، فيه زرار لبناء سجل تقديري لآخر ٩٠ يوم من أسعار السوق الحقيقية.',
+    text: "رسوم بيانية لتوزيع محفظتك بين الأسهم، ومساهمة كل سهم في الربح أو الخسارة، وتطوّر قيمة المحفظة يوم بيوم — مبنية على سجل الإغلاق اليومي اللي بيتحفظ تلقائيًا. لو بدأت متأخر، فيه زرار لبناء سجل تقديري لآخر ٩٠ يوم من أسعار السوق الحقيقية.",
   },
   {
     icon: Radar,
@@ -248,13 +248,14 @@ const FAQ = [
 ];
 
 function HowToUsePage() {
+  const { name: brandName } = useTenant();
   return (
     <SiteShell>
       <section className="border-b bg-card">
         <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
           <Badge variant="outline">دليل الاستخدام</Badge>
           <h1 className="mt-4 text-3xl font-bold leading-[1.25] tracking-tight sm:text-4xl">
-            طريقة استخدام EGXpert
+            طريقة استخدام {brandName}
           </h1>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
             شرح مبسّط بالعربي لكل خطوة، من عمل الحساب لحد ما تبدأ تاخد قرارك اليومي في كل سهم عندك.
@@ -301,7 +302,7 @@ function HowToUsePage() {
                     {item.label}
                   </h3>
                   <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
-                    {item.text}
+                    {withBrand(item.text, brandName)}
                   </p>
                 </div>
               </li>
@@ -309,9 +310,9 @@ function HowToUsePage() {
           </ol>
           <p className="mt-6 rounded-xl border border-warn/40 bg-warn-soft p-4 text-[12.5px] leading-relaxed">
             «تحليل السوق» و«رفع صور المحفظة» ليهم رصيد شهري حسب باقتك (شوف صفحة الأسعار)، والعدد
-            الباقي مكتوب جنب الزرار — أما «إدخال يدوي» فبلا حدود. لو خلص رصيد أي ميزة قبل ما يجي الشهر
-            الجاي، تقدر تشتري رصيد إضافي دفعة واحدة من صفحة الأسعار. وتقدر تشوف رصيدك في كل ميزة أول
-            ما تحب من صفحة «البروفايل والإعدادات».
+            الباقي مكتوب جنب الزرار — أما «إدخال يدوي» فبلا حدود. لو خلص رصيد أي ميزة قبل ما يجي
+            الشهر الجاي، تقدر تشتري رصيد إضافي دفعة واحدة من صفحة الأسعار. وتقدر تشوف رصيدك في كل
+            ميزة أول ما تحب من صفحة «البروفايل والإعدادات».
           </p>
         </div>
       </section>
@@ -350,7 +351,10 @@ function HowToUsePage() {
           <h3 className="mt-8 text-[15px] font-semibold">الأرقام بتتحرك مع السعر</h3>
           <ul className="mt-4 space-y-2 rounded-xl border bg-card p-5 shadow-sm">
             {LIVE_POINTS.map((point) => (
-              <li key={point} className="flex gap-2 text-[13px] leading-relaxed text-muted-foreground">
+              <li
+                key={point}
+                className="flex gap-2 text-[13px] leading-relaxed text-muted-foreground"
+              >
                 <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
                 {point}
               </li>
@@ -364,10 +368,15 @@ function HowToUsePage() {
                 key={item.label}
                 className="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-sm sm:flex-row sm:items-start sm:gap-4"
               >
-                <Badge variant="outline" className={`shrink-0 sm:mt-0.5 sm:w-24 sm:justify-center ${item.tone}`}>
+                <Badge
+                  variant="outline"
+                  className={`shrink-0 sm:mt-0.5 sm:w-24 sm:justify-center ${item.tone}`}
+                >
                   {item.label}
                 </Badge>
-                <p className="text-[13px] leading-relaxed text-muted-foreground">{item.text}</p>
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  {withBrand(item.text, brandName)}
+                </p>
               </div>
             ))}
           </div>
@@ -382,7 +391,7 @@ function HowToUsePage() {
                 <div>
                   <h4 className="text-[14.5px] font-semibold">{step.title}</h4>
                   <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                    {step.text}
+                    {withBrand(step.text, brandName)}
                   </p>
                 </div>
               </li>
@@ -398,7 +407,10 @@ function HowToUsePage() {
       </section>
 
       {/* Cash analysis */}
-      <section id="cash-analysis" className="mx-auto scroll-mt-20 w-full max-w-3xl px-4 py-14 sm:py-16">
+      <section
+        id="cash-analysis"
+        className="mx-auto scroll-mt-20 w-full max-w-3xl px-4 py-14 sm:py-16"
+      >
         <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
           <Coins className="size-5 text-primary" />
           إزاي تستخدم تحليل الكاش
@@ -470,9 +482,9 @@ function HowToUsePage() {
             </span>
             <h3 className="mt-3 text-[14.5px] font-semibold">القرار الأخير ليك</h3>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
-              EGXpert أداة تحليل ومساعدة في القرار مبنية على قواعد واضحة، مش توصية مالية مرخّصة، ومش
-              متوصّلة بحسابك عند السمسار — استخدمها كمساعد، والقرار النهائي مسؤوليتك. ولو عندك أي سؤال
-              كلّمنا من الشات أو واتساب في ركن الشاشة.
+              {brandName} أداة تحليل ومساعدة في القرار مبنية على قواعد واضحة، مش توصية مالية مرخّصة،
+              ومش متوصّلة بحسابك عند السمسار — استخدمها كمساعد، والقرار النهائي مسؤوليتك. ولو عندك
+              أي سؤال كلّمنا من الشات أو واتساب في ركن الشاشة.
             </p>
           </article>
         </div>
@@ -490,7 +502,7 @@ function HowToUsePage() {
                   {item.q}
                 </h3>
                 <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
-                  {item.a}
+                  {withBrand(item.a, brandName)}
                 </p>
               </article>
             ))}

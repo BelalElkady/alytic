@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Separator } from "@/components/ui/separator";
 import { useDesk } from "@/lib/store";
+import { useTenant } from "@/lib/tenant";
 
 const PERKS = [
   "تجربة مجانية ٥ أيام تداول بكل المزايا",
@@ -19,6 +20,7 @@ const PERKS = [
 ];
 
 export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | "register" }) {
+  const { name: brandName } = useTenant();
   const { signIn, signInWithGoogle } = useDesk();
   const navigate = useNavigate();
   const [register, setRegister] = useState(initialMode === "register");
@@ -67,7 +69,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
   return (
     <main className="grid min-h-screen bg-surface lg:grid-cols-2">
       <section className="hidden flex-col justify-between border-e bg-card p-10 lg:flex">
-        <Link to="/" aria-label="EGXpert">
+        <Link to="/" aria-label={brandName}>
           <Logo />
         </Link>
         <div>
@@ -88,14 +90,14 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
           </ul>
         </div>
         <p className="text-[12px] leading-relaxed text-muted-foreground">
-          EGXpert أداة تحليل ومساعدة في القرار — وليست توصية مالية مرخّصة.
+          {brandName} أداة تحليل ومساعدة في القرار — وليست توصية مالية مرخّصة.
         </p>
       </section>
 
       <section className="flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-6 flex flex-col items-center gap-3 text-center lg:hidden">
-            <Link to="/" aria-label="EGXpert">
+            <Link to="/" aria-label={brandName}>
               <Logo tagline={false} />
             </Link>
           </div>

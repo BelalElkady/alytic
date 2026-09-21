@@ -8,18 +8,18 @@ import {
 } from "@/components/desk/stock-detail";
 import { EmptyState } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/stock/$code")({
-  head: ({ params }) => {
-    const title = `${params.code.toUpperCase()} — تحليل السهم — EGXpert`;
+  head: ({ params, matches }) => {
+    const title = `${params.code.toUpperCase()} — تحليل السهم — ${siteName(matches)}`;
     return {
       meta: [
         { title },
         { name: "robots", content: "noindex, nofollow" },
         { property: "og:title", content: title },
-        { property: "og:url", content: `${SITE_URL}/stock/${params.code.toUpperCase()}` },
+        { property: "og:url", content: `${siteUrl(matches)}/stock/${params.code.toUpperCase()}` },
       ],
     };
   },

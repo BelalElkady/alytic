@@ -94,6 +94,17 @@ export function sanitizeBrand(input) {
     }
     brand.analytics = analytics;
   }
+  if (input.social != null) {
+    if (!isPlainObject(input.social)) throw new BadRequest('brand.social لازم يكون object');
+    const social = {};
+    for (const key of ['instagram', 'facebook', 'x', 'youtube', 'tiktok']) {
+      if (!input.social[key]) continue;
+      const url = safeHttpsUrl(input.social[key]);
+      if (!url) throw new BadRequest(`brand.social.${key} لازم يكون رابط https`);
+      social[key] = url;
+    }
+    brand.social = social;
+  }
   return brand;
 }
 

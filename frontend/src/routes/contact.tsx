@@ -8,29 +8,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { post } from "@/lib/api";
-import { canonical, SITE_URL } from "@/lib/seo";
+import { canonical, siteUrl, siteName } from "@/lib/seo";
+import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/contact")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "تواصل معنا — EGXpert" },
+      { title: `تواصل معنا — ${siteName(matches)}` },
       {
         name: "description",
-        content: "عندك سؤال أو ملاحظة على EGXpert؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.",
+        content: `عندك سؤال أو ملاحظة على ${siteName(matches)}؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.`,
       },
-      { property: "og:title", content: "تواصل معنا — EGXpert" },
+      { property: "og:title", content: `تواصل معنا — ${siteName(matches)}` },
       {
         property: "og:description",
-        content: "عندك سؤال أو ملاحظة على EGXpert؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.",
+        content: `عندك سؤال أو ملاحظة على ${siteName(matches)}؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.`,
       },
-      { property: "og:url", content: `${SITE_URL}/contact` },
+      { property: "og:url", content: `${siteUrl(matches)}/contact` },
     ],
-    links: [canonical("/contact")],
+    links: [canonical(matches, "/contact")],
   }),
   component: ContactPage,
 });
 
 function ContactPage() {
+  const { name: brandName } = useTenant();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -68,7 +70,8 @@ function ContactPage() {
             <>
               <h1 className="text-2xl font-bold tracking-tight">تواصل معنا</h1>
               <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
-                عندك سؤال، ملاحظة، أو مشكلة في استخدام EGXpert؟ اكتبلنا وهنرد عليك بأسرع ما يمكن.
+                عندك سؤال، ملاحظة، أو مشكلة في استخدام {brandName}؟ اكتبلنا وهنرد عليك بأسرع ما
+                يمكن.
               </p>
 
               <form onSubmit={submit} className="mt-6 space-y-4">

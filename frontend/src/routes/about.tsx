@@ -5,21 +5,22 @@ import type { ReactNode } from "react";
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { canonical, SITE_URL } from "@/lib/seo";
+import { canonical, siteUrl, siteName } from "@/lib/seo";
+import { useTenant, withBrand } from "@/lib/tenant";
 
 const DESCRIPTION =
   "EGXpert منصة ذكية لتحليل محافظ الأسهم في البورصة المصرية: متابعة المحفظة، وقف الخسارة والأهداف، توصيات يومية، وتحليل السوق والسيولة.";
 
 export const Route = createFileRoute("/about")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "من نحن — EGXpert" },
-      { name: "description", content: DESCRIPTION },
-      { property: "og:title", content: "من نحن — EGXpert" },
-      { property: "og:description", content: DESCRIPTION },
-      { property: "og:url", content: `${SITE_URL}/about` },
+      { title: `من نحن — ${siteName(matches)}` },
+      { name: "description", content: withBrand(DESCRIPTION, siteName(matches)) },
+      { property: "og:title", content: `من نحن — ${siteName(matches)}` },
+      { property: "og:description", content: withBrand(DESCRIPTION, siteName(matches)) },
+      { property: "og:url", content: `${siteUrl(matches)}/about` },
     ],
-    links: [canonical("/about")],
+    links: [canonical(matches, "/about")],
   }),
   component: AboutPage,
 });
@@ -59,17 +60,18 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function AboutPage() {
+  const { name: brandName } = useTenant();
   return (
     <SiteShell>
       <section className="border-b bg-card">
         <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
           <Badge variant="outline">من نحن</Badge>
           <h1 className="mt-4 text-3xl font-bold leading-[1.25] tracking-tight sm:text-4xl">
-            EGXpert – خبير البورصة المصرية بين يديك
+            {brandName} – خبير البورصة المصرية بين يديك
           </h1>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
             في سوق الأوراق المالية المصري، القرار الصح محتاج معلومة دقيقة وتوقيت سليم. من هنا جت
-            فكرة EGXpert.
+            فكرة {brandName}.
           </p>
         </div>
       </section>
@@ -77,9 +79,9 @@ function AboutPage() {
       <article className="mx-auto w-full max-w-3xl px-4 pb-16 pt-4">
         <Section title="مين إحنا">
           <p>
-            EGXpert منصة ذكية لتحليل محافظ الأسهم في البورصة المصرية، اتبنت عشان تحل مشكلة بيواجهها
-            كل مستثمر مصري: إزاي تتابع محفظتك، تعرف نقاط الدخول والخروج، وتاخد قرارك من غير ما تضيع
-            ساعات في التحليل اليدوي أو تعتمد على حدسك بس.
+            {brandName} منصة ذكية لتحليل محافظ الأسهم في البورصة المصرية، اتبنت عشان تحل مشكلة
+            بيواجهها كل مستثمر مصري: إزاي تتابع محفظتك، تعرف نقاط الدخول والخروج، وتاخد قرارك من غير
+            ما تضيع ساعات في التحليل اليدوي أو تعتمد على حدسك بس.
           </p>
         </Section>
 
@@ -95,7 +97,7 @@ function AboutPage() {
           </div>
         </Section>
 
-        <Section title="ليه EGXpert">
+        <Section title={`ليه ${brandName}`}>
           <p>
             إحنا مش شركة استثمار ومش بديل عن قرارك، إحنا أداة بتنظّم لك المعلومة وتوفّر لك وقتك،
             وتخليك تاخد قرارك وانت شايف الصورة كاملة.
@@ -134,8 +136,8 @@ function AboutPage() {
         </div>
 
         <p className="mt-12 rounded-xl border border-warn/40 bg-warn-soft p-4 text-[12.5px] leading-relaxed">
-          <strong>تنويه:</strong> EGXpert أداة تحليل ومساعدة في اتخاذ القرار الاستثماري، وليست جهة
-          استشارية مالية مرخّصة. القرار الاستثماري النهائي ومسؤوليته بالكامل على المستخدم.
+          <strong>تنويه:</strong> {brandName} أداة تحليل ومساعدة في اتخاذ القرار الاستثماري، وليست
+          جهة استشارية مالية مرخّصة. القرار الاستثماري النهائي ومسؤوليته بالكامل على المستخدم.
         </p>
       </article>
     </SiteShell>

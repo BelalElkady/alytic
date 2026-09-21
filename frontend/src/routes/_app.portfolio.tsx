@@ -29,29 +29,29 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ApiError, api, post } from "@/lib/api";
 import { arDay, fmt, int, pct, signed, tone } from "@/lib/format";
 import { STYLE_RULES, styleRecommendation, useActiveInvestStyle, type StyleKey } from "@/lib/invest-style";
-import { SITE_URL } from "@/lib/seo";
+import { siteName, siteUrl } from "@/lib/seo";
 import { useDesk, type Row, type Verdict } from "@/lib/store";
 
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/portfolio")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "EGXpert" },
+      { title: siteName(matches) },
       {
         name: "description",
         content:
           "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
-      { property: "og:title", content: "EGXpert" },
+      { property: "og:title", content: siteName(matches) },
       {
         property: "og:description",
         content:
           "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${SITE_URL}/portfolio` },
+      { property: "og:url", content: `${siteUrl(matches)}/portfolio` },
     ],
   }),
   component: PositionsPage,

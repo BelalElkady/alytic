@@ -6,26 +6,27 @@ import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { canonical, SITE_URL } from "@/lib/seo";
+import { canonical, siteUrl, siteName } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/pricing")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "الأسعار — EGXpert" },
+      { title: `الأسعار — ${siteName(matches)}` },
       {
         name: "description",
         content:
           "3 باقات: تجربة مجانية 5 أيام تداول، باقة النفس الطويل من 299 جنيه شهريًا، وباقة الحريفة من 499 جنيه شهريًا.",
       },
-      { property: "og:title", content: "الأسعار — EGXpert" },
+      { property: "og:title", content: `الأسعار — ${siteName(matches)}` },
       {
         property: "og:description",
         content: "تجربة مجانية 5 أيام تداول، ثم اختار باقة النفس الطويل أو الحريفة حسب نشاطك.",
       },
-      { property: "og:url", content: `${SITE_URL}/pricing` },
+      { property: "og:url", content: `${siteUrl(matches)}/pricing` },
     ],
-    links: [canonical("/pricing")],
+    links: [canonical(matches, "/pricing")],
   }),
   component: PricingPage,
 });
@@ -121,6 +122,7 @@ const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string;
 };
 
 function PricingPage() {
+  const { name: brandName } = useTenant();
   // Yearly by default: it's the better deal, and it's the price quoted per month below.
   const [period, setPeriod] = useState<Period>("yearly");
 
@@ -327,7 +329,7 @@ function PricingPage() {
             },
             {
               q: "هل ده استشارة مالية؟",
-              a: "لا. EGXpert أداة تحليل بقواعد واضحة تساعدك في القرار، والقرار الأخير مسؤوليتك.",
+              a: `لا. ${brandName} أداة تحليل بقواعد واضحة تساعدك في القرار، والقرار الأخير مسؤوليتك.`,
             },
           ].map((faq) => (
             <article key={faq.q} className="rounded-xl border bg-card p-5 shadow-sm">

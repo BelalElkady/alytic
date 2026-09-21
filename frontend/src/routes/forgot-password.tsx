@@ -7,25 +7,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { post } from "@/lib/api";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
+import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/forgot-password")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "نسيت كلمة السر — EGXpert" },
+      { title: `نسيت كلمة السر — ${siteName(matches)}` },
       {
         name: "description",
-        content: "اكتب بريدك الإلكتروني وهنبعتلك رابط لإعادة تعيين كلمة السر في EGXpert.",
+        content: `اكتب بريدك الإلكتروني وهنبعتلك رابط لإعادة تعيين كلمة السر في ${siteName(matches)}.`,
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: "نسيت كلمة السر — EGXpert" },
-      { property: "og:url", content: `${SITE_URL}/forgot-password` },
+      { property: "og:title", content: `نسيت كلمة السر — ${siteName(matches)}` },
+      { property: "og:url", content: `${siteUrl(matches)}/forgot-password` },
     ],
   }),
   component: ForgotPasswordPage,
 });
 
 function ForgotPasswordPage() {
+  const { name: brandName } = useTenant();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,7 +49,7 @@ function ForgotPasswordPage() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 py-12 text-center">
-      <Link to="/" aria-label="EGXpert">
+      <Link to="/" aria-label={brandName}>
         <Logo tagline={false} />
       </Link>
 

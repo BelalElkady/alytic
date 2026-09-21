@@ -4,7 +4,7 @@ import { EmptyState, ErrorState } from "@/components/desk/state-blocks";
 import { BlogCard } from "@/components/marketing/blog-card";
 import { BlogPagination } from "@/components/marketing/blog-pagination";
 import { BLOG_PAGE_SIZE, getBlogPosts } from "@/lib/blog";
-import { canonical, SITE_URL } from "@/lib/seo";
+import { canonical, siteUrl, siteName } from "@/lib/seo";
 
 type BlogSearch = { page?: number };
 
@@ -24,15 +24,22 @@ export const Route = createFileRoute("/blog/")({
     // A stale bookmark or hand-typed ?page=99 after posts were removed: land on
     // the real last page instead of an empty one.
     if (!result.error && deps.page > lastPage) {
-      throw redirect({ to: "/blog", search: { page: lastPage > 1 ? lastPage : undefined }, replace: true });
+      throw redirect({
+        to: "/blog",
+        search: { page: lastPage > 1 ? lastPage : undefined },
+        replace: true,
+      });
     }
     return { ...result, page: deps.page, lastPage };
   },
-  head: ({ loaderData }) => {
+  head: ({ loaderData, matches }) => {
     const page = loaderData?.page ?? 1;
     // Each page is its own indexable URL with its own title and canonical, so
     // page 2 isn't read as a duplicate of page 1.
-    const title = page > 1 ? `تابع اخبار البورصة — الصفحة ${page} — EGXpert` : "تابع اخبار البورصة — EGXpert";
+    const title =
+      page > 1
+        ? `تابع اخبار البورصة — الصفحة ${page} — ${siteName(matches)}`
+        : `تابع اخبار البورصة — ${siteName(matches)}`;
     const path = page > 1 ? `/blog?page=${page}` : "/blog";
     return {
       meta: [
@@ -40,9 +47,9 @@ export const Route = createFileRoute("/blog/")({
         { name: "description", content: description },
         { property: "og:title", content: title },
         { property: "og:description", content: description },
-        { property: "og:url", content: `${SITE_URL}${path}` },
+        { property: "og:url", content: `${siteUrl(matches)}${path}` },
       ],
-      links: [canonical(path)],
+      links: [canonical(matches, path)],
     };
   },
   component: BlogIndexPage,

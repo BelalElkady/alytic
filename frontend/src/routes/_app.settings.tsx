@@ -14,24 +14,24 @@ import {
   useActiveInvestStyle,
   type StyleKey,
 } from "@/lib/invest-style";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/settings")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "الملف الشخصي والإعدادات — EGXpert" },
+      { title: `الملف الشخصي والإعدادات — ${siteName(matches)}` },
       {
         name: "description",
         content: "بياناتك، رصيدك من كل ميزة، وسلوكك الاستثماري.",
       },
-      { property: "og:title", content: "الملف الشخصي والإعدادات — EGXpert" },
+      { property: "og:title", content: `الملف الشخصي والإعدادات — ${siteName(matches)}` },
       {
         property: "og:description",
         content: "بياناتك، رصيدك من كل ميزة، وسلوكك الاستثماري.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${SITE_URL}/settings` },
+      { property: "og:url", content: `${siteUrl(matches)}/settings` },
     ],
   }),
   component: SettingsPage,

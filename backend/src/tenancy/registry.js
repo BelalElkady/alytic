@@ -60,6 +60,7 @@ const DEFAULT_BRAND = {
   faviconUrl: '/favicon.svg',
   colors: {},
   analytics: { gaId: 'G-789W810GMB', adsClient: 'ca-pub-8353018708854851' },
+  social: { instagram: 'https://www.instagram.com/egxpertapp/', facebook: 'https://www.facebook.com/egxpertapp/' },
 };
 
 function defaultConfigFromEnv() {
@@ -98,7 +99,7 @@ function buildTenant(row, { isDefault, domains, db }) {
   };
   const brand = {
     ...DEFAULT_BRAND,
-    ...(isDefault ? {} : { analytics: {} }),
+    ...(isDefault ? {} : { analytics: {}, social: {} }),
     ...brandIn,
     colors: { ...(brandIn.colors ?? {}) },
   };

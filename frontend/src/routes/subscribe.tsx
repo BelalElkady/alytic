@@ -4,7 +4,7 @@ import { SubscribePanel } from "@/components/billing/subscribe-panel";
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 /** Set by a plan's button on /pricing: which tier to show alone, and which billing period starts selected. Both optional, so plain /subscribe links still offer everything. */
@@ -17,20 +17,19 @@ export const Route = createFileRoute("/subscribe")({
     tier: search["tier"] === "long" || search["tier"] === "trader" ? search["tier"] : undefined,
     period: search["period"] === "monthly" || search["period"] === "yearly" ? search["period"] : undefined,
   }),
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "طريقة الاشتراك — EGXpert" },
+      { title: `طريقة الاشتراك — ${siteName(matches)}` },
       {
         name: "description",
-        content:
-          "اشترك في EGXpert: باقة النفس الطويل من ٢٩٩ جنيه أو باقة الحريفة من ٤٩٩ جنيه شهريًا. كلّمنا في الشات وهنبعتلك بيانات الدفع ونفعّل حسابك.",
+        content: `اشترك في ${siteName(matches)}: باقة النفس الطويل من ٢٩٩ جنيه أو باقة الحريفة من ٤٩٩ جنيه شهريًا. كلّمنا في الشات وهنبعتلك بيانات الدفع ونفعّل حسابك.`,
       },
-      { property: "og:title", content: "طريقة الاشتراك — EGXpert" },
+      { property: "og:title", content: `طريقة الاشتراك — ${siteName(matches)}` },
       {
         property: "og:description",
         content: "كلّمنا في الشات وهنبعتلك بيانات الدفع وكل التفاصيل.",
       },
-      { property: "og:url", content: `${SITE_URL}/subscribe` },
+      { property: "og:url", content: `${siteUrl(matches)}/subscribe` },
     ],
   }),
   component: SubscribePage,

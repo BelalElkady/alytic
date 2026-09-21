@@ -19,24 +19,24 @@ import {
 import { api, post } from "@/lib/api";
 import { fmt, int, pct, tone } from "@/lib/format";
 import { INVEST_STYLES, STYLE_RULES, useActiveInvestStyle } from "@/lib/invest-style";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/cash")({
-  head: () => ({
+  head: ({ matches }) => ({
     meta: [
-      { title: "تحليل الكاش والأسهم المفضلة — EGXpert" },
+      { title: `تحليل الكاش والأسهم المفضلة — ${siteName(matches)}` },
       {
         name: "description",
         content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
-      { property: "og:title", content: "تحليل الكاش والأسهم المفضلة — EGXpert" },
+      { property: "og:title", content: `تحليل الكاش والأسهم المفضلة — ${siteName(matches)}` },
       {
         property: "og:description",
         content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${SITE_URL}/cash` },
+      { property: "og:url", content: `${siteUrl(matches)}/cash` },
     ],
   }),
   component: CashPage,
