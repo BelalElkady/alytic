@@ -1792,13 +1792,16 @@ async function runScan(portfolio, { codes, style, userId, force = false, focus =
   // a large balance leaves most of it idle behind the per-position cap, and
   // too many for a small balance slices each ticket down to nothing.
   const MAX_RECOMMENDATIONS = 6;
+  // A cash plan never puts everything on one stock, even when the whole
+  // balance would fit under a single position's cap.
+  const MIN_RECOMMENDATIONS = 2;
   const MIN_TICKET_EGP = 5000;
   const maxPositionEgp = capital * (rules.sizing.maxPositionPct / 100);
   const maxRecommendations = investableCash <= 0
     // Nothing to deploy — still surface a few honest "no cash" reasons below
     // instead of an empty screen.
     ? 3
-    : Math.max(1, Math.min(
+    : Math.max(MIN_RECOMMENDATIONS, Math.min(
       MAX_RECOMMENDATIONS,
       maxPositionEgp > 0 ? Math.ceil(investableCash / maxPositionEgp) : MAX_RECOMMENDATIONS,
       Math.max(1, Math.floor(investableCash / MIN_TICKET_EGP)),
