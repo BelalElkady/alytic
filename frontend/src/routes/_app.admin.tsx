@@ -156,15 +156,16 @@ function AdminPage() {
   }
 
   // The index lists are market data shared by every white-label site, so
-  // only the platform owner edits them; a client site's admins start on
-  // their users. The clients tab is the platform owner's alone as well.
+  // only the main site's admins edit them; a client site's admins start on
+  // their users. The clients tab is the platform owner's alone.
+  const canEditIndices = Boolean(user.canEditIndices);
   const isPlatformAdmin = Boolean(user.isPlatformAdmin);
 
   return (
-    <Tabs defaultValue={isPlatformAdmin ? "indices" : "users"} className="space-y-4">
+    <Tabs defaultValue={canEditIndices ? "indices" : "users"} className="space-y-4">
       {/* mt-3: room for the unread badge that sits on top of the "الدعم" tab. */}
       <TabsList className="mt-3">
-        {isPlatformAdmin && <TabsTrigger value="indices">المؤشرات</TabsTrigger>}
+        {canEditIndices && <TabsTrigger value="indices">المؤشرات</TabsTrigger>}
         <TabsTrigger value="users">المستخدمين</TabsTrigger>
         <TabsTrigger value="support" className="relative">
           الدعم
@@ -180,7 +181,7 @@ function AdminPage() {
         <TabsTrigger value="blog">المدونة</TabsTrigger>
         {isPlatformAdmin && <TabsTrigger value="platform">العملاء</TabsTrigger>}
       </TabsList>
-      {isPlatformAdmin && (
+      {canEditIndices && (
         <TabsContent value="indices">
           <IndicesTab />
         </TabsContent>

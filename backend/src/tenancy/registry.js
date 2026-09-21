@@ -249,6 +249,14 @@ export function isPlatformAdmin(user, tenant) {
   return Boolean(tenant?.isDefault && user?.isAdmin && user.emailVerified && isPlatformAdminEmail(user.email));
 }
 
+/**
+ * Who may edit the index lists and admin-added stocks. That is market data
+ * shared by every site, so only the main site's admins — not a client's — and
+ * not gated on PLATFORM_ADMIN_EMAILS, which is for the clients panel: an admin
+ * account whose email isn't on that list still runs the main site's market data.
+ */
+export const canEditIndices = (user, tenant) => Boolean(tenant?.isDefault && user?.isAdmin && user.emailVerified);
+
 /** What the browser may know about a tenant: branding and public switches — never keys, emails of staff or payment details. */
 export function publicTenant(tenant) {
   return {
