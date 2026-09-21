@@ -137,6 +137,14 @@ export function sanitizeConfig(input) {
       return value;
     });
   }
+  if (input.marketerEmails != null) {
+    if (!Array.isArray(input.marketerEmails) || input.marketerEmails.length > 50) throw new BadRequest('config.marketerEmails لازم تكون قائمة إيميلات');
+    config.marketerEmails = input.marketerEmails.map((email) => {
+      const value = String(email).trim().toLowerCase();
+      if (!EMAIL.test(value)) throw new BadRequest(`config.marketerEmails: إيميل غير صالح: ${value}`);
+      return value;
+    });
+  }
   if (input.instapay != null) {
     if (!isPlainObject(input.instapay)) throw new BadRequest('config.instapay لازم يكون object');
     config.instapay = {

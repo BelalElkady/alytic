@@ -79,6 +79,16 @@ const ENV_ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com')
   .filter(Boolean);
 const isAdminEmail = (email) => (currentTenant()?.config?.adminEmails ?? ENV_ADMIN_EMAILS).includes(email);
 
+// Same idea for marketers (read-only view of the users table): MARKETER_EMAILS
+// for the original site, marketerEmails in the tenant config for a client site.
+// An address that is also an admin address stays a plain admin.
+const ENV_MARKETER_EMAILS = (process.env.MARKETER_EMAILS ?? '')
+  .split(',')
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+const isMarketerEmail = (email) =>
+  !isAdminEmail(email) && (currentTenant()?.config?.marketerEmails ?? ENV_MARKETER_EMAILS).includes(email);
+
 const PHONE_TAKEN_MESSAGE = 'رقم الموبايل ده مسجّل بحساب تاني. لو ده حسابك سجّل دخول بيه.';
 
 /** One account per phone number — the strongest per-person signal we collect, since it can't be minted like an email alias. */
@@ -180,6 +190,7 @@ function publicUser(user) {
     createdAt: user.created_at ?? user.createdAt,
     emailVerified: Boolean(user.email_verified ?? user.emailVerified),
     isAdmin: Boolean(user.is_admin ?? user.isAdmin),
+    isMarketer: Boolean(user.is_marketer ?? user.isMarketer),
   };
 }
 
@@ -297,6 +308,7 @@ export async function register({ email, password, name, phone, ip }) {
     passwordSalt: salt,
     passwordHash: hash,
     isAdmin: isAdminEmail(normalized),
+    isMarketer: isMarketerEmail(normalized),
     verificationToken: token,
     verificationTokenExpires: new Date(Date.now() + VERIFICATION_TTL).toISOString(),
     createdAt: new Date().toISOString(),
@@ -391,6 +403,7 @@ export async function googleSignIn({ credential, ip }) {
         signupIp: ip,
         emailVerified: true,
         isAdmin: isAdminEmail(normalized),
+        isMarketer: isMarketerEmail(normalized),
         createdAt: new Date().toISOString(),
       };
       await createUser(created);

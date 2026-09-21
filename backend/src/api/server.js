@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -45,7 +45,7 @@ import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAG
 import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
 import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
-import { activeTenants, defaultTenant, isPlatformAdmin, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
+import { activeTenants, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
 import { mountPlatformRoutes } from './platform.js';
 
 // Where the public contact form's messages and support-chat alerts land is
@@ -84,16 +84,17 @@ function trialInfo(user) {
 /**
  * Everything the client needs to know about what this account may do, and the
  * one place `hasAccess` is decided: an unexpired trial, a live paid period,
- * or a staff/CLI account. Admins and the built-in 'local' CLI user bypass
- * billing entirely — the CLI has no way to pay and locking it out would break
- * local development.
+ * or a staff/CLI account. Admins, marketers and the built-in 'local' CLI user
+ * bypass billing entirely — the CLI has no way to pay and locking it out would
+ * break local development, and a marketer is staff whose whole job is the
+ * admin page, which the subscription wall would otherwise replace.
  */
 async function accessInfo(user) {
   const trial = trialInfo(user);
   const subscription = await getSubscription(user.id);
   const periodEnd = subscription ? new Date(subscription.current_period_end) : null;
   const subscriptionActive = Boolean(periodEnd && periodEnd.getTime() > Date.now());
-  const exempt = Boolean(user.isAdmin) || user.id === 'local';
+  const exempt = Boolean(user.isAdmin) || Boolean(user.isMarketer) || user.id === 'local';
   // The free trial only counts once the email is confirmed: an unconfirmed
   // address costs nothing to invent, so honoring the trial before then would
   // let anyone mint a fresh one with a throwaway. The clock still runs from
@@ -892,7 +893,14 @@ app.get('/api/indices/performance', wrap(async (_req, res) => {
 // that address has proved it owns the mailbox — so an unconfirmed account
 // registered with an admin's email must not get admin powers until the
 // confirmation link (which only the real owner receives) has been used.
+//
+// A marketer is not an admin: they get exactly the two reads behind the users
+// table (the list, and the online-now counter above it) and nothing else — no
+// writes, no support inbox, no blog, no indices. It is an allowlist on purpose,
+// so a new /api/admin route is closed to marketers until someone adds it here.
+const MARKETER_READS = new Set(['GET /users', 'GET /online']);
 app.use('/api/admin', (req, res, next) => {
+  if (req.user?.isMarketer && req.user.emailVerified && MARKETER_READS.has(`${req.method} ${req.path}`)) return next();
   if (!req.user?.isAdmin || !req.user.emailVerified) return res.status(403).json({ error: 'للمشرفين فقط' });
   next();
 });
@@ -1112,13 +1120,14 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     const subscriptionActive = Boolean(subscription) && new Date(subscription.current_period_end).getTime() > Date.now();
     // Same resolution as accessInfo() for this user's own request — see its
     // comment on why staff/CLI get the top tier rather than a bypass.
-    const tier = u.is_admin || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive && u.email_verified ? 'free' : null;
+    const tier = u.is_admin || u.is_marketer || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive && u.email_verified ? 'free' : null;
     return {
       id: u.id,
       email: u.email,
       name: u.name,
       phone: u.phone,
       isAdmin: u.is_admin,
+      isMarketer: Boolean(u.is_marketer),
       emailVerified: u.email_verified,
       googleLinked: Boolean(u.google_id),
       createdAt: u.created_at,
@@ -1284,6 +1293,34 @@ app.delete('/api/admin/users/:id', wrap(async (req, res) => {
   await removeSupportImagesFor(target.id);
   await deleteUser(target.id);
   res.json({ ok: true });
+}));
+
+// Sets a user's role from the users table: 'admin' (everything in this panel),
+// 'marketer' (read-only view of the users table) or 'user' (a regular
+// account). Only an admin gets here, and it only ever touches this site's own
+// users. Three accounts can't be changed from the panel, so the panel can
+// never be left without someone able to use it:
+//  - your own (ask another admin), so the last admin can't demote themselves;
+//  - the internal CLI account;
+//  - on the main site, the platform owner's (PLATFORM_ADMIN_EMAILS) — another
+//    admin there must not be able to lock the owner out. That one is changed
+//    with scripts/make-admin.mjs on the server.
+app.post('/api/admin/users/:id/role', wrap(async (req, res) => {
+  const role = String(req.body?.role ?? '');
+  if (!USER_ROLES.includes(role)) return res.status(400).json({ error: 'الدور لازم يكون مشرف أو مسوّق أو مستخدم' });
+  const target = await getUserById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  if (target.id === 'local') return res.status(400).json({ error: 'ده حساب النظام الداخلي (للـ CLI) — مينفعش يتغير دوره' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'مينفعش تغيّر دور حسابك — اطلب من مشرف تاني يعمل ده' });
+  if (req.tenant.isDefault && isPlatformAdminEmail(target.email)) {
+    return res.status(400).json({ error: 'ده حساب مالك المنصة — دوره بيتغير من السيرفر بس (scripts/make-admin.mjs)' });
+  }
+  const before = roleOf(target);
+  if (before !== role) {
+    await setUserRole(target.id, role);
+    console.log(`[audit] role ${before} -> ${role}: ${target.email} (by ${req.user.email}, site ${req.tenant.id})`);
+  }
+  res.json({ ok: true, role });
 }));
 
 /** Activation history for one user — what to check when a payment is disputed or entered twice. */

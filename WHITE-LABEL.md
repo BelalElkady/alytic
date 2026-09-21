@@ -45,7 +45,7 @@ browser → nginx (Host: app.clientx.com) → frontend :8080
    - domains: `app.clientx.com`
    - Supabase URL and service_role key. These are checked on save; the save is rejected if the database can't be reached or `schema.sql` is missing.
    - `brand`: name, tagline, `logoUrl`, `faviconUrl`, `colors` (CSS variables such as `primary` and `info`, in oklch or hex), `darkColors`, `emailColor` (hex), `analytics`, `social`
-   - `config`: `adminEmails` (the client's staff, who become admins when they sign up), `contactEmail`, `supportNotifyEmail`, `instapay`, `prices` (by plan key), `emailFrom`, `features.blog`
+   - `config`: `adminEmails` (the client's staff, who become admins when they sign up), `marketerEmails` (become read-only marketers: the users table only), `contactEmail`, `supportNotifyEmail`, `instapay`, `prices` (by plan key), `emailFrom`, `features.blog`
 4. **nginx + HTTPS:** follow the steps at the top of `deploy/nginx/tenant.conf.example`.
 5. **Email sender:** to send as `no-reply@clientx.com`, verify that domain in Resend first. Until then, leave `emailFrom` empty. Mail then goes out as "Client X <your platform address>".
 6. **Google sign-in:** either add `https://app.clientx.com` to the Authorized JavaScript origins of your existing OAuth client, or create a separate client for them and set `config.googleClientId`.
@@ -55,6 +55,7 @@ browser → nginx (Host: app.clientx.com) → frontend :8080
 - **Suspend or resume:** use the button in the edit dialog. Their users see a "service paused" message, and their data stays as it is.
 - **Usage:** "اعرض" in the clients table shows users, active subscriptions and AI cost for the last 30 days.
 - **Background jobs:** the daily close runs for every active site. The blog cron writes an article only for sites with `features.blog: true`, and each article is a paid AI run.
+- **Roles:** every site has admins, marketers (read-only view of the users table) and regular users. An admin changes anyone's role from the role selector under each user's email in the users table; a role can also be given at signup by email (`adminEmails` / `marketerEmails`). You can't change your own role, and on the main site the platform owner's account (`PLATFORM_ADMIN_EMAILS`) can only be changed on the server with `scripts/make-admin.mjs`. Roles need the `is_marketer` column, so run `schema.sql` (or `alter table users add column if not exists is_marketer boolean not null default false;`) in every client database.
 - **Index lists and custom stocks** can only be edited from the main site, because every site uses them.
 - **Schema changes:** when `schema.sql` changes, apply it to **every** client database as well as the platform one.
 

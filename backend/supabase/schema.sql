@@ -30,6 +30,9 @@ create table if not exists users (
 alter table users add column if not exists phone text;
 alter table users add column if not exists reset_token text;
 alter table users add column if not exists reset_token_expires timestamptz;
+-- Marketer: read-only access to the admin users table, nothing else. See
+-- app.use('/api/admin') in src/api/server.js. Apply to every client database.
+alter table users add column if not exists is_marketer boolean not null default false;
 
 -- One free trial per person. email_canonical collapses the spellings that
 -- reach one mailbox (Gmail dots, +tags, googlemail.com) — the same rule as
