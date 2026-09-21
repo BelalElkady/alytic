@@ -25,21 +25,21 @@ import { canonical, siteUrl, siteName } from "@/lib/seo";
 import { useTenant, withBrand } from "@/lib/tenant";
 
 export const Route = createFileRoute("/how-to-use")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `طريقة الاستخدام — ${siteName(matches)}` },
+      { title: `طريقة الاستخدام — ${siteName(match)}` },
       {
         name: "description",
-        content: `شرح مبسّط لطريقة استخدام ${siteName(matches)} خطوة بخطوة: عمل الحساب، إضافة أسهمك، استخدام التوصيات وتحليل الكاش، وفهم كل شاشة في لوحة التحكم.`,
+        content: `شرح مبسّط لطريقة استخدام ${siteName(match)} خطوة بخطوة: عمل الحساب، إضافة أسهمك، استخدام التوصيات وتحليل الكاش، وفهم كل شاشة في لوحة التحكم.`,
       },
-      { property: "og:title", content: `طريقة الاستخدام — ${siteName(matches)}` },
+      { property: "og:title", content: `طريقة الاستخدام — ${siteName(match)}` },
       {
         property: "og:description",
         content: "شرح مبسّط لكل خطوة، من عمل الحساب لحد فهم التوصية اليومية لكل سهم.",
       },
-      { property: "og:url", content: `${siteUrl(matches)}/how-to-use` },
+      { property: "og:url", content: `${siteUrl(match)}/how-to-use` },
     ],
-    links: [canonical(matches, "/how-to-use")],
+    links: [canonical(match, "/how-to-use")],
   }),
   component: HowToUsePage,
 });

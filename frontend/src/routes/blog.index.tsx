@@ -32,14 +32,14 @@ export const Route = createFileRoute("/blog/")({
     }
     return { ...result, page: deps.page, lastPage };
   },
-  head: ({ loaderData, matches }) => {
+  head: ({ loaderData, match }) => {
     const page = loaderData?.page ?? 1;
     // Each page is its own indexable URL with its own title and canonical, so
     // page 2 isn't read as a duplicate of page 1.
     const title =
       page > 1
-        ? `تابع اخبار البورصة — الصفحة ${page} — ${siteName(matches)}`
-        : `تابع اخبار البورصة — ${siteName(matches)}`;
+        ? `تابع اخبار البورصة — الصفحة ${page} — ${siteName(match)}`
+        : `تابع اخبار البورصة — ${siteName(match)}`;
     const path = page > 1 ? `/blog?page=${page}` : "/blog";
     return {
       meta: [
@@ -47,9 +47,9 @@ export const Route = createFileRoute("/blog/")({
         { name: "description", content: description },
         { property: "og:title", content: title },
         { property: "og:description", content: description },
-        { property: "og:url", content: `${siteUrl(matches)}${path}` },
+        { property: "og:url", content: `${siteUrl(match)}${path}` },
       ],
-      links: [canonical(matches, path)],
+      links: [canonical(match, path)],
     };
   },
   component: BlogIndexPage,

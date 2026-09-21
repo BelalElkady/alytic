@@ -14,16 +14,16 @@ export const Route = createFileRoute("/verify-email")({
   validateSearch: (search: Record<string, unknown>): VerifySearch => ({
     token: typeof search["token"] === "string" ? search["token"] : undefined,
   }),
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `تفعيل البريد الإلكتروني — ${siteName(matches)}` },
+      { title: `تفعيل البريد الإلكتروني — ${siteName(match)}` },
       {
         name: "description",
-        content: `جارٍ تفعيل بريدك الإلكتروني لحسابك في ${siteName(matches)}.`,
+        content: `جارٍ تفعيل بريدك الإلكتروني لحسابك في ${siteName(match)}.`,
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: `تفعيل البريد الإلكتروني — ${siteName(matches)}` },
-      { property: "og:url", content: `${siteUrl(matches)}/verify-email` },
+      { property: "og:title", content: `تفعيل البريد الإلكتروني — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/verify-email` },
     ],
   }),
   component: VerifyEmailPage,

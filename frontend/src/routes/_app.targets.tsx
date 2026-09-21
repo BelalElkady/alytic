@@ -17,20 +17,20 @@ import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/targets")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `جدول الأهداف — ${siteName(matches)}` },
+      { title: `جدول الأهداف — ${siteName(match)}` },
       {
         name: "description",
         content: "أهداف كل سهم مرتبة من الأقرب للأبعد، مع المسافة والتقدير الزمني ومستويات الوقف.",
       },
-      { property: "og:title", content: `جدول الأهداف — ${siteName(matches)}` },
+      { property: "og:title", content: `جدول الأهداف — ${siteName(match)}` },
       {
         property: "og:description",
         content: "أهداف كل سهم مرتبة من الأقرب للأبعد، مع المسافة والتقدير الزمني ومستويات الوقف.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${siteUrl(matches)}/targets` },
+      { property: "og:url", content: `${siteUrl(match)}/targets` },
     ],
   }),
   component: TargetsPage,

@@ -36,22 +36,22 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/portfolio")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: siteName(matches) },
+      { title: siteName(match) },
       {
         name: "description",
         content:
           "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
-      { property: "og:title", content: siteName(matches) },
+      { property: "og:title", content: siteName(match) },
       {
         property: "og:description",
         content:
           "متابعة مراكزك في البورصة المصرية: الأسعار الحية، وقف الخسارة، الأهداف وتوصية كل سهم.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${siteUrl(matches)}/portfolio` },
+      { property: "og:url", content: `${siteUrl(match)}/portfolio` },
     ],
   }),
   component: PositionsPage,

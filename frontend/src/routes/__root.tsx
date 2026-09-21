@@ -12,7 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import { PresenceBeacon } from "@/components/presence-beacon";
 import { Toaster } from "@/components/ui/sonner";
 import { ogLogoUrl, siteUrl } from "@/lib/seo";
-import { DEFAULT_TENANT, brandCss } from "@/lib/tenant";
+import { DEFAULT_TENANT, brandCss, tenantOf, type Tenant } from "@/lib/tenant";
 import { getTenant } from "@/lib/tenant-server";
 import { DeskProvider } from "@/lib/store";
 
@@ -79,15 +79,23 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+// The browser only ever shows one site, so once the tenant is known on the
+// client it is kept for the rest of the visit. Never cached like this on the
+// server, where one process renders every site.
+let browserTenant: Tenant | null = null;
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  // Which white-label site this is, asked once per page load on the server
-  // (see lib/tenant.ts). It never changes within a visit, so client-side
-  // navigation doesn't ask again.
-  loader: async () => ({ tenant: await getTenant() }),
-  staleTime: Infinity,
-  shouldReload: false,
-  head: ({ loaderData }) => {
-    const tenant = loaderData?.tenant ?? DEFAULT_TENANT;
+  // Which white-label site this is (see lib/tenant.ts). Put in the route
+  // context rather than loader data because every child route inherits the
+  // context, and a child's head() can read it from its own match.
+  beforeLoad: async () => {
+    if (browserTenant) return { tenant: browserTenant };
+    const tenant = await getTenant();
+    if (typeof window !== "undefined") browserTenant = tenant;
+    return { tenant };
+  },
+  head: ({ match }) => {
+    const tenant = tenantOf(match);
     const { brand } = tenant;
     const description = brand.description ?? DEFAULT_TENANT.brand.description ?? "";
     const title = brand.tagline ? `${tenant.name} — ${brand.tagline}` : tenant.name;
@@ -107,8 +115,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         { property: "og:title", content: title },
         { property: "og:description", content: description },
         { property: "og:type", content: "website" },
-        { property: "og:url", content: siteUrl([{ loaderData }]) },
-        { property: "og:image", content: ogLogoUrl([{ loaderData }]) },
+        { property: "og:url", content: siteUrl(match) },
+        { property: "og:image", content: ogLogoUrl(match) },
         { name: "twitter:card", content: "summary_large_image" },
       ],
       links: [

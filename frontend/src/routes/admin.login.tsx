@@ -10,13 +10,13 @@ import { post } from "@/lib/api";
 import { siteUrl, siteName } from "@/lib/seo";
 
 export const Route = createFileRoute("/admin/login")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `دخول المشرف — ${siteName(matches)}` },
-      { name: "description", content: `تسجيل دخول مخصص لمشرفي ${siteName(matches)}.` },
+      { title: `دخول المشرف — ${siteName(match)}` },
+      { name: "description", content: `تسجيل دخول مخصص لمشرفي ${siteName(match)}.` },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: `دخول المشرف — ${siteName(matches)}` },
-      { property: "og:url", content: `${siteUrl(matches)}/admin/login` },
+      { property: "og:title", content: `دخول المشرف — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/admin/login` },
     ],
   }),
   component: AdminLoginPage,

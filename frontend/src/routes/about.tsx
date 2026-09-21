@@ -12,15 +12,15 @@ const DESCRIPTION =
   "EGXpert منصة ذكية لتحليل محافظ الأسهم في البورصة المصرية: متابعة المحفظة، وقف الخسارة والأهداف، توصيات يومية، وتحليل السوق والسيولة.";
 
 export const Route = createFileRoute("/about")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `من نحن — ${siteName(matches)}` },
-      { name: "description", content: withBrand(DESCRIPTION, siteName(matches)) },
-      { property: "og:title", content: `من نحن — ${siteName(matches)}` },
-      { property: "og:description", content: withBrand(DESCRIPTION, siteName(matches)) },
-      { property: "og:url", content: `${siteUrl(matches)}/about` },
+      { title: `من نحن — ${siteName(match)}` },
+      { name: "description", content: withBrand(DESCRIPTION, siteName(match)) },
+      { property: "og:title", content: `من نحن — ${siteName(match)}` },
+      { property: "og:description", content: withBrand(DESCRIPTION, siteName(match)) },
+      { property: "og:url", content: `${siteUrl(match)}/about` },
     ],
-    links: [canonical(matches, "/about")],
+    links: [canonical(match, "/about")],
   }),
   component: AboutPage,
 });

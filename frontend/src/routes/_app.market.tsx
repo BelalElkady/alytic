@@ -5,16 +5,16 @@ import { Panel } from "@/components/desk/state-blocks";
 import { siteUrl, siteName } from "@/lib/seo";
 
 export const Route = createFileRoute("/_app/market")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `تحليل السوق — ${siteName(matches)}` },
+      { title: `تحليل السوق — ${siteName(match)}` },
       {
         name: "description",
         content: "ترتيب أسهم البورصة المصرية حسب التقييم والفرص القابلة للتنفيذ، مع بحث عن أي سهم وتحليله.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: `تحليل السوق — ${siteName(matches)}` },
-      { property: "og:url", content: `${siteUrl(matches)}/market` },
+      { property: "og:title", content: `تحليل السوق — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/market` },
     ],
   }),
   component: MarketPage,

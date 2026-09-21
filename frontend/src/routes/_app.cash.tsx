@@ -23,20 +23,20 @@ import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/cash")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `تحليل الكاش والأسهم المفضلة — ${siteName(matches)}` },
+      { title: `تحليل الكاش والأسهم المفضلة — ${siteName(match)}` },
       {
         name: "description",
         content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
-      { property: "og:title", content: `تحليل الكاش والأسهم المفضلة — ${siteName(matches)}` },
+      { property: "og:title", content: `تحليل الكاش والأسهم المفضلة — ${siteName(match)}` },
       {
         property: "og:description",
         content: "إدارة الكاش المتاح ونسبته من رأس المال، ومتابعة سعر وتغيّر الأسهم المفضلة عندك.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${siteUrl(matches)}/cash` },
+      { property: "og:url", content: `${siteUrl(match)}/cash` },
     ],
   }),
   component: CashPage,

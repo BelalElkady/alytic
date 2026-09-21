@@ -15,12 +15,12 @@ export const Route = createFileRoute("/blog/$slug")({
     return result;
   },
   notFoundComponent: BlogPostNotFound,
-  head: ({ params, loaderData, matches }) => {
+  head: ({ params, loaderData, match }) => {
     const post = loaderData?.post ?? null;
-    const url = `${siteUrl(matches)}/blog/${params.slug}`;
+    const url = `${siteUrl(match)}/blog/${params.slug}`;
     const title = post
-      ? `${post.metaTitle || post.title} — ${siteName(matches)}`
-      : `مقالة — ${siteName(matches)}`;
+      ? `${post.metaTitle || post.title} — ${siteName(match)}`
+      : `مقالة — ${siteName(match)}`;
     const description = post?.metaDescription || post?.dek || null;
     return {
       meta: [
@@ -37,9 +37,9 @@ export const Route = createFileRoute("/blog/$slug")({
         ...(post?.image ? [{ property: "og:image", content: post.image.url }] : []),
         ...(post ? [{ property: "article:published_time", content: post.publishedAt }] : []),
       ],
-      links: [canonical(matches, `/blog/${params.slug}`)],
+      links: [canonical(match, `/blog/${params.slug}`)],
       scripts: post
-        ? [articleJsonLd(post, url, description, siteName(matches), ogLogoUrl(matches))]
+        ? [articleJsonLd(post, url, description, siteName(match), ogLogoUrl(match))]
         : [],
     };
   },

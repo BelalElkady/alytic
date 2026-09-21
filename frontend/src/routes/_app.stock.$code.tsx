@@ -12,14 +12,14 @@ import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/stock/$code")({
-  head: ({ params, matches }) => {
-    const title = `${params.code.toUpperCase()} — تحليل السهم — ${siteName(matches)}`;
+  head: ({ params, match }) => {
+    const title = `${params.code.toUpperCase()} — تحليل السهم — ${siteName(match)}`;
     return {
       meta: [
         { title },
         { name: "robots", content: "noindex, nofollow" },
         { property: "og:title", content: title },
-        { property: "og:url", content: `${siteUrl(matches)}/stock/${params.code.toUpperCase()}` },
+        { property: "og:url", content: `${siteUrl(match)}/stock/${params.code.toUpperCase()}` },
       ],
     };
   },

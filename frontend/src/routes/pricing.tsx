@@ -11,22 +11,22 @@ import { cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/pricing")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `الأسعار — ${siteName(matches)}` },
+      { title: `الأسعار — ${siteName(match)}` },
       {
         name: "description",
         content:
           "3 باقات: تجربة مجانية 5 أيام تداول، باقة النفس الطويل من 299 جنيه شهريًا، وباقة الحريفة من 499 جنيه شهريًا.",
       },
-      { property: "og:title", content: `الأسعار — ${siteName(matches)}` },
+      { property: "og:title", content: `الأسعار — ${siteName(match)}` },
       {
         property: "og:description",
         content: "تجربة مجانية 5 أيام تداول، ثم اختار باقة النفس الطويل أو الحريفة حسب نشاطك.",
       },
-      { property: "og:url", content: `${siteUrl(matches)}/pricing` },
+      { property: "og:url", content: `${siteUrl(match)}/pricing` },
     ],
-    links: [canonical(matches, "/pricing")],
+    links: [canonical(match, "/pricing")],
   }),
   component: PricingPage,
 });

@@ -28,20 +28,20 @@ import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/calendar")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `تقويم الإغلاقات — ${siteName(matches)}` },
+      { title: `تقويم الإغلاقات — ${siteName(match)}` },
       {
         name: "description",
         content: "سجل يومي لقيمة المحفظة: إغلاق كل يوم، تعديلات الوقف والهدف، وملاحظاتك.",
       },
-      { property: "og:title", content: `تقويم الإغلاقات — ${siteName(matches)}` },
+      { property: "og:title", content: `تقويم الإغلاقات — ${siteName(match)}` },
       {
         property: "og:description",
         content: "سجل يومي لقيمة المحفظة: إغلاق كل يوم، تعديلات الوقف والهدف، وملاحظاتك.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${siteUrl(matches)}/calendar` },
+      { property: "og:url", content: `${siteUrl(match)}/calendar` },
     ],
   }),
   component: CalendarPage,

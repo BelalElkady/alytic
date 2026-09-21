@@ -12,21 +12,21 @@ import { canonical, siteUrl, siteName } from "@/lib/seo";
 import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/contact")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `تواصل معنا — ${siteName(matches)}` },
+      { title: `تواصل معنا — ${siteName(match)}` },
       {
         name: "description",
-        content: `عندك سؤال أو ملاحظة على ${siteName(matches)}؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.`,
+        content: `عندك سؤال أو ملاحظة على ${siteName(match)}؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.`,
       },
-      { property: "og:title", content: `تواصل معنا — ${siteName(matches)}` },
+      { property: "og:title", content: `تواصل معنا — ${siteName(match)}` },
       {
         property: "og:description",
-        content: `عندك سؤال أو ملاحظة على ${siteName(matches)}؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.`,
+        content: `عندك سؤال أو ملاحظة على ${siteName(match)}؟ ابعتلنا رسالة وهنرد عليك في أقرب وقت.`,
       },
-      { property: "og:url", content: `${siteUrl(matches)}/contact` },
+      { property: "og:url", content: `${siteUrl(match)}/contact` },
     ],
-    links: [canonical(matches, "/contact")],
+    links: [canonical(match, "/contact")],
   }),
   component: ContactPage,
 });

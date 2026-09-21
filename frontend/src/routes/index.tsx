@@ -21,14 +21,14 @@ import { canonical, siteName } from "@/lib/seo";
 import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `${siteName(matches)} — خبير البورصة المصرية لإدارة محفظتك` },
+      { title: `${siteName(match)} — خبير البورصة المصرية لإدارة محفظتك` },
       {
         name: "description",
-        content: `${siteName(matches)} يحلّل أسهم البورصة المصرية، يحسب وقف الخسارة والأهداف، ويعطيك توصية واضحة لكل سهم حسب سلوكك الاستثماري.`,
+        content: `${siteName(match)} يحلّل أسهم البورصة المصرية، يحسب وقف الخسارة والأهداف، ويعطيك توصية واضحة لكل سهم حسب سلوكك الاستثماري.`,
       },
-      { property: "og:title", content: `${siteName(matches)} — خبير البورصة المصرية` },
+      { property: "og:title", content: `${siteName(match)} — خبير البورصة المصرية` },
       {
         property: "og:description",
         content:
@@ -37,7 +37,7 @@ export const Route = createFileRoute("/")({
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
-    links: [canonical(matches, "/")],
+    links: [canonical(match, "/")],
   }),
   component: LandingPage,
 });

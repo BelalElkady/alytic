@@ -59,13 +59,13 @@ import { cn } from "@/lib/utils";
 const baseTitle = (name: string) => `الإدارة — ${name}`;
 
 export const Route = createFileRoute("/_app/admin")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: baseTitle(siteName(matches)) },
+      { title: baseTitle(siteName(match)) },
       { name: "description", content: "إدارة قوائم المؤشرات والمستخدمين المسجّلين." },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: baseTitle(siteName(matches)) },
-      { property: "og:url", content: `${siteUrl(matches)}/admin` },
+      { property: "og:title", content: baseTitle(siteName(match)) },
+      { property: "og:url", content: `${siteUrl(match)}/admin` },
     ],
   }),
   component: AdminPage,

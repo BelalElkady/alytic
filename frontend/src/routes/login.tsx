@@ -11,20 +11,20 @@ export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     mode: search["mode"] === "register" ? "register" : "login",
   }),
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `دخول أو إنشاء حساب — ${siteName(matches)}` },
+      { title: `دخول أو إنشاء حساب — ${siteName(match)}` },
       {
         name: "description",
-        content: `ادخل على حسابك في ${siteName(matches)} لمتابعة محفظتك في البورصة المصرية، أو ابدأ تجربة مجانية ٥ أيام تداول.`,
+        content: `ادخل على حسابك في ${siteName(match)} لمتابعة محفظتك في البورصة المصرية، أو ابدأ تجربة مجانية ٥ أيام تداول.`,
       },
-      { property: "og:title", content: `دخول أو إنشاء حساب — ${siteName(matches)}` },
+      { property: "og:title", content: `دخول أو إنشاء حساب — ${siteName(match)}` },
       {
         property: "og:description",
-        content: `دخول سريع لـ ${siteName(matches)}، أو إنشاء حساب جديد بتجربة مجانية ٥ أيام تداول.`,
+        content: `دخول سريع لـ ${siteName(match)}، أو إنشاء حساب جديد بتجربة مجانية ٥ أيام تداول.`,
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${siteUrl(matches)}/login` },
+      { property: "og:url", content: `${siteUrl(match)}/login` },
     ],
   }),
   component: LoginPage,

@@ -9,16 +9,16 @@ import { siteUrl, siteName } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/indices")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `المؤشرات — ${siteName(matches)}` },
+      { title: `المؤشرات — ${siteName(match)}` },
       {
         name: "description",
         content: "الأداء اليومي لمؤشرات البورصة المصرية، وأفضل وأسوأ سهم في كل مؤشر.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: `المؤشرات — ${siteName(matches)}` },
-      { property: "og:url", content: `${siteUrl(matches)}/indices` },
+      { property: "og:title", content: `المؤشرات — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/indices` },
     ],
   }),
   component: IndicesPage,

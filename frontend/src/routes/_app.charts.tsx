@@ -21,20 +21,20 @@ import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/charts")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `رسوم المحفظة — ${siteName(matches)}` },
+      { title: `رسوم المحفظة — ${siteName(match)}` },
       {
         name: "description",
         content: "قيمة المحفظة يوم بيوم، ربح وخسارة كل سهم، وموقع السعر بين الوقف والهدف.",
       },
-      { property: "og:title", content: `رسوم المحفظة — ${siteName(matches)}` },
+      { property: "og:title", content: `رسوم المحفظة — ${siteName(match)}` },
       {
         property: "og:description",
         content: "قيمة المحفظة يوم بيوم، ربح وخسارة كل سهم، وموقع السعر بين الوقف والهدف.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${siteUrl(matches)}/charts` },
+      { property: "og:url", content: `${siteUrl(match)}/charts` },
     ],
   }),
   component: ChartsPage,

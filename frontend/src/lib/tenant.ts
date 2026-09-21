@@ -2,9 +2,9 @@ import { useRouterState } from "@tanstack/react-router";
 
 /**
  * Which white-label site this page is. The backend owns the list (see
- * backend/src/tenancy/registry.js). The root route loads it once per page
- * load through getTenant (lib/tenant-server.ts); everything else
- * reads it from there: useTenant() in components, tenantOf(matches) in a
+ * backend/src/tenancy/registry.js). The root route's beforeLoad puts it in
+ * the route context through getTenant (lib/tenant-server.ts); everything
+ * else reads it from there: useTenant() in components, tenantOf(match) in a
  * route's head().
  */
 export type TenantBrand = {
@@ -52,20 +52,21 @@ export const DEFAULT_TENANT: Tenant = {
   features: { blog: true },
 };
 
-type MatchLike = { loaderData?: unknown };
+type MatchLike = { context?: unknown };
 
-/** The tenant from the root route's loader data — for a route's head(), which gets `matches`. */
-export function tenantOf(matches: ReadonlyArray<MatchLike> | undefined): Tenant {
-  const data = matches?.[0]?.loaderData as { tenant?: Tenant } | undefined;
-  return data?.tenant ?? DEFAULT_TENANT;
+/**
+ * The tenant from a match's route context, which the root route's beforeLoad
+ * fills and every child route inherits. For a route's head(): use its
+ * `match`, not `matches` — the router hands head() the match list as it was
+ * before loading started, so only `match` is guaranteed current.
+ */
+export function tenantOf(match: MatchLike | undefined): Tenant {
+  return (match?.context as { tenant?: Tenant } | undefined)?.tenant ?? DEFAULT_TENANT;
 }
 
 /** The tenant this page belongs to, in any component under the router. */
 export function useTenant(): Tenant {
-  return useRouterState({
-    select: (state) =>
-      (state.matches[0]?.loaderData as { tenant?: Tenant } | undefined)?.tenant ?? DEFAULT_TENANT,
-  });
+  return useRouterState({ select: (state) => tenantOf(state.matches[0]) });
 }
 
 /**

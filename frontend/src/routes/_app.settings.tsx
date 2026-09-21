@@ -18,20 +18,20 @@ import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 export const Route = createFileRoute("/_app/settings")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `الملف الشخصي والإعدادات — ${siteName(matches)}` },
+      { title: `الملف الشخصي والإعدادات — ${siteName(match)}` },
       {
         name: "description",
         content: "بياناتك، رصيدك من كل ميزة، وسلوكك الاستثماري.",
       },
-      { property: "og:title", content: `الملف الشخصي والإعدادات — ${siteName(matches)}` },
+      { property: "og:title", content: `الملف الشخصي والإعدادات — ${siteName(match)}` },
       {
         property: "og:description",
         content: "بياناتك، رصيدك من كل ميزة، وسلوكك الاستثماري.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${siteUrl(matches)}/settings` },
+      { property: "og:url", content: `${siteUrl(match)}/settings` },
     ],
   }),
   component: SettingsPage,

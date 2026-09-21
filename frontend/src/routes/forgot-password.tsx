@@ -11,16 +11,16 @@ import { siteUrl, siteName } from "@/lib/seo";
 import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/forgot-password")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `نسيت كلمة السر — ${siteName(matches)}` },
+      { title: `نسيت كلمة السر — ${siteName(match)}` },
       {
         name: "description",
-        content: `اكتب بريدك الإلكتروني وهنبعتلك رابط لإعادة تعيين كلمة السر في ${siteName(matches)}.`,
+        content: `اكتب بريدك الإلكتروني وهنبعتلك رابط لإعادة تعيين كلمة السر في ${siteName(match)}.`,
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: `نسيت كلمة السر — ${siteName(matches)}` },
-      { property: "og:url", content: `${siteUrl(matches)}/forgot-password` },
+      { property: "og:title", content: `نسيت كلمة السر — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/forgot-password` },
     ],
   }),
   component: ForgotPasswordPage,

@@ -10,15 +10,15 @@ const DESCRIPTION =
   "سياسة الخصوصية في EGXpert: البيانات اللي بنجمعها، إزاي بنستخدمها، الإعلانات والكوكيز، وحقوقك تجاه بياناتك.";
 
 export const Route = createFileRoute("/privacy")({
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `سياسة الخصوصية — ${siteName(matches)}` },
-      { name: "description", content: withBrand(DESCRIPTION, siteName(matches)) },
-      { property: "og:title", content: `سياسة الخصوصية — ${siteName(matches)}` },
-      { property: "og:description", content: withBrand(DESCRIPTION, siteName(matches)) },
-      { property: "og:url", content: `${siteUrl(matches)}/privacy` },
+      { title: `سياسة الخصوصية — ${siteName(match)}` },
+      { name: "description", content: withBrand(DESCRIPTION, siteName(match)) },
+      { property: "og:title", content: `سياسة الخصوصية — ${siteName(match)}` },
+      { property: "og:description", content: withBrand(DESCRIPTION, siteName(match)) },
+      { property: "og:url", content: `${siteUrl(match)}/privacy` },
     ],
-    links: [canonical(matches, "/privacy")],
+    links: [canonical(match, "/privacy")],
   }),
   component: PrivacyPage,
 });

@@ -15,13 +15,13 @@ export const Route = createFileRoute("/reset-password")({
   validateSearch: (search: Record<string, unknown>): ResetSearch => ({
     token: typeof search["token"] === "string" ? search["token"] : undefined,
   }),
-  head: ({ matches }) => ({
+  head: ({ match }) => ({
     meta: [
-      { title: `إعادة تعيين كلمة السر — ${siteName(matches)}` },
-      { name: "description", content: `اكتب كلمة سر جديدة لحسابك في ${siteName(matches)}.` },
+      { title: `إعادة تعيين كلمة السر — ${siteName(match)}` },
+      { name: "description", content: `اكتب كلمة سر جديدة لحسابك في ${siteName(match)}.` },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: `إعادة تعيين كلمة السر — ${siteName(matches)}` },
-      { property: "og:url", content: `${siteUrl(matches)}/reset-password` },
+      { property: "og:title", content: `إعادة تعيين كلمة السر — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/reset-password` },
     ],
   }),
   component: ResetPasswordPage,
