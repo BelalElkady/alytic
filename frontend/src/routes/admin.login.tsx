@@ -34,7 +34,7 @@ function AdminLoginPage() {
     setError(null);
     try {
       const result = await post("/api/auth/login", { email, password });
-      if (!result.user?.isAdmin) {
+      if (!result.user?.isAdmin && !result.user?.isMarketer) {
         await post("/api/auth/logout");
         throw new Error("الحساب ده مش حساب مشرف");
       }

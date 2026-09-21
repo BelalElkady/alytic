@@ -81,6 +81,9 @@ export async function createUser(user) {
     is_admin: Boolean(user.isAdmin),
     created_at: user.createdAt,
   };
+  // Only sent when true, so signups keep working on a database that hasn't had
+  // the is_marketer column applied yet.
+  if (user.isMarketer) row.is_marketer = true;
   mustUnlessDuplicate(await supabase.from('users').insert(row), 'createUser');
 }
 
@@ -501,8 +504,29 @@ export async function listRecentSupportMessages({ limit = 500 } = {}) {
   return data;
 }
 
+export const USER_ROLES = ['admin', 'marketer', 'user'];
+
+/** The role a users row holds. Admin wins if both flags are somehow set. */
+export const roleOf = (row) => (row?.is_admin ? 'admin' : row?.is_marketer ? 'marketer' : 'user');
+
+/**
+ * The one place a role is written: 'admin', 'marketer' or 'user' (a regular
+ * account), stored as the two flags. Both are set in a single update, so a
+ * user can never end up holding both.
+ */
+export async function setUserRole(id, role) {
+  if (!USER_ROLES.includes(role)) throw new Error(`setUserRole: unknown role ${role}`);
+  must(await supabase.from('users').update({ is_admin: role === 'admin', is_marketer: role === 'marketer' }).eq('id', id), 'setUserRole');
+}
+
 export async function setUserAdmin(id, isAdmin) {
-  must(await supabase.from('users').update({ is_admin: Boolean(isAdmin) }).eq('id', id), 'setUserAdmin');
+  await setUserRole(id, isAdmin ? 'admin' : 'user');
+}
+
+/** Granting replaces any other role; revoking only clears the marketer flag, so it can never demote an admin. */
+export async function setUserMarketer(id, isMarketer) {
+  if (isMarketer) await setUserRole(id, 'marketer');
+  else must(await supabase.from('users').update({ is_marketer: false }).eq('id', id), 'setUserMarketer');
 }
 
 /**
@@ -529,7 +553,7 @@ export async function deleteUser(id) {
 export async function getAllUsers() {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, phone, is_admin, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip')
+    .select('id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip')
     .order('created_at', { ascending: false });
   if (error) throw new Error(`getAllUsers: ${error.message}`);
   return data;

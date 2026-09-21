@@ -779,7 +779,7 @@ function DesktopNav() {
       className="scrollbar-slim -mx-1 hidden gap-1 overflow-x-auto px-1 md:flex"
       aria-label="التبويبات"
     >
-      {NAV.filter((item) => !item.adminOnly || user?.isAdmin).map(({ to, label, icon: Icon }) => (
+      {NAV.filter((item) => !item.adminOnly || user?.isAdmin || user?.isMarketer).map(({ to, label, icon: Icon }) => (
         <Link
           key={to}
           to={to}
@@ -804,7 +804,7 @@ function MobileNav() {
   const { user } = useDesk();
   const [open, setOpen] = useState(false);
 
-  const items = NAV.filter((item) => !item.adminOnly || user?.isAdmin);
+  const items = NAV.filter((item) => !item.adminOnly || user?.isAdmin || user?.isMarketer);
   const overflow = items.length > MAX_MOBILE_TABS;
   const primary = overflow ? items.slice(0, MAX_MOBILE_TABS - 1) : items;
   const more = overflow ? items.slice(MAX_MOBILE_TABS - 1) : [];

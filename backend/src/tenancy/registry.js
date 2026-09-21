@@ -70,6 +70,7 @@ function defaultConfigFromEnv() {
     contactEmail: process.env.CONTACT_EMAIL ?? 'info@egxpert.com',
     supportNotifyEmail: process.env.SUPPORT_NOTIFY_EMAIL ?? 'belal.elkady4@gmail.com',
     adminEmails: listEnv(process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com'),
+    marketerEmails: listEnv(process.env.MARKETER_EMAILS ?? ''),
     instapay: { address: process.env.INSTAPAY_ADDRESS ?? null, accountName: process.env.INSTAPAY_ACCOUNT_NAME ?? null },
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
     prices: {},
@@ -92,6 +93,7 @@ function buildTenant(row, { isDefault, domains, db }) {
     contactEmail: null,
     supportNotifyEmail: null,
     adminEmails: [],
+    marketerEmails: [],
     instapay: { address: null, accountName: null },
     googleClientId: null,
     prices: {},
@@ -111,6 +113,7 @@ function buildTenant(row, { isDefault, domains, db }) {
     features: { ...base.features, ...(configIn.features ?? {}) },
     prices: { ...base.prices, ...(configIn.prices ?? {}) },
     adminEmails: (configIn.adminEmails ?? base.adminEmails).map((e) => String(e).trim().toLowerCase()).filter(Boolean),
+    marketerEmails: (configIn.marketerEmails ?? base.marketerEmails).map((e) => String(e).trim().toLowerCase()).filter(Boolean),
   };
   config.emailFrom ??= `${brand.name} <${PLATFORM_FROM_ADDRESS}>`;
   // Without a contact/support address of their own, a client's messages still
@@ -241,8 +244,9 @@ export function tenantForHost(rawHost) {
 const PLATFORM_ADMIN_EMAILS = new Set(
   listEnv(process.env.PLATFORM_ADMIN_EMAILS ?? process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com').map((e) => e.toLowerCase()),
 );
+export const isPlatformAdminEmail = (email) => PLATFORM_ADMIN_EMAILS.has(String(email).toLowerCase());
 export function isPlatformAdmin(user, tenant) {
-  return Boolean(tenant?.isDefault && user?.isAdmin && user.emailVerified && PLATFORM_ADMIN_EMAILS.has(String(user.email).toLowerCase()));
+  return Boolean(tenant?.isDefault && user?.isAdmin && user.emailVerified && isPlatformAdminEmail(user.email));
 }
 
 /** What the browser may know about a tenant: branding and public switches — never keys, emails of staff or payment details. */
