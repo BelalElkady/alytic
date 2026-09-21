@@ -6,15 +6,26 @@
  * their users and subscriptions from /api/admin on their own domain, and can
  * never see this.
  *
- * Tenants are suspended rather than deleted: deleting a tenant row would
- * orphan a database full of someone's customers, and that is a decision to
+ * Suspending is the everyday way to stop a client (their data stays reachable
+ * and the site can be switched back on). Deleting removes only the registry
+ * entry, after an explicit confirmation: the client's own Supabase project, with
+ * all their customers' data, is never touched — dropping it is a decision to
  * take by hand in Supabase, not with one click.
  */
+import express from 'express';
+import {
+  BRAND_ASSET_KINDS,
+  BRAND_ASSET_MAX_BYTES,
+  BRAND_ASSET_TYPES,
+  NOT_A_BRAND_IMAGE_MESSAGE,
+  uploadBrandAsset,
+  verifiedBrandAssetType,
+} from '../brandAssets.js';
 import { createServiceClient, platformDb } from '../supabaseClient.js';
 import { encryptSecret } from '../tenancy/secrets.js';
 import { runWithTenant } from '../tenancy/context.js';
 import { DEFAULT_TENANT_ID, allTenants, normalizeHost, refreshTenants, tenantById } from '../tenancy/registry.js';
-import { safeHttpsUrl } from '../security.js';
+import { mediaTypeOf, safeHttpsUrl } from '../security.js';
 
 const TENANT_ID = /^[a-z0-9][a-z0-9-]{1,30}$/;
 const HOSTNAME = /^(?=.{3,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -257,6 +268,19 @@ async function tenantRows() {
 }
 
 export function mountPlatformRoutes(app, { wrap }) {
+  // A client's logo or favicon, uploaded ahead of the tenant form's save (the
+  // client may not exist yet) as a raw image body. Returns the public URL the
+  // form then puts in brand.logoUrl / brand.faviconUrl.
+  app.post('/api/platform/assets/:kind', express.raw({ type: BRAND_ASSET_TYPES, limit: BRAND_ASSET_MAX_BYTES }), wrap(async (req, res) => {
+    const { kind } = req.params;
+    if (!BRAND_ASSET_KINDS.includes(kind)) return res.status(400).json({ error: 'نوع الملف لازم يكون logo أو favicon' });
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة الأول' });
+    const mediaType = verifiedBrandAssetType(req.body, mediaTypeOf(req.headers['content-type']));
+    if (!mediaType) return res.status(415).json({ error: NOT_A_BRAND_IMAGE_MESSAGE });
+    const url = await uploadBrandAsset({ kind, mediaType, buffer: req.body });
+    res.status(201).json({ url });
+  }));
+
   app.get('/api/platform/tenants', wrap(async (_req, res) => {
     const rows = await tenantRows();
     const byId = new Map(rows.map((row) => [row.id, row]));
@@ -357,6 +381,35 @@ export function mountPlatformRoutes(app, { wrap }) {
     await refreshTenants();
     const { data: row } = await platformDb.from('tenants').select('*').eq('id', id).maybeSingle();
     res.json({ tenant: describe(tenantById(id), row) });
+  }));
+
+  // Removes a client from the platform: its registry row and its domains, so
+  // the site stops being served and its cron work stops. The client's own
+  // Supabase project — their users, portfolios, subscriptions — is never
+  // touched: it is theirs, lives in their project, and dropping it is a
+  // decision to take by hand in Supabase. AI-spend history stays too (it is
+  // what you bill from). The stored database key goes with the row, so bringing
+  // the client back means adding it again with that project's URL and key.
+  //
+  // `?confirm=<id>` must repeat the id: the panel sends it after its "are you
+  // sure" step, so a stray or replayed request can't delete anything on its own.
+  app.delete('/api/platform/tenants/:id', wrap(async (req, res) => {
+    const { id } = req.params;
+    if (id === DEFAULT_TENANT_ID) throw new BadRequest('الموقع الأساسي مينفعش يتحذف');
+    if (req.query.confirm !== id) throw new BadRequest('تأكيد الحذف ناقص');
+    const { data: existing, error } = await platformDb.from('tenants').select('id, name').eq('id', id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!existing) return res.status(404).json({ error: 'العميل ده مش موجود' });
+
+    // Domains first: once they are gone nothing routes to the tenant, and if the
+    // second delete fails the client is left visible in the panel to retry.
+    const domains = await platformDb.from('tenant_domains').delete().eq('tenant_id', id);
+    if (domains.error) throw new Error(domains.error.message);
+    const removed = await platformDb.from('tenants').delete().eq('id', id);
+    if (removed.error) throw new Error(removed.error.message);
+    await refreshTenants();
+    console.log(`[audit] tenant deleted: ${id} (${existing.name}) by ${req.user.email}`);
+    res.json({ ok: true });
   }));
 
   // Headline numbers for one client: size of their user base, how many pay,
