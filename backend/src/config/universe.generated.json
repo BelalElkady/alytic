@@ -8,10 +8,10 @@
   "minTurnoverEgp": 0,
   "minBars": 60,
   "candidateTotal": 307,
-  "accepted": 234,
+  "accepted": 235,
   "bySource": {
     "yahoo": 195,
-    "tradingview": 39
+    "tradingview": 40
   },
   "stocks": [
     {
@@ -3071,6 +3071,19 @@
       "avgTurnoverEgp": 2298536,
       "bars": 695,
       "origin": "tradingview"
+    },
+    {
+      "code": "KORA",
+      "source": "tradingview",
+      "yahoo": null,
+      "en": "KORRA",
+      "sector": "energy",
+      "industry": "Electric Utilities",
+      "shariah": "review",
+      "marketCapEgp": null,
+      "avgTurnoverEgp": 878804821,
+      "bars": 69,
+      "origin": "tradingview"
     }
   ],
   "rejected": [
@@ -3243,11 +3256,6 @@
       "code": "MMHC",
       "name": "El Mamoura Company For Construction & Tourism Development",
       "reason": "تاريخ قصير جدًا (1 جلسة) — محتاج 60 على الأقل للتحليل الفني"
-    },
-    {
-      "code": "KORA",
-      "name": "KORRA",
-      "reason": "تاريخ قصير جدًا (59 جلسة) — محتاج 60 على الأقل للتحليل الفني"
     },
     {
       "code": "YAYT",
