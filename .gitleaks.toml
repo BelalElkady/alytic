@@ -1,0 +1,14 @@
+# Extends gitleaks' default rules; only the exceptions below are added.
+[extend]
+useDefault = true
+
+# The scoring engine defines rules as objects like
+#   { key: 'priceVsSma200', bucket: 'priceTrend', weight: 1, ... }
+# and the generic-api-key rule reads `key: '<word>'` as a credential. It is a
+# scoring-rule name, not a secret. Scoped to this one file and this one rule,
+# so a real secret pasted here, or the same rule firing anywhere else, is still
+# reported.
+[[allowlists]]
+description = "scoring rule definitions in classification.js"
+targetRules = ["generic-api-key"]
+paths = ['''backend/src/scoring/classification\.js$''']
