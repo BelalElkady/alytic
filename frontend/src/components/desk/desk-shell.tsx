@@ -59,6 +59,7 @@ import {
   type StyleKey,
 } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
+import { useTenant } from "@/lib/tenant";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -165,6 +166,7 @@ function ExpiryBanner() {
  */
 function SubscriptionWall() {
   const { user } = useDesk();
+  const { name: brandName } = useTenant();
   const expired = Boolean(user?.currentPeriodEnd);
 
   // The trial is running but held back until the email is confirmed —
@@ -190,7 +192,7 @@ function SubscriptionWall() {
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
         {expired
           ? `اشتراكك انتهى${user?.currentPeriodEnd ? ` يوم ${arDay(user.currentPeriodEnd.slice(0, 10))}` : ""}. `
-          : "جرّبت EGXpert ٥ أيام تداول كاملة بكل المزايا. "}
+          : `جرّبت ${brandName} ٥ أيام تداول كاملة بكل المزايا. `}
         محفظتك وصفقاتك وكل بياناتك زي ما هي ومحدش هيمسّها — التحليل والأسعار اللحظية بس اللي واقفة
         لحد ما تشترك.
       </p>
@@ -443,6 +445,7 @@ function useMarketStatus() {
 }
 
 function DeskHeader() {
+  const { name: brandName } = useTenant();
   const {
     user,
     signOut,
@@ -557,12 +560,12 @@ function DeskHeader() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-3 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <Link to="/" aria-label="EGXpert" className="shrink-0">
+            <Link to="/" aria-label={brandName} className="shrink-0">
               <LogoMark className="size-9" />
             </Link>
             <div className="min-w-0">
               <h1 className="truncate text-[15px] font-semibold tracking-tight">
-                <span dir="ltr">EGXpert</span>
+                <span dir="ltr">{brandName}</span>
               </h1>
               <p className="truncate text-[11.5px] text-muted-foreground">
                 {today} ·{" "}
@@ -776,7 +779,7 @@ function DesktopNav() {
       className="scrollbar-slim -mx-1 hidden gap-1 overflow-x-auto px-1 md:flex"
       aria-label="التبويبات"
     >
-      {NAV.filter((item) => !item.adminOnly || user?.isAdmin).map(({ to, label, icon: Icon }) => (
+      {NAV.filter((item) => !item.adminOnly || user?.isAdmin || user?.isMarketer).map(({ to, label, icon: Icon }) => (
         <Link
           key={to}
           to={to}
@@ -801,7 +804,7 @@ function MobileNav() {
   const { user } = useDesk();
   const [open, setOpen] = useState(false);
 
-  const items = NAV.filter((item) => !item.adminOnly || user?.isAdmin);
+  const items = NAV.filter((item) => !item.adminOnly || user?.isAdmin || user?.isMarketer);
   const overflow = items.length > MAX_MOBILE_TABS;
   const primary = overflow ? items.slice(0, MAX_MOBILE_TABS - 1) : items;
   const more = overflow ? items.slice(MAX_MOBILE_TABS - 1) : [];

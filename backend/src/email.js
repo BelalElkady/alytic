@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { currentTenant } from './tenancy/context.js';
 
 /**
  * Sends transactional email over Resend's SMTP relay
@@ -43,7 +44,10 @@ export async function sendEmail({ to, subject, html }) {
     return;
   }
   try {
-    await getTransporter().sendMail({ from: EMAIL_FROM, to, subject, html });
+    // Each site sends under its own name. A tenant's own sender domain has to
+    // be verified in the Resend account first, or Resend refuses the send.
+    const from = currentTenant()?.config?.emailFrom ?? EMAIL_FROM;
+    await getTransporter().sendMail({ from, to, subject, html });
   } catch (err) {
     console.error(`[email] فشل إرسال "${subject}" لـ ${to}:`, err.message);
   }

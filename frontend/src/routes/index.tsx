@@ -17,18 +17,18 @@ import { LatestPosts } from "@/components/marketing/latest-posts";
 import { ToolExplainer } from "@/components/marketing/tool-explainer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { canonical } from "@/lib/seo";
+import { canonical, siteName } from "@/lib/seo";
+import { useTenant } from "@/lib/tenant";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "EGXpert — خبير البورصة المصرية لإدارة محفظتك" },
+      { title: `${siteName(match)} — خبير البورصة المصرية لإدارة محفظتك` },
       {
         name: "description",
-        content:
-          "EGXpert يحلّل أسهم البورصة المصرية، يحسب وقف الخسارة والأهداف، ويعطيك توصية واضحة لكل سهم حسب سلوكك الاستثماري.",
+        content: `${siteName(match)} يحلّل أسهم البورصة المصرية، يحسب وقف الخسارة والأهداف، ويعطيك توصية واضحة لكل سهم حسب سلوكك الاستثماري.`,
       },
-      { property: "og:title", content: "EGXpert — خبير البورصة المصرية" },
+      { property: "og:title", content: `${siteName(match)} — خبير البورصة المصرية` },
       {
         property: "og:description",
         content:
@@ -37,7 +37,7 @@ export const Route = createFileRoute("/")({
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
-    links: [canonical("/")],
+    links: [canonical(match, "/")],
   }),
   component: LandingPage,
 });
@@ -96,6 +96,7 @@ const STEPS = [
 ];
 
 function LandingPage() {
+  const { name: brandName } = useTenant();
   return (
     <SiteShell>
       {/* Hero */}
@@ -109,8 +110,8 @@ function LandingPage() {
               خبير البورصة المصرية في جيبك
             </h1>
             <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-              EGXpert بيتابع أسهمك لحظة بلحظة، بيحسب وقف الخسارة والأهداف، وبيقول لك تعمل إيه في كل
-              سهم النهاردة — بقواعد واضحة تقدر تشوفها وتعدّلها، مش كلام عام.
+              {brandName} بيتابع أسهمك لحظة بلحظة، بيحسب وقف الخسارة والأهداف، وبيقول لك تعمل إيه في
+              كل سهم النهاردة — بقواعد واضحة تقدر تشوفها وتعدّلها، مش كلام عام.
             </p>
             <div className="mt-7 flex flex-wrap items-start gap-3">
               <div className="flex flex-col items-center gap-1.5">
@@ -209,12 +210,13 @@ function LandingPage() {
 }
 
 function PreviewCard() {
+  const { name: brandName } = useTenant();
   return (
     <div className="rounded-2xl border bg-surface p-3 shadow-sm sm:p-4">
       <div className="flex items-center gap-2.5 rounded-xl border bg-card px-3.5 py-3">
         <LogoMark className="size-8" />
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold">EGXpert</p>
+          <p className="text-[13px] font-semibold">{brandName}</p>
           <p className="text-[11px] text-muted-foreground">تحديث الأسعار الآن</p>
         </div>
       </div>

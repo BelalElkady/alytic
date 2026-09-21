@@ -2,7 +2,8 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { SITE_URL } from "./lib/seo";
+import { backendUrl } from "./lib/backend";
+import type { Tenant } from "./lib/tenant";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -49,15 +50,26 @@ function isH3SwallowedErrorBody(body: string): boolean {
 // count as duplicate content. nginx forwards the original Host header, so the
 // redirect lives here and ships with every deploy instead of in the VPS's
 // hand-maintained nginx config.
-// Only the site's own www host is redirected, and always to the canonical
-// origin from lib/seo — never to whatever the Host header happens to say, which
-// a client controls (that would make this an open redirect for any request
-// nginx forwards with a foreign Host).
-function wwwRedirect(request: Request): Response | null {
+// Every white-label site gets the same treatment: a www host is sent to that
+// site's canonical origin as the backend knows it (tenant.siteUrl), never to
+// whatever the Host header happens to say, which a client controls (that
+// would make this an open redirect for any request nginx forwards with a
+// foreign Host). A www host the backend doesn't know is left alone.
+async function wwwRedirect(request: Request): Promise<Response | null> {
   const host = (request.headers.get("host") ?? "").toLowerCase().replace(/:\d+$/, "");
-  if (host !== `www.${new URL(SITE_URL).host}`) return null;
-  const url = new URL(request.url);
-  return Response.redirect(`${SITE_URL}${url.pathname}${url.search}`, 301);
+  if (!host.startsWith("www.")) return null;
+  try {
+    const res = await fetch(`${backendUrl()}/api/tenant`, {
+      headers: { "x-forwarded-host": host.slice(4) },
+    });
+    if (!res.ok) return null;
+    const siteUrl = ((await res.json()) as Tenant).siteUrl.replace(/\/+$/, "");
+    if (new URL(siteUrl).host === host) return null;
+    const url = new URL(request.url);
+    return Response.redirect(`${siteUrl}${url.pathname}${url.search}`, 301);
+  } catch {
+    return null;
+  }
 }
 
 // What the browser is told about every page.
@@ -112,7 +124,7 @@ function withSecurityHeaders(request: Request, response: Response): Response {
 }
 
 async function handle(request: Request, env: unknown, ctx: unknown): Promise<Response> {
-  const redirect = wwwRedirect(request);
+  const redirect = await wwwRedirect(request);
   if (redirect) return redirect;
   try {
     const handler = await getServerEntry();

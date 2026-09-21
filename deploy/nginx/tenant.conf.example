@@ -1,0 +1,40 @@
+# Reverse proxy for ONE white-label client site. Copy per client:
+#
+#   sudo cp deploy/nginx/tenant.conf.example /etc/nginx/sites-available/app.clientx.com
+#   sudo sed -i 's/CLIENT_DOMAIN/app.clientx.com/g' /etc/nginx/sites-available/app.clientx.com
+#   sudo ln -s /etc/nginx/sites-available/app.clientx.com /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#   sudo certbot --nginx -d app.clientx.com -d www.app.clientx.com
+#
+# Before this: the client points the domain's DNS (A record) at this VPS, and
+# the domain is added to the client in the admin panel's "العملاء" tab.
+# The order matters only in that the site answers 404 ("الموقع ده مش معروف")
+# until the domain is registered to a client.
+#
+# Same upstream as egxpert.conf: the one frontend process serves every site
+# and tells them apart by the Host header, which is why that header must be
+# passed through unchanged below.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name CLIENT_DOMAIN www.CLIENT_DOMAIN;
+
+    client_max_body_size 10m;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 180s;
+    proxy_read_timeout 180s;
+
+    include snippets/egxpert-security.conf;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}

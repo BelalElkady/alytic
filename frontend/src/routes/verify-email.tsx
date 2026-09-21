@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { post } from "@/lib/api";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 type VerifySearch = { token: string | undefined };
@@ -14,13 +14,16 @@ export const Route = createFileRoute("/verify-email")({
   validateSearch: (search: Record<string, unknown>): VerifySearch => ({
     token: typeof search["token"] === "string" ? search["token"] : undefined,
   }),
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "تفعيل البريد الإلكتروني — EGXpert" },
-      { name: "description", content: "جارٍ تفعيل بريدك الإلكتروني لحسابك في EGXpert." },
+      { title: `تفعيل البريد الإلكتروني — ${siteName(match)}` },
+      {
+        name: "description",
+        content: `جارٍ تفعيل بريدك الإلكتروني لحسابك في ${siteName(match)}.`,
+      },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: "تفعيل البريد الإلكتروني — EGXpert" },
-      { property: "og:url", content: `${SITE_URL}/verify-email` },
+      { property: "og:title", content: `تفعيل البريد الإلكتروني — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/verify-email` },
     ],
   }),
   component: VerifyEmailPage,

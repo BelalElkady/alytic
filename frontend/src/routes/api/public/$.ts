@@ -40,6 +40,12 @@ async function forward(request: Request): Promise<Response> {
   request.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
   });
+  // The backend picks the white-label site from this header. It is always
+  // overwritten with the Host this request arrived on (nginx passes the real
+  // one), never taken from the client: a client-sent X-Forwarded-Host would
+  // otherwise let a request on one site act on another.
+  const host = request.headers.get("host") ?? new URL(request.url).host;
+  headers.set("x-forwarded-host", host);
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   let res: Response;

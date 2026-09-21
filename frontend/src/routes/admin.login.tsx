@@ -7,16 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { post } from "@/lib/api";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 
 export const Route = createFileRoute("/admin/login")({
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "دخول المشرف — EGXpert" },
-      { name: "description", content: "تسجيل دخول مخصص لمشرفي EGXpert." },
+      { title: `دخول المشرف — ${siteName(match)}` },
+      { name: "description", content: `تسجيل دخول مخصص لمشرفي ${siteName(match)}.` },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: "دخول المشرف — EGXpert" },
-      { property: "og:url", content: `${SITE_URL}/admin/login` },
+      { property: "og:title", content: `دخول المشرف — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/admin/login` },
     ],
   }),
   component: AdminLoginPage,
@@ -34,7 +34,7 @@ function AdminLoginPage() {
     setError(null);
     try {
       const result = await post("/api/auth/login", { email, password });
-      if (!result.user?.isAdmin) {
+      if (!result.user?.isAdmin && !result.user?.isMarketer) {
         await post("/api/auth/logout");
         throw new Error("الحساب ده مش حساب مشرف");
       }

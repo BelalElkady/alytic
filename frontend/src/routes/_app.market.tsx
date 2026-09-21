@@ -2,19 +2,19 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { MarketAnalysis } from "@/components/desk/market-analysis";
 import { Panel } from "@/components/desk/state-blocks";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 
 export const Route = createFileRoute("/_app/market")({
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "تحليل السوق — EGXpert" },
+      { title: `تحليل السوق — ${siteName(match)}` },
       {
         name: "description",
         content: "ترتيب أسهم البورصة المصرية حسب التقييم والفرص القابلة للتنفيذ، مع بحث عن أي سهم وتحليله.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: "تحليل السوق — EGXpert" },
-      { property: "og:url", content: `${SITE_URL}/market` },
+      { property: "og:title", content: `تحليل السوق — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/market` },
     ],
   }),
   component: MarketPage,

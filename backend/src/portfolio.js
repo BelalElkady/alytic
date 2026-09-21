@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import RULES from './config/rules.js';
 import { getPortfolio, putPortfolio } from './db.js';
 import { lookup } from './config/universe.js';
+import { currentTenant } from './tenancy/context.js';
 
 const EMPTY = {
   cash: 0,
@@ -58,7 +59,9 @@ export async function savePortfolio(p, userId = 'local') {
 const writeQueues = new Map();
 
 export async function withPortfolio(userId, mutator) {
-  const previous = writeQueues.get(userId) ?? Promise.resolve();
+  // Per site as well as per user: the 'local' CLI id exists in every tenant's database.
+  const queueKey = `${currentTenant()?.id ?? ''}:${userId}`;
+  const previous = writeQueues.get(queueKey) ?? Promise.resolve();
   const run = previous
     .catch(() => {}) // a prior failure must not jam the queue for later callers
     .then(async () => {
@@ -67,13 +70,13 @@ export async function withPortfolio(userId, mutator) {
       await savePortfolio(next, userId);
       return next;
     });
-  writeQueues.set(userId, run);
+  writeQueues.set(queueKey, run);
   try {
     return await run;
   } finally {
     // Only clear the slot if nobody queued behind us — otherwise this would
     // drop the reference to the run a later caller is chained onto.
-    if (writeQueues.get(userId) === run) writeQueues.delete(userId);
+    if (writeQueues.get(queueKey) === run) writeQueues.delete(queueKey);
   }
 }
 

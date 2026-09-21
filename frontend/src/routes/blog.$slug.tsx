@@ -4,7 +4,7 @@ import { ErrorState } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
 import { getBlogPost, type BlogContentBlock, type BlogImage, type BlogPost } from "@/lib/blog";
 import { arPublishedDate } from "@/lib/format";
-import { canonical, OG_LOGO_URL, SITE_URL } from "@/lib/seo";
+import { canonical, ogLogoUrl, siteUrl, siteName } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/$slug")({
   loader: async ({ params }) => {
@@ -15,10 +15,12 @@ export const Route = createFileRoute("/blog/$slug")({
     return result;
   },
   notFoundComponent: BlogPostNotFound,
-  head: ({ params, loaderData }) => {
+  head: ({ params, loaderData, match }) => {
     const post = loaderData?.post ?? null;
-    const url = `${SITE_URL}/blog/${params.slug}`;
-    const title = post ? `${post.metaTitle || post.title} — EGXpert` : "مقالة — EGXpert";
+    const url = `${siteUrl(match)}/blog/${params.slug}`;
+    const title = post
+      ? `${post.metaTitle || post.title} — ${siteName(match)}`
+      : `مقالة — ${siteName(match)}`;
     const description = post?.metaDescription || post?.dek || null;
     return {
       meta: [
@@ -35,15 +37,23 @@ export const Route = createFileRoute("/blog/$slug")({
         ...(post?.image ? [{ property: "og:image", content: post.image.url }] : []),
         ...(post ? [{ property: "article:published_time", content: post.publishedAt }] : []),
       ],
-      links: [canonical(`/blog/${params.slug}`)],
-      scripts: post ? [articleJsonLd(post, url, description)] : [],
+      links: [canonical(match, `/blog/${params.slug}`)],
+      scripts: post
+        ? [articleJsonLd(post, url, description, siteName(match), ogLogoUrl(match))]
+        : [],
     };
   },
   component: BlogPostPage,
 });
 
 /** schema.org NewsArticle, so Google can read the headline, date and image without guessing. */
-function articleJsonLd(post: BlogPost, url: string, description: string | null) {
+function articleJsonLd(
+  post: BlogPost,
+  url: string,
+  description: string | null,
+  publisherName: string,
+  logoUrl: string,
+) {
   const data = {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
@@ -53,7 +63,11 @@ function articleJsonLd(post: BlogPost, url: string, description: string | null) 
     datePublished: post.publishedAt,
     inLanguage: "ar",
     mainEntityOfPage: url,
-    publisher: { "@type": "Organization", name: "EGXpert", logo: { "@type": "ImageObject", url: OG_LOGO_URL } },
+    publisher: {
+      "@type": "Organization",
+      name: publisherName,
+      logo: { "@type": "ImageObject", url: logoUrl },
+    },
   };
   // "<" escaped so article text can never close the script tag early.
   return { type: "application/ld+json", children: JSON.stringify(data).replace(/</g, "\\u003c") };
@@ -181,7 +195,9 @@ function BlogPostPage() {
           {post.dek && (
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{post.dek}</p>
           )}
-          <p className="mt-2 text-[11.5px] text-muted-foreground">{arPublishedDate(post.publishedAt)}</p>
+          <p className="mt-2 text-[11.5px] text-muted-foreground">
+            {arPublishedDate(post.publishedAt)}
+          </p>
           <div className="mt-8">
             <BlogContent blocks={post.content} />
           </div>

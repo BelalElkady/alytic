@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api, post, postRaw } from "@/lib/api";
 import { useDesk } from "@/lib/store";
+import { useTenant, withBrand } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
 
 export type SupportMessage = {
@@ -160,6 +161,7 @@ type Mode = "menu" | "topics" | "human";
  * and gets the subscriber their payment details instantly instead of waiting.
  */
 export function ChatWidget() {
+  const { name: brandName } = useTenant();
   const { user } = useDesk();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -554,7 +556,7 @@ export function ChatWidget() {
                         say("user", topic.q);
                         say(
                           "admin",
-                          topic.a,
+                          withBrand(topic.a, brandName),
                           <TopicLink
                             to={topic.to}
                             hash={topic.hash}

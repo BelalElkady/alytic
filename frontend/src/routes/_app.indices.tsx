@@ -5,20 +5,20 @@ import { ErrorState, LoadingBlock, Panel } from "@/components/desk/state-blocks"
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { fmt, pct, signed, tone } from "@/lib/format";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/indices")({
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "المؤشرات — EGXpert" },
+      { title: `المؤشرات — ${siteName(match)}` },
       {
         name: "description",
         content: "الأداء اليومي لمؤشرات البورصة المصرية، وأفضل وأسوأ سهم في كل مؤشر.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: "المؤشرات — EGXpert" },
-      { property: "og:url", content: `${SITE_URL}/indices` },
+      { property: "og:title", content: `المؤشرات — ${siteName(match)}` },
+      { property: "og:url", content: `${siteUrl(match)}/indices` },
     ],
   }),
   component: IndicesPage,

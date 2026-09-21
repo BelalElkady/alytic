@@ -20,8 +20,8 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
-import { PLANS, TIERS, ADDONS, planFor, addMonths, INSTAPAY } from '../billing/plans.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
+import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
@@ -44,11 +44,14 @@ import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js'
 import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
 import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
 import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
+import { currentTenant, runWithTenant } from '../tenancy/context.js';
+import { activeTenants, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
+import { mountPlatformRoutes } from './platform.js';
 
-// Where the public contact form's messages land. Same default as
-// ADMIN_EMAILS in auth.js, kept separate so either can change independently.
-const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'info@egxpert.com';
-const SUPPORT_NOTIFY_EMAIL = process.env.SUPPORT_NOTIFY_EMAIL ?? 'belal.elkady4@gmail.com';
+// Where the public contact form's messages and support-chat alerts land is
+// per site: config.contactEmail / config.supportNotifyEmail on the tenant
+// (see tenancy/registry.js). For the original site those come from
+// CONTACT_EMAIL and SUPPORT_NOTIFY_EMAIL in .env, as before.
 
 // Every account is on a 5-trading-day free trial from the moment it's created
 // — the window is derived from users.created_at rather than stored, so there
@@ -81,16 +84,17 @@ function trialInfo(user) {
 /**
  * Everything the client needs to know about what this account may do, and the
  * one place `hasAccess` is decided: an unexpired trial, a live paid period,
- * or a staff/CLI account. Admins and the built-in 'local' CLI user bypass
- * billing entirely — the CLI has no way to pay and locking it out would break
- * local development.
+ * or a staff/CLI account. Admins, marketers and the built-in 'local' CLI user
+ * bypass billing entirely — the CLI has no way to pay and locking it out would
+ * break local development, and a marketer is staff whose whole job is the
+ * admin page, which the subscription wall would otherwise replace.
  */
 async function accessInfo(user) {
   const trial = trialInfo(user);
   const subscription = await getSubscription(user.id);
   const periodEnd = subscription ? new Date(subscription.current_period_end) : null;
   const subscriptionActive = Boolean(periodEnd && periodEnd.getTime() > Date.now());
-  const exempt = Boolean(user.isAdmin) || user.id === 'local';
+  const exempt = Boolean(user.isAdmin) || Boolean(user.isMarketer) || user.id === 'local';
   // The free trial only counts once the email is confirmed: an unconfirmed
   // address costs nothing to invent, so honoring the trial before then would
   // let anyone mint a fresh one with a throwaway. The clock still runs from
@@ -154,8 +158,39 @@ app.use(securityHeaders);
 // comma-separated extra list (see security.js for what is always allowed).
 app.use(originGuard({
   allowedOrigins: [process.env.FRONTEND_URL, process.env.APP_URL, ...(process.env.ALLOWED_ORIGINS ?? '').split(',')],
+  // A white-label site may write only to itself: the Origin has to be one of
+  // the domains of the same tenant the request's host belongs to.
+  isAllowed: (req, origin) => {
+    const target = tenantForHost(requestHost(req));
+    return Boolean(target && !target.isDefault && target.domains.includes(normalizeHost(origin)));
+  },
 }));
 app.use(express.json({ limit: '100kb' }));
+
+/**
+ * The host the browser asked for. The frontend's /api/public proxy sets
+ * X-Forwarded-Host from the Host nginx passed it, overwriting anything the
+ * client sent (see frontend/src/routes/api/public/$.ts). Direct calls on
+ * loopback (cron jobs, tests) carry only Host.
+ */
+function requestHost(req) {
+  return req.get('x-forwarded-host') ?? req.get('host') ?? '';
+}
+
+// Which white-label site this request is for. Placed after express.json on
+// purpose: the JSON body is read from a stream, and a tenant context entered
+// before that would be lost by the time the parser hands over. Everything
+// below runs inside the context, and every database call follows it (see
+// tenancy/context.js).
+app.use((req, res, next) => {
+  const tenant = tenantForHost(requestHost(req));
+  if (!tenant) return res.status(404).json({ error: 'الموقع ده مش معروف' });
+  if (tenant.status !== 'active' && req.path !== '/api/health') {
+    return res.status(503).json({ error: 'الخدمة متوقفة مؤقتًا على الموقع ده — تواصل مع الإدارة.' });
+  }
+  req.tenant = tenant;
+  runWithTenant(tenant, next);
+});
 
 // Brute-force / abuse guards on the endpoints an attacker would actually
 // want to hammer: password guessing, mass account creation, and using the
@@ -189,7 +224,7 @@ const apiFloodLimiter = rateLimited(1200, 1);
 // This process stays API-only for the browser: send a human landing on it
 // straight to the real app instead of serving stale markup.
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:8080';
-app.get('/', (_req, res) => res.redirect(FRONTEND_URL));
+app.get('/', (req, res) => res.redirect(req.tenant?.appUrl ?? FRONTEND_URL));
 
 // No static files are served from this process: the repo has no backend/public
 // directory and the release bundle never ships one, so a file dropped there by
@@ -200,7 +235,9 @@ app.use('/api', apiFloodLimiter);
 // Only messages this app wrote for users (Arabic) reach the client; database,
 // network and programming errors are logged in full and answered generically —
 // see publicError in security.js.
-const wrap = (fn) => (req, res) => fn(req, res).catch((err) => {
+// Re-enters the request's tenant context before the handler: a route-level
+// body parser (express.raw for uploads) resumes on a stream event outside it.
+const wrap = (fn) => (req, res) => runWithTenant(req.tenant ?? currentTenant() ?? defaultTenant(), () => fn(req, res)).catch((err) => {
   console.error(err);
   if (res.headersSent) return;
   const { status, message } = publicError(err);
@@ -272,7 +309,7 @@ app.post('/api/auth/logout', (_req, res) => {
 app.get('/api/auth/me', wrap(async (req, res) => {
   const user = await userFromRequest(req);
   if (!user) return res.json({ user: null });
-  res.json({ user: { ...user, ...(await accessInfo(user)) } });
+  res.json({ user: { ...user, ...(await accessInfo(user)), isPlatformAdmin: isPlatformAdmin(user, req.tenant) } });
 }));
 
 // Public "تواصل معنا" form — no login required, and never blocked by a
@@ -288,7 +325,7 @@ app.post('/api/contact', emailActionLimiter, wrap(async (req, res) => {
   if (!message || message.length > 4000) return res.status(400).json({ error: 'اكتب رسالتك (حد أقصى 4000 حرف)' });
 
   await sendEmail({
-    to: CONTACT_EMAIL,
+    to: req.tenant.config.contactEmail,
     subject: `رسالة تواصل من ${name}`,
     html: contactEmailHtml({ name, email, message }),
   });
@@ -372,16 +409,31 @@ app.post('/api/cron/blog-generate', cronLimiter, wrap(async (req, res) => {
     return res.json({ ok: true, skipped: 'not_a_trading_day', postDate: postDate ?? cairoToday() });
   }
   const { getOrGenerateNextBlogArticle } = await import('../agent/blogGenerator.js');
+  // One article per blog-enabled site per trigger, each written into that
+  // site's own database. Blog is off by default for client sites
+  // (config.features.blog): every article is a paid AI run.
   // Awaited on purpose: the GitHub Actions workflow that calls this should
   // only go green once this run's article (if any) is actually stored, not
   // the moment generation starts.
-  const result = await getOrGenerateNextBlogArticle({ postDate });
-  res.json({
-    ok: true,
-    postDate: result.postDate,
-    totalToday: result.totalToday,
-    generated: result.generated ? { id: result.generated.id, slug: result.generated.slug, status: result.generated.status } : null,
-  });
+  const sites = [];
+  for (const tenant of activeTenants().filter((t) => t.config.features.blog)) {
+    try {
+      const result = await runWithTenant(tenant, () => getOrGenerateNextBlogArticle({ postDate }));
+      sites.push({
+        tenant: tenant.id,
+        postDate: result.postDate,
+        totalToday: result.totalToday,
+        generated: result.generated ? { id: result.generated.id, slug: result.generated.slug, status: result.generated.status } : null,
+      });
+    } catch (err) {
+      console.error(`[blog-cron] ${tenant.id} failed:`, err.message);
+      sites.push({ tenant: tenant.id, error: true });
+    }
+  }
+  // The top-level fields keep describing the original site, as the workflow
+  // that calls this has always read them.
+  const main = sites.find((site) => site.tenant === defaultTenant().id) ?? {};
+  res.json({ ok: true, postDate: main.postDate, totalToday: main.totalToday, generated: main.generated ?? null, sites });
 }));
 
 // Manual/ops trigger for warmNextStopPlans (see agent/stopPlanWarmer.js) —
@@ -407,11 +459,19 @@ app.post('/api/cron/stop-plan-generate', cronLimiter, wrap(async (req, res) => {
 // The prices the "اشترك" screen quotes. Payment details are deliberately not
 // here: users ask on the support chat and an admin sends them privately, so
 // no account number is published to anyone who can curl this.
-app.get('/api/billing/plans', (_req, res) => {
+app.get('/api/billing/plans', (req, res) => {
   // tiers is included so the subscribe screen can show each plan's feature
   // caps without hardcoding a second copy of TIERS. addons are the one-time
   // top-ups (see ADDONS) shown alongside the plans, one list per credit kind.
-  res.json({ plans: Object.values(PLANS), tiers: TIERS, addons: ADDONS });
+  // Prices are this site's own (see plansFor).
+  res.json({ plans: Object.values(plansFor(req.tenant)), tiers: TIERS, addons: addonsFor(req.tenant) });
+});
+
+// What the frontend needs to render this site as itself: name, logo, colors,
+// analytics IDs. Public; publicTenant() leaves out everything private.
+app.get('/api/tenant', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json(publicTenant(req.tenant));
 });
 
 // ---- Live presence ----------------------------------------------------------
@@ -425,7 +485,7 @@ const PRESENCE_WINDOW_MS = 3 * 60 * 1000;
 const PRESENCE_DB_WRITE_MS = 60 * 1000;
 const PRESENCE_MAX_VISITORS = 50_000;
 const VISITOR_ID = /^[A-Za-z0-9-]{8,64}$/;
-const anonSeen = new Map(); // visitor id -> ms of last ping
+const anonSeen = new Map(); // `${tenant id}:${visitor id}` -> ms of last ping
 const userSeenWritten = new Map(); // user id -> ms of last last_seen_at write
 let anonPrunedAt = 0;
 
@@ -439,13 +499,14 @@ const presenceLimiter = rateLimited(120, 1);
 
 app.post('/api/presence', presenceLimiter, wrap(async (req, res) => {
   const now = Date.now();
-  const vid = typeof req.body?.vid === 'string' && VISITOR_ID.test(req.body.vid) ? req.body.vid : null;
+  const vid = typeof req.body?.vid === 'string' && VISITOR_ID.test(req.body.vid) ? `${req.tenant.id}:${req.body.vid}` : null;
   const user = await userFromRequest(req);
   if (user) {
     // A visitor who signs in mid-visit must not also count as an anonymous one.
     if (vid) anonSeen.delete(vid);
-    if (now - (userSeenWritten.get(user.id) ?? 0) >= PRESENCE_DB_WRITE_MS) {
-      userSeenWritten.set(user.id, now);
+    const seenKey = `${req.tenant.id}:${user.id}`;
+    if (now - (userSeenWritten.get(seenKey) ?? 0) >= PRESENCE_DB_WRITE_MS) {
+      userSeenWritten.set(seenKey, now);
       await touchUserSeen(user.id, new Date(now).toISOString());
     }
   } else if (vid) {
@@ -467,6 +528,7 @@ app.use('/api', async (req, res, next) => {
     req.path.startsWith('/blog/') ||
     req.path === '/sitemap-urls' ||
     req.path === '/billing/plans' ||
+    req.path === '/tenant' ||
     req.path === '/cron/blog-generate' ||
     req.path === '/cron/daily-close' ||
     req.path === '/cron/stop-plan-generate'
@@ -604,13 +666,13 @@ async function notifySupportBurst({ user, existing, preview, wantsHuman }) {
     previous?.sender === 'user' && Date.now() - new Date(previous.created_at).getTime() < 10 * 60 * 1000;
   if (withinBurst) return;
   await sendEmail({
-    to: SUPPORT_NOTIFY_EMAIL,
+    to: currentTenant()?.config.supportNotifyEmail ?? process.env.SUPPORT_NOTIFY_EMAIL ?? 'belal.elkady4@gmail.com',
     subject: wantsHuman ? `طلب مساعدة من ${user?.email}` : `رسالة شات جديدة من ${user?.email}`,
     html: supportMessageEmailHtml({
       name: user?.name,
       email: user?.email,
       message: preview,
-      appUrl: process.env.APP_URL ?? FRONTEND_URL,
+      appUrl: currentTenant()?.appUrl ?? process.env.APP_URL ?? FRONTEND_URL,
     }),
   }).catch((err) => console.error('support notification email failed:', err));
 }
@@ -618,8 +680,8 @@ async function notifySupportBurst({ user, existing, preview, wantsHuman }) {
 // What the bot answers "عايز أشترك" with. Behind the session on purpose:
 // this is the one place the InstaPay account is disclosed, so it only ever
 // reaches a signed-in account whose transfer we can later match.
-app.get('/api/support/subscribe-info', wrap(async (_req, res) => {
-  res.json({ plans: Object.values(PLANS), instapay: INSTAPAY });
+app.get('/api/support/subscribe-info', wrap(async (req, res) => {
+  res.json({ plans: Object.values(plansFor(req.tenant)), instapay: instapayFor(req.tenant) });
 }));
 
 // Only marks the admin's messages read when the caller says the panel is
@@ -831,10 +893,33 @@ app.get('/api/indices/performance', wrap(async (_req, res) => {
 // that address has proved it owns the mailbox — so an unconfirmed account
 // registered with an admin's email must not get admin powers until the
 // confirmation link (which only the real owner receives) has been used.
+//
+// A marketer is not an admin: they get exactly the two reads behind the users
+// table (the list, and the online-now counter above it) and nothing else — no
+// writes, no support inbox, no blog, no indices. It is an allowlist on purpose,
+// so a new /api/admin route is closed to marketers until someone adds it here.
+const MARKETER_READS = new Set(['GET /users', 'GET /online']);
 app.use('/api/admin', (req, res, next) => {
+  if (req.user?.isMarketer && req.user.emailVerified && MARKETER_READS.has(`${req.method} ${req.path}`)) return next();
   if (!req.user?.isAdmin || !req.user.emailVerified) return res.status(403).json({ error: 'للمشرفين فقط' });
   next();
 });
+
+// Index membership lists and admin-added stocks are market data every site
+// shares (they live in the platform database), so only the platform owner
+// edits them. A client's admins manage their own users, not the market.
+app.use('/api/admin/indices', (req, res, next) => {
+  if (!isPlatformAdmin(req.user, req.tenant)) return res.status(403).json({ error: 'القوائم دي بتتعدل من الموقع الأساسي بس' });
+  next();
+});
+
+// ---- Platform (white-label) --------------------------------------------------
+// Managing the client sites themselves. See api/platform.js.
+app.use('/api/platform', (req, res, next) => {
+  if (!isPlatformAdmin(req.user, req.tenant)) return res.status(403).json({ error: 'للمشرفين فقط' });
+  next();
+});
+mountPlatformRoutes(app, { wrap });
 
 const TICKER_HEADERS = ['TICKER', 'CODE', 'SYMBOL', 'REUTERS CODE', 'RIC'];
 const NAME_HEADERS = ['COMPANY NAME', 'NAME', 'COMPANY'];
@@ -1006,11 +1091,12 @@ app.post('/api/admin/indices/:name/reset', wrap(async (req, res) => {
 // shows, next to the style the user picked in settings (if any).
 // Who is on the site right now: accounts that pinged within the window, plus
 // anonymous browsers counted in memory (see the presence block above).
-app.get('/api/admin/online', wrap(async (_req, res) => {
+app.get('/api/admin/online', wrap(async (req, res) => {
   const now = Date.now();
   const signedIn = await countUsersSeenSince(new Date(now - PRESENCE_WINDOW_MS).toISOString());
   let visitors = 0;
-  for (const at of anonSeen.values()) if (now - at < PRESENCE_WINDOW_MS) visitors += 1;
+  const prefix = `${req.tenant.id}:`;
+  for (const [vid, at] of anonSeen) if (vid.startsWith(prefix) && now - at < PRESENCE_WINDOW_MS) visitors += 1;
   res.json({ signedIn, visitors, windowSeconds: PRESENCE_WINDOW_MS / 1000, asOf: new Date(now).toISOString() });
 }));
 
@@ -1034,13 +1120,14 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     const subscriptionActive = Boolean(subscription) && new Date(subscription.current_period_end).getTime() > Date.now();
     // Same resolution as accessInfo() for this user's own request — see its
     // comment on why staff/CLI get the top tier rather than a bypass.
-    const tier = u.is_admin || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive && u.email_verified ? 'free' : null;
+    const tier = u.is_admin || u.is_marketer || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive && u.email_verified ? 'free' : null;
     return {
       id: u.id,
       email: u.email,
       name: u.name,
       phone: u.phone,
       isAdmin: u.is_admin,
+      isMarketer: Boolean(u.is_marketer),
       emailVerified: u.email_verified,
       googleLinked: Boolean(u.google_id),
       createdAt: u.created_at,
@@ -1125,7 +1212,7 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
   if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
 
   const requested = String(req.body?.plan ?? '');
-  const plan = planFor(requested);
+  const plan = planForTenant(req.tenant, requested);
   let currentPeriodEnd;
   let tier;
   if (plan) {
@@ -1206,6 +1293,34 @@ app.delete('/api/admin/users/:id', wrap(async (req, res) => {
   await removeSupportImagesFor(target.id);
   await deleteUser(target.id);
   res.json({ ok: true });
+}));
+
+// Sets a user's role from the users table: 'admin' (everything in this panel),
+// 'marketer' (read-only view of the users table) or 'user' (a regular
+// account). Only an admin gets here, and it only ever touches this site's own
+// users. Three accounts can't be changed from the panel, so the panel can
+// never be left without someone able to use it:
+//  - your own (ask another admin), so the last admin can't demote themselves;
+//  - the internal CLI account;
+//  - on the main site, the platform owner's (PLATFORM_ADMIN_EMAILS) — another
+//    admin there must not be able to lock the owner out. That one is changed
+//    with scripts/make-admin.mjs on the server.
+app.post('/api/admin/users/:id/role', wrap(async (req, res) => {
+  const role = String(req.body?.role ?? '');
+  if (!USER_ROLES.includes(role)) return res.status(400).json({ error: 'الدور لازم يكون مشرف أو مسوّق أو مستخدم' });
+  const target = await getUserById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  if (target.id === 'local') return res.status(400).json({ error: 'ده حساب النظام الداخلي (للـ CLI) — مينفعش يتغير دوره' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'مينفعش تغيّر دور حسابك — اطلب من مشرف تاني يعمل ده' });
+  if (req.tenant.isDefault && isPlatformAdminEmail(target.email)) {
+    return res.status(400).json({ error: 'ده حساب مالك المنصة — دوره بيتغير من السيرفر بس (scripts/make-admin.mjs)' });
+  }
+  const before = roleOf(target);
+  if (before !== role) {
+    await setUserRole(target.id, role);
+    console.log(`[audit] role ${before} -> ${role}: ${target.email} (by ${req.user.email}, site ${req.tenant.id})`);
+  }
+  res.json({ ok: true, role });
 }));
 
 /** Activation history for one user — what to check when a payment is disputed or entered twice. */
@@ -2168,8 +2283,24 @@ app.post('/api/cron/daily-close', cronLimiter, wrap(async (req, res) => {
   if (!safeEqual(req.get('X-Cron-Secret'), DAILY_CLOSE_CRON_SECRET)) {
     return res.status(403).json({ error: 'forbidden' });
   }
-  res.json(await runDailyClose());
+  res.json(await runDailyCloseForAllSites());
 }));
+
+/** runDailyClose once per active site, each against its own database. One site failing doesn't stop the rest. */
+async function runDailyCloseForAllSites() {
+  const sites = {};
+  for (const tenant of activeTenants()) {
+    try {
+      sites[tenant.id] = await runWithTenant(tenant, runDailyClose);
+    } catch (err) {
+      console.error(`[daily-close] ${tenant.id} failed:`, err.message);
+      sites[tenant.id] = { ok: false };
+    }
+  }
+  // Top level mirrors the original site's result, which is what the backup
+  // workflow and the scheduler log have always shown.
+  return { ...(sites[defaultTenant().id] ?? {}), sites };
+}
 
 async function runDailyClose() {
   const today = cairoToday();
@@ -2216,7 +2347,7 @@ function startDailyCloseScheduler() {
     if (dailyCloseRanFor === today || cairoClock.format(new Date()) < DAILY_CLOSE_AT) return;
     dailyCloseRanFor = today;
     try {
-      console.log('[daily-close]', JSON.stringify(await runDailyClose()));
+      console.log('[daily-close]', JSON.stringify(await runDailyCloseForAllSites()));
     } catch (err) {
       dailyCloseRanFor = null; // retry on the next tick
       console.error('[daily-close] failed:', err.message);
@@ -2700,7 +2831,7 @@ const REVIEW_STATUS_WAIT_MS = 15_000;
 const REVIEW_JOB_TTL_MS = 30 * 60_000;
 
 function reviewJobKey(userId, style, code = null) {
-  return `${userId}:${style ?? 'medium'}${code ? `:${code}` : ''}`;
+  return `${currentTenant()?.id ?? ''}:${userId}:${style ?? 'medium'}${code ? `:${code}` : ''}`;
 }
 
 function sendReviewJob(res, job) {
@@ -2970,6 +3101,9 @@ const isDirectRun = Boolean(process.argv[1])
   && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (isDirectRun) {
+  // Before listening: a request that arrives before the registry is loaded
+  // would be answered as "unknown site" for every client domain.
+  await startTenantRegistry();
   warnAboutWeakConfig();
   startDailyCloseScheduler();
   startStopPlanScheduler();

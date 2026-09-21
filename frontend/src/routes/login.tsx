@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { AuthScreen } from "@/components/desk/auth-screen";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 
 type LoginSearch = { mode: "login" | "register" };
@@ -11,21 +11,20 @@ export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     mode: search["mode"] === "register" ? "register" : "login",
   }),
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "دخول أو إنشاء حساب — EGXpert" },
+      { title: `دخول أو إنشاء حساب — ${siteName(match)}` },
       {
         name: "description",
-        content:
-          "ادخل على حسابك في EGXpert لمتابعة محفظتك في البورصة المصرية، أو ابدأ تجربة مجانية ٥ أيام تداول.",
+        content: `ادخل على حسابك في ${siteName(match)} لمتابعة محفظتك في البورصة المصرية، أو ابدأ تجربة مجانية ٥ أيام تداول.`,
       },
-      { property: "og:title", content: "دخول أو إنشاء حساب — EGXpert" },
+      { property: "og:title", content: `دخول أو إنشاء حساب — ${siteName(match)}` },
       {
         property: "og:description",
-        content: "دخول سريع لـ EGXpert، أو إنشاء حساب جديد بتجربة مجانية ٥ أيام تداول.",
+        content: `دخول سريع لـ ${siteName(match)}، أو إنشاء حساب جديد بتجربة مجانية ٥ أيام تداول.`,
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${SITE_URL}/login` },
+      { property: "og:url", content: `${siteUrl(match)}/login` },
     ],
   }),
   component: LoginPage,

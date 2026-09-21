@@ -1,3 +1,14 @@
+import { currentTenant } from './tenancy/context.js';
+
+// The sending site's name and accent color. brand.emailColor is a plain hex
+// value because mail clients don't understand the CSS color functions the
+// site's own theme uses.
+const brandName = () => escapeHtml(currentTenant()?.brand?.name ?? 'EGXpert');
+const accent = () => {
+  const color = currentTenant()?.brand?.emailColor;
+  return /^#[0-9a-f]{3,8}$/i.test(color ?? '') ? color : '#3b82f6';
+};
+
 /** Shared HTML shell for every transactional email — inline styles only, as most mail clients strip a <style> block. */
 function layout(bodyHtml) {
   return `<!doctype html>
@@ -6,7 +17,7 @@ function layout(bodyHtml) {
     <table role="presentation" width="100%" style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:12px;overflow:hidden;">
       <tr>
         <td style="padding:24px 32px;background:#0b1220;">
-          <span style="color:#3b82f6;font-size:20px;font-weight:bold;">EGXpert</span>
+          <span style="color:${accent()};font-size:20px;font-weight:bold;">${brandName()}</span>
         </td>
       </tr>
       <tr>
@@ -20,7 +31,7 @@ function layout(bodyHtml) {
 }
 
 function button(href, label) {
-  return `<a href="${href}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">${label}</a>`;
+  return `<a href="${href}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:${accent()};color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">${label}</a>`;
 }
 
 /** User-submitted text (contact form) must never inject markup into the sent email. */
@@ -41,17 +52,17 @@ function addressedTo(name) {
 
 export function verificationEmailHtml(link) {
   return layout(`
-    <p>أهلاً بيك في EGXpert 👋</p>
+    <p>أهلاً بيك في ${brandName()} 👋</p>
     <p>اضغط الزرار ده عشان تفعّل بريدك الإلكتروني وتخلّص تسجيل حسابك:</p>
     <div style="text-align:center;">${button(link, 'تفعيل البريد الإلكتروني')}</div>
     <p style="font-size:13px;color:#94a3b8;">الرابط صالح لمدة 24 ساعة. لو الزرار مش شغال، افتح الرابط ده مباشرة:<br>${link}</p>
-    <p style="font-size:13px;color:#94a3b8;">لو مسجلتش في EGXpert، تجاهل الإيميل ده.</p>
+    <p style="font-size:13px;color:#94a3b8;">لو مسجلتش في ${brandName()}، تجاهل الإيميل ده.</p>
   `);
 }
 
 export function resetPasswordEmailHtml(link) {
   return layout(`
-    <p>وصلنا طلب لإعادة تعيين كلمة السر لحسابك في EGXpert.</p>
+    <p>وصلنا طلب لإعادة تعيين كلمة السر لحسابك في ${brandName()}.</p>
     <div style="text-align:center;">${button(link, 'إعادة تعيين كلمة السر')}</div>
     <p style="font-size:13px;color:#94a3b8;">الرابط صالح لمدة ساعة واحدة. لو الزرار مش شغال، افتح الرابط ده مباشرة:<br>${link}</p>
     <p style="font-size:13px;color:#94a3b8;">لو منتش أنت اللي طلبت ده، تجاهل الإيميل ده — كلمة السر مش هتتغير.</p>
@@ -61,7 +72,7 @@ export function resetPasswordEmailHtml(link) {
 export function registrationConfirmedEmailHtml(name, appUrl) {
   return layout(`
     <p>مبروك${addressedTo(name)} 🎉</p>
-    <p>حسابك في EGXpert اتفعّل بنجاح وتسجيلك خلص. جاهز تبدأ تتابع محفظتك وتحلل أسهم البورصة المصرية.</p>
+    <p>حسابك في ${brandName()} اتفعّل بنجاح وتسجيلك خلص. جاهز تبدأ تتابع محفظتك وتحلل أسهم البورصة المصرية.</p>
     <div style="text-align:center;">${button(appUrl, 'روح للمنصة')}</div>
   `);
 }
@@ -69,7 +80,7 @@ export function registrationConfirmedEmailHtml(name, appUrl) {
 /** Sent to the real account owner when someone tries to register with an email that's already taken — see auth.js's register(). */
 export function alreadyRegisteredEmailHtml(name, appUrl) {
   return layout(`
-    <p>حد حاول يعمل حساب جديد في EGXpert بإيميلك ده${addressedTo(name)}.</p>
+    <p>حد حاول يعمل حساب جديد في ${brandName()} بإيميلك ده${addressedTo(name)}.</p>
     <p>لو انت اللي عملت المحاولة دي، يبقى عندك حساب بالفعل — سجّل دخولك عادي، أو لو نسيت كلمة السر استخدم "نسيت كلمة السر" من صفحة الدخول.</p>
     <div style="text-align:center;">${button(`${appUrl}/login`, 'تسجيل الدخول')}</div>
     <p style="font-size:13px;color:#94a3b8;">لو مش انت اللي حاول، تجاهل الإيميل ده — حسابك بأمان ومفيش حاجة اتغيرت.</p>
@@ -84,7 +95,7 @@ export function alreadyRegisteredEmailHtml(name, appUrl) {
  */
 export function supportMessageEmailHtml({ name, email, message, appUrl }) {
   return layout(`
-    <p>رسالة جديدة في الشات من مستخدم EGXpert:</p>
+    <p>رسالة جديدة في الشات من مستخدم ${brandName()}:</p>
     <table role="presentation" width="100%" style="margin:16px 0;border-collapse:collapse;">
       <tr><td style="padding:4px 0;color:#94a3b8;width:80px;">الاسم</td><td>${escapeHtml(name || '—')}</td></tr>
       <tr><td style="padding:4px 0;color:#94a3b8;">البريد</td><td dir="ltr" style="text-align:right;">${escapeHtml(email)}</td></tr>
@@ -98,7 +109,7 @@ export function supportMessageEmailHtml({ name, email, message, appUrl }) {
 
 export function contactEmailHtml({ name, email, message }) {
   return layout(`
-    <p>رسالة جديدة من نموذج "تواصل معنا" في EGXpert:</p>
+    <p>رسالة جديدة من نموذج "تواصل معنا" في ${brandName()}:</p>
     <table role="presentation" width="100%" style="margin:16px 0;border-collapse:collapse;">
       <tr><td style="padding:4px 0;color:#94a3b8;width:80px;">الاسم</td><td>${escapeHtml(name)}</td></tr>
       <tr><td style="padding:4px 0;color:#94a3b8;">البريد</td><td dir="ltr" style="text-align:right;">${escapeHtml(email)}</td></tr>

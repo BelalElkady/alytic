@@ -3,21 +3,22 @@ import type { ReactNode } from "react";
 
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
-import { canonical, SITE_URL } from "@/lib/seo";
+import { canonical, siteUrl, siteName } from "@/lib/seo";
+import { useTenant, withBrand } from "@/lib/tenant";
 
 const DESCRIPTION =
   "سياسة الخصوصية في EGXpert: البيانات اللي بنجمعها، إزاي بنستخدمها، الإعلانات والكوكيز، وحقوقك تجاه بياناتك.";
 
 export const Route = createFileRoute("/privacy")({
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "سياسة الخصوصية — EGXpert" },
-      { name: "description", content: DESCRIPTION },
-      { property: "og:title", content: "سياسة الخصوصية — EGXpert" },
-      { property: "og:description", content: DESCRIPTION },
-      { property: "og:url", content: `${SITE_URL}/privacy` },
+      { title: `سياسة الخصوصية — ${siteName(match)}` },
+      { name: "description", content: withBrand(DESCRIPTION, siteName(match)) },
+      { property: "og:title", content: `سياسة الخصوصية — ${siteName(match)}` },
+      { property: "og:description", content: withBrand(DESCRIPTION, siteName(match)) },
+      { property: "og:url", content: `${siteUrl(match)}/privacy` },
     ],
-    links: [canonical("/privacy")],
+    links: [canonical(match, "/privacy")],
   }),
   component: PrivacyPage,
 });
@@ -48,6 +49,7 @@ function Bullets({ items }: { items: ReactNode[] }) {
 }
 
 function PrivacyPage() {
+  const { name: brandName } = useTenant();
   return (
     <SiteShell>
       <section className="border-b bg-card">
@@ -57,7 +59,7 @@ function PrivacyPage() {
             سياسة الخصوصية
           </h1>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-            نحن في EGXpert نهتم بخصوصية مستخدمينا، وهذه الصفحة توضح البيانات التي نجمعها، وكيف
+            نحن في {brandName} نهتم بخصوصية مستخدمينا، وهذه الصفحة توضح البيانات التي نجمعها، وكيف
             نستخدمها، وحقوقك تجاهها.
           </p>
         </div>
@@ -194,8 +196,8 @@ function PrivacyPage() {
         </Section>
 
         <p className="mt-12 rounded-xl border border-warn/40 bg-warn-soft p-4 text-[12.5px] leading-relaxed">
-          <strong>تنويه:</strong> EGXpert أداة تحليل ومساعدة في اتخاذ القرار الاستثماري، وليست جهة
-          استشارية مالية مرخّصة. القرار الاستثماري النهائي ومسؤوليته بالكامل على المستخدم.
+          <strong>تنويه:</strong> {brandName} أداة تحليل ومساعدة في اتخاذ القرار الاستثماري، وليست
+          جهة استشارية مالية مرخّصة. القرار الاستثماري النهائي ومسؤوليته بالكامل على المستخدم.
         </p>
       </article>
     </SiteShell>

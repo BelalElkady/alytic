@@ -76,6 +76,10 @@ export type User = {
   phone?: string | null;
   emailVerified?: boolean;
   isAdmin?: boolean;
+  /** Read-only view of the admin users table and nothing else (see backend MARKETER_READS). */
+  isMarketer?: boolean;
+  /** Can manage the white-label sites (see backend isPlatformAdmin). Only ever true on the main site. */
+  isPlatformAdmin?: boolean;
   createdAt?: string;
   trialDaysLeft?: number;
   trialDaysTotal?: number;

@@ -78,6 +78,38 @@ export const INSTAPAY = {
 };
 
 /**
+ * White-label sites sell the same tiers with the same caps, at their own
+ * prices and into their own InstaPay account. A tenant's config.prices maps a
+ * PLANS or ADDONS key to its price in EGP; any key it leaves out keeps the
+ * price above. Without a tenant (CLI, tests) these return the defaults.
+ */
+const priceOverride = (tenant, key) => {
+  const value = Number(tenant?.config?.prices?.[key]);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+export function plansFor(tenant) {
+  return Object.fromEntries(Object.entries(PLANS).map(([key, plan]) => {
+    const price = priceOverride(tenant, key);
+    return [key, price == null ? plan : { ...plan, priceEgp: price }];
+  }));
+}
+
+export function addonsFor(tenant) {
+  return Object.fromEntries(Object.entries(ADDONS).map(([feature, sizes]) => [
+    feature,
+    sizes.map((addon) => {
+      const price = priceOverride(tenant, addon.key);
+      return price == null ? addon : { ...addon, priceEgp: price };
+    }),
+  ]));
+}
+
+export const planForTenant = (tenant, key) => plansFor(tenant)[String(key ?? '')] ?? null;
+
+export const instapayFor = (tenant) => tenant?.config?.instapay ?? INSTAPAY;
+
+/**
  * Calendar-month arithmetic that never rolls over: adding a month to Jan 31
  * lands on Feb 28/29, not Mar 3, so a subscription bought on the 31st keeps
  * renewing near month-end instead of drifting a day forward every period.

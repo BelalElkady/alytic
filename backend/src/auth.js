@@ -24,6 +24,8 @@ import { isDisposableEmail } from './emailIdentity.js';
 import { INVALID_PHONE_MESSAGE, normalizePhone } from './phone.js';
 import { verificationEmailHtml, resetPasswordEmailHtml, registrationConfirmedEmailHtml, alreadyRegisteredEmailHtml } from './emailTemplates.js';
 import { canonicalEmail } from './emailIdentity.js';
+import { currentTenant } from './tenancy/context.js';
+import { DEFAULT_TENANT_ID } from './tenancy/registry.js';
 
 const SESSION_COOKIE = 'alytic_session';
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 30;
@@ -47,20 +49,45 @@ const SESSION_SECRET = process.env.SESSION_SECRET ?? 'change-this-session-secret
 
 const VERIFICATION_TTL = 1000 * 60 * 60 * 24; // 24h
 const RESET_TTL = 1000 * 60 * 60; // 1h
-const APP_URL = process.env.APP_URL ?? process.env.FRONTEND_URL ?? 'http://localhost:8080';
+const PLATFORM_APP_URL = process.env.APP_URL ?? process.env.FRONTEND_URL ?? 'http://localhost:8080';
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? null;
-const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+// Every link in an email, and every brand word in a subject line, is the
+// site the request came in on — see tenancy/registry.js.
+const appUrl = () => currentTenant()?.appUrl ?? PLATFORM_APP_URL;
+const brandName = () => currentTenant()?.brand?.name ?? 'EGXpert';
+const tenantId = () => currentTenant()?.id ?? DEFAULT_TENANT_ID;
+
+// A site can have its own Google OAuth client (its own consent-screen name).
+// Without one it uses the platform's, which then needs that site's domain
+// listed as an authorized JavaScript origin in Google Cloud.
+const googleClients = new Map();
+function googleClientFor() {
+  const clientId = currentTenant()?.config?.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? null;
+  if (!clientId) return null;
+  if (!googleClients.has(clientId)) googleClients.set(clientId, new OAuth2Client(clientId));
+  return { clientId, client: googleClients.get(clientId) };
+}
 
 // Emails that get is_admin=true the moment their account is first created
-// (register or Google sign-in) — comma-separated in .env. There is no UI for
-// granting admin beyond this and scripts/make-admin.mjs on purpose.
-const ADMIN_EMAILS = new Set(
-  (process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean),
-);
+// (register or Google sign-in). For the original site that is ADMIN_EMAILS in
+// .env; for a client site it is adminEmails in its tenant config, set from
+// the platform panel. There is no UI for granting admin beyond this and
+// scripts/make-admin.mjs on purpose.
+const ENV_ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com')
+  .split(',')
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+const isAdminEmail = (email) => (currentTenant()?.config?.adminEmails ?? ENV_ADMIN_EMAILS).includes(email);
+
+// Same idea for marketers (read-only view of the users table): MARKETER_EMAILS
+// for the original site, marketerEmails in the tenant config for a client site.
+// An address that is also an admin address stays a plain admin.
+const ENV_MARKETER_EMAILS = (process.env.MARKETER_EMAILS ?? '')
+  .split(',')
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+const isMarketerEmail = (email) =>
+  !isAdminEmail(email) && (currentTenant()?.config?.marketerEmails ?? ENV_MARKETER_EMAILS).includes(email);
 
 const PHONE_TAKEN_MESSAGE = 'رقم الموبايل ده مسجّل بحساب تاني. لو ده حسابك سجّل دخول بيه.';
 
@@ -98,7 +125,7 @@ const TOO_MANY_ATTEMPTS = 'محاولات دخول كتير على الحساب 
 const tooManyAttempts = () => Object.assign(new Error(TOO_MANY_ATTEMPTS), { status: 429, expose: true, userMessage: TOO_MANY_ATTEMPTS });
 
 function loginKey(email) {
-  return canonicalEmail(email) ?? email;
+  return `${tenantId()}:${canonicalEmail(email) ?? email}`;
 }
 function loginLocked(key, now = Date.now()) {
   const entry = failedLogins.get(key);
@@ -127,7 +154,7 @@ function noteLoginFailure(key, now = Date.now()) {
 const MAIL_COOLDOWN_MS = 2 * 60 * 1000;
 const mailSentAt = new Map(); // `${kind}:${email}` -> ms
 function mailAllowed(kind, email, now = Date.now()) {
-  const key = `${kind}:${email}`;
+  const key = `${tenantId()}:${kind}:${email}`;
   const last = mailSentAt.get(key);
   if (last && now - last < MAIL_COOLDOWN_MS) return false;
   mailSentAt.set(key, now);
@@ -163,6 +190,7 @@ function publicUser(user) {
     createdAt: user.created_at ?? user.createdAt,
     emailVerified: Boolean(user.email_verified ?? user.emailVerified),
     isAdmin: Boolean(user.is_admin ?? user.isAdmin),
+    isMarketer: Boolean(user.is_marketer ?? user.isMarketer),
   };
 }
 
@@ -179,7 +207,7 @@ const passwordFingerprint = (passwordHash) =>
 
 function encodeSession(userId, passwordHash) {
   const payload = Buffer.from(
-    JSON.stringify({ sub: userId, exp: Date.now() + SESSION_TTL, pv: passwordFingerprint(passwordHash) }),
+    JSON.stringify({ sub: userId, tn: tenantId(), exp: Date.now() + SESSION_TTL, pv: passwordFingerprint(passwordHash) }),
   ).toString('base64url');
   const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
   return `${payload}.${signature}`;
@@ -210,8 +238,8 @@ function makeVerificationToken() {
 
 /** Delivered over Resend's SMTP relay — see email.js. Never throws: a broken provider must not fail registration. */
 async function sendVerificationEmail(user, token) {
-  const link = `${APP_URL}/verify-email?token=${token}`;
-  await sendEmail({ to: user.email, subject: 'فعّل بريدك الإلكتروني في EGXpert', html: verificationEmailHtml(link) });
+  const link = `${appUrl()}/verify-email?token=${token}`;
+  await sendEmail({ to: user.email, subject: `فعّل بريدك الإلكتروني في ${brandName()}`, html: verificationEmailHtml(link) });
 }
 
 function makeResetToken() {
@@ -220,13 +248,13 @@ function makeResetToken() {
 
 /** See sendVerificationEmail above. */
 async function sendResetEmail(user, token) {
-  const link = `${APP_URL}/reset-password?token=${token}`;
-  await sendEmail({ to: user.email, subject: 'إعادة تعيين كلمة السر في EGXpert', html: resetPasswordEmailHtml(link) });
+  const link = `${appUrl()}/reset-password?token=${token}`;
+  await sendEmail({ to: user.email, subject: `إعادة تعيين كلمة السر في ${brandName()}`, html: resetPasswordEmailHtml(link) });
 }
 
 /** Sent once, right after a user's email is confirmed — see verifyEmail below. */
 async function sendRegistrationConfirmedEmail(user) {
-  await sendEmail({ to: user.email, subject: 'حسابك في EGXpert جاهز', html: registrationConfirmedEmailHtml(user.name, APP_URL) });
+  await sendEmail({ to: user.email, subject: `حسابك في ${brandName()} جاهز`, html: registrationConfirmedEmailHtml(user.name, appUrl()) });
 }
 
 /**
@@ -237,8 +265,8 @@ async function sendRegistrationConfirmedEmail(user) {
 async function sendAlreadyRegisteredEmail(user) {
   await sendEmail({
     to: user.email,
-    subject: 'محاولة تسجيل حساب جديد بإيميلك في EGXpert',
-    html: alreadyRegisteredEmailHtml(user.name, APP_URL),
+    subject: `محاولة تسجيل حساب جديد بإيميلك في ${brandName()}`,
+    html: alreadyRegisteredEmailHtml(user.name, appUrl()),
   });
 }
 
@@ -279,7 +307,8 @@ export async function register({ email, password, name, phone, ip }) {
     signupIp: ip,
     passwordSalt: salt,
     passwordHash: hash,
-    isAdmin: ADMIN_EMAILS.has(normalized),
+    isAdmin: isAdminEmail(normalized),
+    isMarketer: isMarketerEmail(normalized),
     verificationToken: token,
     verificationTokenExpires: new Date(Date.now() + VERIFICATION_TTL).toISOString(),
     createdAt: new Date().toISOString(),
@@ -319,12 +348,13 @@ export async function login({ email, password, ip }) {
 
 /** Verifies a Google ID token and signs the matching Alytic user in, creating or linking an account as needed. */
 export async function googleSignIn({ credential, ip }) {
-  if (!googleClient) throw new Error('تسجيل الدخول بجوجل غير مفعّل على الخادم');
+  const google = googleClientFor();
+  if (!google) throw new Error('تسجيل الدخول بجوجل غير مفعّل على الخادم');
   if (!credential) throw new Error('بيانات جوجل غير صالحة');
 
   let payload;
   try {
-    const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
+    const ticket = await google.client.verifyIdToken({ idToken: credential, audience: google.clientId });
     payload = ticket.getPayload();
   } catch {
     throw new Error('تعذر التحقق من حساب جوجل');
@@ -372,7 +402,8 @@ export async function googleSignIn({ credential, ip }) {
         googleId: payload.sub,
         signupIp: ip,
         emailVerified: true,
-        isAdmin: ADMIN_EMAILS.has(normalized),
+        isAdmin: isAdminEmail(normalized),
+        isMarketer: isMarketerEmail(normalized),
         createdAt: new Date().toISOString(),
       };
       await createUser(created);
@@ -457,6 +488,12 @@ export async function resetPassword({ token, password }) {
 export async function userFromRequest(req) {
   const session = decodeSession(parseCookies(req.headers.cookie ?? '')[SESSION_COOKIE]);
   if (!session) return null;
+  // A session belongs to the site that issued it. Cookies are per domain so a
+  // browser won't normally carry one across, but this makes a token copied
+  // from one client's site worthless on another's, including for the 'local'
+  // CLI user id that exists in every tenant database. Tokens from before
+  // tenants existed carry no tn and belong to the default site.
+  if ((session.tn ?? DEFAULT_TENANT_ID) !== tenantId()) return null;
   const user = await getUserById(session.sub);
   if (!user) return null;
   // A token issued before the most recent password change carries the old

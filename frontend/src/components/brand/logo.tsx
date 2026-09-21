@@ -1,9 +1,24 @@
+import { useTenant } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
 
-/** EGXpert brand mark: a rising candlestick chart inside a rounded shield. */
+/**
+ * The site's mark. A white-label site with its own logo (brand.logoUrl) shows
+ * that image; the rest share the candlestick shield, which takes the site's
+ * primary color from the brand's CSS variables.
+ */
 export function LogoMark({ className }: { className?: string }) {
+  const { name: brandName, brand } = useTenant();
+  if (brand.logoUrl) {
+    return (
+      <img
+        src={brand.logoUrl}
+        alt={brandName}
+        className={cn("size-9 rounded-[11px] object-contain", className)}
+      />
+    );
+  }
   return (
-    <svg viewBox="0 0 40 40" role="img" aria-label="EGXpert" className={cn("size-9", className)}>
+    <svg viewBox="0 0 40 40" role="img" aria-label={brandName} className={cn("size-9", className)}>
       <defs>
         <linearGradient id="egx-mark" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="var(--primary)" />
@@ -30,17 +45,23 @@ export function LogoMark({ className }: { className?: string }) {
 }
 
 export function Logo({ className, tagline = true }: { className?: string; tagline?: boolean }) {
+  const tenant = useTenant();
+  const brandTagline = tenant.brand.tagline;
   return (
     <span className={cn("flex items-center gap-2.5", className)}>
       <LogoMark className="size-9 shrink-0" />
       <span className="min-w-0 leading-tight">
         <span className="block text-[16px] font-bold tracking-tight" dir="ltr">
-          EGX<span className="text-primary">pert</span>
+          {tenant.name === "EGXpert" ? (
+            <>
+              EGX<span className="text-primary">pert</span>
+            </>
+          ) : (
+            tenant.name
+          )}
         </span>
-        {tagline && (
-          <span className="block truncate text-[11px] text-muted-foreground">
-            خبير البورصة المصرية
-          </span>
+        {tagline && brandTagline && (
+          <span className="block truncate text-[11px] text-muted-foreground">{brandTagline}</span>
         )}
       </span>
     </span>

@@ -9,6 +9,7 @@ import { SiteFooter } from "@/components/marketing/site-footer";
 import { ChatWidget } from "@/components/support/chat-widget";
 import { useDesk } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
+import { useTenant } from "@/lib/tenant";
 
 const LINKS = [
   { to: "/", label: "الرئيسية" },
@@ -20,6 +21,7 @@ const LINKS = [
 ] as const;
 
 export function SiteShell({ children }: { children: ReactNode }) {
+  const { name: brandName } = useTenant();
   // These marketing/blog pages are reachable while already logged in (e.g. via
   // the nav links above), so the header must reflect that instead of always
   // pointing at /login — otherwise a signed-in user sees "دخول" here and
@@ -30,7 +32,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 border-b bg-card/85 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <Link to="/" aria-label="EGXpert">
+          <Link to="/" aria-label={brandName}>
             <Logo />
           </Link>
           <nav className="hidden items-center gap-1 md:flex" aria-label="روابط الموقع">

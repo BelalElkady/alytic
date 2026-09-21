@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { backendFetch } from "@/lib/backend";
+
 import type { BlogPostSummary } from "@/components/marketing/blog-card";
 
 export type BlogContentBlock =
@@ -31,13 +33,14 @@ export type BlogPost = {
 // a useEffect left Googlebot and AdSense's crawler with empty pages. They call
 // the backend directly, the same way routes/sitemap[.]xml.ts does, rather than
 // going through the /api/public proxy, which only exists for the browser.
+// backendFetch passes the request's host along, so a client site's blog
+// lists that site's posts.
 async function fromBackend<T>(
   path: string,
   fallbackError: string,
 ): Promise<{ data: T | null; error: string | null; status: number }> {
-  const target = process.env["ALYTIC_API_URL"] ?? "http://localhost:3000";
   try {
-    const res = await fetch(`${target}${path}`);
+    const res = await backendFetch(path);
     const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
     if (!res.ok || !body) return { data: null, error: body?.error ?? fallbackError, status: res.status };
     return { data: body, error: null, status: res.status };

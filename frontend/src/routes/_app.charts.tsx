@@ -16,25 +16,25 @@ import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { post } from "@/lib/api";
 import { arDay, int, pct, signed, tone } from "@/lib/format";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/charts")({
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: "رسوم المحفظة — EGXpert" },
+      { title: `رسوم المحفظة — ${siteName(match)}` },
       {
         name: "description",
         content: "قيمة المحفظة يوم بيوم، ربح وخسارة كل سهم، وموقع السعر بين الوقف والهدف.",
       },
-      { property: "og:title", content: "رسوم المحفظة — EGXpert" },
+      { property: "og:title", content: `رسوم المحفظة — ${siteName(match)}` },
       {
         property: "og:description",
         content: "قيمة المحفظة يوم بيوم، ربح وخسارة كل سهم، وموقع السعر بين الوقف والهدف.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:url", content: `${SITE_URL}/charts` },
+      { property: "og:url", content: `${siteUrl(match)}/charts` },
     ],
   }),
   component: ChartsPage,

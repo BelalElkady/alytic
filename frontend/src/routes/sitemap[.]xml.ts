@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { backendFetch } from "@/lib/backend";
+import { DEFAULT_TENANT, type Tenant } from "@/lib/tenant";
+
 // Public sitemap for search engines. Built fresh on every request from the
 // backend's published blog posts (see /api/public/$.ts for the same
 // backend-forwarding pattern) instead of a cron-written static file: every
 // push to main rebuilds frontend/.output from scratch and redeploys it (see
 // .github/workflows/deploy.yml), which would wipe any file written to disk at
 // runtime. Generating it on request means it can never go stale either way.
-const SITE_URL = "https://egxpert.com";
+// Each white-label site gets its own: its own domain and its own posts, both
+// from the backend for the host this request came in on.
 
 // Mirrors the public marketing nav and footer in
 // components/marketing/site-shell.tsx — update both if a marketing page is
@@ -15,14 +19,29 @@ const SITE_URL = "https://egxpert.com";
 const STATIC_PATHS = ["/", "/blog", "/how-to-use", "/pricing", "/about", "/contact", "/privacy"];
 
 function escapeXml(value: string): string {
-  const map: Record<string, string> = { "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" };
+  const map: Record<string, string> = {
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    "'": "&apos;",
+    '"': "&quot;",
+  };
   return value.replace(/[<>&'"]/g, (c) => map[c]!);
 }
 
-async function fetchBlogUrls(): Promise<{ slug: string; publishedAt: string }[]> {
-  const target = process.env["ALYTIC_API_URL"] ?? "http://localhost:3000";
+async function fetchSiteUrl(): Promise<string> {
   try {
-    const res = await fetch(`${target}/api/sitemap-urls`);
+    const res = await backendFetch("/api/tenant");
+    if (res.ok) return ((await res.json()) as Tenant).siteUrl.replace(/\/+$/, "");
+  } catch {
+    // Fall through.
+  }
+  return DEFAULT_TENANT.siteUrl;
+}
+
+async function fetchBlogUrls(): Promise<{ slug: string; publishedAt: string }[]> {
+  try {
+    const res = await backendFetch("/api/sitemap-urls");
     if (!res.ok) return [];
     const data = (await res.json()) as { posts?: { slug: string; publishedAt: string }[] };
     return data.posts ?? [];
@@ -34,13 +53,15 @@ async function fetchBlogUrls(): Promise<{ slug: string; publishedAt: string }[]>
 }
 
 async function buildSitemap(): Promise<string> {
-  const posts = await fetchBlogUrls();
+  const [siteUrl, posts] = await Promise.all([fetchSiteUrl(), fetchBlogUrls()]);
 
   const entries = [
-    ...STATIC_PATHS.map((path) => `  <url>\n    <loc>${escapeXml(`${SITE_URL}${path}`)}</loc>\n  </url>`),
+    ...STATIC_PATHS.map(
+      (path) => `  <url>\n    <loc>${escapeXml(`${siteUrl}${path}`)}</loc>\n  </url>`,
+    ),
     ...posts.map((p) => {
       const lastmod = new Date(p.publishedAt).toISOString().slice(0, 10);
-      return `  <url>\n    <loc>${escapeXml(`${SITE_URL}/blog/${p.slug}`)}</loc>\n    <lastmod>${lastmod}</lastmod>\n  </url>`;
+      return `  <url>\n    <loc>${escapeXml(`${siteUrl}/blog/${p.slug}`)}</loc>\n    <lastmod>${lastmod}</lastmod>\n  </url>`;
     }),
   ];
 

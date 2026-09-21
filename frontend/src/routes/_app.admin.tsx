@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,6 +34,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -47,23 +55,25 @@ import { api, del, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
+import { PlatformTab } from "@/components/admin/platform-tab";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
-import { SITE_URL } from "@/lib/seo";
+import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
+import { useTenant } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
 
-const BASE_TITLE = "الإدارة — EGXpert";
+const baseTitle = (name: string) => `الإدارة — ${name}`;
 
 export const Route = createFileRoute("/_app/admin")({
-  head: () => ({
+  head: ({ match }) => ({
     meta: [
-      { title: BASE_TITLE },
+      { title: baseTitle(siteName(match)) },
       { name: "description", content: "إدارة قوائم المؤشرات والمستخدمين المسجّلين." },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: BASE_TITLE },
-      { property: "og:url", content: `${SITE_URL}/admin` },
+      { property: "og:title", content: baseTitle(siteName(match)) },
+      { property: "og:url", content: `${siteUrl(match)}/admin` },
     ],
   }),
   component: AdminPage,
@@ -105,6 +115,7 @@ const LABELS: Record<string, string> = {
  */
 function useUnreadTitleBadge(enabled: boolean): number {
   const [unread, setUnread] = useState(0);
+  const title = baseTitle(useTenant().name);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -114,7 +125,7 @@ function useUnreadTitleBadge(enabled: boolean): number {
         if (cancelled) return;
         const total = threads.reduce((sum: number, t: { unread: number }) => sum + t.unread, 0);
         setUnread(total);
-        document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
+        document.title = total > 0 ? `(${total}) ${title}` : title;
       } catch {
         // Best-effort badge — a failed poll just leaves the last count showing.
       }
@@ -124,9 +135,9 @@ function useUnreadTitleBadge(enabled: boolean): number {
     return () => {
       cancelled = true;
       clearInterval(timer);
-      document.title = BASE_TITLE;
+      document.title = title;
     };
-  }, [enabled]);
+  }, [enabled, title]);
   return unread;
 }
 
@@ -134,15 +145,26 @@ function AdminPage() {
   const { user } = useDesk();
   const supportUnread = useUnreadTitleBadge(Boolean(user?.isAdmin));
 
+  // A marketer sees the users table and nothing else, with every control that
+  // changes data left out — the backend refuses those calls for them anyway.
+  if (!user?.isAdmin && user?.isMarketer) {
+    return <UsersTab readOnly />;
+  }
+
   if (!user?.isAdmin) {
     return <ErrorState message="الصفحة دي للمشرفين بس." />;
   }
 
+  // The index lists are market data shared by every white-label site, so
+  // only the platform owner edits them; a client site's admins start on
+  // their users. The clients tab is the platform owner's alone as well.
+  const isPlatformAdmin = Boolean(user.isPlatformAdmin);
+
   return (
-    <Tabs defaultValue="indices" className="space-y-4">
+    <Tabs defaultValue={isPlatformAdmin ? "indices" : "users"} className="space-y-4">
       {/* mt-3: room for the unread badge that sits on top of the "الدعم" tab. */}
       <TabsList className="mt-3">
-        <TabsTrigger value="indices">المؤشرات</TabsTrigger>
+        {isPlatformAdmin && <TabsTrigger value="indices">المؤشرات</TabsTrigger>}
         <TabsTrigger value="users">المستخدمين</TabsTrigger>
         <TabsTrigger value="support" className="relative">
           الدعم
@@ -156,10 +178,18 @@ function AdminPage() {
           )}
         </TabsTrigger>
         <TabsTrigger value="blog">المدونة</TabsTrigger>
+        {isPlatformAdmin && <TabsTrigger value="platform">العملاء</TabsTrigger>}
       </TabsList>
-      <TabsContent value="indices">
-        <IndicesTab />
-      </TabsContent>
+      {isPlatformAdmin && (
+        <TabsContent value="indices">
+          <IndicesTab />
+        </TabsContent>
+      )}
+      {isPlatformAdmin && (
+        <TabsContent value="platform">
+          <PlatformTab />
+        </TabsContent>
+      )}
       <TabsContent value="users">
         <UsersTab />
       </TabsContent>
@@ -420,6 +450,7 @@ type AdminUserRow = {
   name: string;
   phone: string | null;
   isAdmin: boolean;
+  isMarketer: boolean;
   emailVerified: boolean;
   googleLinked: boolean;
   createdAt: string;
@@ -582,8 +613,72 @@ function useOnlineNow() {
   return online;
 }
 
-function UsersTab() {
+/**
+ * A slider that scrolls the wide users table sideways, so the columns past the
+ * screen edge are one drag away instead of a hunt for the scrollbar at the very
+ * bottom of a long table. Two-way: it follows the table when it's scrolled by
+ * touch, wheel or keyboard. Renders nothing when the table already fits.
+ */
+function TableSlider({ tableRef }: { tableRef: RefObject<HTMLTableElement | null> }) {
+  const [position, setPosition] = useState(0);
+  const [scrollable, setScrollable] = useState(false);
+  const [rtl, setRtl] = useState(true);
+
+  // The Table component scrolls inside its own wrapper, which is the table's parent.
+  const scroller = () => tableRef.current?.parentElement ?? null;
+  const maxScroll = (el: HTMLElement) => el.scrollWidth - el.clientWidth;
+
+  useEffect(() => {
+    const el = scroller();
+    if (!el) return;
+    const sync = () => {
+      const max = maxScroll(el);
+      setScrollable(max > 1);
+      setRtl(getComputedStyle(el).direction === "rtl");
+      // scrollLeft is 0 at the start edge and negative when scrolling an RTL container.
+      setPosition(max > 1 ? Math.round((Math.abs(el.scrollLeft) / max) * SLIDER_STEPS) : 0);
+    };
+    sync();
+    el.addEventListener("scroll", sync, { passive: true });
+    const observer = new ResizeObserver(sync);
+    observer.observe(el);
+    if (tableRef.current) observer.observe(tableRef.current);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      observer.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!scrollable) return null;
+
+  const move = ([next]: number[]) => {
+    const el = scroller();
+    if (!el) return;
+    el.scrollLeft = (rtl ? -1 : 1) * (next / SLIDER_STEPS) * maxScroll(el);
+  };
+
+  return (
+    <div className="flex items-center gap-3 border-b bg-surface px-4 py-2.5 sm:px-5">
+      <span className="shrink-0 text-[11.5px] text-muted-foreground">تحريك الجدول</span>
+      <Slider
+        dir={rtl ? "rtl" : "ltr"}
+        min={0}
+        max={SLIDER_STEPS}
+        step={1}
+        value={[position]}
+        onValueChange={move}
+        aria-label="تحريك الجدول يمين ويسار"
+      />
+    </div>
+  );
+}
+
+const SLIDER_STEPS = 1000;
+
+function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
   const online = useOnlineNow();
+  const tableRef = useRef<HTMLTableElement>(null);
   const [rows, setRows] = useState<AdminUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -792,7 +887,8 @@ function UsersTab() {
         </div>
       </div>
 
-      <div className="relative left-1/2 w-screen -translate-x-1/2 px-3 sm:px-5">
+      {/* Full-bleed: equal negative margins reach both screen edges in LTR and RTL alike (left-1/2 + -translate-x-1/2 only centres in LTR, and slid this panel sideways on wide screens). */}
+      <div className="mx-[calc(50%-50vw)] px-3 sm:px-5">
         <Panel
           title="المستخدمون المسجّلون"
           description={`${filtered.length} من ${rows.length} مستخدم`}
@@ -803,25 +899,26 @@ function UsersTab() {
               <EmptyState title="لا يوجد مستخدمون مطابقون" hint="جرّب كلمة بحث أو فلتر مختلف." />
             </div>
           ) : (
-            <div className="scrollbar-slim overflow-x-auto">
-              <Table className="min-w-[1500px] border-collapse">
+            <div>
+              <TableSlider tableRef={tableRef} />
+              <Table ref={tableRef} className="min-w-[1240px] border-collapse">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[84px] min-w-[84px] whitespace-nowrap border-e py-3 text-start">
+                    <TableHead className="w-[64px] min-w-[64px] border-e py-3 text-start">
                       <span aria-hidden>#</span>
                       <span className="sr-only">الرقم والحذف</span>
                     </TableHead>
-                    <TableHead className="min-w-[190px] whitespace-nowrap border-e py-3 text-start">المستخدم</TableHead>
-                    <TableHead className="min-w-[160px] whitespace-nowrap border-e py-3 text-start">الهاتف / IP</TableHead>
-                    <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">تاريخ التسجيل</TableHead>
-                    <TableHead className="min-w-[150px] whitespace-nowrap border-e py-3 text-start">آخر دخول / ظهور</TableHead>
-                    <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">رأس المال</TableHead>
-                    <TableHead className="min-w-[110px] whitespace-nowrap border-e py-3 text-start">ربح محقق</TableHead>
-                    <TableHead className="min-w-[210px] whitespace-nowrap border-e py-3 text-start">النشاط الاستثماري</TableHead>
-                    <TableHead className="min-w-[250px] whitespace-nowrap border-e py-3 text-start">السلوك الاستثماري</TableHead>
-                    <TableHead className="min-w-[180px] whitespace-nowrap border-e py-3 text-start">الرصيد</TableHead>
-                    <TableHead className="min-w-[170px] whitespace-nowrap border-e py-3 text-start">الاشتراك</TableHead>
-                    <TableHead className="min-w-[140px] whitespace-nowrap py-3 text-start">الحالة</TableHead>
+                    <TableHead className="min-w-[160px] border-e py-3 text-start">المستخدم</TableHead>
+                    <TableHead className="min-w-[120px] border-e py-3 text-start">الهاتف / IP</TableHead>
+                    <TableHead className="min-w-[90px] border-e py-3 text-start">تاريخ التسجيل</TableHead>
+                    <TableHead className="min-w-[110px] border-e py-3 text-start">آخر دخول / ظهور</TableHead>
+                    <TableHead className="min-w-[84px] border-e py-3 text-start">رأس المال</TableHead>
+                    <TableHead className="min-w-[84px] border-e py-3 text-start">ربح محقق</TableHead>
+                    <TableHead className="min-w-[130px] border-e py-3 text-start">النشاط الاستثماري</TableHead>
+                    <TableHead className="min-w-[170px] border-e py-3 text-start">السلوك الاستثماري</TableHead>
+                    <TableHead className="min-w-[140px] border-e py-3 text-start">الرصيد</TableHead>
+                    <TableHead className="min-w-[150px] border-e py-3 text-start">الاشتراك</TableHead>
+                    <TableHead className="min-w-[100px] py-3 text-start">الحالة</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -831,6 +928,7 @@ function UsersTab() {
                       row={row}
                       number={index + 1}
                       onChanged={load}
+                      readOnly={readOnly}
                       striped={index % 2 === 1}
                     />
                   ))}
@@ -851,12 +949,15 @@ function UserRow({
   row,
   number,
   onChanged,
+  readOnly,
   striped,
 }: {
   row: AdminUserRow;
   /** 1-based position in the list as currently filtered. */
   number: number;
   onChanged: () => void;
+  /** Marketer view: shows everything, offers no way to change it. */
+  readOnly: boolean;
   striped: boolean;
 }) {
   const pf = row.portfolio;
@@ -868,13 +969,16 @@ function UserRow({
       <TableCell className="border-e align-top py-3">
         <div className="flex items-center gap-1">
           <span className="num min-w-[2ch] text-[12.5px] font-medium text-muted-foreground">{number}</span>
-          {!row.isAdmin && row.id !== SYSTEM_USER_ID && <DeleteUserButton row={row} onDeleted={onChanged} />}
+          {!readOnly && !row.isAdmin && row.id !== SYSTEM_USER_ID && <DeleteUserButton row={row} onDeleted={onChanged} />}
         </div>
       </TableCell>
       <TableCell className="border-e align-top py-3">
         <div className="min-w-0">
           <div className="truncate font-medium">{row.email}</div>
           {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.name}</div>}
+          <div className="mt-1.5">
+            <RoleCell row={row} onChanged={onChanged} readOnly={readOnly} />
+          </div>
         </div>
       </TableCell>
       <TableCell className="num border-e align-top py-3 text-right">
@@ -938,10 +1042,10 @@ function UserRow({
         {row.behavior ? <BehaviorCell behavior={row.behavior} /> : "—"}
       </TableCell>
       <TableCell className="border-e align-top py-3">
-        <CreditsCell row={row} onChanged={onChanged} />
+        <CreditsCell row={row} onChanged={onChanged} readOnly={readOnly} />
       </TableCell>
       <TableCell className="border-e align-top py-3">
-        <SubscriptionCell row={row} onChanged={onChanged} />
+        <SubscriptionCell row={row} onChanged={onChanged} readOnly={readOnly} />
       </TableCell>
       <TableCell className="align-top py-3">
         <div className="flex flex-wrap gap-1">
@@ -1016,6 +1120,110 @@ function BehaviorCell({ behavior: b }: { behavior: AdminUserBehavior }) {
         <div className="text-[12px] leading-relaxed text-muted-foreground">{facts.join(" · ")}</div>
       )}
     </div>
+  );
+}
+
+type UserRole = "user" | "marketer" | "admin";
+
+const ROLE_LABEL: Record<UserRole, string> = {
+  user: "مستخدم عادي",
+  marketer: "مسوّق",
+  admin: "مشرف",
+};
+
+// What each role can do, shown in the confirmation for a change that touches admin.
+const ROLE_HINT: Record<UserRole, string> = {
+  admin: "صلاحيات كاملة: كل تبويبات الإدارة — المستخدمين والاشتراكات والدعم والمدونة.",
+  marketer: "بيشوف جدول المستخدمين بس، من غير أي تعديل.",
+  user: "حساب عادي من غير أي صلاحيات إدارة.",
+};
+
+/**
+ * Who a user is to the admin panel: admin, marketer (read-only view of this
+ * table) or a regular user. An admin can change anyone's role except their own
+ * and the system account's (the backend enforces this too); the marketer view
+ * only displays it. Any change that grants or takes away admin asks first.
+ */
+function RoleCell({
+  row,
+  onChanged,
+  readOnly,
+}: {
+  row: AdminUserRow;
+  onChanged: () => void;
+  readOnly: boolean;
+}) {
+  const { user: me } = useDesk();
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<UserRole | null>(null);
+  const role: UserRole = row.isAdmin ? "admin" : row.isMarketer ? "marketer" : "user";
+
+  if (readOnly || row.id === SYSTEM_USER_ID || row.id === me?.id) {
+    return role === "admin" ? (
+      <Badge>{ROLE_LABEL.admin}</Badge>
+    ) : (
+      <span className="text-[13px]">{ROLE_LABEL[role]}</span>
+    );
+  }
+
+  const apply = async (next: UserRole) => {
+    setBusy(true);
+    try {
+      await post(`/api/admin/users/${row.id}/role`, { role: next });
+      toast.success(`${row.email} دلوقتي ${ROLE_LABEL[next]}`);
+      onChanged();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تغيير الدور");
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  };
+
+  const choose = (value: string) => {
+    const next = value as UserRole;
+    if (next === role) return;
+    if (next === "admin" || role === "admin") setPending(next);
+    else void apply(next);
+  };
+
+  return (
+    <>
+      <Select value={role} onValueChange={choose} disabled={busy}>
+        <SelectTrigger className="h-8 w-[120px] text-[13px]" aria-label={`دور ${row.email}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(ROLE_LABEL) as UserRole[]).map((key) => (
+            <SelectItem key={key} value={key}>
+              {ROLE_LABEL[key]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <AlertDialog open={pending !== null} onOpenChange={(open) => !open && !busy && setPending(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader className="text-start">
+            <AlertDialogTitle>تغيير دور {row.email}؟</AlertDialogTitle>
+            <AlertDialogDescription className="leading-relaxed">
+              من {ROLE_LABEL[role]} إلى {pending ? ROLE_LABEL[pending] : ""}. {pending ? ROLE_HINT[pending] : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:justify-start">
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(event) => {
+                event.preventDefault();
+                if (pending) void apply(pending);
+              }}
+            >
+              {busy ? <Spinner /> : "تأكيد"}
+            </AlertDialogAction>
+            <AlertDialogCancel disabled={busy}>إلغاء</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -1119,7 +1327,15 @@ const ADDON_PACKS: Record<CreditKind, { count: number; priceEgp: number }[]> = {
  * Extra uses on top of the capped allowances (backend creditsOf()). Each
  * credit is spent only after the user's normal allowance for it runs out.
  */
-function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => void }) {
+function CreditsCell({
+  row,
+  onChanged,
+  readOnly,
+}: {
+  row: AdminUserRow;
+  onChanged: () => void;
+  readOnly: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [amounts, setAmounts] = useState(NO_CREDITS);
@@ -1168,11 +1384,13 @@ function CreditsCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => v
           if (!next) setAmounts(NO_CREDITS);
         }}
       >
-        <DialogTrigger asChild>
-          <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]">
-            إضافة رصيد
-          </Button>
-        </DialogTrigger>
+        {!readOnly && (
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]">
+              إضافة رصيد
+            </Button>
+          </DialogTrigger>
+        )}
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="text-start">
             <DialogTitle>رصيد {row.email}</DialogTitle>
@@ -1240,7 +1458,15 @@ const GRANT_TIER_LABEL: Record<Exclude<Tier, "free">, string> = {
  * design — the user transfers over InstaPay and an admin records it here —
  * so this is the only path to premium access in the whole product.
  */
-function SubscriptionCell({ row, onChanged }: { row: AdminUserRow; onChanged: () => void }) {
+function SubscriptionCell({
+  row,
+  onChanged,
+  readOnly,
+}: {
+  row: AdminUserRow;
+  onChanged: () => void;
+  readOnly: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [endsAt, setEndsAt] = useState("");
@@ -1304,11 +1530,13 @@ function SubscriptionCell({ row, onChanged }: { row: AdminUserRow; onChanged: ()
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]">
-            {subscription?.active ? "تعديل" : "تفعيل"}
-          </Button>
-        </DialogTrigger>
+        {!readOnly && (
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" className="h-7 px-2 text-[12px]">
+              {subscription?.active ? "تعديل" : "تفعيل"}
+            </Button>
+          </DialogTrigger>
+        )}
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="text-start">
             <DialogTitle>اشتراك {row.email}</DialogTitle>
