@@ -47,7 +47,8 @@ import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, s
 
 // Where the public contact form's messages land. Same default as
 // ADMIN_EMAILS in auth.js, kept separate so either can change independently.
-const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'belal.elkady4@gmail.com';
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'info@egxpert.com';
+const SUPPORT_NOTIFY_EMAIL = process.env.SUPPORT_NOTIFY_EMAIL ?? 'belal.elkady4@gmail.com';
 
 // Every account is on a 5-trading-day free trial from the moment it's created
 // — the window is derived from users.created_at rather than stored, so there
@@ -603,7 +604,7 @@ async function notifySupportBurst({ user, existing, preview, wantsHuman }) {
     previous?.sender === 'user' && Date.now() - new Date(previous.created_at).getTime() < 10 * 60 * 1000;
   if (withinBurst) return;
   await sendEmail({
-    to: CONTACT_EMAIL,
+    to: SUPPORT_NOTIFY_EMAIL,
     subject: wantsHuman ? `طلب مساعدة من ${user?.email}` : `رسالة شات جديدة من ${user?.email}`,
     html: supportMessageEmailHtml({
       name: user?.name,

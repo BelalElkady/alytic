@@ -89,6 +89,11 @@ jobs:
   secrets:
     name: Secret scan (full history)
     runs-on: ubuntu-latest
+    # On a pull request the action lists the PR's commits through the API, which
+    # needs this read permission; the workflow-wide default is contents: read only.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
