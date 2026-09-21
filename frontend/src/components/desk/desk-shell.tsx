@@ -523,6 +523,7 @@ function DeskHeader() {
     let imported = 0;
     try {
       let derived = 0;
+      let watchlisted = 0;
       for (const [index, file] of files.entries()) {
         const mode = replaceAll && index === 0 ? "replace=1" : "merge=1";
         const result = await api(`/api/portfolio/import-screenshot?${mode}`, {
@@ -532,12 +533,18 @@ function DeskHeader() {
         } as RequestInit);
         derived += result.derivedPositions ?? 0;
         imported += result.positions ?? 0;
+        watchlisted += result.watchlisted ?? 0;
       }
       await reload();
       const scope = replaceAll
         ? "استُبدلت المحفظة بالكامل."
         : "اتضاف/اتحدّث الأسهم دي بس — باقي المحفظة زي ما هو.";
-      if (derived) {
+      if (!imported && watchlisted) {
+        toast.success(`تمت إضافة ${watchlisted} سهم لقائمة المراقبة`, {
+          description: "الصورة مفيهاش كميات أسهم، فاتضافت للمراقبة بس — محفظتك زي ما هي.",
+          duration: 10000,
+        });
+      } else if (derived) {
         toast.success(`تم تحديث ${imported} سهم من ${files.length} صورة`, {
           description: `${scope} ⚠️ ${derived} منهم عدد الأسهم اتحسب تقديريًا — راجعه من «إدخال يدوي».`,
           duration: 12000,

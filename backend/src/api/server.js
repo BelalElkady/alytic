@@ -2573,7 +2573,9 @@ const numberFromScreenshot = (value) => {
 
 function resolveScreenshotCode(item) {
   const raw = normalizeScreenshotText(item.code ?? item.symbol ?? item.ticker);
-  const compact = raw.replace(/\s+/g, '').replace(/\.(CA|EGX)$/i, '').replace(/^EGX[:\-]/i, '');
+  // `raw` is already normalized (punctuation -> space), so "LUTS.CA" and
+  // "EGX:COMI" arrive here as "LUTS CA" / "EGX COMI".
+  const compact = raw.replace(/ (CA|EGX)$/, '').replace(/^EGX /, '').replace(/\s+/g, '');
   if (lookup(compact)) return compact;
   if (screenshotAliases.has(raw)) return screenshotAliases.get(raw);
   if (screenshotAliases.has(compact)) return screenshotAliases.get(compact);
@@ -2633,7 +2635,9 @@ app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 
     model: SCREENSHOT_VISION_MODEL,
     max_tokens: 4000,
     messages: [
-      { role: 'system', content: `You extract stock portfolio data from an image. Never guess a number that is not visible. Return JSON only, without markdown, using this shape: {"cash":number|null,"positions":[{"code":"EGX ticker or null","name":"company name as shown","shares":number|null,"marketValue":number|null,"profit":number|null,"returnPct":number|null,"avgCost":number|null,"lastPrice":number|null,"stop":number|null,"target":number|null,"isEtf":boolean}]}. If the ticker is not visible, write the company name as shown.
+      { role: 'system', content: `You extract stock portfolio data from an image. Never guess a number that is not visible. Return JSON only, without markdown, using this shape: {"cash":number|null,"positions":[{"code":"EGX ticker or null","name":"company name as shown","shares":number|null,"marketValue":number|null,"profit":number|null,"returnPct":number|null,"avgCost":number|null,"lastPrice":number|null,"stop":number|null,"target":number|null,"isEtf":boolean}]}. If the ticker is not visible, write the company name as shown. A ticker may carry a suffix such as ".CA" (LUTS.CA) — copy it as shown.
+
+The image may be a watchlist rather than holdings: rows with only a name, ticker, price and daily change %, and no quantity. List every stock in it anyway, with "shares" null and the price in "lastPrice". The daily change % is not "returnPct".
 
 Set "isEtf" to true for any holding that is an ETF / exchange-traded index fund (صندوق مؤشرات، e.g. a gold ETF or an EGX30 ETF) and false otherwise. For an ETF, keep "name" and "code" exactly as shown and never map it to a ticker from the reference list below. A listed fund that is itself in that reference list (e.g. EGREF, Egyptians Real Estate Fund) is not an ETF.
 
@@ -2745,10 +2749,33 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
       ...(derived ? { derivedFromScreenshot: true } : {}),
     };
   }
-  if (!Object.keys(positions).length) throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
+  const importedAt = new Date().toISOString();
+  if (!Object.keys(positions).length) {
+    // No quantity or value anywhere: a watchlist screenshot (or a holdings one
+    // whose numbers weren't readable). The stocks still say what the user cares
+    // about, so they go to the watchlist — and only there: positions and cash
+    // are left untouched, whichever of merge/replace was asked for.
+    const watchCodes = [...new Set(parsed.map((p) => p.code).filter((c) => c && ALL_CODES.includes(c)))];
+    if (!watchCodes.length) throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
+    const updated = await withPortfolio(req.user.id, (portfolio) => {
+      if (screenshotImportsLeft(portfolio, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
+      const watchlist = { ...portfolio.watchlist };
+      for (const c of watchCodes) watchlist[c] ??= { addedAt: importedAt, note: null };
+      const next = { ...bumpUsage(portfolio, 'screenshots'), watchlist };
+      return baseLeftFor('screenshots', portfolio, req.access.tier) > 0 ? next : addCredits(next, { screenshots: -1 });
+    });
+    return res.json({
+      ok: true,
+      importedAt,
+      positions: 0,
+      watchlisted: watchCodes.length,
+      derivedPositions: 0,
+      screenshotImportsLeft: screenshotImportsLeft(updated, req.access.tier),
+      portfolio: { ...updated, capital: capitalOf(updated) },
+    });
+  }
 
   const merge = req.query.merge === '1';
-  const importedAt = new Date().toISOString();
   const cashFromScreenshot = numberFromScreenshot(extracted.cash);
   // Prices for every code the import can add or remove, to record the value it
   // moves as a cash flow — fetched here, outside the lock.
