@@ -2552,7 +2552,7 @@ app.post('/api/reset', wrap(async (req, res) => {
 const screenshotAliases = new Map([
   ['CIB', 'COMI'], ['COMMERCIAL INTERNATIONAL BANK', 'COMI'],
   ['TMG', 'TMGH'], ['TAQA ARABIA', 'TAQA'], ['CREDIT AGRICOLE', 'CIEB'],
-  ['EFG HERMES', 'HRHO'], ['EFG-HERMES', 'HRHO'], ['MOBILENIL', 'ETEL'],
+  ['EFG HERMES', 'HRHO'], ['EFG HERMES HOLDING', 'HRHO'], ['MOBILENIL', 'ETEL'],
 ]);
 const screenshotUniverseReference = UNIVERSE.map((stock) => `${stock.code}: ${stock.en}${stock.ar ? ` / ${stock.ar}` : ''}`).join('; ');
 
@@ -2581,6 +2581,12 @@ function resolveScreenshotCode(item) {
   const nameText = normalizeScreenshotText(item.name ?? item.company ?? item.companyName);
   if (!nameText) return null;
   if (screenshotAliases.has(nameText)) return screenshotAliases.get(nameText);
+  // Broker lists cut long names off ("EFG Hermes Hold.."), so a long-enough
+  // alias may match by prefix in either direction. The length floor keeps a
+  // short ticker-like alias (CIB, TMG) from prefix-matching unrelated names.
+  for (const [alias, aliasCode] of screenshotAliases) {
+    if (alias.length >= 8 && nameText.length >= 8 && (alias.startsWith(nameText) || nameText.startsWith(alias))) return aliasCode;
+  }
   const match = UNIVERSE.find((stock) => [stock.en, stock.ar].some((name) => {
     const normalized = normalizeScreenshotText(name);
     return normalized && (normalized === nameText || normalized.includes(nameText) || nameText.includes(normalized));
