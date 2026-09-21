@@ -383,7 +383,9 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                   </div>
 
                   <div className="num mt-2 text-[12px] text-muted-foreground">
-                    السعر {fmt(row.price)} · وقف {fmt(row.stop)}
+                    {/* A held stock's stop is its open position's live (ratcheted) one — the
+                        same number the stock page shows — not the fresh-entry plan stop. */}
+                    السعر {fmt(row.price)} · وقف {fmt(row.position?.stop ?? row.stop)}
                   </div>
 
                   <Badge variant="outline" className={cn("mt-2.5", toneClass[state.tone])}>
