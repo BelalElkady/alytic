@@ -87,8 +87,11 @@ export function allowedOriginsFrom(values) {
  *
  * Outside production any localhost origin is allowed, so the dev server, the
  * Playwright run on its own port and preview tools keep working.
+ *
+ * isAllowed(req, origin) admits origins that aren't known up front — a
+ * white-label site's own domain, which is added at runtime (see server.js).
  */
-export function originGuard({ allowedOrigins, allowLocalhost = !IS_PROD } = {}) {
+export function originGuard({ allowedOrigins, allowLocalhost = !IS_PROD, isAllowed = null } = {}) {
   const allowed = allowedOrigins instanceof Set ? allowedOrigins : allowedOriginsFrom(allowedOrigins ?? []);
   return (req, res, next) => {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
@@ -98,7 +101,7 @@ export function originGuard({ allowedOrigins, allowLocalhost = !IS_PROD } = {}) 
       return next();
     }
     const origin = originOf(raw);
-    if (origin && (allowed.has(origin) || (allowLocalhost && LOCAL_HOSTS.has(new URL(origin).hostname)))) return next();
+    if (origin && (allowed.has(origin) || isAllowed?.(req, origin) || (allowLocalhost && LOCAL_HOSTS.has(new URL(origin).hostname)))) return next();
     return refuse(req, res, raw);
   };
 }

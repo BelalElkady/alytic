@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { supabase } from './supabaseClient.js';
+import { currentDb, supabase } from './supabaseClient.js';
 
 // Private bucket: a support attachment (often an InstaPay receipt) can carry a
 // phone number or account name, so it's never served from a public/guessable
@@ -15,13 +15,15 @@ const EXT_BY_MEDIA_TYPE = {
 
 export const SUPPORT_IMAGE_TYPES = Object.keys(EXT_BY_MEDIA_TYPE);
 
-let bucketReady = null;
+// Per database client — each tenant's project has its own storage.
+const bucketReady = new WeakMap();
 // Lazy + memoized: avoids a storage round trip on every upload once the
 // bucket is confirmed to exist, while still self-healing on first use in a
 // freshly created Supabase project rather than needing a manual dashboard step.
 async function ensureBucket() {
-  if (bucketReady) return bucketReady;
-  bucketReady = (async () => {
+  const db = currentDb();
+  if (bucketReady.has(db)) return bucketReady.get(db);
+  const ready = (async () => {
     const { data: existing } = await supabase.storage.getBucket(BUCKET);
     if (existing) return;
     const { error } = await supabase.storage.createBucket(BUCKET, {
@@ -31,7 +33,9 @@ async function ensureBucket() {
     });
     if (error && !/already exists/i.test(error.message)) throw new Error(`createBucket: ${error.message}`);
   })();
-  return bucketReady;
+  bucketReady.set(db, ready);
+  ready.catch(() => bucketReady.delete(db));
+  return ready;
 }
 
 export async function uploadSupportImage({ userId, mediaType, buffer }) {

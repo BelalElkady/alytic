@@ -1,4 +1,5 @@
-import { supabase } from './supabaseClient.js';
+import { platformDb, supabase } from './supabaseClient.js';
+import { currentTenant } from './tenancy/context.js';
 import { canonicalEmail } from './emailIdentity.js';
 
 function must(result, context) {
@@ -186,7 +187,7 @@ export async function putPortfolio(userId, state) {
 
 /** @returns {object|null} the stored report for that day/style, or null if never generated. */
 export async function getMarketReport(reportDate, style) {
-  const { data, error } = await supabase
+  const { data, error } = await platformDb
     .from('market_reports')
     .select('*')
     .eq('report_date', reportDate)
@@ -205,7 +206,7 @@ export async function getMarketReport(reportDate, style) {
  * @returns {boolean} true if this call's report was the one actually stored.
  */
 export async function putMarketReport(reportDate, style, report, model, usage) {
-  const { data, error } = await supabase
+  const { data, error } = await platformDb
     .from('market_reports')
     .upsert(
       {
@@ -225,7 +226,7 @@ export async function putMarketReport(reportDate, style, report, model, usage) {
 
 /** @returns {object|null} the AI-determined entry-plan stop for that stock/style/day, or null if never generated. See stopPlanner.js. */
 export async function getStopPlan(code, style, reportDate) {
-  const { data, error } = await supabase
+  const { data, error } = await platformDb
     .from('ai_stop_plans')
     .select('*')
     .eq('code', code)
@@ -244,7 +245,7 @@ export async function getStopPlan(code, style, reportDate) {
  * batch to generate.
  */
 export async function getStopPlanCoverage(reportDate) {
-  const { data, error } = await supabase.from('ai_stop_plans').select('code, style').eq('report_date', reportDate);
+  const { data, error } = await platformDb.from('ai_stop_plans').select('code, style').eq('report_date', reportDate);
   if (error) throw new Error(`getStopPlanCoverage: ${error.message}`);
   return data ?? [];
 }
@@ -255,7 +256,7 @@ export async function getStopPlanCoverage(reportDate) {
  * whichever request wins the race is what everyone reads for the rest of the day.
  */
 export async function putStopPlan(code, style, reportDate, stop, basis, model, usage) {
-  const { data, error } = await supabase
+  const { data, error } = await platformDb
     .from('ai_stop_plans')
     .upsert(
       {
@@ -282,13 +283,19 @@ export async function putStopPlan(code, style, reportDate, stop, basis, model, u
  * row is telemetry, not something any feature should fail over.
  */
 export async function logAiSpend(feature, model, usage) {
-  const { error } = await supabase.from('ai_spend').insert({ feature, model: model ?? null, usage_json: usage ?? null });
+  // Always the platform database, tagged with the tenant that made the call,
+  // so every client's AI cost is in one place. The default site's rows keep
+  // a null tenant_id, as every row did before tenants existed.
+  const tenant = currentTenant();
+  const row = { feature, model: model ?? null, usage_json: usage ?? null };
+  if (tenant && !tenant.isDefault) row.tenant_id = tenant.id;
+  const { error } = await platformDb.from('ai_spend').insert(row);
   if (error) throw new Error(`logAiSpend: ${error.message}`);
 }
 
 /** @returns {object|null} cached fundamentals for one ticker, or null if never fetched. */
 export async function getFundamentalsCache(code) {
-  const { data, error } = await supabase.from('fundamentals_cache').select('*').eq('code', code).maybeSingle();
+  const { data, error } = await platformDb.from('fundamentals_cache').select('*').eq('code', code).maybeSingle();
   if (error) throw new Error(`getFundamentalsCache: ${error.message}`);
   if (!data) return null;
   return { ...data.data_json, _fetchedAt: data.fetched_at };
@@ -296,7 +303,7 @@ export async function getFundamentalsCache(code) {
 
 /** Overwrites the cached fundamentals for one ticker. */
 export async function putFundamentalsCache(code, data) {
-  const { error } = await supabase
+  const { error } = await platformDb
     .from('fundamentals_cache')
     .upsert({ code, data_json: data, fetched_at: new Date().toISOString() }, { onConflict: 'code' });
   if (error) throw new Error(`putFundamentalsCache: ${error.message}`);
@@ -537,7 +544,7 @@ export async function getAllPortfolios() {
 
 /** @returns {{tickers:string[],updatedAt:string,updatedBy:string|null}|null} an admin-uploaded ticker list for this index, or null if none was ever uploaded. */
 export async function getIndexOverride(indexName) {
-  const { data, error } = await supabase.from('index_overrides').select('*').eq('index_name', indexName).maybeSingle();
+  const { data, error } = await platformDb.from('index_overrides').select('*').eq('index_name', indexName).maybeSingle();
   if (error) throw new Error(`getIndexOverride: ${error.message}`);
   if (!data) return null;
   return { tickers: data.tickers_json, updatedAt: data.updated_at, updatedBy: data.updated_by };
@@ -545,7 +552,7 @@ export async function getIndexOverride(indexName) {
 
 export async function setIndexOverride(indexName, tickers, updatedBy) {
   must(
-    await supabase.from('index_overrides').upsert(
+    await platformDb.from('index_overrides').upsert(
       { index_name: indexName, tickers_json: tickers, updated_at: new Date().toISOString(), updated_by: updatedBy ?? null },
       { onConflict: 'index_name' },
     ),
@@ -554,11 +561,11 @@ export async function setIndexOverride(indexName, tickers, updatedBy) {
 }
 
 export async function clearIndexOverride(indexName) {
-  must(await supabase.from('index_overrides').delete().eq('index_name', indexName), 'clearIndexOverride');
+  must(await platformDb.from('index_overrides').delete().eq('index_name', indexName), 'clearIndexOverride');
 }
 
 export async function getAllIndexOverrides() {
-  const { data, error } = await supabase.from('index_overrides').select('*');
+  const { data, error } = await platformDb.from('index_overrides').select('*');
   if (error) throw new Error(`getAllIndexOverrides: ${error.message}`);
   return Object.fromEntries(
     data.map((row) => [row.index_name, { tickers: row.tickers_json, updatedAt: row.updated_at, updatedBy: row.updated_by }]),
@@ -567,7 +574,7 @@ export async function getAllIndexOverrides() {
 
 /** @returns {{code:string,name:string}[]} every admin-added stock not in the generated universe — see config/universe.js's registerCustomStocks. */
 export async function getAllCustomStocks() {
-  const { data, error } = await supabase.from('custom_stocks').select('code, name');
+  const { data, error } = await platformDb.from('custom_stocks').select('code, name');
   if (error) throw new Error(`getAllCustomStocks: ${error.message}`);
   return data;
 }
@@ -576,7 +583,7 @@ export async function getAllCustomStocks() {
 export async function addCustomStocks(stocks, addedBy) {
   if (!stocks.length) return;
   must(
-    await supabase.from('custom_stocks').upsert(
+    await platformDb.from('custom_stocks').upsert(
       stocks.map(({ code, name }) => ({ code, name, added_at: new Date().toISOString(), added_by: addedBy ?? null })),
       { onConflict: 'code' },
     ),
