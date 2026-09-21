@@ -80,6 +80,8 @@ export type User = {
   isMarketer?: boolean;
   /** Can manage the white-label sites (see backend isPlatformAdmin). Only ever true on the main site. */
   isPlatformAdmin?: boolean;
+  /** Can edit the shared index lists (see backend canEditIndices). Only ever true on the main site. */
+  canEditIndices?: boolean;
   createdAt?: string;
   trialDaysLeft?: number;
   trialDaysTotal?: number;

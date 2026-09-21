@@ -45,7 +45,7 @@ import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAG
 import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
 import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
-import { activeTenants, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
+import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
 import { mountPlatformRoutes } from './platform.js';
 
 // Where the public contact form's messages and support-chat alerts land is
@@ -309,7 +309,7 @@ app.post('/api/auth/logout', (_req, res) => {
 app.get('/api/auth/me', wrap(async (req, res) => {
   const user = await userFromRequest(req);
   if (!user) return res.json({ user: null });
-  res.json({ user: { ...user, ...(await accessInfo(user)), isPlatformAdmin: isPlatformAdmin(user, req.tenant) } });
+  res.json({ user: { ...user, ...(await accessInfo(user)), isPlatformAdmin: isPlatformAdmin(user, req.tenant), canEditIndices: canEditIndices(user, req.tenant) } });
 }));
 
 // Public "تواصل معنا" form — no login required, and never blocked by a
@@ -906,10 +906,10 @@ app.use('/api/admin', (req, res, next) => {
 });
 
 // Index membership lists and admin-added stocks are market data every site
-// shares (they live in the platform database), so only the platform owner
-// edits them. A client's admins manage their own users, not the market.
+// shares (they live in the platform database), so only the main site's admins
+// edit them. A client's admins manage their own users, not the market.
 app.use('/api/admin/indices', (req, res, next) => {
-  if (!isPlatformAdmin(req.user, req.tenant)) return res.status(403).json({ error: 'القوائم دي بتتعدل من الموقع الأساسي بس' });
+  if (!canEditIndices(req.user, req.tenant)) return res.status(403).json({ error: 'القوائم دي بتتعدل من الموقع الأساسي بس' });
   next();
 });
 
@@ -2568,7 +2568,9 @@ const numberFromScreenshot = (value) => {
   if (typeof value === 'number') return value;
   const arabicDigits = String(value ?? '').replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
   const cleaned = arabicDigits.replace(/[,،\s]/g, '').replace(/[^\d.-]/g, '');
-  return cleaned ? Number(cleaned) : NaN;
+  // Brokers abbreviate big amounts ("EGP 111.78K"); left alone that would read as 111.78.
+  const scale = { k: 1e3, m: 1e6 }[/\d\s*([KkMm])(?![A-Za-z])/.exec(arabicDigits)?.[1]?.toLowerCase()] ?? 1;
+  return cleaned ? Number(cleaned) * scale : NaN;
 };
 
 function resolveScreenshotCode(item) {
@@ -2583,6 +2585,9 @@ function resolveScreenshotCode(item) {
   const nameText = normalizeScreenshotText(item.name ?? item.company ?? item.companyName);
   if (!nameText) return null;
   if (screenshotAliases.has(nameText)) return screenshotAliases.get(nameText);
+  // Some layouts show only the ticker, and the model files it under "name".
+  const nameAsCode = nameText.replace(/ (CA|EGX)$/, '').replace(/^EGX /, '').replace(/\s+/g, '');
+  if (/^[A-Z0-9]{2,10}$/.test(nameAsCode) && lookup(nameAsCode)) return nameAsCode;
   // Broker lists cut long names off ("EFG Hermes Hold.."), so a long-enough
   // alias may match by prefix in either direction. The length floor keeps a
   // short ticker-like alias (CIB, TMG) from prefix-matching unrelated names.
@@ -2645,6 +2650,8 @@ The single most valuable field is "shares" — the number of shares held (الك
 
 Nearly as valuable is a per-share price: "avgCost" (متوسط التكلفة / متوسط الشراء) and "lastPrice" (السعر الحالي / آخر سعر). These let the share count be recovered exactly from the same screen when quantity is missing, so extract them whenever visible.
 
+"profit" is the position's unrealized gain or loss in EGP (الربح / الخسارة), usually a coloured amount beside a percentage — make it negative when it is red, has a down arrow (▼) or a minus sign. "returnPct" is that same total return as a percentage, not the day's change. Write abbreviated amounts in full (6.79K -> 6790, 1.2M -> 1200000). If the ticker is visible (BWS, AMER, TALM...), put it in "code" and the company name, if there is one, in "name".
+
 Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL value of the whole position, while avgCost/lastPrice are PER SHARE. Do not confuse the two. Use only these verified Alytic ticker/name references when identifying a stock: ${screenshotUniverseReference}. Use null when a number is not visible. Ignore numbers unrelated to holdings or cash.` },
       { role: 'user', content: [
         { type: 'image_url', image_url: { url: `data:${mediaType};base64,${req.body.toString('base64')}` } },
@@ -2662,6 +2669,7 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
     const jsonText = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
     extracted = JSON.parse(jsonText);
   } catch {
+    console.warn(`[screenshot] model output was not JSON (${SCREENSHOT_VISION_MODEL}):`, text.slice(0, 1500));
     throw new Error('الصورة لم تعطِ بيانات محفظة قابلة للقراءة');
   }
 
@@ -2756,7 +2764,10 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
     // about, so they go to the watchlist — and only there: positions and cash
     // are left untouched, whichever of merge/replace was asked for.
     const watchCodes = [...new Set(parsed.map((p) => p.code).filter((c) => c && ALL_CODES.includes(c)))];
-    if (!watchCodes.length) throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
+    if (!watchCodes.length) {
+      console.warn(`[screenshot] nothing usable (${SCREENSHOT_VISION_MODEL}):`, JSON.stringify(rows).slice(0, 1500));
+      throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
+    }
     const updated = await withPortfolio(req.user.id, (portfolio) => {
       if (screenshotImportsLeft(portfolio, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
       const watchlist = { ...portfolio.watchlist };

@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 
 import { runWithTenant, currentTenant } from '../../src/tenancy/context.js';
 import { encryptSecret, decryptSecret } from '../../src/tenancy/secrets.js';
-import { normalizeHost, tenantForHost, defaultTenant, publicTenant, isPlatformAdmin } from '../../src/tenancy/registry.js';
+import { normalizeHost, tenantForHost, defaultTenant, publicTenant, isPlatformAdmin, canEditIndices } from '../../src/tenancy/registry.js';
 import { currentDb, platformDb } from '../../src/supabaseClient.js';
 import { sanitizeBrand, sanitizeConfig } from '../../src/api/platform.js';
 
@@ -115,4 +115,12 @@ test('isPlatformAdmin: only a verified admin on the default site', () => {
   assert.equal(isPlatformAdmin({ ...admin, emailVerified: false }, defaultTenant()), false);
   assert.equal(isPlatformAdmin({ ...admin, email: 'someone@else.com' }, defaultTenant()), false);
   assert.equal(isPlatformAdmin(admin, { ...defaultTenant(), isDefault: false }), false);
+});
+
+test('canEditIndices: any verified admin on the default site, nobody on a client site', () => {
+  const admin = { email: 'someone@else.com', isAdmin: true, emailVerified: true };
+  assert.equal(canEditIndices(admin, defaultTenant()), true);
+  assert.equal(canEditIndices({ ...admin, emailVerified: false }, defaultTenant()), false);
+  assert.equal(canEditIndices({ ...admin, isAdmin: false }, defaultTenant()), false);
+  assert.equal(canEditIndices(admin, { ...defaultTenant(), isDefault: false }), false);
 });
