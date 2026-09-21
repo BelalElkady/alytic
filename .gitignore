@@ -17,6 +17,7 @@ frontend/.output/
 frontend/.vinxi/
 frontend/tsconfig.tsbuildinfo
 frontend/coverage/
+frontend/.tanstack/
 
 # e2e (Playwright at the repo root)
 tests/e2e/.tmp/
