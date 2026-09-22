@@ -442,6 +442,20 @@ export async function recordSubscriptionGrant({ userId, plan, periodEnd, amountE
   );
 }
 
+/** Appends one admin Credits change to the audit log — see the credits_grants comment in supabase/schema.sql. */
+export async function recordCreditsGrant({ userId, deltas, reference, note, grantedBy }) {
+  must(
+    await supabase.from('credits_grants').insert({
+      user_id: userId,
+      deltas,
+      reference: reference ?? null,
+      note: note ?? null,
+      granted_by: grantedBy ?? null,
+    }),
+    'recordCreditsGrant',
+  );
+}
+
 /** This user's activation history, newest first — shown in the admin panel when reviewing a disputed or repeated payment. */
 export async function listSubscriptionGrants(userId, { limit = 20 } = {}) {
   const { data, error } = await supabase

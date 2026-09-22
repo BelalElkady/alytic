@@ -476,8 +476,15 @@ const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
   INVEST_STYLES.map((s) => [s.key, s.label]),
 ) as Record<StyleKey, string>;
 
+// Phones are stored compact (see normalizePhone() in backend/src/phone.js), but an Admin
+// searching from an InstaPay transfer often types one with spaces, dashes or parens
+// (e.g. "010 1234 5678"). Strip those from both sides before matching so the search
+// isn't defeated by formatting the stored digits never had.
+const stripPhoneFormatting = (value: string) => value.replace(/[\s().-]/g, "");
+
 const matchesUser = (row: AdminUserRow, query: string) =>
-  [row.email, row.name, row.phone, row.signupIp, row.lastLoginIp].some((field) => field?.toLowerCase().includes(query));
+  [row.email, row.name, row.signupIp, row.lastLoginIp].some((field) => field?.toLowerCase().includes(query)) ||
+  (!!row.phone && stripPhoneFormatting(row.phone.toLowerCase()).includes(stripPhoneFormatting(query)));
 
 type UserSort = "createdAt" | "lastLoginAt" | "lastSeenAt";
 
@@ -980,6 +987,7 @@ function CreditsCell({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [amounts, setAmounts] = useState(NO_CREDITS);
+  const [reference, setReference] = useState("");
   const { cashScansLeft, screenshotsLeftThisMonth, recommendationsLeft, marketAnalysisLeft, credits } = row.usage;
 
   const deltas = Object.fromEntries(
@@ -991,10 +999,11 @@ function CreditsCell({
   const save = async () => {
     setBusy(true);
     try {
-      await post(`/api/admin/users/${row.id}/credits`, deltas);
+      await post(`/api/admin/users/${row.id}/credits`, { ...deltas, reference: reference.trim() || undefined });
       toast.success(`تم تحديث رصيد ${row.email}`);
       setOpen(false);
       setAmounts(NO_CREDITS);
+      setReference("");
       onChanged();
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "تعذر تحديث الرصيد");
@@ -1022,7 +1031,10 @@ function CreditsCell({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) setAmounts(NO_CREDITS);
+          if (!next) {
+            setAmounts(NO_CREDITS);
+            setReference("");
+          }
         }}
       >
         {!readOnly && (
@@ -1041,6 +1053,15 @@ function CreditsCell({
           </DialogHeader>
 
           <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor={`credit-ref-${row.id}`}>مرجع التحويل (اختياري)</Label>
+              <Input
+                id={`credit-ref-${row.id}`}
+                value={reference}
+                onChange={(event) => setReference(event.target.value)}
+                placeholder="رقم عملية InstaPay أو ملاحظة"
+              />
+            </div>
             {CREDIT_FIELDS.map(({ kind, label, hint }) => (
               <div key={kind} className="space-y-1">
                 <Label htmlFor={`credit-${kind}-${row.id}`}>

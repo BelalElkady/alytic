@@ -335,11 +335,17 @@ const ROW_TINT: Record<RenewalStatus, string> = {
   never: "hover:bg-muted/40",
 };
 
-/** Slim 4-column table (2 on phone); a row opens the drawer, a bottom sheet on phone. */
-function UsersTable({ p }: { p: Props }) {
+/**
+ * Slim 4-column table (2 on phone); a row opens the drawer, a bottom sheet on
+ * phone. The drawer looks its row up in `allRows`, not the Renewal-filtered
+ * `p.rows`: an action that changes the selected row's status (e.g.
+ * Activating a user while the "تجربة" chip is selected) must not make the
+ * row — and the drawer confirming it worked — vanish out from under the Admin.
+ */
+function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
   const phone = useIsPhone();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = p.rows.find((r) => r.id === selectedId) ?? null;
+  const selected = allRows.find((r) => r.id === selectedId) ?? null;
   return (
     <>
       <div className="overflow-hidden rounded-lg border">
@@ -417,7 +423,7 @@ export function UsersScreen(props: Props) {
           لا يوجد مستخدمون مطابقون — جرّب كلمة بحث أو فلتر مختلف.
         </div>
       ) : (
-        <UsersTable p={p} />
+        <UsersTable p={p} allRows={props.rows} />
       )}
     </div>
   );

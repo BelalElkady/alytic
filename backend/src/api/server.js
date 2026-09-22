@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -1196,7 +1196,22 @@ app.post('/api/admin/users/:id/credits', wrap(async (req, res) => {
     }
     deltas[kind] = value;
   }
-  const updated = await withPortfolio(req.params.id, (portfolio) => addCredits(portfolio, deltas));
+  // A negative delta can't take a balance below 0 (addCredits clamps), so the
+  // requested deltas aren't necessarily what happened — record the actual,
+  // clamped change, not the request, or a "-20" against a balance of 5 would
+  // log a grant that never occurred.
+  let actualDeltas = null;
+  const updated = await withPortfolio(req.params.id, (portfolio) => {
+    const before = creditsOf(portfolio);
+    const next = addCredits(portfolio, deltas);
+    const after = creditsOf(next);
+    actualDeltas = Object.fromEntries(CREDIT_KINDS.map((kind) => [kind, after[kind] - before[kind]]));
+    return next;
+  });
+  const reference = String(req.body?.reference ?? '').trim().slice(0, 200) || null;
+  if (Object.values(actualDeltas).some((value) => value !== 0)) {
+    await recordCreditsGrant({ userId: req.params.id, deltas: actualDeltas, reference, grantedBy: req.user.id });
+  }
   res.json({ ok: true, credits: creditsOf(updated) });
 }));
 

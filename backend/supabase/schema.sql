@@ -259,6 +259,22 @@ create table if not exists subscription_grants (
 );
 create index if not exists idx_subscription_grants_user on subscription_grants (user_id, created_at desc);
 
+-- Append-only record of every Credits change an admin made by hand — the
+-- same rationale as subscription_grants above, extended to Credits packs
+-- bought over InstaPay. One row per POST /api/admin/users/:id/credits call;
+-- deltas holds every credit kind changed in that call, e.g.
+-- {"cashScans": 20, "recommendations": 0, "screenshots": 0, "marketAnalysis": 0}.
+create table if not exists credits_grants (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  deltas jsonb not null,
+  reference text,
+  note text,
+  granted_by text references users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_credits_grants_user on credits_grants (user_id, created_at desc);
+
 -- The in-app support chat. One thread per user (there is nothing to key a
 -- second conversation on), so a "thread" is just every row sharing a user_id
 -- read in created_at order. This is the subscription path as well as support:
