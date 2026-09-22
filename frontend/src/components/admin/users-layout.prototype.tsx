@@ -112,7 +112,9 @@ function Renewal({ row }: { row: AdminUserRow }) {
   const credits = grantedCredits(row);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className={cn("tabular-nums", r.warn && "text-warn font-medium")}>{r.text}</span>
+      <span className={cn("tabular-nums", row.subscription?.active ? "text-up font-medium" : r.warn && "text-warn font-medium")}>
+        {r.text}
+      </span>
       {credits > 0 && (
         <Badge variant="outline" className="tabular-nums">
           +{credits} رصيد
@@ -324,7 +326,12 @@ function VariantA({ p }: { p: Props }) {
               <tr
                 key={row.id}
                 onClick={() => setSelectedId(row.id)}
-                className={cn("cursor-pointer border-t align-top hover:bg-muted/40", selectedId === row.id && "bg-muted/60")}
+                className={cn(
+                  "cursor-pointer border-t align-top",
+                  // Subscribed Users stand out in green; the selected row still wins so the drawer's row is findable.
+                  row.subscription?.active ? "bg-up-soft hover:bg-up-soft/70" : "hover:bg-muted/40",
+                  selectedId === row.id && "bg-muted/60",
+                )}
               >
                 <td className="max-w-[260px] p-3">
                   <Identity row={row} systemUserId={p.systemUserId} phoneClassName="sm:hidden" />
