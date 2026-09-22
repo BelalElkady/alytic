@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import {
-  EmptyState,
   ErrorState,
   LoadingBlock,
   Notice,
@@ -41,25 +40,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { api, del, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
-import { PROTOTYPE_VARIANTS, UsersLayoutPrototype } from "@/components/admin/users-layout.prototype";
-import { PrototypeSwitcher, usePrototypeVariant } from "@/components/prototype-switcher";
+import { RENEWAL_LABEL, UsersScreen, renewalStatus } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
-import { arDay, int, signed, tone } from "@/lib/format";
+import { arDay } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
@@ -490,24 +479,6 @@ const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
 const matchesUser = (row: AdminUserRow, query: string) =>
   [row.email, row.name, row.phone, row.signupIp, row.lastLoginIp].some((field) => field?.toLowerCase().includes(query));
 
-/** Where a user actually stands for renewal purposes — active/trial/free-and-lapsed are mutually exclusive. */
-type SubStatus = "activeSub" | "trial" | "free";
-
-const statusOf = (row: AdminUserRow): SubStatus => {
-  if (row.subscription?.active) return "activeSub";
-  if (row.trialActive) return "trial";
-  return "free";
-};
-
-type StatusFilter = "all" | SubStatus;
-
-const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: "all", label: "الكل" },
-  { key: "activeSub", label: "مشترك فعال" },
-  { key: "trial", label: "تجربة سارية" },
-  { key: "free", label: "مجاني — محتاج تجديد" },
-];
-
 type UserSort = "createdAt" | "lastLoginAt" | "lastSeenAt";
 
 const USER_SORTS: { key: UserSort; label: string }[] = [
@@ -519,12 +490,6 @@ const USER_SORTS: { key: UserSort; label: string }[] = [
 /** Newest first; accounts with no such timestamp (never logged in / seen) sink to the bottom. */
 const byRecent = (key: UserSort) => (a: AdminUserRow, b: AdminUserRow) =>
   (b[key] ? Date.parse(b[key]) : -Infinity) - (a[key] ? Date.parse(a[key]) : -Infinity) || 0;
-
-const STATUS_LABEL: Record<SubStatus, string> = {
-  activeSub: "مشترك فعال",
-  trial: "تجربة سارية",
-  free: "مجاني — محتاج تجديد",
-};
 
 const csvCell = (value: unknown) => {
   const str = value === null || value === undefined ? "" : String(value);
@@ -572,7 +537,7 @@ function downloadUsersCsv(rows: AdminUserRow[]) {
       pf?.positionsCount ?? "",
       pf?.watchlistCount ?? "",
       style ? STYLE_LABEL[style] : "",
-      STATUS_LABEL[statusOf(row)],
+      RENEWAL_LABEL[renewalStatus(row)],
       row.subscription ? PLAN_LABEL[row.subscription.plan] : "",
       row.subscription?.currentPeriodEnd?.slice(0, 10) ?? "",
       row.emailVerified ? "نعم" : "لا",
@@ -616,78 +581,12 @@ function useOnlineNow() {
   return online;
 }
 
-/**
- * A slider that scrolls the wide users table sideways, so the columns past the
- * screen edge are one drag away instead of a hunt for the scrollbar at the very
- * bottom of a long table. Two-way: it follows the table when it's scrolled by
- * touch, wheel or keyboard. Renders nothing when the table already fits.
- */
-function TableSlider({ tableRef }: { tableRef: RefObject<HTMLTableElement | null> }) {
-  const [position, setPosition] = useState(0);
-  const [scrollable, setScrollable] = useState(false);
-  const [rtl, setRtl] = useState(true);
-
-  // The Table component scrolls inside its own wrapper, which is the table's parent.
-  const scroller = () => tableRef.current?.parentElement ?? null;
-  const maxScroll = (el: HTMLElement) => el.scrollWidth - el.clientWidth;
-
-  useEffect(() => {
-    const el = scroller();
-    if (!el) return;
-    const sync = () => {
-      const max = maxScroll(el);
-      setScrollable(max > 1);
-      setRtl(getComputedStyle(el).direction === "rtl");
-      // scrollLeft is 0 at the start edge and negative when scrolling an RTL container.
-      setPosition(max > 1 ? Math.round((Math.abs(el.scrollLeft) / max) * SLIDER_STEPS) : 0);
-    };
-    sync();
-    el.addEventListener("scroll", sync, { passive: true });
-    const observer = new ResizeObserver(sync);
-    observer.observe(el);
-    if (tableRef.current) observer.observe(tableRef.current);
-    return () => {
-      el.removeEventListener("scroll", sync);
-      observer.disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!scrollable) return null;
-
-  const move = ([next]: number[]) => {
-    const el = scroller();
-    if (!el) return;
-    el.scrollLeft = (rtl ? -1 : 1) * (next / SLIDER_STEPS) * maxScroll(el);
-  };
-
-  return (
-    <div className="flex items-center gap-3 border-b bg-surface px-4 py-2.5 sm:px-5">
-      <span className="shrink-0 text-[11.5px] text-muted-foreground">تحريك الجدول</span>
-      <Slider
-        dir={rtl ? "rtl" : "ltr"}
-        min={0}
-        max={SLIDER_STEPS}
-        step={1}
-        value={[position]}
-        onValueChange={move}
-        aria-label="تحريك الجدول يمين ويسار"
-      />
-    </div>
-  );
-}
-
-const SLIDER_STEPS = 1000;
-
 function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
   const online = useOnlineNow();
-  const tableRef = useRef<HTMLTableElement>(null);
   const [rows, setRows] = useState<AdminUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortBy, setSortBy] = useState<UserSort>("createdAt");
-  const [variant, setVariant] = usePrototypeVariant();
 
   const load = () => {
     api("/api/admin/users")
@@ -708,7 +607,6 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
     if (!rows) return null;
     let capital = 0;
     let profit = 0;
-    const statusCounts: Record<SubStatus, number> = { activeSub: 0, trial: 0, free: 0 };
     const styleCounts: Record<StyleKey, number> = { trader: 0, medium: 0, long: 0 };
     const subByStyle: Record<StyleKey, number> = { trader: 0, medium: 0, long: 0 };
     let styleUnknown = 0;
@@ -718,42 +616,31 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
         capital += row.portfolio.cash + row.portfolio.positionsValue;
         profit += row.portfolio.realizedPnl;
       }
-      const status = statusOf(row);
-      statusCounts[status] += 1;
-
       const style = row.behavior?.chosenStyle ?? row.behavior?.inferredStyle ?? null;
       if (style) {
         styleCounts[style] += 1;
-        if (status === "activeSub") subByStyle[style] += 1;
+        if (row.subscription?.active) subByStyle[style] += 1;
       } else {
         styleUnknown += 1;
       }
     }
 
     return {
-      total: rows.length,
-      active: statusCounts.activeSub + statusCounts.trial,
       capital,
       profit,
       styleCounts,
       styleUnknown,
-      statusCounts,
       subTrader: subByStyle.trader,
       subMediumLong: subByStyle.medium + subByStyle.long,
     };
   }, [rows]);
 
+  // Search and sort only: the screen filters by Renewal status itself, so its chips can count every status.
   const query = search.trim().toLowerCase();
-  const filtered = useMemo(() => {
-    if (!rows) return [];
-    return rows
-      .filter(
-        (row) =>
-          (statusFilter === "all" || statusOf(row) === statusFilter) &&
-          (!query || matchesUser(row, query)),
-      )
-      .sort(byRecent(sortBy));
-  }, [rows, query, statusFilter, sortBy]);
+  const searched = useMemo(
+    () => (rows ?? []).filter((row) => !query || matchesUser(row, query)).sort(byRecent(sortBy)),
+    [rows, query, sortBy],
+  );
 
   if (error)
     return (
@@ -768,346 +655,50 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
     );
   if (!rows || !stats) return <LoadingBlock rows={3} />;
 
-  // PROTOTYPE (#29): `?variant=A|B|C` swaps the whole tab for a layout variant. Remove when the prototype is folded in.
-  if (variant)
-    return (
-      <>
-        <UsersLayoutPrototype
-          variant={variant}
-          rows={rows.filter((row) => !query || matchesUser(row, query)).sort(byRecent(sortBy))}
-          totalCount={rows.length}
-          stats={stats}
-          online={online}
-          controls={
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="ابحث بالهاتف أو الاسم أو البريد…"
-                className="sm:max-w-sm sm:flex-1"
-              />
-              <div className="flex flex-wrap items-center gap-1.5 sm:ms-auto">
-                {USER_SORTS.map(({ key, label }) => (
-                  <Button key={key} size="sm" variant={sortBy === key ? "default" : "outline"} onClick={() => setSortBy(key)}>
-                    {label}
-                  </Button>
-                ))}
-                <Button size="sm" variant="outline" disabled={filtered.length === 0} onClick={() => downloadUsersCsv(filtered)}>
-                  <Download className="size-4" />
-                  CSV
-                </Button>
-              </div>
-            </div>
-          }
-          readOnly={readOnly}
-          onChanged={load}
-          editors={{
-            Subscription: SubscriptionCell,
-            Credits: CreditsCell,
-            Role: RoleCell,
-            Delete: DeleteUserButton,
-            Behavior: BehaviorCell,
-          }}
-          systemUserId={SYSTEM_USER_ID}
-        />
-        <PrototypeSwitcher variants={PROTOTYPE_VARIANTS} current={variant} onChange={setVariant} />
-      </>
-    );
-
-  const statRows: { label: string; value: ReactNode; sub?: string; valueClassName?: string }[][] = [
-    [
-      {
-        label: "متصلون الآن",
-        value: online ? int(online.signedIn + online.visitors) : "…",
-        sub: online ? `آخر ${Math.round(online.windowSeconds / 60)} دقايق` : undefined,
-        valueClassName: "text-up",
-      },
-      { label: "مسجّلون متصلون", value: online ? int(online.signedIn) : "…" },
-      { label: "زوّار غير مسجّلين", value: online ? int(online.visitors) : "…", sub: "متصفحات — تُصفَّر مع إعادة تشغيل السيرفر" },
-      {
-        label: "آخر تحديث",
-        value: online
-          ? new Date(online.asOf).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit", numberingSystem: "latn" })
-          : "…",
-        sub: "يتجدد كل ٣٠ ثانية",
-      },
-    ],
-    [
-      { label: "إجمالي المستخدمين", value: int(stats.total) },
-      { label: "نشط (تجربة سارية أو اشتراك فعال)", value: int(stats.active), sub: `من ${stats.total}` },
-      { label: "إجمالي رأس مال المحافظ", value: `${int(stats.capital)} ج` },
-      { label: "إجمالي الأرباح المحققة", value: signed(stats.profit), valueClassName: tone(stats.profit) },
-    ],
-    [
-      { label: "مضاربة (مخاطرة)", value: int(stats.styleCounts.trader) },
-      { label: "متوسط المدى", value: int(stats.styleCounts.medium) },
-      { label: "طويل المدى", value: int(stats.styleCounts.long) },
-      { label: "غير محدد الأسلوب", value: int(stats.styleUnknown) },
-    ],
-    [
-      { label: "مشترك فعال — مضاربة", value: int(stats.subTrader) },
-      { label: "مشترك فعال — متوسط/طويل المدى", value: int(stats.subMediumLong) },
-      { label: "تجربة سارية", value: int(stats.statusCounts.trial) },
-      { label: "مجاني — محتاج تجديد", value: int(stats.statusCounts.free), valueClassName: "text-warn" },
-    ],
-  ];
-
   return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[860px] border-collapse text-sm">
-          <tbody>
-            {statRows.map((row, ri) => (
-              <tr
-                key={ri}
-                className={cn("border-b last:border-b-0", ri % 2 === 1 ? "bg-muted/30" : "bg-surface")}
-              >
-                {row.map((cell, ci) => (
-                  <td
-                    key={cell.label}
-                    className={cn("p-3 align-top text-start", ci < row.length - 1 && "border-e")}
-                  >
-                    <div className="text-[11.5px] font-medium text-muted-foreground">{cell.label}</div>
-                    <div
-                      className={cn(
-                        "num mt-1 whitespace-nowrap text-[17px] font-semibold tracking-tight",
-                        cell.valueClassName,
-                      )}
-                    >
-                      {cell.value}
-                    </div>
-                    {cell.sub && (
-                      <div className="num mt-0.5 whitespace-nowrap text-[11.5px] text-muted-foreground">
-                        {cell.sub}
-                      </div>
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+    <UsersScreen
+      rows={searched}
+      totalCount={rows.length}
+      stats={stats}
+      online={online}
+      controls={
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="ابحث بالبريد الإلكتروني أو الاسم أو رقم الهاتف…"
+            placeholder="ابحث بالهاتف أو الاسم أو البريد…"
             className="sm:max-w-sm sm:flex-1"
           />
-          <Button
-            size="sm"
-            variant="outline"
-            className="sm:ms-auto"
-            disabled={filtered.length === 0}
-            onClick={() => downloadUsersCsv(filtered)}
-          >
-            <Download className="size-4" />
-            تصدير CSV ({filtered.length})
-          </Button>
-        </div>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-1.5">
-            {STATUS_FILTERS.map(({ key, label }) => (
-              <Button
-                key={key}
-                size="sm"
-                variant={statusFilter === key ? "default" : "outline"}
-                onClick={() => setStatusFilter(key)}
-              >
-                {label} ({key === "all" ? stats.total : stats.statusCounts[key]})
-              </Button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 sm:ms-auto">
             <span className="text-[12px] text-muted-foreground">الترتيب:</span>
             {USER_SORTS.map(({ key, label }) => (
-              <Button
-                key={key}
-                size="sm"
-                variant={sortBy === key ? "default" : "outline"}
-                onClick={() => setSortBy(key)}
-              >
+              <Button key={key} size="sm" variant={sortBy === key ? "default" : "outline"} onClick={() => setSortBy(key)}>
                 {label}
               </Button>
             ))}
+            <Button size="sm" variant="outline" disabled={searched.length === 0} onClick={() => downloadUsersCsv(searched)}>
+              <Download className="size-4" />
+              تصدير CSV ({searched.length})
+            </Button>
           </div>
         </div>
-      </div>
-
-      {/* Full-bleed: equal negative margins reach both screen edges in LTR and RTL alike (left-1/2 + -translate-x-1/2 only centres in LTR, and slid this panel sideways on wide screens). */}
-      <div className="mx-[calc(50%-50vw)] px-3 sm:px-5">
-        <Panel
-          title="المستخدمون المسجّلون"
-          description={`${filtered.length} من ${rows.length} مستخدم`}
-          bodyClassName="px-0 py-0 sm:px-0"
-        >
-          {filtered.length === 0 ? (
-            <div className="p-4">
-              <EmptyState title="لا يوجد مستخدمون مطابقون" hint="جرّب كلمة بحث أو فلتر مختلف." />
-            </div>
-          ) : (
-            <div>
-              <TableSlider tableRef={tableRef} />
-              <Table ref={tableRef} className="min-w-[1240px] border-collapse">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[64px] min-w-[64px] border-e py-3 text-start">
-                      <span aria-hidden>#</span>
-                      <span className="sr-only">الرقم والحذف</span>
-                    </TableHead>
-                    <TableHead className="min-w-[160px] border-e py-3 text-start">المستخدم</TableHead>
-                    <TableHead className="min-w-[120px] border-e py-3 text-start">الهاتف / IP</TableHead>
-                    <TableHead className="min-w-[90px] border-e py-3 text-start">تاريخ التسجيل</TableHead>
-                    <TableHead className="min-w-[110px] border-e py-3 text-start">آخر دخول / ظهور</TableHead>
-                    <TableHead className="min-w-[84px] border-e py-3 text-start">رأس المال</TableHead>
-                    <TableHead className="min-w-[84px] border-e py-3 text-start">ربح محقق</TableHead>
-                    <TableHead className="min-w-[130px] border-e py-3 text-start">النشاط الاستثماري</TableHead>
-                    <TableHead className="min-w-[170px] border-e py-3 text-start">السلوك الاستثماري</TableHead>
-                    <TableHead className="min-w-[140px] border-e py-3 text-start">الرصيد</TableHead>
-                    <TableHead className="min-w-[150px] border-e py-3 text-start">الاشتراك</TableHead>
-                    <TableHead className="min-w-[100px] py-3 text-start">الحالة</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((row, index) => (
-                    <UserRow
-                      key={row.id}
-                      row={row}
-                      number={index + 1}
-                      onChanged={load}
-                      readOnly={readOnly}
-                      striped={index % 2 === 1}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </Panel>
-      </div>
-    </div>
+      }
+      readOnly={readOnly}
+      onChanged={load}
+      editors={{
+        Subscription: SubscriptionCell,
+        Credits: CreditsCell,
+        Role: RoleCell,
+        Delete: DeleteUserButton,
+        Behavior: BehaviorCell,
+      }}
+      systemUserId={SYSTEM_USER_ID}
+    />
   );
 }
 
 /** The built-in CLI/dev account (local@alytic.local) — not a real user, and the backend refuses to delete it. */
 const SYSTEM_USER_ID = "local";
-
-function UserRow({
-  row,
-  number,
-  onChanged,
-  readOnly,
-  striped,
-}: {
-  row: AdminUserRow;
-  /** 1-based position in the list as currently filtered. */
-  number: number;
-  onChanged: () => void;
-  /** Marketer view: shows everything, offers no way to change it. */
-  readOnly: boolean;
-  striped: boolean;
-}) {
-  const pf = row.portfolio;
-  const capital = pf ? pf.cash + pf.positionsValue : null;
-
-  return (
-    <TableRow className={cn(striped && "bg-muted/30")}>
-      {/* First column, so the row number and the delete button are visible without scrolling the wide table sideways. Admin accounts can't be deleted. */}
-      <TableCell className="border-e align-top py-3">
-        <div className="flex items-center gap-1">
-          <span className="num min-w-[2ch] text-[12.5px] font-medium text-muted-foreground">{number}</span>
-          {!readOnly && !row.isAdmin && row.id !== SYSTEM_USER_ID && <DeleteUserButton row={row} onDeleted={onChanged} />}
-        </div>
-      </TableCell>
-      <TableCell className="border-e align-top py-3">
-        <div className="min-w-0">
-          <div className="truncate font-medium">{row.email}</div>
-          {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.name}</div>}
-          <div className="mt-1.5">
-            <RoleCell row={row} onChanged={onChanged} readOnly={readOnly} />
-          </div>
-        </div>
-      </TableCell>
-      <TableCell className="num border-e align-top py-3 text-right">
-        <div dir="ltr">{row.phone || "—"}</div>
-        {(row.signupIp || row.lastLoginIp) && (
-          <div dir="ltr" className="mt-1 text-[11px] text-muted-foreground">
-            {row.signupIp && <div title="IP التسجيل">reg {row.signupIp}</div>}
-            {row.lastLoginIp && row.lastLoginIp !== row.signupIp && (
-              <div title="IP آخر دخول">login {row.lastLoginIp}</div>
-            )}
-          </div>
-        )}
-      </TableCell>
-      <TableCell className="num border-e align-top py-3 text-right">{arDay(row.createdAt?.slice(0, 10))}</TableCell>
-      <TableCell className="num border-e align-top py-3 text-right">
-        {row.lastLoginAt
-          ? new Date(row.lastLoginAt).toLocaleString("ar-EG", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              numberingSystem: "latn",
-            })
-          : "—"}
-        {row.lastSeenAt && (
-          <div className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
-            {Date.now() - new Date(row.lastSeenAt).getTime() < 3 * 60 * 1000 && (
-              <span className="size-1.5 rounded-full bg-up" aria-label="متصل الآن" />
-            )}
-            <span title="آخر ظهور على الموقع">
-              ظهر{" "}
-              {new Date(row.lastSeenAt).toLocaleString("ar-EG", {
-                day: "numeric",
-                month: "short",
-                hour: "2-digit",
-                minute: "2-digit",
-                numberingSystem: "latn",
-              })}
-            </span>
-          </div>
-        )}
-      </TableCell>
-      <TableCell className="num border-e align-top py-3 text-right">
-        {capital != null ? `${int(capital)} ج` : "—"}
-      </TableCell>
-      <TableCell
-        className={cn(
-          "num border-e align-top py-3 text-right",
-          pf ? tone(pf.realizedPnl) : "text-muted-foreground",
-        )}
-      >
-        {pf ? signed(pf.realizedPnl) : "—"}
-      </TableCell>
-      <TableCell className="border-e align-top py-3 text-muted-foreground">
-        {pf
-          ? `${pf.tradesCount} صفقة · ${pf.positionsCount} مركز · ${pf.watchlistCount} متابعة`
-          : "لا توجد محفظة"}
-      </TableCell>
-      <TableCell className="border-e align-top py-3">
-        {row.behavior ? <BehaviorCell behavior={row.behavior} /> : "—"}
-      </TableCell>
-      <TableCell className="border-e align-top py-3">
-        <CreditsCell row={row} onChanged={onChanged} readOnly={readOnly} />
-      </TableCell>
-      <TableCell className="border-e align-top py-3">
-        <SubscriptionCell row={row} onChanged={onChanged} readOnly={readOnly} />
-      </TableCell>
-      <TableCell className="align-top py-3">
-        <div className="flex flex-wrap gap-1">
-          {row.isAdmin && <Badge>مشرف</Badge>}
-          {row.id === SYSTEM_USER_ID && <Badge variant="outline">حساب النظام</Badge>}
-          {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
-          {row.googleLinked && <Badge variant="secondary">Google</Badge>}
-        </div>
-      </TableCell>
-    </TableRow>
-  );
-}
 
 /**
  * What kind of investor this is and why we think so: the style driving their
