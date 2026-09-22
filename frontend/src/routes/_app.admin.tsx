@@ -774,17 +774,10 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
       <>
         <UsersLayoutPrototype
           variant={variant}
-          rows={filtered}
+          rows={rows.filter((row) => !query || matchesUser(row, query)).sort(byRecent(sortBy))}
           totalCount={rows.length}
           stats={stats}
           online={online}
-          chips={STATUS_FILTERS.map(({ key, label }) => ({
-            key,
-            label,
-            count: key === "all" ? stats.total : stats.statusCounts[key],
-          }))}
-          activeChip={statusFilter}
-          onChip={(key) => setStatusFilter(key as StatusFilter)}
           controls={
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input

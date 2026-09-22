@@ -39,13 +39,11 @@ export type PrototypeStats = {
 
 type Props = {
   variant: string;
+  /** Searched and sorted, but not filtered by Renewal status: the prototype owns that filter (4 statuses, not 3). */
   rows: AdminUserRow[];
   totalCount: number;
   stats: PrototypeStats;
   online: { signedIn: number; visitors: number; windowSeconds: number; asOf: string } | null;
-  chips: { key: string; label: string; count: number }[];
-  activeChip: string;
-  onChip: (key: string) => void;
   controls: ReactNode;
   readOnly: boolean;
   onChanged: () => void;
@@ -69,20 +67,36 @@ function ago(iso: string) {
 const daysUntil = (iso: string) => Math.ceil((new Date(iso).getTime() - Date.now()) / DAY);
 const TIER_LABEL = { trader: "مضاربة", long: "طويل المدى" } as const;
 
-function renewal(row: AdminUserRow): { text: string; warn: boolean } {
+/** Renewal status, split four ways: a paid Subscription that ran out (Expired) is told apart from never having paid. */
+type RenewalStatus = "active" | "expired" | "trial" | "never";
+
+const RENEWAL_CHIPS: { key: "all" | RenewalStatus; label: string }[] = [
+  { key: "all", label: "الكل" },
+  { key: "active", label: "مشترك فعال" },
+  { key: "expired", label: "اشتراك منتهي" },
+  { key: "trial", label: "تجربة" },
+  { key: "never", label: "لم يشترك" },
+];
+
+const renewalStatus = (row: AdminUserRow): RenewalStatus =>
+  row.subscription?.active ? "active" : row.subscription ? "expired" : row.trialActive ? "trial" : "never";
+
+const daysSince = (iso: string) => Math.max(0, -daysUntil(iso));
+
+function renewal(row: AdminUserRow): { text: string; className?: string } {
   const sub = row.subscription;
-  if (sub?.active) {
-    const left = daysUntil(sub.currentPeriodEnd);
-    return { text: `مشترك فعال · ${TIER_LABEL[sub.tier]} · ينتهي ${arDay(sub.currentPeriodEnd.slice(0, 10))}`, warn: left <= 7 };
+  switch (renewalStatus(row)) {
+    case "active":
+      return { text: `مشترك فعال · ${TIER_LABEL[sub!.tier]} · ينتهي ${arDay(sub!.currentPeriodEnd.slice(0, 10))}`, className: "text-up font-medium" };
+    case "expired":
+      return { text: `اشتراك منتهي منذ ${daysSince(sub!.currentPeriodEnd)} يوم · كان ${TIER_LABEL[sub!.tier]}`, className: "text-down font-medium" };
+    case "trial": {
+      const left = Math.max(0, daysUntil(row.trialEndsAt));
+      return { text: `تجربة · باقي ${left} يوم`, className: left <= 2 ? "text-warn font-medium" : undefined };
+    }
+    case "never":
+      return { text: `لم يشترك · التجربة انتهت منذ ${daysSince(row.trialEndsAt)} يوم`, className: "text-muted-foreground" };
   }
-  if (row.trialActive) {
-    const left = Math.max(0, daysUntil(row.trialEndsAt));
-    return { text: `تجربة · باقي ${left} يوم`, warn: left <= 2 };
-  }
-  const ends = [row.trialEndsAt, sub?.currentPeriodEnd].filter(Boolean) as string[];
-  const last = ends.sort().at(-1);
-  const since = last ? Math.max(0, -daysUntil(last)) : null;
-  return { text: since != null ? `منتهي منذ ${since} يوم` : "مجاني", warn: true };
 }
 
 const grantedCredits = (row: AdminUserRow) => Object.values(row.usage.credits).reduce((a, b) => a + b, 0);
@@ -112,7 +126,7 @@ function Renewal({ row }: { row: AdminUserRow }) {
   const credits = grantedCredits(row);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className={cn("tabular-nums", row.subscription?.active ? "text-up font-medium" : r.warn && "text-warn font-medium")}>
+      <span className={cn("tabular-nums", r.className)}>
         {r.text}
       </span>
       {credits > 0 && (
@@ -223,7 +237,17 @@ function Detail({ row, p }: { row: AdminUserRow; p: Props }) {
 
 const MORE_KEY = "prototype.admin.moreStats";
 
-function StatsStrip({ p }: { p: Props }) {
+function StatsStrip({
+  p,
+  counts,
+  chip,
+  onChip,
+}: {
+  p: Props;
+  counts: Record<"all" | RenewalStatus, number>;
+  chip: "all" | RenewalStatus;
+  onChip: (key: "all" | RenewalStatus) => void;
+}) {
   const [more, setMore] = useState(false);
   useEffect(() => {
     try {
@@ -260,15 +284,19 @@ function StatsStrip({ p }: { p: Props }) {
           متصلون الآن {online ? int(online.signedIn + online.visitors) : "…"}
           <span className="text-muted-foreground">({online ? int(online.signedIn) : "…"} مسجّلين)</span>
         </span>
-        {p.chips.map((c) => (
+        {RENEWAL_CHIPS.map((c) => (
           <Button
             key={c.key}
             size="sm"
-            variant={p.activeChip === c.key ? "default" : "outline"}
-            className="tabular-nums shrink-0 rounded-full"
-            onClick={() => p.onChip(c.key)}
+            variant={chip === c.key ? "default" : "outline"}
+            className={cn(
+              "tabular-nums shrink-0 rounded-full",
+              chip !== c.key && c.key === "active" && "border-up text-up",
+              chip !== c.key && c.key === "expired" && "border-down text-down",
+            )}
+            onClick={() => onChip(c.key)}
           >
-            {c.label} <span className="font-semibold">{int(c.count)}</span>
+            {c.label} <span className="font-semibold">{int(counts[c.key])}</span>
           </Button>
         ))}
         <Button size="sm" variant="ghost" className="shrink-0" onClick={toggle}>
@@ -304,6 +332,13 @@ function useIsPhone() {
   return phone;
 }
 
+const ROW_TINT: Record<RenewalStatus, string> = {
+  active: "bg-up-soft hover:bg-up-soft/70",
+  expired: "bg-down-soft hover:bg-down-soft/70",
+  trial: "hover:bg-muted/40",
+  never: "hover:bg-muted/40",
+};
+
 /** A — the leading idea: slim 3-column table (2 on phone), row opens a side drawer (bottom sheet on phone). */
 function VariantA({ p }: { p: Props }) {
   const phone = useIsPhone();
@@ -328,8 +363,8 @@ function VariantA({ p }: { p: Props }) {
                 onClick={() => setSelectedId(row.id)}
                 className={cn(
                   "cursor-pointer border-t align-top",
-                  // Subscribed Users stand out in green; the selected row still wins so the drawer's row is findable.
-                  row.subscription?.active ? "bg-up-soft hover:bg-up-soft/70" : "hover:bg-muted/40",
+                  // Subscribed in green, Expired in red; the selected row still wins so the drawer's row is findable.
+                  ROW_TINT[renewalStatus(row)],
                   selectedId === row.id && "bg-muted/60",
                 )}
               >
@@ -451,10 +486,14 @@ function VariantC({ p }: { p: Props }) {
   );
 }
 
-export function UsersLayoutPrototype(p: Props) {
+export function UsersLayoutPrototype(props: Props) {
+  const [chip, setChip] = useState<"all" | RenewalStatus>("all");
+  const counts = { all: props.rows.length, active: 0, expired: 0, trial: 0, never: 0 };
+  for (const row of props.rows) counts[renewalStatus(row)] += 1;
+  const p = { ...props, rows: chip === "all" ? props.rows : props.rows.filter((row) => renewalStatus(row) === chip) };
   return (
     <div className="space-y-4">
-      <StatsStrip p={p} />
+      <StatsStrip p={p} counts={counts} chip={chip} onChip={setChip} />
       {p.controls}
       <div className="text-[12px] text-muted-foreground">
         {p.rows.length} من {p.totalCount} مستخدم
