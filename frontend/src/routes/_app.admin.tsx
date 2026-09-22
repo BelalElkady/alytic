@@ -56,6 +56,8 @@ import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
+import { PROTOTYPE_VARIANTS, UsersLayoutPrototype } from "@/components/admin/users-layout.prototype";
+import { PrototypeSwitcher, usePrototypeVariant } from "@/components/prototype-switcher";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
@@ -419,7 +421,7 @@ type AdminUserPortfolio = {
 };
 
 /** Cut-down behaviorProfile() (backend/src/scoring/behavior.js) plus the style picked in settings. */
-type AdminUserBehavior = {
+export type AdminUserBehavior = {
   chosenStyle: StyleKey | null;
   inferredStyle: StyleKey | null;
   buys: number;
@@ -445,7 +447,7 @@ type AdminSubscription = {
   updatedAt: string;
 };
 
-type AdminUserRow = {
+export type AdminUserRow = {
   id: string;
   email: string;
   name: string;
@@ -685,6 +687,7 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortBy, setSortBy] = useState<UserSort>("createdAt");
+  const [variant, setVariant] = usePrototypeVariant();
 
   const load = () => {
     api("/api/admin/users")
@@ -764,6 +767,52 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
       />
     );
   if (!rows || !stats) return <LoadingBlock rows={3} />;
+
+  // PROTOTYPE (#29): `?variant=A|B|C` swaps the whole tab for a layout variant. Remove when the prototype is folded in.
+  if (variant)
+    return (
+      <>
+        <UsersLayoutPrototype
+          variant={variant}
+          rows={rows.filter((row) => !query || matchesUser(row, query)).sort(byRecent(sortBy))}
+          totalCount={rows.length}
+          stats={stats}
+          online={online}
+          controls={
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="ابحث بالهاتف أو الاسم أو البريد…"
+                className="sm:max-w-sm sm:flex-1"
+              />
+              <div className="flex flex-wrap items-center gap-1.5 sm:ms-auto">
+                {USER_SORTS.map(({ key, label }) => (
+                  <Button key={key} size="sm" variant={sortBy === key ? "default" : "outline"} onClick={() => setSortBy(key)}>
+                    {label}
+                  </Button>
+                ))}
+                <Button size="sm" variant="outline" disabled={filtered.length === 0} onClick={() => downloadUsersCsv(filtered)}>
+                  <Download className="size-4" />
+                  CSV
+                </Button>
+              </div>
+            </div>
+          }
+          readOnly={readOnly}
+          onChanged={load}
+          editors={{
+            Subscription: SubscriptionCell,
+            Credits: CreditsCell,
+            Role: RoleCell,
+            Delete: DeleteUserButton,
+            Behavior: BehaviorCell,
+          }}
+          systemUserId={SYSTEM_USER_ID}
+        />
+        <PrototypeSwitcher variants={PROTOTYPE_VARIANTS} current={variant} onChange={setVariant} />
+      </>
+    );
 
   const statRows: { label: string; value: ReactNode; sub?: string; valueClassName?: string }[][] = [
     [
