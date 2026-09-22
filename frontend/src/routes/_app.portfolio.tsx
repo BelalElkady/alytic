@@ -678,7 +678,8 @@ function PositionCard({
         ) : (
           <>
             <span className="text-muted-foreground">
-              توصية اليوم{row.asOf && ` (${arDay(row.asOf)})`} ·{" "}
+              {!row.asOf || row.asOf === cairoDay(Date.now()) ? "توصية اليوم" : "توصية قديمة"}
+              {row.asOf && ` (${arDay(row.asOf)})`} ·{" "}
             </span>
             {rec.text}
             {rec.order && (
