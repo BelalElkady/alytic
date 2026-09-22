@@ -79,6 +79,17 @@ export const RULES = {
     maxAddsPerPosition: 1,
   },
 
+  shariah: {
+    // A stock tagged 'non_compliant' in the universe (config/universe.js) is
+    // never offered as a NEW buy — analyze.js gates buyingNow.worthIt and
+    // plan.actionable on this, which is what cashPlanSelected and every
+    // "worth buying now" surface derive from. An already-open position in
+    // one stays fully tracked (stop, targets, exit) regardless: this blocks
+    // new money in, it does not hide a position you already hold.
+    // 'review' (screening unknown) is left recommendable by default.
+    excludeNonCompliant: true,
+  },
+
   commissionPct: 0.20,
 
   webSearch: {
