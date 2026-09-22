@@ -1,9 +1,8 @@
-// PROTOTYPE — throwaway (wayfinder: "Prototype the slim table + detail drawer layout", issue #29).
-// Three structurally different layouts of the admin users screen on the existing /admin route, switchable via
-// `?variant=A|B|C`: A = slim table + drawer, B = cards that expand in place, C = list + detail split view.
-// Glance row and stats strip follow the decisions in #27 and #28. Editors are the real ones: changes are real.
+// The admin users screen: a stats strip whose Renewal status chips double as the filter, then a slim table
+// (Identity · phone · Renewal · activity) where a row opens a drawer (bottom sheet on phone) with everything else,
+// including every editor. Designed on map #26 (decisions in #27, #28, #29).
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,15 +11,9 @@ import { arDay, int, signed, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { AdminUserBehavior, AdminUserRow } from "@/routes/_app.admin";
 
-export const PROTOTYPE_VARIANTS = [
-  { key: "A", name: "Slim table + drawer" },
-  { key: "B", name: "Cards, expand in place" },
-  { key: "C", name: "List + detail split" },
-];
-
 type EditorProps = { row: AdminUserRow; onChanged: () => void; readOnly: boolean };
 
-export type PrototypeEditors = {
+export type UsersScreenEditors = {
   Subscription: (p: EditorProps) => ReactNode;
   Credits: (p: EditorProps) => ReactNode;
   Role: (p: EditorProps) => ReactNode;
@@ -28,7 +21,7 @@ export type PrototypeEditors = {
   Behavior: (p: { behavior: AdminUserBehavior }) => ReactNode;
 };
 
-export type PrototypeStats = {
+export type UsersScreenStats = {
   capital: number;
   profit: number;
   styleCounts: Record<"trader" | "medium" | "long", number>;
@@ -38,20 +31,19 @@ export type PrototypeStats = {
 };
 
 type Props = {
-  variant: string;
-  /** Searched and sorted, but not filtered by Renewal status: the prototype owns that filter (4 statuses, not 3). */
+  /** Searched and sorted, but not filtered by Renewal status: this screen owns that filter. */
   rows: AdminUserRow[];
   totalCount: number;
-  stats: PrototypeStats;
+  stats: UsersScreenStats;
   online: { signedIn: number; visitors: number; windowSeconds: number; asOf: string } | null;
   controls: ReactNode;
   readOnly: boolean;
   onChanged: () => void;
-  editors: PrototypeEditors;
+  editors: UsersScreenEditors;
   systemUserId: string;
 };
 
-// ---------- shared glance atoms (the #27 decision) ----------
+// ---------- glance row ----------
 
 const DAY = 86_400_000;
 const rtf = new Intl.RelativeTimeFormat("ar-EG-u-nu-latn", { numeric: "auto" });
@@ -68,17 +60,21 @@ const daysUntil = (iso: string) => Math.ceil((new Date(iso).getTime() - Date.now
 const TIER_LABEL = { trader: "مضاربة", long: "طويل المدى" } as const;
 
 /** Renewal status, split four ways: a paid Subscription that ran out (Expired) is told apart from never having paid. */
-type RenewalStatus = "active" | "expired" | "trial" | "never";
+export type RenewalStatus = "active" | "expired" | "trial" | "never";
+
+export const RENEWAL_LABEL: Record<RenewalStatus, string> = {
+  active: "مشترك فعال",
+  expired: "اشتراك منتهي",
+  trial: "تجربة",
+  never: "لم يشترك",
+};
 
 const RENEWAL_CHIPS: { key: "all" | RenewalStatus; label: string }[] = [
   { key: "all", label: "الكل" },
-  { key: "active", label: "مشترك فعال" },
-  { key: "expired", label: "اشتراك منتهي" },
-  { key: "trial", label: "تجربة" },
-  { key: "never", label: "لم يشترك" },
+  ...(Object.keys(RENEWAL_LABEL) as RenewalStatus[]).map((key) => ({ key, label: RENEWAL_LABEL[key] })),
 ];
 
-const renewalStatus = (row: AdminUserRow): RenewalStatus =>
+export const renewalStatus = (row: AdminUserRow): RenewalStatus =>
   row.subscription?.active ? "active" : row.subscription ? "expired" : row.trialActive ? "trial" : "never";
 
 const daysSince = (iso: string) => Math.max(0, -daysUntil(iso));
@@ -150,7 +146,7 @@ function Activity({ row }: { row: AdminUserRow }) {
   );
 }
 
-// ---------- shared detail body (grouping is still fog on the map; kept identical across variants) ----------
+// ---------- drawer ----------
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -233,9 +229,9 @@ function Detail({ row, p }: { row: AdminUserRow; p: Props }) {
   );
 }
 
-// ---------- shared stats strip (the #28 decision) ----------
+// ---------- stats strip ----------
 
-const MORE_KEY = "prototype.admin.moreStats";
+const MORE_KEY = "admin.users.moreStats";
 
 function StatsStrip({
   p,
@@ -318,7 +314,7 @@ function StatsStrip({
   );
 }
 
-// ---------- variants ----------
+// ---------- table ----------
 
 function useIsPhone() {
   const [phone, setPhone] = useState(false);
@@ -339,8 +335,8 @@ const ROW_TINT: Record<RenewalStatus, string> = {
   never: "hover:bg-muted/40",
 };
 
-/** A — the leading idea: slim 3-column table (2 on phone), row opens a side drawer (bottom sheet on phone). */
-function VariantA({ p }: { p: Props }) {
+/** Slim 4-column table (2 on phone); a row opens the drawer, a bottom sheet on phone. */
+function UsersTable({ p }: { p: Props }) {
   const phone = useIsPhone();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = p.rows.find((r) => r.id === selectedId) ?? null;
@@ -404,89 +400,7 @@ function VariantA({ p }: { p: Props }) {
   );
 }
 
-/** B — no table at all: a card per User; tapping a card expands it in place to the full-width detail. */
-function VariantB({ p }: { p: Props }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {p.rows.map((row) => {
-        const open = openId === row.id;
-        return (
-          <div
-            key={row.id}
-            className={cn("rounded-xl border bg-surface p-4 shadow-sm", open && "sm:col-span-2 xl:col-span-3 ring-2 ring-primary/40")}
-          >
-            <button type="button" className="flex w-full items-start gap-3 text-start" onClick={() => setOpenId(open ? null : row.id)}>
-              <div className="min-w-0 flex-1 space-y-2">
-                <Identity row={row} systemUserId={p.systemUserId} />
-                <Renewal row={row} />
-                <Activity row={row} />
-              </div>
-              {open ? <X className="size-4 shrink-0" /> : <ChevronDown className="size-4 shrink-0 text-muted-foreground" />}
-            </button>
-            {open && (
-              <div className="mt-4 border-t pt-4">
-                <Detail row={row} p={p} />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** C — mail-client style: a narrow list always beside a persistent detail pane; on phone the detail replaces the list. */
-function VariantC({ p }: { p: Props }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [phoneDetail, setPhoneDetail] = useState(false);
-  const selected = p.rows.find((r) => r.id === selectedId) ?? p.rows[0] ?? null;
-  return (
-    <div className="overflow-hidden rounded-lg border lg:grid lg:h-[75vh] lg:grid-cols-[380px_1fr]">
-      <ul className={cn("divide-y overflow-y-auto lg:border-e", phoneDetail && "hidden lg:block")}>
-        {p.rows.map((row) => (
-          <li key={row.id}>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedId(row.id);
-                setPhoneDetail(true);
-              }}
-              className={cn(
-                "flex w-full items-start gap-2 p-3 text-start text-sm hover:bg-muted/40",
-                selected?.id === row.id && "lg:bg-muted/70",
-              )}
-            >
-              <div className="min-w-0 flex-1 space-y-1">
-                <Identity row={row} systemUserId={p.systemUserId} />
-                <Renewal row={row} />
-              </div>
-              {isOnline(row) && <span className="mt-2 size-1.5 shrink-0 rounded-full bg-up" />}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className={cn("overflow-y-auto p-4", !phoneDetail && "hidden lg:block")}>
-        <Button size="sm" variant="ghost" className="mb-2 lg:hidden" onClick={() => setPhoneDetail(false)}>
-          <ChevronRight className="size-4" /> رجوع للقائمة
-        </Button>
-        {selected ? (
-          <>
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <Identity row={selected} systemUserId={p.systemUserId} />
-              <Activity row={selected} />
-            </div>
-            <Detail row={selected} p={p} />
-          </>
-        ) : (
-          <div className="text-muted-foreground">اختر مستخدمًا</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function UsersLayoutPrototype(props: Props) {
+export function UsersScreen(props: Props) {
   const [chip, setChip] = useState<"all" | RenewalStatus>("all");
   const counts = { all: props.rows.length, active: 0, expired: 0, trial: 0, never: 0 };
   for (const row of props.rows) counts[renewalStatus(row)] += 1;
@@ -498,7 +412,13 @@ export function UsersLayoutPrototype(props: Props) {
       <div className="text-[12px] text-muted-foreground">
         {p.rows.length} من {p.totalCount} مستخدم
       </div>
-      {p.variant === "B" ? <VariantB p={p} /> : p.variant === "C" ? <VariantC p={p} /> : <VariantA p={p} />}
+      {p.rows.length === 0 ? (
+        <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+          لا يوجد مستخدمون مطابقون — جرّب كلمة بحث أو فلتر مختلف.
+        </div>
+      ) : (
+        <UsersTable p={p} />
+      )}
     </div>
   );
 }
