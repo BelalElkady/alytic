@@ -16,6 +16,8 @@ type EditorProps = { row: AdminUserRow; onChanged: () => void; readOnly: boolean
 export type UsersScreenEditors = {
   Subscription: (p: EditorProps) => ReactNode;
   Credits: (p: EditorProps) => ReactNode;
+  /** Collapsed disclosure of past Subscription/Credits grants — for checking a disputed or repeated payment. */
+  History: (p: { row: AdminUserRow }) => ReactNode;
   Role: (p: EditorProps) => ReactNode;
   Delete: (p: { row: AdminUserRow; onDeleted: () => void }) => ReactNode;
   Behavior: (p: { behavior: AdminUserBehavior }) => ReactNode;
@@ -173,6 +175,7 @@ function Detail({ row, p }: { row: AdminUserRow; p: Props }) {
           <E.Subscription row={row} onChanged={onChanged} readOnly={readOnly} />
           <E.Credits row={row} onChanged={onChanged} readOnly={readOnly} />
         </div>
+        <E.History row={row} />
       </Section>
       <Section title="التواصل">
         <dl className="tabular-nums grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">

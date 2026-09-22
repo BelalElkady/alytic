@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -1338,9 +1338,9 @@ app.post('/api/admin/users/:id/role', wrap(async (req, res) => {
   res.json({ ok: true, role });
 }));
 
-/** Activation history for one user — what to check when a payment is disputed or entered twice. */
+/** Activation history for one user — what to check when a payment is disputed or entered twice. Capped at 5: this is a quick sanity check for the admin panel's history disclosure, not a ledger. */
 app.get('/api/admin/users/:id/subscription', wrap(async (req, res) => {
-  const grants = await listSubscriptionGrants(req.params.id);
+  const grants = await listSubscriptionGrants(req.params.id, { limit: 5 });
   res.json({
     grants: grants.map((g) => ({
       id: g.id,
@@ -1350,6 +1350,19 @@ app.get('/api/admin/users/:id/subscription', wrap(async (req, res) => {
       amountEgp: g.amount_egp,
       reference: g.reference,
       note: g.note,
+      createdAt: g.created_at,
+    })),
+  });
+}));
+
+/** Credits change history for one user — same audit-check purpose as the Subscription history above. */
+app.get('/api/admin/users/:id/credits', wrap(async (req, res) => {
+  const grants = await listCreditsGrants(req.params.id, { limit: 5 });
+  res.json({
+    grants: grants.map((g) => ({
+      id: g.id,
+      deltas: g.deltas,
+      reference: g.reference,
       createdAt: g.created_at,
     })),
   });

@@ -468,6 +468,18 @@ export async function listSubscriptionGrants(userId, { limit = 20 } = {}) {
   return data;
 }
 
+/** This user's Credits change history, newest first — same audit-check purpose as listSubscriptionGrants. */
+export async function listCreditsGrants(userId, { limit = 20 } = {}) {
+  const { data, error } = await supabase
+    .from('credits_grants')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listCreditsGrants: ${error.message}`);
+  return data;
+}
+
 /** One user's support thread, oldest first — the whole conversation, which stays small enough not to need paging. */
 export async function listSupportMessages(userId) {
   const { data, error } = await supabase

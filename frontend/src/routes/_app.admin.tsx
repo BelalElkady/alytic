@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -48,7 +48,7 @@ import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
 import { RENEWAL_LABEL, UsersScreen, renewalStatus } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
-import { arDay } from "@/lib/format";
+import { arDay, signed } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
@@ -695,6 +695,7 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
       editors={{
         Subscription: SubscriptionCell,
         Credits: CreditsCell,
+        History: GrantHistoryCell,
         Role: RoleCell,
         Delete: DeleteUserButton,
         Behavior: BehaviorCell,
@@ -1283,6 +1284,111 @@ function SubscriptionCell({
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+type SubscriptionGrantEntry = {
+  id: string;
+  plan: PlanKey;
+  action: "grant" | "revoke";
+  periodEnd: string | null;
+  reference: string | null;
+  createdAt: string;
+};
+
+type CreditsGrantEntry = {
+  id: string;
+  deltas: Partial<Record<CreditKind, number>>;
+  reference: string | null;
+  createdAt: string;
+};
+
+const creditsGrantText = (deltas: Partial<Record<CreditKind, number>>) =>
+  CREDIT_FIELDS.filter(({ kind }) => deltas[kind]).map(({ kind, label }) => `${label} ${signed(deltas[kind])}`).join("، ");
+
+/**
+ * Collapsed history of past Subscription/Credits grants, for checking a
+ * disputed or repeated InstaPay payment. Fetched only once expanded — most
+ * drawer opens are to act, not to audit, so an open shouldn't cost two
+ * extra requests it'll never look at.
+ */
+function GrantHistoryCell({ row }: { row: AdminUserRow }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [subs, setSubs] = useState<SubscriptionGrantEntry[] | null>(null);
+  const [credits, setCredits] = useState<CreditsGrantEntry[] | null>(null);
+
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next && subs === null) {
+      setLoading(true);
+      try {
+        const [subRes, creditRes] = await Promise.all([
+          api<{ grants: SubscriptionGrantEntry[] }>(`/api/admin/users/${row.id}/subscription`),
+          api<{ grants: CreditsGrantEntry[] }>(`/api/admin/users/${row.id}/credits`),
+        ]);
+        setSubs(subRes.grants);
+        setCredits(creditRes.grants);
+      } catch {
+        setSubs([]);
+        setCredits([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  return (
+    <div className="border-t pt-3">
+      <Button size="sm" variant="ghost" className="h-7 px-1 text-[12px] text-muted-foreground" onClick={() => void toggle()}>
+        {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4 rtl:rotate-180" />}
+        سجل
+      </Button>
+      {open && (
+        <div className="mt-2 space-y-3 text-[12px]">
+          {loading && <div className="text-muted-foreground">جارِ التحميل…</div>}
+          {!loading && subs && (
+            <div className="space-y-1">
+              <div className="font-medium text-muted-foreground">الاشتراك</div>
+              {subs.length === 0 ? (
+                <div className="text-muted-foreground">لا يوجد سجل</div>
+              ) : (
+                subs.map((g) => (
+                  <div key={g.id} className="flex flex-wrap items-baseline justify-between gap-x-2 tabular-nums">
+                    <span>
+                      {g.action === "revoke" ? `أُوقف: ${PLAN_LABEL[g.plan]}` : `${PLAN_LABEL[g.plan]} · حتى ${arDay(g.periodEnd?.slice(0, 10))}`}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {arDay(g.createdAt.slice(0, 10))}
+                      {g.reference ? ` · ${g.reference}` : ""}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          {!loading && credits && (
+            <div className="space-y-1">
+              <div className="font-medium text-muted-foreground">الرصيد</div>
+              {credits.length === 0 ? (
+                <div className="text-muted-foreground">لا يوجد سجل</div>
+              ) : (
+                credits.map((g) => (
+                  <div key={g.id} className="flex flex-wrap items-baseline justify-between gap-x-2 tabular-nums">
+                    <span>{creditsGrantText(g.deltas)}</span>
+                    <span className="text-muted-foreground">
+                      {arDay(g.createdAt.slice(0, 10))}
+                      {g.reference ? ` · ${g.reference}` : ""}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
