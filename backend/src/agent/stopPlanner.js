@@ -51,10 +51,24 @@ Support: ${sup || 'none clear'}
 Resistance: ${res || 'none above price'}`;
 }
 
-/** Keeps a stop strictly inside (0, ceiling) — the one shape guarantee every caller needs regardless of how the level itself was chosen. */
-function clampPositiveBelow(value, ceiling) {
-  if (!Number.isFinite(value) || value <= 0) return r2(ceiling * 0.05);
-  if (value >= ceiling) return r2(ceiling * 0.995);
+/**
+ * Keeps a stop strictly inside (0, ceiling) — the one shape guarantee every
+ * caller needs regardless of how the level itself was chosen. Logged when it
+ * actually rewrites the model's number: a silent correction here would hide a
+ * model that's regularly returning nonsense stops behind output that still
+ * looks fine. `ctx` is free text identifying the call site for that log line.
+ */
+function clampPositiveBelow(value, ceiling, ctx) {
+  if (!Number.isFinite(value) || value <= 0) {
+    const fallback = r2(ceiling * 0.05);
+    console.warn(`[ai] stop clamp fired (${ctx}): model returned ${value}, ceiling ${ceiling} — falling back to ${fallback}`);
+    return fallback;
+  }
+  if (value >= ceiling) {
+    const capped = r2(ceiling * 0.995);
+    console.warn(`[ai] stop clamp fired (${ctx}): model returned ${value} >= ceiling ${ceiling} — capped to ${capped}`);
+    return capped;
+  }
   return r2(value);
 }
 
@@ -102,7 +116,7 @@ A fresh buy today would enter at ${entry} EGP. Where should the stop-loss sit?`;
     feature: 'stop_plan',
   });
 
-  const stop = clampPositiveBelow(data.stop, entry);
+  const stop = clampPositiveBelow(data.stop, entry, `stop_plan ${code}/${style}`);
   await putStopPlan(code, style, asOf, stop, data.basis, raw.model, raw.usage);
   // Re-read so a concurrent request that won the insert race is what this
   // call (and everyone after it) actually sees, same pattern as market_reports.
@@ -147,7 +161,7 @@ Where should the stop sit now?`;
     feature: 'trailing_stop',
   });
 
-  let stop = clampPositiveBelow(data.stop, price);
+  let stop = clampPositiveBelow(data.stop, price, `trailing_stop ${code}/${style}`);
   // Ratchet-only safety rail, confirmed with the user: an AI-suggested level
   // below the existing stop is ignored, the existing stop is kept.
   if (position.existingStop != null) stop = Math.max(stop, position.existingStop);
@@ -220,7 +234,7 @@ The price above is a live intraday quote, not a close, and the stop only ever mo
       feature: 'trailing_stop_live',
     });
 
-    const stop = Math.max(clampPositiveBelow(data.stop, price), floor);
+    const stop = Math.max(clampPositiveBelow(data.stop, price, `trailing_stop_live ${code}/${style}`), floor);
     // Stored even when the model kept the stop where it was, so `pricedAt`
     // moves up and the same price doesn't re-ask.
     await putPortfolioReview(userId, asOf, cacheStyle, hash, { stop, rationale: data.rationale, pricedAt: price }, raw.model, raw.usage);

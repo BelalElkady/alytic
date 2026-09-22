@@ -231,6 +231,12 @@ export async function analyzeTicker(code, opts = {}) {
   };
   buyingNow.worthIt = buyingNow.riskReward != null && buyingNow.riskReward >= rules.entry.minRiskReward;
 
+  // Screening gate, not a technical one: a stock the universe tags
+  // non-compliant is never offered as a fresh buy, independent of how good
+  // the setup looks. Doesn't apply to a position already held — see rules.js.
+  const shariahExcluded = !position && rules.shariah?.excludeNonCompliant && meta.shariah === 'non_compliant';
+  if (shariahExcluded) buyingNow.worthIt = false;
+
   const sizing =
     capital && stopPlan.stop
       ? positionSize(
@@ -473,7 +479,8 @@ export async function analyzeTicker(code, opts = {}) {
       entryStatus,
       entryNote,
       supportGapPct,
-      actionable: entryStatus === 'buy_now' || entryStatus === 'limit_pullback',
+      actionable: !shariahExcluded && (entryStatus === 'buy_now' || entryStatus === 'limit_pullback'),
+      shariahExcluded,
       buyingNow,
       stop: stopPlan,
       targets: resultTargets,
