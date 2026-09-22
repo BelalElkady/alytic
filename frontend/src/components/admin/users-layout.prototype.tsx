@@ -88,11 +88,12 @@ function renewal(row: AdminUserRow): { text: string; warn: boolean } {
 const grantedCredits = (row: AdminUserRow) => Object.values(row.usage.credits).reduce((a, b) => a + b, 0);
 const isOnline = (row: AdminUserRow) => !!row.lastSeenAt && Date.now() - new Date(row.lastSeenAt).getTime() < 3 * 60_000;
 
-function Identity({ row, systemUserId }: { row: AdminUserRow; systemUserId: string }) {
+/** `phoneClassName` lets a layout with its own phone column hide the phone line here (e.g. "sm:hidden"). */
+function Identity({ row, systemUserId, phoneClassName }: { row: AdminUserRow; systemUserId: string; phoneClassName?: string }) {
   return (
     <div className="min-w-0">
       <div className="truncate font-semibold">{row.name || row.email}</div>
-      <div dir="ltr" className="num text-end text-[13px]">
+      <div dir="ltr" className={cn("num text-end text-[13px]", phoneClassName)}>
         {row.phone || "—"}
       </div>
       {row.name && <div className="truncate text-[12px] text-muted-foreground">{row.email}</div>}
@@ -111,9 +112,9 @@ function Renewal({ row }: { row: AdminUserRow }) {
   const credits = grantedCredits(row);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className={cn("num", r.warn && "text-warn font-medium")}>{r.text}</span>
+      <span className={cn("tabular-nums", r.warn && "text-warn font-medium")}>{r.text}</span>
       {credits > 0 && (
-        <Badge variant="outline" className="num">
+        <Badge variant="outline" className="tabular-nums">
           +{credits} رصيد
         </Badge>
       )}
@@ -123,7 +124,7 @@ function Renewal({ row }: { row: AdminUserRow }) {
 
 function Activity({ row }: { row: AdminUserRow }) {
   return (
-    <div className="num text-[13px]">
+    <div className="tabular-nums text-[13px]">
       <div className="flex items-center gap-1.5">
         {isOnline(row) && <span className="size-1.5 rounded-full bg-up" aria-label="متصل الآن" />}
         {row.lastSeenAt ? `ظهر ${ago(row.lastSeenAt)}` : row.lastLoginAt ? `دخل ${ago(row.lastLoginAt)}` : "لم يظهر"}
@@ -162,7 +163,7 @@ function Detail({ row, p }: { row: AdminUserRow; p: Props }) {
         </div>
       </Section>
       <Section title="التواصل">
-        <dl className="num grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
+        <dl className="tabular-nums grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
           <dt className="text-muted-foreground">البريد</dt>
           <dd className="truncate">{row.email}</dd>
           <dt className="text-muted-foreground">الهاتف</dt>
@@ -182,7 +183,7 @@ function Detail({ row, p }: { row: AdminUserRow; p: Props }) {
       </Section>
       <Section title="الاستثمار">
         {pf ? (
-          <div className="num grid grid-cols-3 gap-2 text-[13px]">
+          <div className="tabular-nums grid grid-cols-3 gap-2 text-[13px]">
             <div>
               <div className="text-muted-foreground">رأس المال</div>
               {int(pf.cash + pf.positionsValue)} ج
@@ -250,7 +251,7 @@ function StatsStrip({ p }: { p: Props }) {
     <div className="space-y-2">
       <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 whitespace-nowrap">
         <span
-          className="num inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px]"
+          className="tabular-nums inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px]"
           title={online ? `آخر ${Math.round(online.windowSeconds / 60)} دقايق · زوّار غير مسجّلين: ${online.visitors} (تُصفَّر مع إعادة تشغيل السيرفر)` : undefined}
         >
           <span className="size-1.5 rounded-full bg-up" />
@@ -262,7 +263,7 @@ function StatsStrip({ p }: { p: Props }) {
             key={c.key}
             size="sm"
             variant={p.activeChip === c.key ? "default" : "outline"}
-            className="num shrink-0 rounded-full"
+            className="tabular-nums shrink-0 rounded-full"
             onClick={() => p.onChip(c.key)}
           >
             {c.label} <span className="font-semibold">{int(c.count)}</span>
@@ -313,6 +314,7 @@ function VariantA({ p }: { p: Props }) {
           <thead className="bg-muted/40 text-[12px] text-muted-foreground">
             <tr>
               <th className="p-3 text-start font-medium">المستخدم</th>
+              <th className="hidden p-3 text-start font-medium sm:table-cell">الهاتف</th>
               <th className="p-3 text-start font-medium">الاشتراك</th>
               <th className="hidden p-3 text-start font-medium sm:table-cell">النشاط</th>
             </tr>
@@ -325,7 +327,10 @@ function VariantA({ p }: { p: Props }) {
                 className={cn("cursor-pointer border-t align-top hover:bg-muted/40", selectedId === row.id && "bg-muted/60")}
               >
                 <td className="max-w-[260px] p-3">
-                  <Identity row={row} systemUserId={p.systemUserId} />
+                  <Identity row={row} systemUserId={p.systemUserId} phoneClassName="sm:hidden" />
+                </td>
+                <td className="hidden p-3 sm:table-cell">
+                  <span dir="ltr" className="num text-[13px]">{row.phone || "—"}</span>
                 </td>
                 <td className="p-3">
                   <Renewal row={row} />
