@@ -87,7 +87,7 @@ function TargetsPage() {
                             </span>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-64 text-center leading-relaxed">
-                            عائد/مخاطرة لو اشتريت بالسعر الحالي: المسافة للهدف المتوسط ÷ المسافة
+                            عائد/مخاطرة لو اشتريت بالسعر الحالي: المسافة للهدف ÷ المسافة
                             للوقف، بوحدة R. كل ما زاد الرقم كل ما الفرصة أفضل بالنسبة للمخاطرة
                             المأخوذة.
                           </TooltipContent>
@@ -111,7 +111,7 @@ function TargetsPage() {
                       </TableCell>
                       <TableCell className="num text-right">{fmt(row.price)}</TableCell>
                       <TableCell className="num text-right text-up">
-                        {row.midTarget ? fmt(row.midTarget.price) : "—"}
+                        {fmt(row.position.targetLevel ?? row.midTarget?.price)}
                       </TableCell>
                       <TableCell className="num text-right font-medium">
                         {estimate.reached ? "—" : pct(estimate.distancePct, 1)}
