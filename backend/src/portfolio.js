@@ -16,7 +16,7 @@ import { currentTenant } from './tenancy/context.js';
 
 const EMPTY = {
   cash: 0,
-  positions: {},   // code -> { shares, avgCost, stop, target, openedAt }
+  positions: {},   // code -> { shares, avgCost, stop, target, openedAt, addedOrder }
   watchlist: {},   // favorites the user picked to watch — code -> { addedAt, note }
   trades: [],      // { date, code, side, shares, price, commission, note }
   // One entry per saved close, keyed YYYY-MM-DD. This is what the calendar and
@@ -30,12 +30,40 @@ const EMPTY = {
 };
 
 export async function loadPortfolio(userId = 'local') {
-  return { ...EMPTY, ...((await getPortfolio(userId)) ?? {}) };
+  return stampAddedOrder({ ...EMPTY, ...((await getPortfolio(userId)) ?? {}) });
 }
 
 export async function savePortfolio(p, userId = 'local') {
-  await putPortfolio(userId, p);
-  return p;
+  const stamped = stampAddedOrder(p);
+  await putPortfolio(userId, stamped);
+  return stamped;
+}
+
+/**
+ * Gives every position without one an `addedOrder` — its place in the order
+ * the positions arrived in (see "Order added" in CONTEXT.md). The order has to
+ * be stored: the portfolio lives in a jsonb column, and jsonb re-sorts object
+ * keys, so the order positions were written in is gone once saved.
+ *
+ * In memory, before a save, key order is still arrival order (a screenshot
+ * import builds its positions top row first), so new positions are numbered
+ * in that order after everything already stamped. A portfolio saved before
+ * this existed has no counter and its key order is jsonb's, so its positions
+ * are numbered by the day they were opened, then by code.
+ */
+export function stampAddedOrder(p) {
+  const positions = p.positions ?? {};
+  let unstamped = Object.keys(positions).filter((c) => !Number.isFinite(positions[c]?.addedOrder));
+  const stamped = Object.values(positions).map((pos) => pos?.addedOrder).filter(Number.isFinite);
+  let next = Number.isFinite(p.nextAddedOrder) ? p.nextAddedOrder : Math.max(0, ...stamped.map((n) => n + 1));
+  if (!unstamped.length) return next === p.nextAddedOrder ? p : { ...p, nextAddedOrder: next };
+  if (!Number.isFinite(p.nextAddedOrder)) {
+    unstamped = unstamped.sort((a, b) =>
+      String(positions[a].openedAt ?? '').localeCompare(String(positions[b].openedAt ?? '')) || a.localeCompare(b));
+  }
+  const nextPositions = { ...positions };
+  for (const c of unstamped) nextPositions[c] = { ...positions[c], addedOrder: next++ };
+  return { ...p, positions: nextPositions, nextAddedOrder: next };
 }
 
 /**
@@ -66,9 +94,7 @@ export async function withPortfolio(userId, mutator) {
     .catch(() => {}) // a prior failure must not jam the queue for later callers
     .then(async () => {
       const portfolio = await loadPortfolio(userId);
-      const next = await mutator(portfolio);
-      await savePortfolio(next, userId);
-      return next;
+      return savePortfolio(await mutator(portfolio), userId);
     });
   writeQueues.set(queueKey, run);
   try {

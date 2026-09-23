@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PencilLine, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDownUp, PencilLine, Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
 import {
@@ -25,10 +25,12 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApiError, api, post } from "@/lib/api";
 import { arDay, fmt, int, pct, signed, tone } from "@/lib/format";
 import { STYLE_RULES, styleRecommendation, useActiveInvestStyle, type StyleKey } from "@/lib/invest-style";
+import { POSITION_SORT_OPTIONS, sortPositions, usePositionSort, type PositionSortKey } from "@/lib/position-sort";
 import { siteName, siteUrl } from "@/lib/seo";
 import { useDesk, type Row, type Verdict } from "@/lib/store";
 
@@ -287,10 +289,50 @@ function TradeReminder() {
   );
 }
 
+function PositionSortControl({
+  sort,
+  onChange,
+}: {
+  sort: ReturnType<typeof usePositionSort>["sort"];
+  onChange: ReturnType<typeof usePositionSort>["setSort"];
+}) {
+  const reversed = sort.direction === "reversed";
+  const directionLabel =
+    sort.key === "added" ? (reversed ? "الأحدث أولاً" : "الأقدم أولاً") : reversed ? "الأقل أولاً" : "الأعلى أولاً";
+  return (
+    <div className="flex items-center justify-start gap-2">
+      <span className="text-[12px] text-muted-foreground">ترتيب:</span>
+      <Select value={sort.key} onValueChange={(key) => onChange({ key: key as PositionSortKey, direction: "natural" })}>
+        <SelectTrigger className="h-8 w-40 text-[13px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {POSITION_SORT_OPTIONS.map((option) => (
+            <SelectItem key={option.key} value={option.key}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-8 gap-1 text-[12px]"
+        aria-label={`عكس الترتيب — الحالي: ${directionLabel}`}
+        onClick={() => onChange({ ...sort, direction: reversed ? "natural" : "reversed" })}
+      >
+        <ArrowDownUp className="size-3.5" />
+        {directionLabel}
+      </Button>
+    </div>
+  );
+}
+
 function PositionsPage() {
   const { rows, loading, error, reload, openDetail, pf, aiAvailable, user } = useDesk();
   const { style } = useActiveInvestStyle(pf?.trades);
   const nearStopPct = STYLE_RULES[style].nearStopPct;
+  const { sort, setSort } = usePositionSort();
   const isAdmin = Boolean(user?.isAdmin);
   const recommendationsLeft =
     typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
@@ -419,8 +461,10 @@ function PositionsPage() {
         </div>
       )}
 
+      <PositionSortControl sort={sort} onChange={setSort} />
+
       <div className="flex flex-col gap-3">
-        {rows.map((row) => (
+        {sortPositions(rows, pf, sort).map((row) => (
           <PositionCard
             key={row.code}
             row={row}

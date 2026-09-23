@@ -43,3 +43,11 @@ _Avoid_: Tokens, points
 **Investing style**:
 Whether a User invests as a trader, medium-term, or long-term; either chosen by the User or inferred from their trades.
 _Avoid_: Risk profile, persona
+
+**Position**:
+A stock a User currently holds in their portfolio, with its share count and average cost.
+_Avoid_: Holding, stock (when meaning the User's stake)
+
+**Order added**:
+The order a User's Positions arrived in: Positions from a broker screenshot keep the screenshot's row order, and Positions added by hand afterwards go to the end. Labelled "ترتيب الإضافة".
+_Avoid_: Screenshot order, manual order, insertion order
