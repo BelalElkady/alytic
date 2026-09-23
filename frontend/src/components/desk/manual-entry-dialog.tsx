@@ -1,5 +1,5 @@
 import { Pencil } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { NewTradeDialog, TradeForm, type LoggedTrade } from "@/components/desk/new-trade-dialog";
@@ -45,6 +45,8 @@ export function ManualEntryDialog() {
   const [editingTrade, setEditingTrade] = useState<LoggedTrade | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,37 +57,49 @@ export function ManualEntryDialog() {
   // reads the fresh value and needs no dependency on it: a later change to it
   // while the dialog is open must not switch tabs under the user.
   useEffect(() => {
-    if (manualOpen) setTab(manualTab);
+    if (!manualOpen) return;
+    setTab(manualTab);
+    // Each opening starts from the saved values with nothing ticked.
+    setDraft({});
+    setSelected({});
+    setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manualOpen]);
 
+  // rows is replaced on every live price refresh. Reseeding everything from it
+  // used to wipe what the user was typing and re-tick every row, so a ticked
+  // row (one the user chose or edited) keeps its draft; the rest follow the
+  // latest saved values, e.g. after a trade is logged from the other tab.
   useEffect(() => {
     if (!manualOpen) return;
-    const next: Draft = {};
-    const nextSelected: Record<string, boolean> = {};
-    for (const row of rows) {
-      next[row.code] = {
-        shares: String(row.position.shares ?? ""),
-        avgCost: String(row.position.avgCost ?? ""),
-        stop: String(row.position.stop ?? ""),
-        target: row.midTarget?.price != null ? String(row.midTarget.price) : "",
-      };
-      nextSelected[row.code] = true;
-    }
-    setDraft(next);
-    setSelected(nextSelected);
-    setError(null);
+    const seed = (row: (typeof rows)[number]) => ({
+      shares: String(row.position.shares ?? ""),
+      avgCost: String(row.position.avgCost ?? ""),
+      stop: String(row.position.stop ?? ""),
+      target: row.midTarget?.price != null ? String(row.midTarget.price) : "",
+    });
+    setDraft((previous) => {
+      const next: Draft = {};
+      for (const row of rows) {
+        const kept = selectedRef.current[row.code] ? previous[row.code] : undefined;
+        next[row.code] = kept ?? seed(row);
+      }
+      return next;
+    });
   }, [manualOpen, rows]);
 
   const anyEstimated = rows.some((row) => row.position.sharesEstimated);
   const allSelected = rows.length > 0 && rows.every((row) => selected[row.code]);
   const noneSelected = rows.every((row) => !selected[row.code]);
 
-  const set = (code: string, field: keyof Draft[string], value: string) =>
+  // Editing a row ticks it, so the change is saved without a separate click.
+  const set = (code: string, field: keyof Draft[string], value: string) => {
     setDraft((previous) => {
       const current = previous[code] ?? { shares: "", avgCost: "", stop: "", target: "" };
       return { ...previous, [code]: { ...current, [field]: value } };
     });
+    setSelected((previous) => ({ ...previous, [code]: true }));
+  };
 
   const toggleSelected = (code: string, checked: boolean) =>
     setSelected((previous) => ({ ...previous, [code]: checked }));
