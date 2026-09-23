@@ -1,9 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type PointerEvent, type ReactNode } from "react";
 
 import { PriceHistoryChart } from "@/components/desk/price-history-chart";
 import { EmptyState, ErrorState, LoadingBlock, Notice, Stat } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
 import { useActiveInvestStyle } from "@/lib/invest-style";
@@ -138,19 +138,38 @@ const GLOSSARY: Record<string, string> = {
     "الأصول المتداولة مقسومة على الالتزامات المتداولة؛ بتقيس قدرة الشركة على سداد التزاماتها قصيرة الأجل.",
 };
 
-/** A label with a dotted underline that shows its definition on hover, when one exists in GLOSSARY. */
+/**
+ * A label with a dotted underline that shows its definition, when one exists in
+ * GLOSSARY. A popover rather than a tooltip so it works on phones: tapping the
+ * term toggles it (touch screens have no hover), and a mouse still opens it on hover.
+ */
 function TermLabel({ children }: { children: string }) {
+  const [open, setOpen] = useState(false);
   const definition = GLOSSARY[children];
   if (!definition) return <>{children}</>;
+  const onHover = (next: boolean) => (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse") setOpen(next);
+  };
   return (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="cursor-help underline decoration-dotted underline-offset-4">{children}</span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-64 text-center leading-relaxed">{definition}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${children}: ${definition}`}
+          className="cursor-help touch-manipulation text-start underline decoration-dotted underline-offset-4"
+          onPointerEnter={onHover(true)}
+          onPointerLeave={onHover(false)}
+        >
+          {children}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        className="w-auto max-w-64 px-3 py-2 text-center text-xs leading-relaxed"
+      >
+        {definition}
+      </PopoverContent>
+    </Popover>
   );
 }
 
