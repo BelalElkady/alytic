@@ -354,7 +354,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const refreshPrices = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
       const current = rowsRef.current;
-      if (!current.length || (typeof document !== "undefined" && document.hidden)) return;
+      if (!current.length || (typeof document !== "undefined" && document.hidden) || !egxSessionLikelyOpen()) return;
       if (!force && Date.now() - lastRefreshAt.current < PRICE_REFRESH_MS - 1000) return;
       lastRefreshAt.current = Date.now();
       try {
