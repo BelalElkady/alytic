@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { PriceHistoryChart } from "@/components/desk/price-history-chart";
 import { EmptyState, ErrorState, LoadingBlock, Notice, Stat } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { fmt, int, pct, signed, tone } from "@/lib/format";
 import { useActiveInvestStyle } from "@/lib/invest-style";
@@ -89,6 +90,70 @@ const MACD_STATE: Record<string, string> = {
   bearish: "تحت خط الإشارة",
 };
 
+/** Definitions shown on hover for jargon labels, keyed by the exact label text used below. */
+const GLOSSARY: Record<string, string> = {
+  RSI: "مؤشر القوة النسبية: يقيس سرعة وحجم حركة السعر من 0 إلى 100. فوق 70 يعني تشبع شرائي، وتحت 30 يعني تشبع بيعي.",
+  "RSI (14)":
+    "مؤشر القوة النسبية: يقيس سرعة وحجم حركة السعر من 0 إلى 100. فوق 70 يعني تشبع شرائي، وتحت 30 يعني تشبع بيعي.",
+  "تباعد RSI":
+    "لما السعر بيعمل قمة أو قاع جديد لكن مؤشر RSI مابيأكدش الحركة — إشارة على ضعف محتمل في الاتجاه الحالي.",
+  MACD: "مؤشر تقارب وتباعد المتوسطات المتحركة: الفرق بين متوسطين أسيين (12 و26 يوم) بيوضح قوة واتجاه الزخم.",
+  "خط إشارة MACD": "متوسط أسي لخط MACD نفسه (9 أيام)؛ تقاطع MACD معه لأعلى أو لأسفل بيدي إشارة شراء أو بيع.",
+  "هيستوجرام MACD": "الفرق بين خط MACD وخط الإشارة؛ كل ما زاد الهيستوجرام كل ما قوي الزخم في نفس الاتجاه.",
+  "متوسط 20 يوم (SMA)": "المتوسط المتحرك البسيط لآخر 20 جلسة تداول، بيوضح الاتجاه قصير المدى للسعر.",
+  "متوسط 50 يوم (SMA)": "المتوسط المتحرك البسيط لآخر 50 جلسة تداول، بيوضح الاتجاه متوسط المدى للسعر.",
+  "متوسط 200 يوم (SMA)": "المتوسط المتحرك البسيط لآخر 200 جلسة تداول، بيوضح الاتجاه طويل المدى للسعر.",
+  "متوسط 9 أيام (EMA)":
+    "متوسط متحرك أسي لآخر 9 أيام؛ زي المتوسط البسيط بس بيدي وزن أكبر للأسعار الأحدث فبيتفاعل أسرع.",
+  "متوسط 21 يوم (EMA)":
+    "متوسط متحرك أسي لآخر 21 يوم؛ زي المتوسط البسيط بس بيدي وزن أكبر للأسعار الأحدث فبيتفاعل أسرع.",
+  "متوسط 50 مقابل 200":
+    "لما المتوسط الأقصر (50 يوم) يعدي فوق الأطول (200 يوم) بيبقى تقاطع ذهبي (إشارة صعود)، ولما يعدي تحته بيبقى تقاطع الموت (إشارة هبوط).",
+  "قوة الاتجاه (ADX)": "مؤشر متوسط الحركة الاتجاهية: يقيس قوة الاتجاه (مش اتجاهه) من 0 إلى 100. فوق 25 يعني اتجاه قوي.",
+  "+DI": "يقيس قوة الضغط الشرائي، ويُستخدم مع -DI ومؤشر ADX لتحديد اتجاه الترند.",
+  "-DI": "يقيس قوة الضغط البيعي، ويُستخدم مع +DI ومؤشر ADX لتحديد اتجاه الترند.",
+  "ستوكاستك %K": "الخط الأساسي لمؤشر ستوكاستك: بيقارن سعر الإغلاق بمدى التداول خلال فترة معينة.",
+  "ستوكاستك %D": "المتوسط المتحرك لخط %K في مؤشر ستوكاستك؛ تقاطعه مع %K بيدي إشارات شراء أو بيع.",
+  "معدل التغير (20 يوم)": "النسبة المئوية للتغير في السعر مقارنة بسعره قبل 20 جلسة، بيقيس سرعة الزخم.",
+  "اختراق حديث": "اختراق مستوى دعم أو مقاومة مهم بحركة سعر واضحة، وأقوى لما يكون مؤكد بارتفاع في حجم التداول.",
+  "متوسط المدى الحقيقي (ATR 14)":
+    "متوسط حجم تذبذب السعر يوميًا على مدار 14 جلسة، بيُستخدم لتحديد حجم الوقف ومدى تقلب السهم.",
+  "التذبذب السنوي": "مقياس لحجم تقلب سعر السهم خلال سنة؛ كل ما زادت النسبة كل ما زادت المخاطرة.",
+  "بولنجر العلوي": "النطاق العلوي لمؤشر بولنجر: متوسط 20 يوم زائد انحرافين معياريين، بيوضح حد أعلى محتمل للتذبذب.",
+  "بولنجر الأوسط": "الخط الأوسط لمؤشر بولنجر، وهو نفسه المتوسط المتحرك البسيط لآخر 20 جلسة.",
+  "بولنجر السفلي": "النطاق السفلي لمؤشر بولنجر: متوسط 20 يوم ناقص انحرافين معياريين، بيوضح حد أدنى محتمل للتذبذب.",
+  "موقع السعر داخل النطاق (%B)": "موقع السعر الحالي داخل نطاق بولنجر: 1 يعني عند النطاق العلوي، 0 يعني عند النطاق السفلي.",
+  "ضغط النطاق": "لما نطاقات بولنجر تضيق جدًا، وده غالبًا بيسبق حركة سعرية أقوى في أي اتجاه.",
+  "الحجم النسبي": "حجم التداول الحالي مقسوم على متوسط حجم آخر 20 جلسة؛ فوق 1× يعني تداول أعلى من المعتاد.",
+  "تدفق الحجم (OBV)":
+    "مؤشر تراكمي بيضيف حجم التداول يوم الصعود ويطرحه يوم الهبوط، بيوضح هل الحجم بيدعم الاتجاه الحالي ولا لأ.",
+  "مكرر الربحية (P/E)": "سعر السهم مقسوم على ربحية السهم؛ كل ما زاد الرقم كل ما كان السهم أغلى نسبة لأرباحه.",
+  "ربحية السهم (EPS)": "صافي ربح الشركة مقسوم على عدد الأسهم القائمة.",
+  "السعر ÷ القيمة الدفترية":
+    "سعر السهم مقسوم على القيمة الدفترية له؛ بيوضح هل السهم بيتداول بسعر أعلى أو أقل من صافي أصول الشركة.",
+  "عائد التوزيعات": "التوزيعات النقدية السنوية للسهم كنسبة من سعره الحالي.",
+  "العائد على حقوق الملكية": "صافي الربح مقسوم على حقوق المساهمين؛ بيقيس كفاءة الشركة في تحقيق أرباح من أموال المساهمين.",
+  "الدين ÷ حقوق الملكية": "إجمالي دين الشركة مقسوم على حقوق الملكية؛ بيوضح مدى اعتمادها على الاقتراض مقارنة بأموال المساهمين.",
+  "نسبة التداول (السيولة)":
+    "الأصول المتداولة مقسومة على الالتزامات المتداولة؛ بتقيس قدرة الشركة على سداد التزاماتها قصيرة الأجل.",
+};
+
+/** A label with a dotted underline that shows its definition on hover, when one exists in GLOSSARY. */
+function TermLabel({ children }: { children: string }) {
+  const definition = GLOSSARY[children];
+  if (!definition) return <>{children}</>;
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="cursor-help underline decoration-dotted underline-offset-4">{children}</span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-64 text-center leading-relaxed">{definition}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 const SHARIAH_LABEL: Record<string, { label: string; className: string }> = {
   compliant: { label: "متوافق مع الشريعة", className: "border-up/40 bg-up-soft text-up" },
   non_compliant: { label: "غير متوافق مع الشريعة", className: "border-down/40 bg-down-soft text-down" },
@@ -135,7 +200,7 @@ export function StockAnalysisBody({
       />
       <Stat label="التقييم" value={`${technical.score}/100`} sub={technical.signal?.ar} />
       <Stat label="الاتجاه" value={<span className="text-[14px]">{snapshot.trend.label}</span>} />
-      <Stat label="RSI" value={fmt(snapshot.momentum.rsi14, 1)} />
+      <Stat label={<TermLabel>RSI</TermLabel>} value={fmt(snapshot.momentum.rsi14, 1)} />
     </div>
   );
 
@@ -515,7 +580,9 @@ function MetricPanel({ title, rows }: { title: string; rows: Metric[] }) {
 function Line({ label, value, hint }: { label: string; value: ReactNode; hint?: string | undefined }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
-      <dt className="text-muted-foreground">{label}</dt>
+      <dt className="text-muted-foreground">
+        <TermLabel>{label}</TermLabel>
+      </dt>
       <dd className="text-end font-medium">
         {value}
         {hint && <div className="mt-0.5 text-[11.5px] font-normal text-muted-foreground">{hint}</div>}
