@@ -2834,7 +2834,9 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
     if (screenshotImportsLeft(portfolio, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
     const next = {
       ...bumpUsage(portfolio, 'screenshots'),
-      positions: merge ? { ...portfolio.positions, ...positions } : positions,
+      // A merge keeps each already-held position's place in the Order added;
+      // stocks new to the portfolio go after them, in screenshot row order.
+      positions: merge ? { ...portfolio.positions, ...keepAddedOrder(portfolio.positions, positions) } : positions,
       ...(Number.isFinite(cashFromScreenshot) && cashFromScreenshot >= 0 ? { cash: cashFromScreenshot } : {}),
       imports: [...(portfolio.imports ?? []), { importedAt, positions: Object.keys(positions), source: 'screenshot' }].slice(-20),
     };
@@ -2851,6 +2853,13 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
     portfolio: { ...updated, capital: capitalOf(updated) },
   });
 }));
+
+function keepAddedOrder(held, incoming) {
+  return Object.fromEntries(Object.entries(incoming).map(([code, pos]) => [
+    code,
+    Number.isFinite(held[code]?.addedOrder) ? { ...pos, addedOrder: held[code].addedOrder } : pos,
+  ]));
+}
 
 // ---- AI endpoints ----------------------------------------------------------
 
