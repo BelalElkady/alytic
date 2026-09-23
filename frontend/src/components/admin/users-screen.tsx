@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { arDay, int, signed, tone } from "@/lib/format";
+import { arDay, exact, int, signed, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { STYLE_LABEL, type AdminUserBehavior, type AdminUserRow } from "@/routes/_app.admin";
 
@@ -291,7 +291,7 @@ function StatsStrip({
       <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 whitespace-nowrap">
         <span
           className="tabular-nums inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px]"
-          title={online ? `آخر ${Math.round(online.windowSeconds / 60)} دقايق · زوّار غير مسجّلين: ${online.visitors} (تُصفَّر مع إعادة تشغيل السيرفر)` : undefined}
+          title={online ? `آخر ${exact(online.windowSeconds / 60)} دقايق · زوّار غير مسجّلين: ${online.visitors} (تُصفَّر مع إعادة تشغيل السيرفر)` : undefined}
         >
           <span className="size-1.5 rounded-full bg-up" />
           متصلون الآن {online ? int(online.signedIn + online.visitors) : "…"}

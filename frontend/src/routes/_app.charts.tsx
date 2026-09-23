@@ -15,7 +15,7 @@ import { EmptyState, Notice, Panel, Spinner } from "@/components/desk/state-bloc
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { post } from "@/lib/api";
-import { arDay, int, pct, signed, tone } from "@/lib/format";
+import { arDay, exact, int, pct, signed, tone } from "@/lib/format";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -122,7 +122,7 @@ function ChartsPage() {
                     />
                   </span>
                   <span className={cn("num text-end text-[12.5px] font-medium", tone(value))}>
-                    {pct(value, 1)}
+                    {pct(value)}
                   </span>
                 </div>
               );
@@ -140,11 +140,11 @@ const RANGES = [
   { value: "ALL", label: "الكل", sessions: Infinity },
 ];
 
-/** Compact axis label: 508,055 -> "508K". The tooltip still shows it in full. */
+/** Compact axis label: 508,055 -> "508.055K". The tooltip still shows it in full. */
 const compact = (value: number) =>
   Math.abs(value) >= 1000
-    ? `${Math.round(value / 1000).toLocaleString("en-US")}K`
-    : String(Math.round(value));
+    ? `${exact(value / 1000)}K`
+    : exact(value);
 
 /** DD/MM — enough to place a point in time without crowding the axis. */
 const shortDay = (iso: string) =>
@@ -205,7 +205,7 @@ function EquityCurve({ series }: { series: { day: string; value: number }[] }) {
           <div className={cn("num mt-1.5 text-[13px] font-medium", tone(change))}>
             <bdi>{signed(change)} ج</bdi>
             <span className="mx-1 text-muted-foreground">·</span>
-            <bdi>{pct(changePct, 1)}</bdi>
+            <bdi>{pct(changePct)}</bdi>
             <span className="mr-1.5 font-normal text-muted-foreground">
               {range === "ALL"
                 ? `خلال ${shown.length} يوم محفوظ`

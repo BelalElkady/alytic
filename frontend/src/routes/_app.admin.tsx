@@ -48,7 +48,7 @@ import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
 import { RENEWAL_LABEL, UsersScreen, renewalStatus } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
-import { arDay, signed } from "@/lib/format";
+import { arDay, exact, signed } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
@@ -729,8 +729,8 @@ function BehaviorCell({ behavior: b }: { behavior: AdminUserBehavior }) {
   const facts: string[] = [];
   if (tradesCount) {
     facts.push(`${b.buys} شراء · ${b.sells} بيع`);
-    if (b.avgHoldDays != null) facts.push(`متوسط الاحتفاظ ${Math.round(b.avgHoldDays)} يوم`);
-    if (b.winRatePct != null) facts.push(`${Math.round(b.winRatePct)}% صفقات رابحة`);
+    if (b.avgHoldDays != null) facts.push(`متوسط الاحتفاظ ${exact(b.avgHoldDays)} يوم`);
+    if (b.winRatePct != null) facts.push(`${exact(b.winRatePct)}% صفقات رابحة`);
     if (b.averagingDownBuys) facts.push(`متوسّط لتحت ${b.averagingDownBuys} مرة`);
     facts.push(
       b.tradesLast30d
@@ -738,7 +738,7 @@ function BehaviorCell({ behavior: b }: { behavior: AdminUserBehavior }) {
         : `آخر صفقة ${arDay(b.lastTradeDate)}`,
     );
   } else if (b.avgOpenPositionDays != null) {
-    facts.push(`مراكزه مفتوحة من ${Math.round(b.avgOpenPositionDays)} يوم في المتوسط`);
+    facts.push(`مراكزه مفتوحة من ${exact(b.avgOpenPositionDays)} يوم في المتوسط`);
   }
 
   return (

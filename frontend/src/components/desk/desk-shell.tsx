@@ -50,7 +50,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, post } from "@/lib/api";
-import { arDay, int, signed, tone } from "@/lib/format";
+import { arDay, exact, int, signed, tone } from "@/lib/format";
 import {
   INVEST_STYLES,
   isStyleKey,
@@ -907,7 +907,7 @@ function HeroBar() {
               label="ربح/خسارة من الشراء"
               value={signed(totals.pl)}
               valueClassName={cn(size, tone(totals.pl))}
-              sub={<span className={tone(totals.pl)}>{totals.plPct.toFixed(2)}%</span>}
+              sub={<span className={tone(totals.pl)}>{exact(totals.plPct)}%</span>}
             />
             <Stat
               label="تغيّر اليوم"

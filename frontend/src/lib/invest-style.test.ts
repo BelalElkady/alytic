@@ -177,7 +177,7 @@ describe("styleRecommendation", () => {
     const row8 = { price: 108, midTarget: { price: 120 } };
     const trader = styleRecommendation(row8, { ...held, unrealizedPct: 8 }, "trader");
     expect(trader.action).toBe("sell_part"); // trader banks from 6%
-    expect(trader.order?.price).toBe(109.08); // +1% limit
+    expect(trader.order?.price).toBeCloseTo(109.08); // +1% limit
 
     const medium = styleRecommendation(row8, { ...held, unrealizedPct: 8 }, "medium");
     expect(medium.action).toBe("hold"); // medium waits for 15%

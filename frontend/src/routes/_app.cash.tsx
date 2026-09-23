@@ -95,7 +95,7 @@ function CashAnalysisExplainer() {
         <>
           بيسيب بس الأسهم اللي: مش موجودة عندك، ودخولها مناسب دلوقتي (شراء فوري أو أمر محدد على تصحيح — مش
           سهم ممتد فات وقته)، وليها هدف واضح، والهدف بيدفع على الأقل{" "}
-          <b className="num">{fmt(rules.entry.minRiskReward, 1)}</b> ضعف المخاطرة (حسب أسلوبك «{styleLabel}»)،
+          <b className="num">{fmt(rules.entry.minRiskReward)}</b> ضعف المخاطرة (حسب أسلوبك «{styleLabel}»)،
           وحجمها حسب القواعد أكبر من صفر.
         </>
       ),
@@ -116,7 +116,7 @@ function CashAnalysisExplainer() {
       body: (
         <>
           التوزيع مش بالتساوي: السهم الأقوى ياخد نصيب أكبر. وعدد أسهم كل واحد بيتحدد بأصغر حد من أربعة:
-          ميزانية المخاطرة (<b className="num">{fmt(rules.sizing.riskPerTradePct, 1)}%</b> من رأس المال في
+          ميزانية المخاطرة (<b className="num">{fmt(rules.sizing.riskPerTradePct)}%</b> من رأس المال في
           الصفقة)، وأقصى وزن للسهم الواحد (<b className="num">{rules.sizing.maxPositionPct}%</b> من محفظتك)،
           والسيولة (مش أكتر من <b className="num">{MAX_DAILY_TURNOVER_PCT}%</b> من تداوله اليومي)، وحد القطاع (
           <b className="num">{MAX_SECTOR_PCT}%</b> من المحفظة). سهم نصيبه مايكفيش سهم واحد بيتشال، والفلوس
@@ -241,10 +241,10 @@ function CashPage() {
     totals.cash <= 0
       ? "مفيش كاش متاح حاليًا. أي شراء جديد لازم يجي من بيع جزئي لسهم مربح — ما تشتريش بالدين."
       : share < 10
-        ? `الكاش ${fmt(share, 0)}% بس من المحفظة — قليل. احتفظ به كاحتياطي، وما تدخلش صفقة جديدة إلا على فرصة واضحة من أسهمك المفضلة أو تحليل السوق.`
+        ? `الكاش ${fmt(share)}% بس من المحفظة — قليل. احتفظ به كاحتياطي، وما تدخلش صفقة جديدة إلا على فرصة واضحة من أسهمك المفضلة أو تحليل السوق.`
         : share < 30
-          ? `الكاش ${fmt(share, 0)}% — نسبة صحية. وزّعه: ثلث على أوامر محددة، وثلث ينتظر تصحيح المؤشر، وثلث يفضل نقدي.`
-          : `الكاش ${fmt(share, 0)}% — عالي. ابدأ نشر تدريجي على 3 أسابيع بأوامر محددة. الباقي صندوق نقدي — مش فلوس نايمة، ده عائد + ذخيرة.`;
+          ? `الكاش ${fmt(share)}% — نسبة صحية. وزّعه: ثلث على أوامر محددة، وثلث ينتظر تصحيح المؤشر، وثلث يفضل نقدي.`
+          : `الكاش ${fmt(share)}% — عالي. ابدأ نشر تدريجي على 3 أسابيع بأوامر محددة. الباقي صندوق نقدي — مش فلوس نايمة، ده عائد + ذخيرة.`;
 
   const saveCash = async () => {
     setSavingCash(true);
@@ -312,7 +312,7 @@ function CashPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border bg-surface p-3 sm:grid-cols-4">
-          <Stat label="نسبة الكاش من الإجمالي" value={`${fmt(share, 1)}%`} />
+          <Stat label="نسبة الكاش من الإجمالي" value={`${fmt(share)}%`} />
           <Stat label="التكلفة الكلية" value={int(totals.cost)} />
           <Stat label="قيمة الأسهم" value={int(totals.value)} />
           <Stat label="إجمالي رأس المال" value={int(totals.value + totals.cash)} />
@@ -411,7 +411,7 @@ function CashPage() {
                           {row ? fmt(row.price) : "—"}
                         </TableCell>
                         <TableCell className={`num text-right ${tone(row?.changePct)}`}>
-                          {row?.changePct != null ? pct(row.changePct, 1) : "—"}
+                          {row?.changePct != null ? pct(row.changePct) : "—"}
                         </TableCell>
                         <TableCell className="num text-right">{row?.score ?? "—"}</TableCell>
                         <TableCell className="text-right">{row?.signal?.ar ?? "—"}</TableCell>

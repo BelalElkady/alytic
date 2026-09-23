@@ -6,6 +6,7 @@ import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { fmt } from "@/lib/format";
 import { canonical, siteUrl, siteName } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant";
@@ -39,9 +40,6 @@ const BASE_INCLUDED = [
 ];
 
 type Period = "monthly" | "yearly";
-
-/** English (Western) digits with thousands separators — the site's Arabic copy still quotes prices as 2,990, not ٢٬٩٩٠. */
-const fmt = (n: number) => n.toLocaleString("en-US");
 
 /** كل رقم شهري — يتجدد أول كل شهر ميلادي، بلا علاقة بمدة الاشتراك (شهري أو سنوي). الأسعار مطابقة لـ PLANS في backend/src/billing/plans.js. */
 const PLANS = [
@@ -85,7 +83,7 @@ const PLANS = [
 const YEARLY_DISCOUNT_PCT = Math.min(
   ...PLANS.flatMap((plan) =>
     plan.monthlyPrice !== null && plan.yearlyPrice !== null
-      ? [Math.round((1 - plan.yearlyPrice / (plan.monthlyPrice * 12)) * 100)]
+      ? [(1 - plan.yearlyPrice / (plan.monthlyPrice * 12)) * 100]
       : [],
   ),
 );
@@ -145,7 +143,7 @@ function PricingPage() {
             <TabsTrigger value="yearly" className="relative">
               سنوي
               <span className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[12px] font-semibold text-up">
-                وفّر <span className="num">{YEARLY_DISCOUNT_PCT}%</span>
+                وفّر <span className="num">{fmt(YEARLY_DISCOUNT_PCT)}%</span>
               </span>
             </TabsTrigger>
           </TabsList>
@@ -153,13 +151,13 @@ function PricingPage() {
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {PLANS.map((plan) => {
-            // The yearly tab quotes the yearly price as a per-month figure (2,990 → 249), whole
-            // pounds only, with the real one-time total and the saving spelled out beneath it.
+            // The yearly tab quotes the yearly price as a per-month figure (2,990 → 249.17 on screen),
+            // with the real one-time total and the saving spelled out beneath it.
             let price: number | null = plan.monthlyPrice;
             let yearlyTotal = 0;
             let yearlySaving = 0;
             if (period === "yearly" && plan.monthlyPrice !== null && plan.yearlyPrice !== null) {
-              price = Math.round(plan.yearlyPrice / 12);
+              price = plan.yearlyPrice / 12;
               yearlyTotal = plan.yearlyPrice;
               // Same saving the backend's PLANS comment quotes: twelve monthly payments vs the yearly price.
               yearlySaving = plan.monthlyPrice * 12 - plan.yearlyPrice;

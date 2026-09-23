@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { fmt } from "@/lib/format";
+
 export type StyleKey = "trader" | "medium" | "long";
 
 export const STYLE_STORAGE_KEY = "alytic-invest-style";
@@ -220,8 +222,6 @@ export function useActiveInvestStyle(trades: Trade[] | null | undefined): Active
   return { style: explicit ? manual : (inferred ?? manual), auto: !explicit, inferred };
 }
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
-
 export type Recommendation = {
   action: string;
   label: string;
@@ -286,11 +286,11 @@ export function styleRecommendation(
       action: "take_target",
       label: "جني أرباح",
       text:
-        `وصل الهدف ${r2(target)}. بيع ${qty} سهم وارفع الوقف للباقي لـ ${r2(
+        `وصل الهدف ${fmt(target)}. بيع ${qty} سهم وارفع الوقف للباقي لـ ${fmt(
           price * (1 - rules.takeProfit.raiseStopAfterTargetPct / 100),
         )}.` +
-        (position.reachedTarget?.next != null ? ` الهدف الجديد للباقي: ${r2(position.reachedTarget.next)}.` : ""),
-      order: { side: "sell", qty, price: r2(price) },
+        (position.reachedTarget?.next != null ? ` الهدف الجديد للباقي: ${fmt(position.reachedTarget.next)}.` : ""),
+      order: { side: "sell", qty, price },
     };
   }
 
@@ -301,10 +301,10 @@ export function styleRecommendation(
     return {
       action: "sell_part",
       label: "بيع جزئي",
-      text: `مربح ${r2(profitPct)}% — أمّن جزء. بيع ${qty} سهم بأمر محدد عند ${r2(
+      text: `مربح ${fmt(profitPct)}% — أمّن جزء. بيع ${qty} سهم بأمر محدد عند ${fmt(
         limit,
       )} (صلاحية أسبوع). الباقي بوقف متحرك ${rules.trailing.trailPct}%.`,
-      order: { side: "sell", qty, price: r2(limit) },
+      order: { side: "sell", qty, price: limit },
     };
   }
 
@@ -313,7 +313,7 @@ export function styleRecommendation(
     return {
       action: "hold",
       label: "احتفاظ",
-      text: `قريب من الوقف (${r2(position.distanceToStopPct ?? 0)}% بس). احتفظ، بس إغلاق تحت ${r2(
+      text: `قريب من الوقف (${fmt(position.distanceToStopPct ?? 0)}% بس). احتفظ، بس إغلاق تحت ${fmt(
         stop ?? 0,
       )} يبقى خروج كامل.`,
       order: null,
@@ -330,7 +330,7 @@ export function styleRecommendation(
   return {
     action: "hold",
     label: "احتفاظ",
-    text: `${profitPct >= 0 ? "مربح" : "خاسر"} ${r2(Math.abs(profitPct))}% وداخل النطاق. الحركة هادية ومش محتاجة أي قرار.${trailNote}`,
+    text: `${profitPct >= 0 ? "مربح" : "خاسر"} ${fmt(Math.abs(profitPct))}% وداخل النطاق. الحركة هادية ومش محتاجة أي قرار.${trailNote}`,
     order: null,
   };
 }

@@ -399,7 +399,7 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                         <TargetBox
                           label="الهدف"
                           price={one.price ?? undefined}
-                          hint={`${pct(one.upsidePct, 1)} · ${one.horizon?.ar ?? ""}`}
+                          hint={`${pct(one.upsidePct)} · ${one.horizon?.ar ?? ""}`}
                         />
                       </div>
                     ) : (
@@ -409,7 +409,7 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                           price={row.midTarget?.price}
                           hint={
                             row.midTarget
-                              ? `${pct(row.midTarget.upsidePct, 1)} · ${row.midTarget.horizon?.ar ?? ""}`
+                              ? `${pct(row.midTarget.upsidePct)} · ${row.midTarget.horizon?.ar ?? ""}`
                               : "لا يوجد هدف صالح"
                           }
                         />
@@ -418,7 +418,7 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                           price={row.longTarget?.price}
                           hint={
                             row.longTarget?.price
-                              ? `${pct(row.longTarget.upsidePct, 1)} · ${row.longTarget.horizon?.ar ?? ""}`
+                              ? `${pct(row.longTarget.upsidePct)} · ${row.longTarget.horizon?.ar ?? ""}`
                               : (row.longTarget?.note ?? "لا يوجد هدف بعيد")
                           }
                         />

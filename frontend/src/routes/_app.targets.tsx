@@ -114,7 +114,7 @@ function TargetsPage() {
                         {fmt(row.position.targetLevel ?? row.midTarget?.price)}
                       </TableCell>
                       <TableCell className="num text-right font-medium">
-                        {estimate.reached ? "—" : pct(estimate.distancePct, 1)}
+                        {estimate.reached ? "—" : pct(estimate.distancePct)}
                       </TableCell>
                       <TableCell className={cn("num text-right", tone(row.changePct))}>
                         {row.changePct != null ? pct(row.changePct) : "—"}

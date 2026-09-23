@@ -195,7 +195,7 @@ function CalendarPage() {
                 <span className="num font-medium">{+day.slice(-2)}</span>
                 {dayEntry && (
                   <span className={cn("num text-[10.5px]", tone(dayEntry.dayChange))}>
-                    {pct(dayEntry.dayChangePct, 1)}
+                    {pct(dayEntry.dayChangePct)}
                   </span>
                 )}
               </button>

@@ -219,7 +219,7 @@ export function StockAnalysisBody({
       />
       <Stat label="التقييم" value={`${technical.score}/100`} sub={technical.signal?.ar} />
       <Stat label="الاتجاه" value={<span className="text-[14px]">{snapshot.trend.label}</span>} />
-      <Stat label={<TermLabel>RSI</TermLabel>} value={fmt(snapshot.momentum.rsi14, 1)} />
+      <Stat label={<TermLabel>RSI</TermLabel>} value={fmt(snapshot.momentum.rsi14)} />
     </div>
   );
 
@@ -452,9 +452,9 @@ export function StockAnalysisBody({
         typeof ma.goldenCross === "boolean"
           ? ["متوسط 50 مقابل 200", ma.goldenCross ? "فوقه (تقاطع ذهبي)" : "تحته (تقاطع الموت)"]
           : null,
-        metric("قوة الاتجاه (ADX)", strength.adx, (v) => num(fmt(v, 1)), strength.trendQuality),
-        metric("+DI", strength.plusDI, (v) => num(fmt(v, 1))),
-        metric("-DI", strength.minusDI, (v) => num(fmt(v, 1))),
+        metric("قوة الاتجاه (ADX)", strength.adx, (v) => num(fmt(v)), strength.trendQuality),
+        metric("+DI", strength.plusDI, (v) => num(fmt(v))),
+        metric("-DI", strength.minusDI, (v) => num(fmt(v))),
       ]}
     />
   );
@@ -464,12 +464,12 @@ export function StockAnalysisBody({
     <MetricPanel
       title="الزخم"
       rows={[
-        metric("RSI (14)", momentum.rsi14, (v) => num(fmt(v, 1)), momentum.rsiState),
+        metric("RSI (14)", momentum.rsi14, (v) => num(fmt(v)), momentum.rsiState),
         metric("MACD", momentum.macd, (v) => num(fmt(v)), MACD_STATE[momentum.macdCross] ?? null),
         metric("خط إشارة MACD", momentum.macdSignal, (v) => num(fmt(v))),
         metric("هيستوجرام MACD", momentum.macdHistogram, (v) => num(fmt(v))),
-        metric("ستوكاستك %K", momentum.stochK, (v) => num(fmt(v, 1))),
-        metric("ستوكاستك %D", momentum.stochD, (v) => num(fmt(v, 1))),
+        metric("ستوكاستك %K", momentum.stochK, (v) => num(fmt(v))),
+        metric("ستوكاستك %D", momentum.stochD, (v) => num(fmt(v))),
         metric("معدل التغير (20 يوم)", momentum.roc20, tonedPct),
         momentum.divergence?.type && momentum.divergence.type !== "none"
           ? [
@@ -497,7 +497,7 @@ export function StockAnalysisBody({
       title="التذبذب"
       rows={[
         metric("متوسط المدى الحقيقي (ATR 14)", volatility.atr14, (v) => num(`${fmt(v)} ج`), isNum(volatility.atrPct) ? `${fmt(volatility.atrPct)}% من السعر` : null),
-        metric("التذبذب السنوي", volatility.annualizedVolPct, (v) => num(`${fmt(v, 1)}%`)),
+        metric("التذبذب السنوي", volatility.annualizedVolPct, (v) => num(`${fmt(v)}%`)),
         metric("بولنجر العلوي", volatility.bollingerUpper, (v) => num(fmt(v))),
         metric("بولنجر الأوسط", volatility.bollingerMid, (v) => num(fmt(v))),
         metric("بولنجر السفلي", volatility.bollingerLower, (v) => num(fmt(v))),
@@ -536,7 +536,7 @@ export function StockAnalysisBody({
           metric("ربحية السهم (EPS)", fundamentals.epsEgp, (v) => num(`${fmt(v)} ج`)),
           metric("السعر ÷ القيمة الدفترية", fundamentals.priceToBook, (v) => num(`${fmt(v)}×`)),
           metric("عائد التوزيعات", fundamentals.dividendYieldPct, (v) => num(`${fmt(v)}%`)),
-          metric("العائد على حقوق الملكية", fundamentals.returnOnEquityPct, (v) => num(`${fmt(v, 1)}%`)),
+          metric("العائد على حقوق الملكية", fundamentals.returnOnEquityPct, (v) => num(`${fmt(v)}%`)),
           metric("الدين ÷ حقوق الملكية", fundamentals.debtToEquity, (v) => num(fmt(v))),
           metric("نسبة التداول (السيولة)", fundamentals.currentRatio, (v) => num(fmt(v))),
           metric("القيمة السوقية", fundamentals.marketCapEgp, (v) => num(egpBig(v))),

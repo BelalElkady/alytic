@@ -165,7 +165,7 @@ function verdictStaleReason(
   }
   const movePct = ((now - then) / then) * 100;
   if (Math.abs(movePct) >= VERDICT_STALE_MOVE_PCT) {
-    return `السعر اتحرك ${pct(movePct, 1)} من وقت التوصية`;
+    return `السعر اتحرك ${pct(movePct)} من وقت التوصية`;
   }
   return null;
 }
@@ -411,7 +411,7 @@ function PositionsPage() {
       if ((p.distanceToStopPct ?? 99) <= nearStopPct)
         return {
           tone: "warn" as const,
-          text: `${row.code}: قريب من الوقف (${fmt(p.distanceToStopPct, 1)}%)`,
+          text: `${row.code}: قريب من الوقف (${fmt(p.distanceToStopPct)}%)`,
         };
       if (p.triggers?.atTarget) {
         // The row's targets have already moved up to the new one by now, so the
@@ -689,16 +689,16 @@ function PositionCard({
           label="الربح"
           value={signed(p.unrealizedEgp)}
           valueClassName={tone(p.unrealizedEgp)}
-          sub={pct(p.unrealizedPct, 1)}
+          sub={pct(p.unrealizedPct)}
         />
         <Stat
           label="للوقف"
-          value={pct(p.distanceToStopPct, 1)}
+          value={pct(p.distanceToStopPct)}
           valueClassName={(p.distanceToStopPct ?? 99) <= 3 ? "text-down" : ""}
         />
         <Stat
           label="للهدف"
-          value={pct(p.distanceToTargetPct, 1)}
+          value={pct(p.distanceToTargetPct)}
         />
       </div>
 

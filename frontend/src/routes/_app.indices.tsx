@@ -113,7 +113,7 @@ function IndexCard({ row }: { row: IndexRow }) {
       description={
         <>
           {row.constituentCount} سهم متابَع
-          {row.spotValue !== null && ` · القيمة ${fmt(row.spotValue, 0)}`}
+          {row.spotValue !== null && ` · القيمة ${fmt(row.spotValue)}`}
         </>
       }
       action={
@@ -132,7 +132,7 @@ function IndexCard({ row }: { row: IndexRow }) {
           <p className="text-[12px] text-muted-foreground">
             التغيّر اليوم:{" "}
             <span className={cn("num", tone(row.changePoints))}>
-              {signed(row.changePoints, 1)} نقطة
+              {signed(row.changePoints)} نقطة
             </span>
           </p>
         )}

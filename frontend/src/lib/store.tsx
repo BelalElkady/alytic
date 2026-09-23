@@ -37,8 +37,6 @@ export type Row = {
 };
 export type Portfolio = any;
 
-const round2 = (x: number) => +x.toFixed(2);
-
 /**
  * Re-derives every price-dependent field of an open position at a live price.
  * The server prices a position once, at fetch time; the live quote then keeps
@@ -51,18 +49,18 @@ export function repricePosition(position: Position, price: number): Position {
   const { shares, avgCost, stop, stopAtClose, targetLevel, closePrice } = position;
   const next = {
     ...position,
-    marketValue: round2(shares * price),
-    unrealizedEgp: round2(shares * (price - avgCost)),
-    unrealizedPct: round2(((price - avgCost) / avgCost) * 100),
+    marketValue: shares * price,
+    unrealizedEgp: shares * (price - avgCost),
+    unrealizedPct: ((price - avgCost) / avgCost) * 100,
   };
   if (typeof stop === "number") {
-    next.distanceToStopPct = round2(((price - stop) / price) * 100);
+    next.distanceToStopPct = ((price - stop) / price) * 100;
     // The close is judged against the stop that was in force then, which a
     // stop raised during the session doesn't change.
     if (typeof closePrice === "number") next.stopBreached = closePrice < (stopAtClose ?? stop) && price < stop;
   }
   if (typeof targetLevel === "number") {
-    next.distanceToTargetPct = round2(((targetLevel - price) / price) * 100);
+    next.distanceToTargetPct = ((targetLevel - price) / price) * 100;
   }
   return next;
 }

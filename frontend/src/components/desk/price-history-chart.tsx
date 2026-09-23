@@ -92,15 +92,6 @@ function niceScale(lo: number, hi: number, targetTicks = 4) {
   return { min: +min.toFixed(6), max: +max.toFixed(6), ticks, step };
 }
 
-/** Fewest decimals that show every multiple of `step` exactly (0.25 -> 2, 5 -> 0). */
-const decimalsFor = (step: number) => {
-  for (let digits = 0; digits < 3; digits++) {
-    const scaled = step * 10 ** digits;
-    if (Math.abs(scaled - Math.round(scaled)) < 1e-6) return digits;
-  }
-  return 3;
-};
-
 // The dialog re-mounts this for every stock, so the last zoom level is kept
 // here — comparing several stocks over the same period shouldn't mean
 // re-picking it each time.
@@ -196,14 +187,13 @@ function PriceArea({ range, history }: { range: RangeKey; history: History }) {
   const high = Math.max(hi, start);
   const pad = (high - low || high * 0.02) * 0.1;
   const scale = niceScale(low - pad, high + pad);
-  const digits = decimalsFor(scale.step);
   const axis = axisFor(range, points);
   const note = RANGES.find((option) => option.value === range)?.note;
 
   return (
     <div className="space-y-3">
       <div className={cn("num text-[13px] font-medium", tone(changePct))}>
-        <bdi>{pct(changePct, 2)}</bdi>
+        <bdi>{pct(changePct)}</bdi>
         <span className="mr-1.5 font-normal text-muted-foreground">
           {base != null ? "عن إغلاق أمس" : "خلال الفترة"}
         </span>
@@ -231,7 +221,7 @@ function PriceArea({ range, history }: { range: RangeKey; history: History }) {
               orientation="right"
               domain={[scale.min, scale.max]}
               ticks={scale.ticks}
-              tickFormatter={(value: number) => fmt(value, digits)}
+              tickFormatter={(value: number) => fmt(value)}
               tickLine={false}
               axisLine={false}
               width={46}
@@ -301,7 +291,7 @@ function PriceTooltip({
       </div>
       <div className="num mt-0.5 text-[14px] font-semibold">{fmt(point.c)} ج</div>
       <div className={cn("num text-[11.5px]", tone(sincePct))}>
-        <bdi>{pct(sincePct, 2)}</bdi> {label}
+        <bdi>{pct(sincePct)}</bdi> {label}
       </div>
     </div>
   );

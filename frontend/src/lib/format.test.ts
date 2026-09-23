@@ -3,9 +3,20 @@ import { describe, expect, it } from "vitest";
 import { arDay, clamp, fmt, int, isoDay, pct, signed, tone } from "./format";
 
 describe("fmt", () => {
-  it("formats numbers with fixed digits", () => {
+  it("shows up to 3 decimals exactly, without padding", () => {
+    expect(fmt(12.3)).toBe("12.3");
+    expect(fmt(1.235)).toBe("1.235");
+    expect(fmt(1234567.891)).toBe("1,234,567.891");
+  });
+
+  it("rounds only long decimals, to 2 places", () => {
     expect(fmt(12.3456)).toBe("12.35");
-    expect(fmt(12.3, 3)).toBe("12.300");
+    expect(fmt(2990 / 12)).toBe("249.17");
+    expect(fmt(-1.23456)).toBe("-1.23");
+  });
+
+  it("drops floating-point noise", () => {
+    expect(fmt(0.1 + 0.2)).toBe("0.3");
   });
 
   it("renders an em dash for anything that is not a usable number", () => {
@@ -17,13 +28,13 @@ describe("fmt", () => {
   });
 
   it("accepts numeric strings", () => {
-    expect(fmt("42.5")).toBe("42.50");
+    expect(fmt("42.5")).toBe("42.5");
   });
 });
 
 describe("int", () => {
-  it("rounds and thousands-separates", () => {
-    expect(int(1234.6)).toBe("1,235");
+  it("thousands-separates without rounding", () => {
+    expect(int(1234.6)).toBe("1,234.6");
     expect(int(1234567)).toBe("1,234,567");
   });
 
@@ -34,10 +45,10 @@ describe("int", () => {
 });
 
 describe("pct", () => {
-  it("signs gains and losses", () => {
-    expect(pct(1.234)).toBe("+1.23%");
-    expect(pct(-5)).toBe("-5.00%");
-    expect(pct(0)).toBe("0.00%");
+  it("signs gains and losses without rounding", () => {
+    expect(pct(1.234)).toBe("+1.234%");
+    expect(pct(-5)).toBe("-5%");
+    expect(pct(0)).toBe("0%");
   });
 
   it("renders an em dash for missing values", () => {
@@ -47,14 +58,12 @@ describe("pct", () => {
 });
 
 describe("signed", () => {
-  it("signs with zero digits by default", () => {
-    expect(signed(5.5)).toBe("+6");
-    expect(signed(-2.2)).toBe("-2");
+  it("signs without rounding", () => {
+    expect(signed(5.5)).toBe("+5.5");
+    expect(signed(-2.2)).toBe("-2.2");
     expect(signed(0)).toBe("0");
-  });
-
-  it("honours explicit digits", () => {
-    expect(signed(3.14159, 2)).toBe("+3.14");
+    expect(signed(3.14159)).toBe("+3.14");
+    expect(signed(-12345.5)).toBe("-12,345.5");
   });
 });
 
