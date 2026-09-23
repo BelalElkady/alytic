@@ -472,7 +472,7 @@ type AdminUserUsage = {
   credits: Record<CreditKind, number>;
 };
 
-const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
+export const STYLE_LABEL: Record<StyleKey, string> = Object.fromEntries(
   INVEST_STYLES.map((s) => [s.key, s.label]),
 ) as Record<StyleKey, string>;
 

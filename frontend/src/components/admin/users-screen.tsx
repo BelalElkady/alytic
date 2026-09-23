@@ -1,6 +1,6 @@
 // The admin users screen: a stats strip whose Renewal status chips double as the filter, then a slim table
-// (Identity · phone · Renewal · activity) where a row opens a drawer (bottom sheet on phone) with everything else,
-// including every editor. Designed on map #26 (decisions in #27, #28, #29).
+// (Identity · phone · Renewal · activity · capital · style) where a row opens a drawer (bottom sheet on phone)
+// with everything else, including every editor. Designed on map #26 (decisions in #27, #28, #29, #40).
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { arDay, int, signed, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { AdminUserBehavior, AdminUserRow } from "@/routes/_app.admin";
+import { STYLE_LABEL, type AdminUserBehavior, type AdminUserRow } from "@/routes/_app.admin";
 
 type EditorProps = { row: AdminUserRow; onChanged: () => void; readOnly: boolean };
 
@@ -145,6 +145,20 @@ function Activity({ row }: { row: AdminUserRow }) {
       </div>
       <div className="text-[11.5px] text-muted-foreground">سجّل {arDay(row.createdAt?.slice(0, 10))}</div>
     </div>
+  );
+}
+
+function Capital({ row }: { row: AdminUserRow }) {
+  const pf = row.portfolio;
+  return <span className="num text-[13px]">{pf ? `${int(pf.cash + pf.positionsValue)} ج` : "—"}</span>;
+}
+
+function Style({ row }: { row: AdminUserRow }) {
+  const style = row.behavior?.chosenStyle ?? row.behavior?.inferredStyle ?? null;
+  return style ? (
+    <span className="text-[13px] font-medium">{STYLE_LABEL[style]}</span>
+  ) : (
+    <span className="text-[13px] text-muted-foreground">غير محدد</span>
   );
 }
 
@@ -339,8 +353,9 @@ const ROW_TINT: Record<RenewalStatus, string> = {
 };
 
 /**
- * Slim 4-column table (2 on phone); a row opens the drawer, a bottom sheet on
- * phone. The drawer looks its row up in `allRows`, not the Renewal-filtered
+ * Slim table — 6 columns on desktop, 4 on phone (phone and activity stay
+ * desktop-only; capital and style show on both) — a row opens the drawer, a
+ * bottom sheet on phone. The drawer looks its row up in `allRows`, not the Renewal-filtered
  * `p.rows`: an action that changes the selected row's status (e.g.
  * Activating a user while the "تجربة" chip is selected) must not make the
  * row — and the drawer confirming it worked — vanish out from under the Admin.
@@ -359,6 +374,8 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
               <th className="hidden p-3 text-start font-medium sm:table-cell">الهاتف</th>
               <th className="p-3 text-start font-medium">الاشتراك</th>
               <th className="hidden p-3 text-start font-medium sm:table-cell">النشاط</th>
+              <th className="p-3 text-start font-medium">رأس المال</th>
+              <th className="p-3 text-start font-medium">الأسلوب</th>
             </tr>
           </thead>
           <tbody>
@@ -384,6 +401,12 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
                 </td>
                 <td className="hidden p-3 sm:table-cell">
                   <Activity row={row} />
+                </td>
+                <td className="p-3">
+                  <Capital row={row} />
+                </td>
+                <td className="p-3">
+                  <Style row={row} />
                 </td>
               </tr>
             ))}
