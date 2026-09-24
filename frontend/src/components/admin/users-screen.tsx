@@ -354,7 +354,8 @@ const ROW_TINT: Record<RenewalStatus, string> = {
 
 /**
  * Slim table — 6 columns on desktop, 4 on phone (phone and activity stay
- * desktop-only; capital and style show on both) — a row opens the drawer, a
+ * desktop-only; capital and style show on both), scrolling sideways on a
+ * narrow screen instead of squeezing the columns — a row opens the drawer, a
  * bottom sheet on phone. The drawer looks its row up in `allRows`, not the Renewal-filtered
  * `p.rows`: an action that changes the selected row's status (e.g.
  * Activating a user while the "تجربة" chip is selected) must not make the
@@ -366,8 +367,8 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
   const selected = allRows.find((r) => r.id === selectedId) ?? null;
   return (
     <>
-      <div className="overflow-hidden rounded-lg border">
-        <table className="w-full text-sm">
+      <div className="scrollbar-slim overflow-x-auto rounded-lg border">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-muted/40 text-[12px] text-muted-foreground">
             <tr>
               <th className="p-3 text-start font-medium">المستخدم</th>
