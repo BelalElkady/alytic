@@ -3185,11 +3185,13 @@ app.get('/api/market-analysis', wrap(async (req, res) => {
   res.json({ report });
 }));
 
-// The recommendation track record (see src/recommendations.js). Open to every
-// signed-in User, paid or not: it is the record of advice already given, and
-// shows no other User's identity, only whether a row is the viewer's own.
+// The recommendation track record (see src/recommendations.js). Admins only
+// for now, with the same verified-email rule as /api/admin: calls are still
+// logged for every User, only viewing the record is restricted. It shows no
+// User's identity, only whether a row is the viewer's own.
 const TRACK_RECORD_ACTIONS = ['buy', 'hold', 'sell', 'reduce'];
 app.get('/api/track-record', wrap(async (req, res) => {
+  if (!req.user?.isAdmin || !req.user.emailVerified) return res.status(403).json({ error: 'للمشرفين فقط' });
   const { scope = 'all', vs = 'own', action, horizon, from, to } = req.query;
   if (!['all', 'mine'].includes(scope)) return res.status(400).json({ error: 'نطاق غير معروف' });
   if (!Object.hasOwn(COMPARISONS, vs)) return res.status(400).json({ error: 'مؤشر مقارنة غير معروف' });

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Download, Search } from "lucide-react";
+import { Download, Info, Search } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Area,
@@ -16,6 +16,7 @@ import { EmptyState, ErrorState, LoadingBlock, Notice, Panel, Spinner } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
@@ -29,6 +30,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "@/lib/api";
 import { arDay, fmt, isoDay, pct, tone } from "@/lib/format";
 import { siteUrl, siteName } from "@/lib/seo";
+import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/track-record")({
@@ -44,7 +46,7 @@ export const Route = createFileRoute("/_app/track-record")({
       { property: "og:url", content: `${siteUrl(match)}/track-record` },
     ],
   }),
-  component: TrackRecordPage,
+  component: TrackRecordRoute,
 });
 
 type Action = "buy" | "hold" | "sell" | "reduce";
@@ -71,6 +73,11 @@ type RecRow = {
   excessBy: Record<Vs, number | null>;
   sessions: number;
   win: boolean | null;
+  stockMovePrice: number | null;
+  stockMovePct: number | null;
+  stockMoveSessions: number;
+  stockMoveFinal: boolean;
+  right: boolean | null;
   mine: boolean;
   model: string;
 };
@@ -103,7 +110,7 @@ type Benchmark = "EGX30" | "EGX70" | "EGX100";
 
 /** What excess return is measured against — see COMPARISONS in backend/src/recommendations.js. */
 const VS_OPTIONS: { value: Vs; label: string; short: string }[] = [
-  { value: "own", label: "مؤشر كل سهم", short: "مؤشر السهم" },
+  { value: "own", label: "مؤشر كل سهم", short: "مؤشر كل سهم" },
   { value: "egx30", label: "EGX30", short: "EGX30" },
   { value: "egx70", label: "EGX70", short: "EGX70" },
   { value: "egx33", label: "EGX33 (شريعة)", short: "EGX33" },
@@ -154,6 +161,49 @@ function monthsAgo(months: number) {
 
 const monthLabel = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString("ar-EG", { month: "short", timeZone: "UTC" });
+
+/**
+ * An ⓘ that opens a short explanation. A popover rather than a tooltip, so it
+ * opens on a tap too — tooltips never show on a phone.
+ */
+function Hint({ children, label, className }: { children: ReactNode; label: string; className?: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`شرح: ${label}`}
+          className={cn(
+            "inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            className,
+          )}
+        >
+          <Info className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent dir="rtl" side="top" className="w-72 space-y-1.5 text-[12.5px] leading-relaxed">
+        {children}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** A panel title with its hint beside it. */
+function HintedTitle({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {title}
+      <Hint label={title}>{children}</Hint>
+    </span>
+  );
+}
+
+/** Admins only for now — the API refuses everyone else too (see /api/track-record in server.js). */
+function TrackRecordRoute() {
+  const { user } = useDesk();
+  if (!user?.isAdmin) return <ErrorState message="الصفحة دي للمشرفين بس." />;
+  return <TrackRecordPage />;
+}
 
 function TrackRecordPage() {
   const [scope, setScope] = useState<"all" | "mine">("all");
@@ -211,20 +261,31 @@ function TrackRecordPage() {
             كل توصية بتتسجل لحظة إصدارها ومبتتعدلش، وبتتقيّم يوميًا بعد الإغلاق مقابل المستهدف والوقف ومؤشرات البورصة.
           </p>
         </div>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={scope}
-          onValueChange={(value) => value && setScope(value as "all" | "mine")}
-          className="shrink-0 justify-start"
-        >
-          <ToggleGroupItem value="all" size="sm" className="px-3 text-[12.5px]">
-            كل التوصيات
-          </ToggleGroupItem>
-          <ToggleGroupItem value="mine" size="sm" className="px-3 text-[12.5px]">
-            توصياتي فقط
-          </ToggleGroupItem>
-        </ToggleGroup>
+        <div className="flex shrink-0 items-center gap-2">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={scope}
+            onValueChange={(value) => value && setScope(value as "all" | "mine")}
+            className="justify-start"
+          >
+            <ToggleGroupItem value="all" size="sm" className="px-3 text-[12.5px]">
+              كل التوصيات
+            </ToggleGroupItem>
+            <ToggleGroupItem value="mine" size="sm" className="px-3 text-[12.5px]">
+              توصياتي فقط
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <Hint label="كل التوصيات أو توصياتي فقط">
+            <p>
+              <b>كل التوصيات:</b> كل التوصيات اللي التطبيق إداها لكل المستخدمين على الموقع.
+            </p>
+            <p>
+              <b>توصياتي فقط:</b> التوصيات اللي اتدت لك إنت بس، من مراجعة محفظتك أو تحليل سهم أو تقرير السوق أو خطة
+              الكاش.
+            </p>
+          </Hint>
+        </div>
       </div>
 
       <Filters
@@ -259,27 +320,93 @@ function TrackRecordPage() {
           <div className="grid gap-4 lg:grid-cols-3">
             <Panel
               className="lg:col-span-2"
-              title={`الأداء التراكمي مقابل ${vsShort(data.vs)}`}
+              title={
+                <HintedTitle title={`لو نفّذت كل التوصيات بمبالغ متساوية — مقابل ${vsShort(data.vs)}`}>
+                  <p>
+                    بيوضح الفلوس كانت هتعمل إيه مع الوقت لو حد نفّذ كل توصية اتحسمت، بنفس المبلغ لكل واحدة. يعني ده أداء
+                    التوصيات كلها مع بعض، مش سهم واحد.
+                  </p>
+                  <p>
+                    <b>ده مش أداء محفظتك.</b> الرسم مابيعرفش إنت اشتريت كام ولا بكام، ولا نفّذت التوصية أصلًا ولا لأ، ولا
+                    باقي أسهمك اللي مفيش عليها توصيات. أداء محفظتك الحقيقي في صفحة «الرسوم».
+                  </p>
+                  <p>
+                    التوصيات اللي داخلة فيه بتتحدد من «كل التوصيات» أو «توصياتي فقط» فوق. توصياتك مش أسهم محفظتك بس:
+                    فيها كمان ترشيحات تقرير السوق وخطة الكاش.
+                  </p>
+                  <p>
+                    <b>الخط الأزرق المتصل:</b> التوصيات. <b>الخط البرتقالي المتقطع:</b> نفس الفلوس لو كانت في المؤشر خلال
+                    نفس الفترات بالظبط.
+                  </p>
+                  <p>
+                    كل نقطة هي يوم اتحسمت فيه توصية أو أكتر، والرقم هو المكسب أو الخسارة التراكمية من أول الفترة. لما
+                    الأزرق يبقى فوق البرتقالي، التوصيات سابقة المؤشر.
+                  </p>
+                  {data.vs === "own" && (
+                    <p>
+                      في «مؤشر كل سهم» الخط المتقطع مش مؤشر واحد: كل توصية بتتقارن بمؤشر سهمها (EGX30 أو EGX70 أو
+                      EGX100) في نفس مدتها، والخط هو مجموعهم. لو عايز تقارن بالسوق كله اختار EGX100 من «مقابل».
+                    </p>
+                  )}
+                  <p>قرّب الماوس أو المس الرسم لأي نقطة تشوف أرقامها.</p>
+                </HintedTitle>
+              }
               description={
-                data.vs === "own"
-                  ? "محفظة افتراضية تنفّذ كل التوصيات المحسومة بأوزان متساوية، مقابل نفس الفلوس في مؤشر كل سهم (EGX30 أو EGX70 أو EGX100) على نفس الفترات"
-                  : `محفظة افتراضية تنفّذ كل التوصيات المحسومة بأوزان متساوية، مقابل نفس الفلوس في ${vsShort(data.vs)} على نفس الفترات`
+                <>
+                  {data.vs === "own"
+                    ? "محفظة افتراضية بتنفّذ كل التوصيات المحسومة بنفس المبلغ، مقابل نفس الفلوس في مؤشر كل سهم (EGX30 أو EGX70 أو EGX100) على نفس الفترات."
+                    : `محفظة افتراضية بتنفّذ كل التوصيات المحسومة بنفس المبلغ، مقابل نفس الفلوس في ${vsShort(data.vs)} على نفس الفترات.`}{" "}
+                  <span className="font-medium text-foreground">ده مش أداء محفظتك الحقيقية.</span>
+                </>
               }
             >
               <PerformanceChart series={data.series} indexLabel={vsShort(data.vs)} />
             </Panel>
             <div className="space-y-4">
-              <Panel title="نتائج الحسم">
+              <Panel
+                title={
+                  <HintedTitle title="نتائج الحسم">
+                    <p>إزاي اتقفلت التوصيات المحسومة، كنسبة من إجماليها:</p>
+                    <p>
+                      <b>حققت المستهدف:</b> السعر لمس الهدف. <b>ضربت الوقف:</b> السعر لمس وقف الخسارة.{" "}
+                      <b>انتهت المدة بربح أو بخسارة:</b> الأفق خلص من غير ما يلمس أي مستوى، فاتحسمت بسعر إغلاق آخر جلسة.
+                    </p>
+                    <p>البيع والتخفيف مالهمش مستهدف ولا وقف، فدايمًا بيتحسموا بانتهاء المدة.</p>
+                  </HintedTitle>
+                }
+              >
                 <Outcomes outcomes={data.outcomes} closed={data.summary.closed} />
               </Panel>
-              <Panel title="النجاح حسب نوع التوصية">
+              <Panel
+                title={
+                  <HintedTitle title="النجاح حسب نوع التوصية">
+                    <p>نسبة النجاح لكل نوع قرار لوحده: شراء، بيع، تخفيف، واحتفاظ.</p>
+                    <p>الرقم بين القوسين عدد التوصيات من النوع ده، شامل المفتوحة. النسبة محسوبة على المحسوم بس.</p>
+                  </HintedTitle>
+                }
+              >
                 <ByAction byAction={data.byAction} />
               </Panel>
             </div>
           </div>
 
           <Panel
-            title="سجل التوصيات"
+            title={
+              <HintedTitle title="سجل التوصيات">
+                <p>كل توصية لوحدها، الأحدث الأول.</p>
+                <p>
+                  <b>سعر المرجع:</b> السعر وقت إصدار التوصية. <b>المستهدف والوقف:</b> المستويين اللي بتتحسم عليهم، والبيع
+                  والتخفيف مالهمش مستويات.
+                </p>
+                <p>
+                  <b>العائد:</b> النهائي لو اتحسمت، أو لحد آخر إغلاق لو لسه مفتوحة. <b>مقابل المؤشر:</b> العائد ناقص حركة
+                  المؤشر في نفس المدة.
+                </p>
+                <p>
+                  <b>الجلسات:</b> الجلسات اللي عدّت من أفق التوصية، يعني 5 / 20 = عدّت 5 جلسات من 20.
+                </p>
+              </HintedTitle>
+            }
             description={
               data.rowsTruncated ? `أحدث ${data.rows.length} توصية — الأرقام فوق محسوبة على الكل` : undefined
             }
@@ -382,7 +509,29 @@ function Filters({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-3 py-2.5">
-      <span className="text-[12px] font-medium text-muted-foreground">أفق التقييم</span>
+      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-muted-foreground">
+        أفق التقييم
+        <Hint label="أفق التقييم">
+          <p>
+            <b>الأفق</b> هو المدة اللي التوصية بتتقيّم خلالها، يعني الموعد اللي المفروض يبان فيه هي صح ولا غلط. ده خاص
+            بالتوصية مش بالسهم.
+          </p>
+          <p>
+            بيتحسب بـ<b>جلسات التداول</b> مش بالأيام (من الأحد للخميس من غير الإجازات)، يعني 20 جلسة ≈ 4 أسابيع.
+          </p>
+          <p>
+            <b>بيتحدد إزاي:</b> في الشراء والاحتفاظ، من المدة المتوقعة إن السهم يوصل فيها للمستهدف حسب سرعة حركته. لو
+            مفيش تقدير، أو لو التوصية بيع أو تخفيف، بياخد مدة ثابتة حسب الأسلوب: 10 جلسات للمضارب، 20 للمتوسط، 60
+            للطويل.
+          </p>
+          <p>
+            <b>مثال:</b> شراء بسعر 100، والمستهدف 110، والأفق 20 جلسة. لو وصل 110 في الجلسة 8، تتحسم «حققت المستهدف».
+            ولو عدّت الـ 20 جلسة من غير ما يلمس المستهدف ولا الوقف، تتحسم بسعر إغلاق الجلسة 20. وحركة السهم الفعلية
+            بتتقاس في الحالتين لحد الجلسة 20.
+          </p>
+          <p>الفلتر ده بيعرض التوصيات حسب طول أفقها: قصير (حتى 10 جلسات)، متوسط (11–40)، أو طويل (أكتر من 40).</p>
+        </Hint>
+      </span>
       <ToggleGroup
         type="single"
         value={horizon}
@@ -398,6 +547,17 @@ function Filters({
 
       <div className="ms-auto flex flex-wrap items-center gap-2">
         {loading && <Spinner className="text-muted-foreground" />}
+        <Hint label="مقابل">
+          <p>المؤشر اللي بنقارن بيه أداء التوصيات، في «العائد الزائد» والرسم البياني وعمود المقارنة في الجدول.</p>
+          <p>
+            <b>مؤشر كل سهم:</b> كل توصية بتتقارن بمؤشر سهمها وقت الإصدار: EGX30 لو السهم فيه، EGX70 لو فيه، وEGX100 لو
+            مش في الاتنين. دي أعدل مقارنة، لأن الأسهم الصغيرة بتتحرك غير الكبيرة.
+          </p>
+          <p>
+            أو قارن الكل بمؤشر واحد: <b>EGX30</b> (أكبر 30 شركة)، <b>EGX70</b> (الـ 70 اللي بعدهم)، <b>EGX33</b> (الأسهم
+            المتوافقة مع الشريعة)، أو <b>EGX100</b> (الاتنين مع بعض).
+          </p>
+        </Hint>
         <Select value={vs} onValueChange={(value) => setVs(value as Vs)}>
           <SelectTrigger className="h-8 w-[150px] text-[12.5px]" aria-label="المقارنة">
             <span className="text-muted-foreground">مقابل</span>
@@ -467,12 +627,14 @@ function KpiCard({
   label,
   value,
   sub,
+  hint,
   valueClassName,
   highlight = false,
 }: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
+  hint: ReactNode;
   valueClassName?: string;
   highlight?: boolean;
 }) {
@@ -483,11 +645,18 @@ function KpiCard({
         highlight ? "border-primary bg-primary text-primary-foreground" : "bg-card",
       )}
     >
-      <span className={cn("text-[12px]", highlight ? "text-primary-foreground/80" : "text-muted-foreground")}>
+      <span
+        className={cn(
+          "flex items-center justify-between gap-2 text-[12px]",
+          highlight ? "text-primary-foreground/80" : "text-muted-foreground",
+        )}
+      >
         {label}
+        <Hint label={label} className={highlight ? "text-primary-foreground/80 hover:text-primary-foreground" : undefined}>
+          {hint}
+        </Hint>
       </span>
-      <span className={cn("num text-[26px] font-semibold leading-tight tracking-tight", valueClassName)}>{value}</span>
-      {sub && (
+      <span className={cn("num text-[26px] font-semibold leading-tight tracking-tight", valueClassName)}>{value}</span>      {sub && (
         <span className={cn("text-[11.5px]", highlight ? "text-primary-foreground/75" : "text-muted-foreground")}>
           {sub}
         </span>
@@ -509,8 +678,30 @@ function Kpis({ data }: { data: TrackRecord }) {
             ? `${fmt(s.wins)} من ${fmt(s.closed)} توصية محسومة${s.open ? ` · ${fmt(s.open)} مفتوحة` : ""}`
             : `${fmt(s.open)} توصية مفتوحة — لسه مفيش محسوم`
         }
+        hint={
+          <>
+            <p>نسبة التوصيات المحسومة اللي نجحت. التوصيات المفتوحة مش داخلة في الحساب.</p>
+            <p>
+              التوصية <b>بتنجح</b> لو لمست المستهدف، أو خلص أفقها وهي كسبانة. <b>بتفشل</b> لو لمست الوقف، أو خلص أفقها
+              وهي خسرانة.
+            </p>
+            <p>الاحتفاظ اللي يخلص أفقه بينجح لو سهمه ماتأخرش عن مؤشره.</p>
+          </>
+        }
       />
-      <KpiCard label="متوسط العائد لكل توصية" value={pct(s.avgReturn)} valueClassName={tone(s.avgReturn)} sub="قبل العمولات" />
+      <KpiCard
+        label="متوسط العائد لكل توصية"
+        value={pct(s.avgReturn)}
+        valueClassName={tone(s.avgReturn)}
+        sub="قبل العمولات"
+        hint={
+          <>
+            <p>متوسط مكسب أو خسارة التوصية الواحدة، من سعر المرجع لسعر الخروج، على التوصيات المحسومة بس.</p>
+            <p>في البيع والتخفيف، نزول السعر بيتحسب مكسب لأن التوصية كانت إنك تطلع من السهم.</p>
+            <p>الأرقام قبل عمولات السمسرة والضرايب.</p>
+          </>
+        }
+      />
       <KpiCard
         label={`العائد الزائد عن ${vsShort(data.vs)}`}
         value={pct(s.avgExcess)}
@@ -520,20 +711,48 @@ function Kpis({ data }: { data: TrackRecord }) {
             : "متوسط الفرق لكل توصية"
         }
         highlight
+        hint={
+          <>
+            <p>الفرق بين عائد التوصية وحركة المؤشر في نفس المدة بالظبط، والرقم ده متوسطه على التوصيات المحسومة.</p>
+            <p>
+              <b>موجب:</b> التوصيات كسبت أكتر من إنك تحط نفس الفلوس في المؤشر في نفس الوقت. <b>سالب:</b> المؤشر كان
+              أحسن.
+            </p>
+            <p>المؤشر بيتغير من اختيار «مقابل» فوق.</p>
+          </>
+        }
       />
       <KpiCard
         label="متوسط الربح / الخسارة"
         value={
-          <span className="flex flex-wrap items-baseline gap-1.5">
+          <span className="flex items-baseline gap-1.5 whitespace-nowrap">
             <span className="text-up">{pct(s.avgWin)}</span>
-            <span className="text-[16px] text-muted-foreground">/</span>
+            <span className="text-[15px] text-muted-foreground">/</span>
             <span className="text-down">{pct(s.avgLoss)}</span>
           </span>
         }
+        valueClassName="text-[20px]"
         sub={s.winLossRatio == null ? "نسبة الربح للخسارة —" : `نسبة الربح للخسارة ${fmt(s.winLossRatio)}`}
+        hint={
+          <>
+            <p>
+              <b>الأخضر:</b> متوسط مكسب التوصيات اللي كسبت. <b>الأحمر:</b> متوسط خسارة التوصيات اللي خسرت.
+            </p>
+            <p>
+              <b>نسبة الربح للخسارة</b> = الأخضر ÷ الأحمر. لو أكبر من 1، المكسب المعتاد أكبر من الخسارة المعتادة، فممكن
+              تكسب في الإجمالي حتى لو نسبة النجاح أقل من 50%.
+            </p>
+          </>
+        }
       />
       <KpiCard
         label="متوسط الوصول للمستهدف"
+        hint={
+          <p>
+            متوسط عدد جلسات التداول من يوم إصدار التوصية لحد ما لمست المستهدف، محسوب على التوصيات اللي وصلت له بس. كل
+            ما قل، كل ما التوصيات بتحقق هدفها أسرع.
+          </p>
+        }
         value={
           s.avgSessionsToTarget == null ? (
             "—"
@@ -559,21 +778,46 @@ function PerformanceChart({ series, indexLabel }: { series: TrackRecord["series"
     );
   }
   const last = series[series.length - 1]!;
+  // One tick per month (its first point), not one per point — daily points
+  // with a month-only label printed the same month several times.
+  const monthTicks = series
+    .filter((point, i) => i === 0 || point.date.slice(0, 7) !== series[i - 1]!.date.slice(0, 7))
+    .map((point) => point.date);
+  // Each line's name at its end, the higher line's above it and the lower's below, so they don't collide.
+  const strategyOnTop = last.strategy >= last.index;
+  const endLabel = (text: string, color: string, above: boolean) =>
+    function EndLabel(props: { index?: number; x?: number | string; y?: number | string }) {
+      if (props.index !== series.length - 1 || props.x == null || props.y == null) return <g />;
+      return (
+        <text
+          x={Number(props.x) - 6}
+          y={Number(props.y) + (above ? -9 : 16)}
+          textAnchor="end"
+          fill={color}
+          fontSize={11.5}
+          fontWeight={600}
+        >
+          {text}
+        </text>
+      );
+    };
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-4 text-[12px]">
-        <span className="flex items-center gap-1.5">
-          <span className="h-0.5 w-4 rounded bg-primary" />
-          التوصيات <span className={cn("num font-semibold", tone(last.strategy))}>{pct(last.strategy)}</span>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+        <span className="flex items-center gap-2 rounded-lg border bg-surface px-2.5 py-1.5">
+          <span className="h-[3px] w-6 rounded bg-primary" />
+          <span>التوصيات (محفظة افتراضية)</span>
+          <span className={cn("num font-semibold", tone(last.strategy))}>{pct(last.strategy)}</span>
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-0 w-4 border-t-2 border-dashed border-muted-foreground" />
-          {indexLabel} <span className={cn("num font-semibold", tone(last.index))}>{pct(last.index)}</span>
+        <span className="flex items-center gap-2 rounded-lg border bg-surface px-2.5 py-1.5">
+          <span className="h-0 w-6 border-t-[3px] border-dashed border-warn" />
+          <span>نفس الفلوس في {indexLabel}</span>
+          <span className={cn("num font-semibold", tone(last.index))}>{pct(last.index)}</span>
         </span>
       </div>
       <div dir="ltr" className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
+          <ComposedChart data={series} margin={{ top: 22, right: 8, bottom: 4, left: 8 }}>
             <defs>
               <linearGradient id="trackFill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.14} />
@@ -583,10 +827,11 @@ function PerformanceChart({ series, indexLabel }: { series: TrackRecord["series"
             <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.7} />
             <XAxis
               dataKey="date"
+              ticks={monthTicks}
               tickFormatter={monthLabel}
               tickLine={false}
               axisLine={false}
-              minTickGap={40}
+              minTickGap={24}
               tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             />
             <YAxis
@@ -601,20 +846,25 @@ function PerformanceChart({ series, indexLabel }: { series: TrackRecord["series"
             <Area
               type="monotone"
               dataKey="strategy"
+              name="التوصيات"
               stroke="var(--primary)"
-              strokeWidth={2}
+              strokeWidth={2.5}
               fill="url(#trackFill)"
               dot={false}
               activeDot={{ r: 4, strokeWidth: 0 }}
+              label={endLabel("التوصيات", "var(--primary)", strategyOnTop)}
               isAnimationActive={false}
             />
             <Line
               type="monotone"
               dataKey="index"
-              stroke="var(--muted-foreground)"
-              strokeWidth={1.75}
-              strokeDasharray="5 4"
+              name={indexLabel}
+              stroke="var(--warn)"
+              strokeWidth={2}
+              strokeDasharray="6 4"
               dot={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: "var(--warn)" }}
+              label={endLabel(indexLabel, "var(--warn)", !strategyOnTop)}
               isAnimationActive={false}
             />
           </ComposedChart>
@@ -638,12 +888,15 @@ function SeriesTooltip({
   return (
     <div dir="rtl" className="rounded-lg border bg-card px-3 py-2 shadow-md">
       <div className="text-[11.5px] text-muted-foreground">{arDay(point.date)}</div>
-      <div className="num mt-0.5 text-[13px]">
+      <div className="num mt-1 flex items-center gap-1.5 text-[13px]">
+        <span className="h-[3px] w-4 rounded bg-primary" />
         التوصيات <span className={cn("font-semibold", tone(point.strategy))}>{pct(point.strategy)}</span>
       </div>
-      <div className="num text-[13px]">
+      <div className="num flex items-center gap-1.5 text-[13px]">
+        <span className="h-0 w-4 border-t-[3px] border-dashed border-warn" />
         {indexLabel} <span className={cn("font-semibold", tone(point.index))}>{pct(point.index)}</span>
       </div>
+      <div className="mt-1 text-[11px] text-muted-foreground">التراكمي من أول الفترة</div>
     </div>
   );
 }
@@ -664,12 +917,14 @@ function Outcomes({ outcomes, closed }: { outcomes: TrackRecord["outcomes"]; clo
           <span key={part.key} className={part.className} style={{ width: `${outcomes[part.key].pct}%` }} />
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
+      {/* One row per outcome: the panel sits in a narrow column, and two per row cut the labels short. */}
+      <div className="space-y-1.5 text-[12.5px]">
         {OUTCOME_PARTS.map((part) => (
-          <div key={part.key} className="flex items-center gap-1.5">
+          <div key={part.key} className="flex items-center gap-2">
             <span className={cn("size-2.5 shrink-0 rounded-sm", part.className)} />
-            <span className="truncate text-muted-foreground">{part.label}</span>
-            <span className="num ms-auto font-semibold">{fmt(outcomes[part.key].pct)}%</span>
+            <span className="text-muted-foreground">{part.label}</span>
+            <span className="num ms-auto text-[11.5px] text-muted-foreground">{fmt(outcomes[part.key].count)} توصية</span>
+            <span className="num w-14 text-end font-semibold">{fmt(outcomes[part.key].pct)}%</span>
           </div>
         ))}
       </div>
@@ -707,6 +962,33 @@ function ByAction({ byAction }: { byAction: TrackRecord["byAction"] }) {
   );
 }
 
+/** The stock's real move over the call's horizon, with whether the call got its direction right. */
+function StockMoveCell({ row }: { row: RecRow }) {
+  if (row.stockMovePct == null) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <span className={cn("num font-semibold", tone(row.stockMovePct))}>{pct(row.stockMovePct)}</span>
+        {row.stockMoveFinal ? (
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[11px] font-semibold",
+              row.right ? "bg-up-soft text-up" : "bg-down-soft text-down",
+            )}
+          >
+            {row.right ? "✔ صح" : "✖ غلط"}
+          </span>
+        ) : (
+          <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted-foreground">لسه</span>
+        )}
+      </div>
+      <div className="num text-[11px] text-muted-foreground">
+        {fmt(row.refPrice)} ← {fmt(row.stockMovePrice)}
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ row }: { row: RecRow }) {
   return (
     <Badge variant="outline" className={cn("whitespace-nowrap font-medium", STATUS_CLASS[row.status])}>
@@ -733,8 +1015,37 @@ function RecordTable({ rows, vs }: { rows: RecRow[]; vs: Vs }) {
             <TableHead className="text-start">الوقف</TableHead>
             <TableHead className="text-start">الحالة</TableHead>
             <TableHead className="text-start">العائد</TableHead>
-            <TableHead className="text-start">مقابل {vsShort(vs)}</TableHead>
-            <TableHead className="text-start">الجلسات</TableHead>
+            <TableHead className="text-start">
+              <span className="inline-flex items-center gap-1">
+                مقابل {vsShort(vs)}
+                <Hint label="مقابل المؤشر">
+                  <p>عائد التوصية ناقص حركة المؤشر في نفس المدة. موجب يعني التوصية سبقت المؤشر.</p>
+                  {vs === "own" && <p>اسم المؤشر تحت الرقم هو مؤشر السهم اللي اتقارن بيه.</p>}
+                </Hint>
+              </span>
+            </TableHead>
+            <TableHead className="text-start">
+              <span className="inline-flex items-center gap-1">
+                حركة السهم الفعلية
+                <Hint label="حركة السهم الفعلية">
+                  <p>اللي حصل للسهم فعلًا من سعر التوصية لسعره في آخر أفقها، بغض النظر عن المستهدف والوقف.</p>
+                  <p>
+                    <b>✔ صح:</b> السهم مشي في اتجاه التوصية (شراء وطلع، بيع أو تخفيف ونزل، احتفاظ ومانزلش).{" "}
+                    <b>✖ غلط:</b> مشي عكسها. <b>لسه:</b> الأفق لسه ماخلصش، والرقم لحد آخر إغلاق.
+                  </p>
+                  <p>تحت الرقم: سعر التوصية ← سعر السهم في آخر الأفق.</p>
+                </Hint>
+              </span>
+            </TableHead>
+            <TableHead className="text-start">
+              <span className="inline-flex items-center gap-1">
+                الجلسات
+                <Hint label="الجلسات">
+                  <p>الجلسات اللي عدّت من إصدار التوصية / أفقها الكامل. مثلًا 5 / 20 = عدّت 5 جلسات من 20.</p>
+                  <p>للمحسومة، الرقم الأول هو الجلسة اللي اتقفلت فيها.</p>
+                </Hint>
+              </span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -760,6 +1071,9 @@ function RecordTable({ rows, vs }: { rows: RecRow[]; vs: Vs }) {
                 {vs === "own" && row.benchmark && (
                   <div className="text-[11px] font-normal text-muted-foreground">{BENCHMARK_LABEL[row.benchmark]}</div>
                 )}
+              </TableCell>
+              <TableCell>
+                <StockMoveCell row={row} />
               </TableCell>
               <TableCell className="num text-muted-foreground">
                 {row.sessions ? `${row.sessions} / ${row.horizon}` : `— / ${row.horizon}`}
@@ -797,6 +1111,12 @@ function RecordCards({ rows }: { rows: RecRow[] }) {
             </span>
             <span className={cn("num font-semibold", tone(row.returnPct))}>{pct(row.returnPct)}</span>
           </div>
+          {row.stockMovePct != null && (
+            <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2 text-[12px]">
+              <span className="text-muted-foreground">السهم فعلًا في آخر الأفق</span>
+              <StockMoveCell row={row} />
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -809,9 +1129,9 @@ const csvCell = (value: unknown) => {
 };
 
 function downloadCsv(rows: RecRow[]) {
-  const header = ["ticker", "name", "sector", "action", "issued_on", "ref_price", "target_price", "stop_price", "horizon_sessions", "status", "closed_at", "exit_price", "return_pct", "benchmark", "excess_vs_benchmark_pct", "excess_vs_egx30_pct", "excess_vs_egx70_pct", "excess_vs_egx33_pct", "excess_vs_egx100_pct", "sessions_elapsed", "model_version"];
+  const header = ["ticker", "name", "sector", "action", "issued_on", "ref_price", "target_price", "stop_price", "horizon_sessions", "status", "closed_at", "exit_price", "return_pct", "benchmark", "excess_vs_benchmark_pct", "excess_vs_egx30_pct", "excess_vs_egx70_pct", "excess_vs_egx33_pct", "excess_vs_egx100_pct", "sessions_elapsed", "stock_price_at_horizon_end", "stock_move_pct", "horizon_over", "direction_right", "model_version"];
   const lines = rows.map((r) =>
-    [r.ticker, r.name, r.sector, r.action, r.issuedOn, r.refPrice, r.targetPrice, r.stopPrice, r.horizon, r.status, r.closedAt?.slice(0, 10), r.exitPrice, r.returnPct, r.benchmark, r.excessBy.own, r.excessBy.egx30, r.excessBy.egx70, r.excessBy.egx33, r.excessBy.egx100, r.sessions, r.model]
+    [r.ticker, r.name, r.sector, r.action, r.issuedOn, r.refPrice, r.targetPrice, r.stopPrice, r.horizon, r.status, r.closedAt?.slice(0, 10), r.exitPrice, r.returnPct, r.benchmark, r.excessBy.own, r.excessBy.egx30, r.excessBy.egx70, r.excessBy.egx33, r.excessBy.egx100, r.sessions, r.stockMovePrice, r.stockMovePct, r.stockMoveFinal, r.stockMoveFinal ? r.right : null, r.model]
       .map(csvCell)
       .join(","),
   );

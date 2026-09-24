@@ -901,14 +901,14 @@ export async function insertRecommendations(rows) {
   if (error) throw new Error(`insertRecommendations: ${error.message}`);
 }
 
-/** Every open call's ticker and issue date — what the daily price recording needs to cover. */
+/** The ticker and issue date of every call still being followed (open, or its horizon not over) — what the daily price recording needs to cover. */
 export async function listOpenRecommendationTickers() {
   const rows = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('recommendations')
       .select('ticker, issued_on')
-      .eq('status', 'open')
+      .or('status.eq.open,stock_move_final.eq.false')
       .order('id')
       .range(from, from + 999);
     if (error) throw new Error(`listOpenRecommendationTickers: ${error.message}`);
@@ -935,7 +935,7 @@ export async function listRecommendations({ userId = null, from = null, to = nul
   for (let offset = 0; offset < limit; offset += 1000) {
     let query = supabase
       .from('recommendations')
-      .select('id, user_id, ticker, action, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, model_version, issued_at, issued_on, source, style, status, closed_at, exit_price, return_pct, excess_return_pct, sessions_elapsed, mark_price, mark_return_pct, mark_excess_return_pct, evaluated_at, benchmark, indices_at_issue, benchmark_excess_pct, index_excess, mark_benchmark_excess_pct, mark_index_excess');
+      .select('id, user_id, ticker, action, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, model_version, issued_at, issued_on, source, style, status, closed_at, exit_price, return_pct, excess_return_pct, sessions_elapsed, mark_price, mark_return_pct, mark_excess_return_pct, evaluated_at, benchmark, indices_at_issue, benchmark_excess_pct, index_excess, mark_benchmark_excess_pct, mark_index_excess, stock_move_price, stock_move_pct, stock_move_sessions, stock_move_final');
     if (userId) query = query.eq('user_id', userId);
     if (from) query = query.gte('issued_on', from);
     if (to) query = query.lte('issued_on', to);

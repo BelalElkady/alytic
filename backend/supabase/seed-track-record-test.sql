@@ -4,7 +4,8 @@
 -- stamps every row with the current time and refuses deletes, so real calls
 -- can't be backdated or erased. To show a populated track-record page before
 -- any real call has matured, this script switches that trigger off, inserts
--- ~60 backdated calls (with outcomes, marks and benchmark figures), and
+-- ~60 backdated calls (with outcomes, marks, benchmark figures and each
+-- stock's actual move over the horizon), and
 -- switches it back on. Anything written this way is invented, which is why
 -- it must only ever run against a throwaway project.
 --
@@ -24,7 +25,7 @@
 
 do $$
 declare
-  seed_email constant text := 'you@example.com';  -- ← your sign-up email on the test site
+  seed_email constant text := 'belal.elkady9@gmail.com';  -- ← your sign-up email on the test site
   seed_user text;
   tickers constant text[] := array['COMI','ABUK','SWDY','HDBK','MFPC','EGAL','HELI','ETEL','TMGH','PHDC','ORAS','FWRY','JUFO','AMOC','CIEB'];
   benchmarks constant text[] := array['EGX30','EGX30','EGX30','EGX70','EGX30','EGX70','EGX70','EGX30','EGX30','EGX30','EGX30','EGX30','EGX70','EGX30','EGX30'];
@@ -44,6 +45,9 @@ declare
   v_exit numeric;
   v_ret numeric;
   v_dir int;
+  v_move numeric;
+  v_move_sessions int;
+  v_move_final boolean;
   moves jsonb;
   excess jsonb;
   k text;
@@ -113,6 +117,17 @@ begin
       v_ret := round((v_dir * (random() * 8 - 3))::numeric, 2);
     end if;
 
+    -- What the stock actually did by the end of the horizon (or so far).
+    -- A call that ran to its horizon moved exactly as scored; one closed early
+    -- at its target or stop kept moving after it.
+    v_move_final := v_issued + (v_horizon * 7 / 5 + 1) < current_date;
+    v_move_sessions := case when v_move_final then v_horizon
+                            else greatest(1, least(v_horizon - 1, (current_date - v_issued) * 5 / 7)) end;
+    v_move := case
+      when v_status in ('hit_target', 'hit_stop') then round((v_dir * v_ret + (random() * 12 - 5))::numeric, 2)
+      else round((v_dir * v_ret)::numeric, 2)
+    end;
+
     -- Each index's move over the call's span, then the excess over it.
     moves := jsonb_build_object(
       'EGX30', round((random() * 6 - 2)::numeric, 2),
@@ -131,6 +146,7 @@ begin
       benchmark, indices_at_issue,
       status, closed_at, exit_price, return_pct, excess_return_pct, benchmark_excess_pct, index_excess,
       sessions_elapsed, mark_price, mark_return_pct, mark_excess_return_pct, mark_benchmark_excess_pct, mark_index_excess,
+      stock_move_price, stock_move_pct, stock_move_sessions, stock_move_final,
       evaluated_at
     ) values (
       case when i % 2 = 0 then seed_user else null end,
@@ -150,6 +166,7 @@ begin
       (excess ->> 'EGX30')::numeric,
       (excess ->> v_bench)::numeric,
       excess,
+      round(v_ref * (1 + v_move / 100), 2), v_move, v_move_sessions, v_move_final,
       now()
     );
   end loop;

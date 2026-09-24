@@ -54,6 +54,29 @@ function indexMovePct(rec, indexCloses, index, date) {
   return (to / from - 1) * 100;
 }
 
+/**
+ * What actually happened to the stock over the call's horizon, ignoring the
+ * target and stop: its close at the horizon's last session (or at the latest
+ * session while the horizon runs) against the reference price. Tracked on
+ * after the call itself closes, and final once that last session is in.
+ *
+ * @param {object} rec - a recommendations row
+ * @param {Array<{date:string, close:number}>} bars - the stock's sessions strictly after rec.issued_on, oldest first
+ * @returns {object|null} the stock_move_* columns, or null with no session to judge by
+ */
+export function evaluateStockMove(rec, bars) {
+  if (!bars.length) return null;
+  const horizon = Number(rec.horizon_days);
+  const sessions = Math.min(horizon, bars.length);
+  const close = num(bars[sessions - 1].close);
+  return {
+    stock_move_price: round(close, 4),
+    stock_move_pct: round((close / num(rec.ref_price) - 1) * 100, 2),
+    stock_move_sessions: sessions,
+    stock_move_final: bars.length >= horizon,
+  };
+}
+
 /** The close of the session for `date`, as a timestamp — 14:30 Cairo is 12:30 UTC in winter (11:30 in summer); near enough for "closed on". */
 export const sessionCloseAt = (date) => `${date}T12:30:00Z`;
 

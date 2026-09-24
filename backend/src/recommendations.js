@@ -188,8 +188,9 @@ export async function logRecommendations(userId, items, { source, style, model }
 }
 
 /**
- * Records session bars for every stock with an open call (and the four
- * benchmark indices), from the first session after its earliest open call, so the evaluator has what
+ * Records session bars for every stock with a call still being followed —
+ * open, or its horizon not over (and the four benchmark indices), from the
+ * first session after its earliest such call, so the evaluator has what
  * it needs. Stops at the last session whose close should be published (see
  * expectedLastSession): a bar still forming would resolve calls on prices the
  * session never closed at. Runs in the current tenant's database.
@@ -347,6 +348,20 @@ function summarize(rows, vs) {
   };
 }
 
+/**
+ * Whether the stock actually went the way the call said, by its move over the
+ * call's horizon (stock_move_pct), whatever the target or stop did: a buy is
+ * right if the stock rose, a sell or reduce if it fell, a hold if it didn't
+ * fall. Null until the evaluator has a session to judge by.
+ */
+export function wasRight(row) {
+  if (row.stock_move_pct == null) return null;
+  const move = n(row.stock_move_pct);
+  if (row.action === 'buy') return move > 0;
+  if (row.action === 'hold') return move >= 0;
+  return move < 0;
+}
+
 function outcomes(rows) {
   const closed = rows.filter((r) => r.status !== 'open');
   const count = {
@@ -417,6 +432,12 @@ export async function trackRecord(userId, filters = {}) {
       excessBy: Object.fromEntries(Object.keys(COMPARISONS).map((key) => [key, excessOf(r, key)])),
       sessions: r.sessions_elapsed,
       win: isWin(r),
+      // What the stock actually did over the horizon, target and stop aside.
+      stockMovePrice: n(r.stock_move_price),
+      stockMovePct: n(r.stock_move_pct),
+      stockMoveSessions: r.stock_move_sessions ?? 0,
+      stockMoveFinal: Boolean(r.stock_move_final),
+      right: wasRight(r),
       mine: r.user_id === userId,
       model: r.model_version,
     })),

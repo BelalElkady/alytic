@@ -64,17 +64,26 @@ import { useTenant } from "@/lib/tenant";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
+type NavUser = { isAdmin?: boolean; isMarketer?: boolean } | null | undefined;
+
+/**
+ * Who sees a tab: "all" — everyone; "staff" — admins and marketers (the admin
+ * panel shows a marketer its read-only users table); "admin" — admins only.
+ */
+const canSee = (item: { access: "all" | "staff" | "admin" }, user: NavUser) =>
+  item.access === "all" || Boolean(user?.isAdmin) || (item.access === "staff" && Boolean(user?.isMarketer));
+
 const NAV = [
-  { to: "/portfolio", label: "الأسهم", icon: Wallet, adminOnly: false },
-  { to: "/indices", label: "المؤشرات", icon: Activity, adminOnly: false },
-  { to: "/targets", label: "الأهداف", icon: Crosshair, adminOnly: false },
-  { to: "/calendar", label: "التقويم", icon: CalendarDays, adminOnly: false },
-  { to: "/charts", label: "الرسوم", icon: BarChart3, adminOnly: false },
-  { to: "/cash", label: "تحليل الكاش", icon: LineChart, adminOnly: false },
-  { to: "/track-record", label: "سجل الأداء", icon: ListChecks, adminOnly: false },
-  { to: "/settings", label: "البروفايل والإعدادات", icon: Settings, adminOnly: false },
-  { to: "/how-to-use", label: "طريقة الاستخدام", icon: HelpCircle, adminOnly: false },
-  { to: "/admin", label: "الإدارة", icon: ShieldCheck, adminOnly: true },
+  { to: "/portfolio", label: "الأسهم", icon: Wallet, access: "all" },
+  { to: "/indices", label: "المؤشرات", icon: Activity, access: "all" },
+  { to: "/targets", label: "الأهداف", icon: Crosshair, access: "all" },
+  { to: "/calendar", label: "التقويم", icon: CalendarDays, access: "all" },
+  { to: "/charts", label: "الرسوم", icon: BarChart3, access: "all" },
+  { to: "/cash", label: "تحليل الكاش", icon: LineChart, access: "all" },
+  { to: "/track-record", label: "سجل الأداء", icon: ListChecks, access: "admin" },
+  { to: "/settings", label: "البروفايل والإعدادات", icon: Settings, access: "all" },
+  { to: "/how-to-use", label: "طريقة الاستخدام", icon: HelpCircle, access: "all" },
+  { to: "/admin", label: "الإدارة", icon: ShieldCheck, access: "staff" },
 ] as const;
 
 export function DeskShell({ children }: { children: ReactNode }) {
@@ -788,7 +797,7 @@ function DesktopNav() {
       className="scrollbar-slim -mx-1 hidden gap-1 overflow-x-auto px-1 md:flex"
       aria-label="التبويبات"
     >
-      {NAV.filter((item) => !item.adminOnly || user?.isAdmin || user?.isMarketer).map(({ to, label, icon: Icon }) => (
+      {NAV.filter((item) => canSee(item, user)).map(({ to, label, icon: Icon }) => (
         <Link
           key={to}
           to={to}
@@ -813,7 +822,7 @@ function MobileNav() {
   const { user } = useDesk();
   const [open, setOpen] = useState(false);
 
-  const items = NAV.filter((item) => !item.adminOnly || user?.isAdmin || user?.isMarketer);
+  const items = NAV.filter((item) => canSee(item, user));
   const overflow = items.length > MAX_MOBILE_TABS;
   const primary = overflow ? items.slice(0, MAX_MOBILE_TABS - 1) : items;
   const more = overflow ? items.slice(MAX_MOBILE_TABS - 1) : [];

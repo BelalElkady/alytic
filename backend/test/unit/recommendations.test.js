@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import { evaluateRecommendation } from '../../supabase/functions/evaluate-recommendations/evaluate.js';
-import { recommendationRow, isWin, benchmarkFor } from '../../src/recommendations.js';
+import { evaluateRecommendation, evaluateStockMove } from '../../supabase/functions/evaluate-recommendations/evaluate.js';
+import { recommendationRow, isWin, benchmarkFor, wasRight } from '../../src/recommendations.js';
 
 const rec = (over = {}) => ({
   action: 'buy', ref_price: 100, target_price: 110, stop_price: 95, horizon_days: 5, egx30_at_issue: 30000, issued_on: '2026-09-01', ...over,
@@ -129,4 +129,23 @@ test('recommendationRow: keeps only the index levels the feed returned', () => {
   assert.equal(row.egx30_at_issue, 30000);
   assert.equal(row.benchmark, 'EGX70');
   assert.deepEqual(row.indices_at_issue, { EGX30: 30000, EGX70: 10000 });
+});
+
+test('evaluateStockMove: follows the stock to the end of the horizon, target and stop aside', () => {
+  const bars = ['2026-09-02', '2026-09-03', '2026-09-06'].map((d, i) => bar(d, 100, 120, 90, [111, 108, 115][i]));
+  // The call itself hit its target on the first session; the stock is still followed.
+  const running = evaluateStockMove(rec({ horizon_days: 5 }), bars);
+  assert.deepEqual(running, { stock_move_price: 115, stock_move_pct: 15, stock_move_sessions: 3, stock_move_final: false });
+  const done = evaluateStockMove(rec({ horizon_days: 2 }), bars);
+  assert.deepEqual(done, { stock_move_price: 108, stock_move_pct: 8, stock_move_sessions: 2, stock_move_final: true });
+  assert.equal(evaluateStockMove(rec(), []), null);
+});
+
+test('wasRight: sell at 55 and the stock went to 60 was wrong', () => {
+  assert.equal(wasRight({ action: 'sell', stock_move_pct: 9.09 }), false);
+  assert.equal(wasRight({ action: 'reduce', stock_move_pct: -4 }), true);
+  assert.equal(wasRight({ action: 'buy', stock_move_pct: 15 }), true);
+  assert.equal(wasRight({ action: 'buy', stock_move_pct: 0 }), false);
+  assert.equal(wasRight({ action: 'hold', stock_move_pct: 0 }), true);
+  assert.equal(wasRight({ action: 'buy', stock_move_pct: null }), null);
 });

@@ -439,7 +439,8 @@ create table if not exists blog_daily_topics (
 --   - issue fields (ticker, action, prices, horizon, EGX30 level, model,
 --     issue time) never change after insert;
 --   - the outcome fields change only while the row is still open, and once
---     it is closed the whole row is final;
+--     it is closed they are final; the stock-move fields (below) keep going
+--     to the horizon's end and are final from then;
 --   - rows can't be deleted or truncated. A deleted account's rows stay, with
 --     user_id set to null (the one issue-field change allowed).
 -- RLS is enabled with no policies by the lock-down block at the end of this
@@ -540,6 +541,24 @@ begin
   end if;
 end $$;
 
+-- What actually happened to the stock, apart from how the call was scored:
+-- its close at the end of the call's horizon (the session numbered
+-- horizon_days after issue), whatever the target or stop did on the way.
+-- A buy that exited at its target is still followed to the horizon's end, so
+-- the page can say "EGXpert said sell at 55, the stock went to 60".
+--   stock_move_price     that close (while the horizon runs: the latest close)
+--   stock_move_pct       its % change from ref_price
+--   stock_move_sessions  sessions counted so far
+--   stock_move_final     true once the horizon's last session is in; from
+--                        then on these four are frozen like the outcome.
+-- Unlike the outcome fields they keep updating after the call itself closes,
+-- until the horizon ends.
+alter table recommendations add column if not exists stock_move_price numeric;
+alter table recommendations add column if not exists stock_move_pct numeric;
+alter table recommendations add column if not exists stock_move_sessions integer not null default 0;
+alter table recommendations add column if not exists stock_move_final boolean not null default false;
+create index if not exists recommendations_tracking_idx on recommendations (ticker, issued_on) where stock_move_final = false;
+
 -- One call per (User, stock, action, day): the same review read twice, or a
 -- cached market report served on every page view, logs once.
 create unique index if not exists recommendations_daily_key on recommendations (user_id, ticker, action, issued_on);
@@ -572,6 +591,10 @@ begin
     new.index_excess := null;
     new.mark_benchmark_excess_pct := null;
     new.mark_index_excess := null;
+    new.stock_move_price := null;
+    new.stock_move_pct := null;
+    new.stock_move_sessions := 0;
+    new.stock_move_final := false;
     new.evaluated_at := null;
     return new;
   end if;
@@ -598,6 +621,12 @@ begin
           old.mark_price, old.mark_return_pct, old.mark_excess_return_pct, old.evaluated_at,
           old.benchmark_excess_pct, old.index_excess, old.mark_benchmark_excess_pct, old.mark_index_excess) then
     raise exception 'recommendation % is already closed (%) and final', old.id, old.status;
+  end if;
+  if old.stock_move_final
+     and (new.stock_move_price, new.stock_move_pct, new.stock_move_sessions, new.stock_move_final)
+         is distinct from
+         (old.stock_move_price, old.stock_move_pct, old.stock_move_sessions, old.stock_move_final) then
+    raise exception 'recommendation %: the stock''s move over its horizon is already final', old.id;
   end if;
   return new;
 end $$;
