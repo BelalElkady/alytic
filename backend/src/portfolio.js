@@ -18,7 +18,7 @@ const EMPTY = {
   cash: 0,
   positions: {},   // code -> { shares, avgCost, stop, target, openedAt, addedOrder }
   watchlist: {},   // favorites the user picked to watch — code -> { addedAt, note }
-  trades: [],      // { date, code, side, shares, price, commission, note }
+  trades: [],      // { date, code, side, shares, price, commission, note } — a 'dividend' row's price is the cash paid per share
   // One entry per saved close, keyed YYYY-MM-DD. This is what the calendar and
   // the equity curve read — without it the app can show today but has no
   // memory, so "how did the book do this month" is unanswerable.
@@ -112,11 +112,16 @@ export async function withPortfolio(userId, mutator) {
  * Buys move average cost; sells never do — they realise P&L against the
  * existing average and leave it untouched for the remaining shares. Getting
  * this backwards is the classic way a book quietly stops reflecting reality.
+ *
+ * A dividend (`shares` entitled × `price` paid per share) is cash received:
+ * it adds to cash and realised P&L, pays no commission, and leaves the
+ * position alone — the shares may since have been sold, since a dividend is
+ * paid to whoever held on the record date.
  */
 export async function recordTrade(portfolio, { code, side, shares, price, date = null, note = null }, rules = RULES) {
   const c = code.toUpperCase();
   const p = { ...portfolio, positions: { ...portfolio.positions }, trades: [...portfolio.trades] };
-  const commission = shares * price * (rules.commissionPct / 100);
+  const commission = side === 'dividend' ? 0 : shares * price * (rules.commissionPct / 100);
   const when = date ?? new Date().toISOString().slice(0, 10);
 
   if (!(shares > 0) || !(price > 0)) throw new Error('عدد الأسهم والسعر لازم يكونوا أكبر من صفر');
@@ -154,8 +159,11 @@ export async function recordTrade(portfolio, { code, side, shares, price, date =
     // sell part" rule fire once per position instead of every day after.
     else p.positions[c] = { ...existing, shares: left, partialTakenAt: when };
     p.cash = +(p.cash + shares * price - commission).toFixed(2);
+  } else if (side === 'dividend') {
+    p.realizedPnl = +((p.realizedPnl ?? 0) + shares * price).toFixed(2);
+    p.cash = +(p.cash + shares * price).toFixed(2);
   } else {
-    throw new Error(`نوع الصفقة لازم يكون buy أو sell، مش ${side}`);
+    throw new Error(`نوع الصفقة لازم يكون buy أو sell أو dividend، مش ${side}`);
   }
 
   p.trades.push({
@@ -167,6 +175,7 @@ export async function recordTrade(portfolio, { code, side, shares, price, date =
     commission: +commission.toFixed(2),
     note,
     ...(side === 'sell' ? { realized: +(shares * (price - existing.avgCost) - commission).toFixed(2) } : {}),
+    ...(side === 'dividend' ? { realized: +(shares * price).toFixed(2) } : {}),
   });
 
   return p;
@@ -176,7 +185,8 @@ export async function recordTrade(portfolio, { code, side, shares, price, date =
  * Walk one stock's trades, in log order, from a starting holding. Returns the
  * shares and average cost it ends on, the cash it moved, the P&L it realised
  * (and each sell's share of it), and whether any sell exceeded what was held.
- * Same arithmetic as recordTrade, minus the rounding.
+ * Same arithmetic as recordTrade, minus the rounding; a dividend only adds
+ * cash and realised P&L.
  */
 function replayCode(trades, start) {
   let shares = start.shares;
@@ -192,6 +202,9 @@ function replayCode(trades, start) {
       avgCost = shares + t.shares > 0 ? (Math.max(shares, 0) * avgCost + value) / (Math.max(shares, 0) + t.shares) : 0;
       shares += t.shares;
       cash -= value + commission;
+    } else if (t.side === 'dividend') {
+      cash += value;
+      realized += value;
     } else {
       if (t.shares > shares + 1e-9) oversold = true;
       const r = t.shares * (t.price - avgCost) - commission;
@@ -229,7 +242,7 @@ export function editTrade(portfolio, index, next, rules = RULES) {
     const shares = Number(next.shares);
     const price = Number(next.price);
     if (!(shares > 0) || !(price > 0)) throw new Error('عدد الأسهم والسعر لازم يكونوا أكبر من صفر');
-    if (next.side !== 'buy' && next.side !== 'sell') throw new Error(`نوع الصفقة لازم يكون buy أو sell، مش ${next.side}`);
+    if (!['buy', 'sell', 'dividend'].includes(next.side)) throw new Error(`نوع الصفقة لازم يكون buy أو sell أو dividend، مش ${next.side}`);
     if (!lookup(code)) {
       throw new Error(`الكود "${code}" مش في قائمة الأسهم اللي التطبيق بيقدر يتابعها — اختاره من القائمة بدل الكتابة اليدوية.`);
     }
@@ -241,8 +254,9 @@ export function editTrade(portfolio, index, next, rules = RULES) {
       side: next.side,
       shares,
       price,
-      commission: +(shares * price * (rules.commissionPct / 100)).toFixed(2),
+      commission: next.side === 'dividend' ? 0 : +(shares * price * (rules.commissionPct / 100)).toFixed(2),
       note: next.note !== undefined ? next.note : old.note ?? null,
+      ...(next.side === 'dividend' ? { realized: +(shares * price).toFixed(2) } : {}),
     };
   }
 
@@ -258,7 +272,7 @@ export function editTrade(portfolio, index, next, rules = RULES) {
     const before = portfolio.trades.filter((t) => t.code === code);
     const after = trades.filter((t) => t.code === code);
     const current = positions[code];
-    const net = before.reduce((sum, t) => sum + (t.side === 'buy' ? t.shares : -t.shares), 0);
+    const net = before.reduce((sum, t) => sum + (t.side === 'buy' ? t.shares : t.side === 'sell' ? -t.shares : 0), 0);
     const startShares = (current?.shares ?? 0) - net;
 
     const at0 = replayCode(before, { shares: startShares, avgCost: 0 }).avgCost;

@@ -243,7 +243,8 @@ export function ManualEntryDialog() {
 
           <TabsContent value="new" className="mt-4 space-y-4">
             <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-              أي بيع أو شراء اتنفذ فعليًا. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا.
+              أي بيع أو شراء اتنفذ فعليًا، أو توزيعات أرباح نقدية وصلتك. المتوسط والعدد والكاش
+              والتوصيات بتتحدث تلقائيًا.
             </p>
             <TradeForm key={newTradeKey} onDone={() => setNewTradeKey((key) => key + 1)} />
           </TabsContent>
@@ -277,6 +278,12 @@ type Trade = {
   price: number;
   commission: number;
   realized?: number | null;
+};
+
+const SIDE: Record<string, { label: string; className: string }> = {
+  buy: { label: "شراء", className: "text-up" },
+  sell: { label: "بيع", className: "text-down" },
+  dividend: { label: "توزيعات", className: "text-primary" },
 };
 
 function TradeLog({
@@ -323,8 +330,8 @@ function TradeLog({
                 <TableRow key={`${trade.date}-${trade.code}-${index}`}>
                   <TableCell className="num text-right">{trade.date}</TableCell>
                   <TableCell className="font-medium">{trade.code}</TableCell>
-                  <TableCell className={trade.side === "buy" ? "text-up" : "text-down"}>
-                    {trade.side === "buy" ? "شراء" : "بيع"}
+                  <TableCell className={SIDE[trade.side]?.className}>
+                    {SIDE[trade.side]?.label ?? trade.side}
                   </TableCell>
                   <TableCell className="num text-right">{int(trade.shares)}</TableCell>
                   <TableCell className="num text-right">{fmt(trade.price)}</TableCell>

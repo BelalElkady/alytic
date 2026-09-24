@@ -73,6 +73,40 @@ test('overselling, unknown codes, bad sides and non-positive amounts all refuse'
   await assert.rejects(() => recordTrade(p, { code: CODE, side: 'buy', shares: 1, price: -5 }));
 });
 
+test('a dividend adds cash and realised P&L, pays no commission and leaves the position alone', async () => {
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
+  const cashBefore = p.cash;
+  p = await recordTrade(p, { code: CODE, side: 'dividend', shares: 100, price: 1.5 });
+  assert.equal(p.cash, +(cashBefore + 150).toFixed(2));
+  assert.equal(p.realizedPnl, 150);
+  assert.equal(p.positions.ABUK.shares, 100);
+  assert.equal(p.positions.ABUK.avgCost, 50);
+  assert.equal(p.trades[1].commission, 0);
+  assert.equal(p.trades[1].realized, 150);
+});
+
+test('a dividend on shares already sold is still recorded', async () => {
+  const p = await recordTrade(base(), { code: CODE, side: 'dividend', shares: 200, price: 0.5 });
+  assert.equal(p.positions.ABUK, undefined);
+  assert.equal(p.cash, 100_100);
+});
+
+test('editing or deleting a dividend moves cash and realised P&L by the difference only', async () => {
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
+  p = await recordTrade(p, { code: CODE, side: 'dividend', shares: 100, price: 1 });
+  const edited = editTrade(p, 1, { code: CODE, side: 'dividend', shares: 100, price: 2, date: p.trades[1].date });
+  assert.equal(edited.cash, +(p.cash + 100).toFixed(2));
+  assert.equal(edited.realizedPnl, 200);
+  assert.equal(edited.trades[1].realized, 200);
+  assert.equal(edited.trades[1].commission, 0);
+  assert.equal(edited.positions.ABUK.shares, 100);
+  assert.equal(edited.positions.ABUK.avgCost, 50);
+  const deleted = editTrade(p, 1, null);
+  assert.equal(deleted.cash, +(p.cash - 100).toFixed(2));
+  assert.equal(deleted.realizedPnl, 0);
+  assert.equal(deleted.positions.ABUK.shares, 100);
+});
+
 test('editing a buy re-averages the position, moves cash by the difference and re-prices later sells', async () => {
   let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
   p = await recordTrade(p, { code: CODE, side: 'buy', shares: 100, price: 60 });

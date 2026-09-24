@@ -135,7 +135,12 @@ export function useInvestStyle(): StyleKey {
   return style;
 }
 
-export type Trade = { date: string; code: string; side: "buy" | "sell"; shares: number };
+export type Trade = {
+  date: string;
+  code: string;
+  side: "buy" | "sell" | "dividend";
+  shares: number;
+};
 
 // Fewer completed round trips than this and there isn't enough history to
 // read behaviour from — stick with the manual/default style instead of

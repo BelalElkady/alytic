@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { post } from "@/lib/api";
+import { fmt } from "@/lib/format";
 import { useDesk } from "@/lib/store";
 
 const EMPTY = { code: "", side: "buy", shares: "", price: "", date: "" };
@@ -38,7 +39,9 @@ export type LoggedTrade = {
 
 /**
  * The trade fields and their save button. Without `trade` it logs a new
- * executed buy/sell — shares, average cost and cash update server-side. Given
+ * executed buy/sell — shares, average cost and cash update server-side — or a
+ * dividend received (shares entitled × cash per share, added to cash and
+ * realised profit without touching the position). Given
  * `trade`, it corrects or deletes that logged trade instead. `onDone` fires
  * after a successful save or delete (before the desk reloads).
  */
@@ -65,6 +68,8 @@ export function TradeForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  const dividend = form.side === "dividend";
+  const dividendTotal = +form.shares * +form.price;
 
   // Echoed back so the server can tell the log hasn't shifted under this row.
   const original = trade && {
@@ -114,7 +119,13 @@ export function TradeForm({
       else await post("/api/portfolio/trade", body);
       onDone();
       await reload();
-      toast.success(trade ? "تم تعديل الصفقة وتحديث المحفظة" : "تم تسجيل الصفقة وتحديث المحفظة");
+      toast.success(
+        trade
+          ? "تم تعديل الصفقة وتحديث المحفظة"
+          : dividend
+            ? "تم تسجيل التوزيعات وإضافتها للكاش"
+            : "تم تسجيل الصفقة وتحديث المحفظة",
+      );
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -152,6 +163,7 @@ export function TradeForm({
             <SelectContent>
               <SelectItem value="buy">شراء</SelectItem>
               <SelectItem value="sell">بيع</SelectItem>
+              <SelectItem value="dividend">توزيعات أرباح</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -166,7 +178,7 @@ export function TradeForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor={`${id}-shares`}>العدد</Label>
+          <Label htmlFor={`${id}-shares`}>{dividend ? "عدد الأسهم المستحقة" : "العدد"}</Label>
           <Input
             id={`${id}-shares`}
             className="num"
@@ -178,7 +190,7 @@ export function TradeForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor={`${id}-price`}>سعر التنفيذ</Label>
+          <Label htmlFor={`${id}-price`}>{dividend ? "التوزيع للسهم (ج)" : "سعر التنفيذ"}</Label>
           <Input
             id={`${id}-price`}
             className="num"
@@ -190,12 +202,25 @@ export function TradeForm({
         </div>
       </div>
 
+      {dividend && (
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          صافي التوزيع النقدي اللي وصلك. بيتضاف للكاش والربح المحقق من غير ما يغيّر عدد الأسهم أو
+          المتوسط.
+          {dividendTotal > 0 && (
+            <span className="mt-1 block">
+              الإجمالي:{" "}
+              <span className="num font-medium text-foreground">{fmt(dividendTotal)} ج</span>
+            </span>
+          )}
+        </p>
+      )}
+
       {error && <p className="text-[13px] text-down">{error}</p>}
 
       <DialogFooter className="gap-2 sm:justify-start">
         <Button onClick={() => void submit()} disabled={busy}>
           {busy && <Spinner />}
-          {trade ? "حفظ التعديل" : "تسجيل الصفقة"}
+          {trade ? "حفظ التعديل" : dividend ? "تسجيل التوزيعات" : "تسجيل الصفقة"}
         </Button>
         {trade && (
           <Button variant="destructive" onClick={() => void remove()} disabled={busy}>
