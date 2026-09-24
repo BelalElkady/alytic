@@ -634,20 +634,26 @@ function PositionCard({
                 </Tooltip>
               </TooltipProvider>
             )}
-            {memberOf.map((name) => (
-              <Badge
-                key={name}
-                variant="outline"
-                className="border-border bg-surface-2 text-[10.5px] text-muted-foreground"
-              >
-                {name}
-              </Badge>
-            ))}
           </div>
-          <p className="mt-1 truncate text-[12px] text-muted-foreground">
-            {row.name} · <span className="num">{int(p.shares)}</span> سهم @{" "}
-            <span className="num">{fmt(p.avgCost)}</span>
+          {/* Name, holding and indices each get their own line: a long Arabic
+              company name used to push the share count and cost off the end. */}
+          <p className="mt-1 text-[12.5px] leading-snug text-foreground/80">{row.name}</p>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">
+            <span className="num">{int(p.shares)}</span> سهم بمتوسط <span className="num">{fmt(p.avgCost)}</span>
           </p>
+          {memberOf.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {memberOf.map((name) => (
+                <Badge
+                  key={name}
+                  variant="outline"
+                  className="border-border bg-surface-2 text-[10.5px] text-muted-foreground"
+                >
+                  {name}
+                </Badge>
+              ))}
+            </div>
+          )}
         </div>
         <div className="shrink-0 text-end">
           <div className="num text-[17px] font-semibold tracking-tight">{fmt(row.price)}</div>
@@ -704,13 +710,10 @@ function PositionCard({
 
       <div className={cn("mt-3 rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed", badgeTone)}>
         {verdict ? (
-          // Two lines, always: the decision, then the order (or the level to
-          // watch on a hold). The clamp is a backstop if the model runs long.
-          <p
-            dir="rtl"
-            className="line-clamp-2 text-right"
-            title={[verdict.headline, verdict.orderInstruction ?? verdict.invalidation].filter(Boolean).join(" — ")}
-          >
+          // The decision, then the order (or the level to watch on a hold),
+          // each shown in full: clamped to two lines, a narrow phone screen
+          // cut the order off mid-sentence.
+          <p dir="rtl" className="text-right">
             <span className="font-medium">{verdict.headline}</span>
             {(verdict.orderInstruction ?? verdict.invalidation) && (
               <>
