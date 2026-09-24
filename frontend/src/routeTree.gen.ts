@@ -32,6 +32,7 @@ import { Route as AppMarketRouteImport } from './routes/_app.market'
 import { Route as AppPortfolioRouteImport } from './routes/_app.portfolio'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppTargetsRouteImport } from './routes/_app.targets'
+import { Route as AppTrackRecordRouteImport } from './routes/_app.track-record'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as BlogIndexRouteImport } from './routes/blog.index'
 import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
@@ -152,6 +153,11 @@ const AppTargetsRoute = AppTargetsRouteImport.update({
   path: '/targets',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTrackRecordRoute = AppTrackRecordRouteImport.update({
+  id: '/track-record',
+  path: '/track-record',
+  getParentRoute: () => AppRoute,
+} as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
   id: '/admin/login',
   path: '/admin/login',
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
+  '/track-record': typeof AppTrackRecordRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/': typeof BlogIndexRoute
@@ -229,6 +236,7 @@ export interface FileRoutesByTo {
   '/portfolio': typeof AppPortfolioRoute
   '/settings': typeof AppSettingsRoute
   '/targets': typeof AppTargetsRoute
+  '/track-record': typeof AppTrackRecordRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog': typeof BlogIndexRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/_app/portfolio': typeof AppPortfolioRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/targets': typeof AppTargetsRoute
+  '/_app/track-record': typeof AppTrackRecordRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/': typeof BlogIndexRoute
@@ -291,6 +300,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/settings'
     | '/targets'
+    | '/track-record'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog/'
@@ -319,6 +329,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/settings'
     | '/targets'
+    | '/track-record'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog'
@@ -349,6 +360,7 @@ export interface FileRouteTypes {
     | '/_app/portfolio'
     | '/_app/settings'
     | '/_app/targets'
+    | '/_app/track-record'
     | '/admin/login'
     | '/blog/$slug'
     | '/blog/'
@@ -538,6 +550,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTargetsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/track-record': {
+      id: '/_app/track-record'
+      path: '/track-record'
+      fullPath: '/track-record'
+      preLoaderRoute: typeof AppTrackRecordRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/admin/login': {
       id: '/admin/login'
       path: '/admin/login'
@@ -586,6 +605,7 @@ interface AppRouteChildren {
   AppPortfolioRoute: typeof AppPortfolioRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTargetsRoute: typeof AppTargetsRoute
+  AppTrackRecordRoute: typeof AppTrackRecordRoute
   AppStockCodeRoute: typeof AppStockCodeRoute
 }
 
@@ -599,6 +619,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPortfolioRoute: AppPortfolioRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTargetsRoute: AppTargetsRoute,
+  AppTrackRecordRoute: AppTrackRecordRoute,
   AppStockCodeRoute: AppStockCodeRoute,
 }
 
