@@ -78,13 +78,16 @@ const PLANS = [
 
 /**
  * The headline yearly discount: the smallest saving across the paid plans
- * (today both work out to the same 16.7%), so the label never overstates one.
+ * (today both work out to the same 16.7%), rounded down to a whole percent (16%) so the label
+ * never overstates one.
  */
-const YEARLY_DISCOUNT_PCT = Math.min(
-  ...PLANS.flatMap((plan) =>
-    plan.monthlyPrice !== null && plan.yearlyPrice !== null
-      ? [(1 - plan.yearlyPrice / (plan.monthlyPrice * 12)) * 100]
-      : [],
+const YEARLY_DISCOUNT_PCT = Math.floor(
+  Math.min(
+    ...PLANS.flatMap((plan) =>
+      plan.monthlyPrice !== null && plan.yearlyPrice !== null
+        ? [(1 - plan.yearlyPrice / (plan.monthlyPrice * 12)) * 100]
+        : [],
+    ),
   ),
 );
 
@@ -151,13 +154,13 @@ function PricingPage() {
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {PLANS.map((plan) => {
-            // The yearly tab quotes the yearly price as a per-month figure (2,990 → 249.17 on screen),
-            // with the real one-time total and the saving spelled out beneath it.
+            // The yearly tab quotes the yearly price as a per-month figure, rounded to whole pounds
+            // (2,990 → 249 on screen), with the real one-time total and the saving spelled out beneath it.
             let price: number | null = plan.monthlyPrice;
             let yearlyTotal = 0;
             let yearlySaving = 0;
             if (period === "yearly" && plan.monthlyPrice !== null && plan.yearlyPrice !== null) {
-              price = plan.yearlyPrice / 12;
+              price = Math.round(plan.yearlyPrice / 12);
               yearlyTotal = plan.yearlyPrice;
               // Same saving the backend's PLANS comment quotes: twelve monthly payments vs the yearly price.
               yearlySaving = plan.monthlyPrice * 12 - plan.yearlyPrice;
