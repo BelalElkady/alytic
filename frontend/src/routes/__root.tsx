@@ -84,6 +84,8 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 // server, where one process renders every site.
 let browserTenant: Tenant | null = null;
 
+const META_PIXEL_ID = "1612671676275288";
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   // Which white-label site this is (see lib/tenant.ts). Put in the route
   // context rather than loader data because every child route inherits the
@@ -168,6 +170,24 @@ gtag('config', '${gaId}');`,
               },
             ]
           : []),
+        // Meta Pixel: our own site only, same rule as above — a client's
+        // visitors must not land in our Meta reports.
+        ...(tenant.id === DEFAULT_TENANT.id
+          ? [
+              {
+                children: `!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '${META_PIXEL_ID}');
+fbq('track', 'PageView');`,
+              },
+            ]
+          : []),
       ],
     };
   },
@@ -178,12 +198,24 @@ gtag('config', '${gaId}');`,
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const { tenant } = Route.useRouteContext();
   return (
     <html lang="ar" dir="rtl">
       <head>
         <HeadContent />
       </head>
       <body>
+        {tenant.id === DEFAULT_TENANT.id && (
+          <noscript>
+            <img
+              height="1"
+              width="1"
+              style={{ display: "none" }}
+              alt=""
+              src={`https://www.facebook.com/tr?id=${META_PIXEL_ID}&ev=PageView&noscript=1`}
+            />
+          </noscript>
+        )}
         {children}
         <Scripts />
       </body>
