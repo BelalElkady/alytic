@@ -1152,7 +1152,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
         positionsCount: positions.length,
         positionsValue,
         watchlistCount: Object.keys(pf.watchlist ?? {}).length,
-        tradesCount: (pf.trades ?? []).length,
+        tradesCount: (pf.trades ?? []).filter((t) => t.side !== 'dividend').length,
         realizedPnl: pf.realizedPnl ?? 0,
         updatedAt: pf.updatedAt ?? null,
       },
@@ -2030,7 +2030,7 @@ const isDayString = (value) => typeof value === 'string' && value.length <= 40 &
 
 function tradeInputError({ code, side, shares, price, date, note }) {
   if (typeof code !== 'string') return 'الكود لازم يكون نص';
-  if (side !== 'buy' && side !== 'sell') return 'نوع الصفقة لازم يكون buy أو sell';
+  if (!['buy', 'sell', 'dividend'].includes(side)) return 'نوع الصفقة لازم يكون buy أو sell أو dividend';
   const s = Number(shares);
   const p = Number(price);
   if (!Number.isFinite(s) || s <= 0 || s > MAX_SHARES) return 'عدد الأسهم غير صالح';
