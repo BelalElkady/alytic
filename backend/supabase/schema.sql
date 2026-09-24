@@ -424,6 +424,219 @@ create table if not exists blog_daily_topics (
   generated_at timestamptz not null default now()
 );
 
+-- ---------------------------------------------------------------------------
+-- Recommendation track record.
+--
+-- Every buy/hold/sell/reduce call the app hands a User is written here at the
+-- moment it is issued (see src/recommendations.js), then resolved once a day
+-- by the evaluate-recommendations Edge Function (supabase/functions/, run by
+-- pg_cron — see supabase/recommendations-cron.sql) against the session bars in
+-- recommendation_prices. The track-record page reads nothing else.
+--
+-- The record is only worth anything if it can't be edited after the fact, so
+-- the guard trigger below — not the app — enforces it, for every role
+-- including service_role (which bypasses RLS but not triggers):
+--   - issue fields (ticker, action, prices, horizon, EGX30 level, model,
+--     issue time) never change after insert;
+--   - the outcome fields change only while the row is still open, and once
+--     it is closed the whole row is final;
+--   - rows can't be deleted or truncated. A deleted account's rows stay, with
+--     user_id set to null (the one issue-field change allowed).
+-- RLS is enabled with no policies by the lock-down block at the end of this
+-- file, like every other table here: anon/authenticated can't reach it at all.
+--
+-- horizon_days counts EGX trading sessions, not calendar days — the engine's
+-- target horizons are in sessions, and so is the evaluator's clock.
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'recommendation_action') then
+    create type recommendation_action as enum ('buy', 'hold', 'sell', 'reduce');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'recommendation_status') then
+    create type recommendation_status as enum ('open', 'hit_target', 'hit_stop', 'expired');
+  end if;
+end $$;
+
+create table if not exists recommendations (
+  id bigint generated always as identity primary key,
+  user_id text references users(id) on delete set null,
+  ticker text not null,
+  action recommendation_action not null,
+  ref_price numeric not null check (ref_price > 0),
+  target_price numeric check (target_price > 0),
+  stop_price numeric check (stop_price > 0),
+  horizon_days integer not null check (horizon_days between 1 and 500),
+  egx30_at_issue numeric check (egx30_at_issue > 0),
+  model_version text not null,
+  issued_at timestamptz not null default now(),
+  -- The Cairo trading date of issued_at, set by the guard trigger. Evaluation
+  -- starts with the first session after it, and it keys the one-call-per-day
+  -- dedupe below.
+  issued_on date not null default ((now() at time zone 'Africa/Cairo')::date),
+  -- Where the call came from (portfolio_review, stock_review, market_report,
+  -- cash_review) and the investing style it was made for. Issue fields too.
+  source text not null,
+  style text,
+
+  status recommendation_status not null default 'open',
+  closed_at timestamptz,
+  exit_price numeric,
+  return_pct numeric,
+  excess_return_pct numeric,
+
+  -- Running figures the evaluator refreshes while the call is open (and
+  -- freezes at close): sessions since issue, last close, and the return and
+  -- excess return marked to it.
+  sessions_elapsed integer not null default 0,
+  mark_price numeric,
+  mark_return_pct numeric,
+  mark_excess_return_pct numeric,
+  evaluated_at timestamptz,
+
+  constraint recommendations_closed_consistent check (
+    (status = 'open' and closed_at is null and exit_price is null and return_pct is null)
+    or (status <> 'open' and closed_at is not null and exit_price is not null and return_pct is not null)
+  ),
+  -- A target sits on the profitable side of the reference price and a stop
+  -- on the losing side: above/below for buy and hold, the reverse for sell
+  -- and reduce (which are scored as short calls).
+  constraint recommendations_levels_sided check (
+    case when action in ('buy', 'hold')
+      then (target_price is null or target_price > ref_price) and (stop_price is null or stop_price < ref_price)
+      else (target_price is null or target_price < ref_price) and (stop_price is null or stop_price > ref_price)
+    end
+  )
+);
+
+-- Benchmarks beyond EGX30. Each call is also measured against its own index,
+-- chosen at issue from the stock's membership: EGX30 for an EGX30 member,
+-- EGX70 (EWI) for an EGX70 member, EGX100 (EWI) for a stock in neither —
+-- EGX30 alone would credit or blame a small-cap call for being small-cap.
+-- And against each of the four indices in turn (EGX30, EGX70, EGX33 — the
+-- Shariah index — and EGX100), so the page can compare the whole record to
+-- any one of them.
+--   indices_at_issue  all four levels at issue, {"EGX30": …, "EGX70": …,
+--                     "EGX33": …, "EGX100": …}; one the feed didn't return
+--                     is left out.
+--   index_excess      the call's excess return over each index, same keys
+--                     (mark_index_excess: the running figures while open).
+--   benchmark_excess_pct  the excess over the call's own benchmark.
+-- egx30_at_issue / excess_return_pct stay the EGX30 figures. Calls logged
+-- before these columns existed have them null.
+alter table recommendations add column if not exists benchmark text;
+alter table recommendations add column if not exists indices_at_issue jsonb;
+alter table recommendations add column if not exists benchmark_excess_pct numeric;
+alter table recommendations add column if not exists index_excess jsonb;
+alter table recommendations add column if not exists mark_benchmark_excess_pct numeric;
+alter table recommendations add column if not exists mark_index_excess jsonb;
+-- An earlier draft of this section had EGX33-only columns; index_excess replaced them.
+alter table recommendations drop column if exists egx33_excess_pct;
+alter table recommendations drop column if exists mark_egx33_excess_pct;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'recommendations_benchmark_check') then
+    alter table recommendations add constraint recommendations_benchmark_check
+      check (benchmark is null or benchmark in ('EGX30', 'EGX70', 'EGX100'));
+  end if;
+end $$;
+
+-- One call per (User, stock, action, day): the same review read twice, or a
+-- cached market report served on every page view, logs once.
+create unique index if not exists recommendations_daily_key on recommendations (user_id, ticker, action, issued_on);
+create index if not exists recommendations_open_idx on recommendations (ticker, issued_on) where status = 'open';
+create index if not exists recommendations_user_idx on recommendations (user_id, issued_at desc);
+create index if not exists recommendations_issued_idx on recommendations (issued_at desc);
+
+create or replace function recommendations_guard() returns trigger
+language plpgsql as $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'recommendations are append-only: row % cannot be deleted', old.id;
+  end if;
+
+  if tg_op = 'INSERT' then
+    -- Stamped here, not trusted from the caller, so nothing can be backdated
+    -- or inserted already resolved.
+    new.issued_at := now();
+    new.issued_on := (now() at time zone 'Africa/Cairo')::date;
+    new.status := 'open';
+    new.closed_at := null;
+    new.exit_price := null;
+    new.return_pct := null;
+    new.excess_return_pct := null;
+    new.sessions_elapsed := 0;
+    new.mark_price := null;
+    new.mark_return_pct := null;
+    new.mark_excess_return_pct := null;
+    new.benchmark_excess_pct := null;
+    new.index_excess := null;
+    new.mark_benchmark_excess_pct := null;
+    new.mark_index_excess := null;
+    new.evaluated_at := null;
+    return new;
+  end if;
+
+  -- UPDATE
+  if (new.id, new.ticker, new.action, new.ref_price, new.target_price, new.stop_price, new.horizon_days,
+      new.egx30_at_issue, new.model_version, new.issued_at, new.issued_on, new.source, new.style,
+      new.benchmark, new.indices_at_issue)
+     is distinct from
+     (old.id, old.ticker, old.action, old.ref_price, old.target_price, old.stop_price, old.horizon_days,
+      old.egx30_at_issue, old.model_version, old.issued_at, old.issued_on, old.source, old.style,
+      old.benchmark, old.indices_at_issue) then
+    raise exception 'recommendation %: issue fields are immutable', old.id;
+  end if;
+  if new.user_id is distinct from old.user_id and new.user_id is not null then
+    raise exception 'recommendation %: user_id can only be cleared, not reassigned', old.id;
+  end if;
+  if old.status <> 'open'
+     and (new.status, new.closed_at, new.exit_price, new.return_pct, new.excess_return_pct, new.sessions_elapsed,
+          new.mark_price, new.mark_return_pct, new.mark_excess_return_pct, new.evaluated_at,
+          new.benchmark_excess_pct, new.index_excess, new.mark_benchmark_excess_pct, new.mark_index_excess)
+         is distinct from
+         (old.status, old.closed_at, old.exit_price, old.return_pct, old.excess_return_pct, old.sessions_elapsed,
+          old.mark_price, old.mark_return_pct, old.mark_excess_return_pct, old.evaluated_at,
+          old.benchmark_excess_pct, old.index_excess, old.mark_benchmark_excess_pct, old.mark_index_excess) then
+    raise exception 'recommendation % is already closed (%) and final', old.id, old.status;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists recommendations_guard_row on recommendations;
+create trigger recommendations_guard_row
+  before insert or update or delete on recommendations
+  for each row execute function recommendations_guard();
+
+create or replace function recommendations_no_truncate() returns trigger
+language plpgsql as $$
+begin
+  raise exception 'recommendations are append-only: truncate is not allowed';
+end $$;
+
+drop trigger if exists recommendations_guard_truncate on recommendations;
+create trigger recommendations_guard_truncate
+  before truncate on recommendations
+  for each statement execute function recommendations_no_truncate();
+
+-- Daily session bars for every stock with an open recommendation, plus the
+-- four benchmark indices under the tickers 'EGX30', 'EGX70', 'EGX33' and
+-- 'EGX100' (TradingView's EGX30, EGX70EWI, SHARIAH, EGX100EWI), each from the
+-- first session after the earliest open call that needs it. Written by the backend's 14:30 daily-close run (see
+-- recordRecommendationPrices in src/recommendations.js) — the market feeds
+-- this app uses (Yahoo, TradingView's websocket) live in the backend, so the
+-- Edge Function reads prices from here rather than scraping them itself.
+-- A re-run overwrites the same bars, which also heals a missed day.
+create table if not exists recommendation_prices (
+  ticker text not null,
+  session_date date not null,
+  open numeric,
+  high numeric not null,
+  low numeric not null,
+  close numeric not null,
+  updated_at timestamptz not null default now(),
+  primary key (ticker, session_date)
+);
+
 -- The CLI/local dev account. INSERT ... ON CONFLICT DO NOTHING equivalent —
 -- safe to run every time this file is applied.
 insert into users (id, email, name, password_salt, password_hash, email_verified, created_at)

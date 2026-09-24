@@ -51,3 +51,11 @@ _Avoid_: Holding, stock (when meaning the User's stake)
 **Order added**:
 The order a User's Positions arrived in: Positions from a broker screenshot keep the screenshot's row order, and Positions added by hand afterwards go to the end. Labelled "ترتيب الإضافة".
 _Avoid_: Screenshot order, manual order, insertion order
+
+**Recommendation**:
+A buy, hold, sell or reduce call on one stock that the app handed a User, with its reference price, target, stop and horizon. Logged when it's issued and never edited afterwards. It ends as hit target, hit stop or expired. The model's wider vocabulary (accumulate, take profit, exit…) folds into these four, and "wait"/"avoid" aren't Recommendations.
+_Avoid_: Signal, tip, verdict (a verdict is the model's raw output, before it's logged)
+
+**Track record**:
+How Recommendations performed once resolved: hit rate, returns, and returns against EGX30. Labelled "سجل الأداء".
+_Avoid_: Backtest (it only covers calls that were actually issued, never simulated ones)

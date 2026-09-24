@@ -1,0 +1,151 @@
+/**
+ * The resolution rules for one recommendation — pure, no I/O, so the Edge
+ * Function (index.ts, Deno) and the backend's unit tests (Node) run the same
+ * code.
+ *
+ * A call is walked session by session, starting with the first session after
+ * the day it was issued:
+ *   - stop touched (low ≤ stop for buy/hold, high ≥ stop for sell/reduce)
+ *     → hit_stop. A session that touches both the stop and the target counts
+ *     as the stop: daily bars can't say which came first, and the record
+ *     should never flatter itself.
+ *   - target touched (high ≥ target, or low ≤ target for sell/reduce)
+ *     → hit_target.
+ *   - neither, and the session count reaches horizon_days → expired, at that
+ *     session's close.
+ * A session that opens beyond a level fills at the open, not at the level —
+ * a gap through the stop costs more than the stop, a gap through the target
+ * pays more than the target.
+ *
+ * Sell and reduce are scored as short calls: their return is the fall in
+ * price. Excess return is measured over the same span, in the same
+ * direction, against each of the four indices (index_excess, keyed by
+ * index), against the call's own benchmark chosen at issue — EGX30, EGX70 or
+ * EGX100 by the stock's membership (benchmark_excess_pct) — and, as its own
+ * column, against EGX30 (excess_return_pct). An index is left out, or the
+ * column null, when either end of it is missing.
+ */
+
+const LONG_ACTIONS = new Set(['buy', 'hold']);
+const INDICES = ['EGX30', 'EGX70', 'EGX33', 'EGX100'];
+
+export const directionOf = (action) => (LONG_ACTIONS.has(action) ? 1 : -1);
+
+const round = (x, digits) => {
+  const f = 10 ** digits;
+  return Math.round(x * f) / f;
+};
+
+const num = (x) => (x == null || x === '' ? null : Number(x));
+
+/** An index's level when the call was issued. Calls logged before indices_at_issue existed only carry EGX30. */
+function issueLevel(rec, index) {
+  const level = num(rec.indices_at_issue?.[index]);
+  if (level > 0) return level;
+  return index === 'EGX30' ? num(rec.egx30_at_issue) : null;
+}
+
+/** An index's move from the call's issue level to `date`'s close, in percent — null when either side is missing. */
+function indexMovePct(rec, indexCloses, index, date) {
+  if (!index) return null;
+  const from = issueLevel(rec, index);
+  const to = indexCloses.get(index)?.get(date);
+  if (!(from > 0) || !(to > 0)) return null;
+  return (to / from - 1) * 100;
+}
+
+/** The close of the session for `date`, as a timestamp — 14:30 Cairo is 12:30 UTC in winter (11:30 in summer); near enough for "closed on". */
+export const sessionCloseAt = (date) => `${date}T12:30:00Z`;
+
+/**
+ * @param {object} rec - a recommendations row (numeric columns may arrive as strings)
+ * @param {Array<{date:string, open:number|null, high:number, low:number, close:number}>} bars
+ *   the stock's sessions strictly after rec.issued_on, oldest first
+ * @param {Map<string, Map<string, number>>} indexCloses - per index ('EGX30', 'EGX70', 'EGX33', 'EGX100'), its close per session date
+ * @returns {object|null} the columns to write, or null when there is no new session to judge by
+ */
+export function evaluateRecommendation(rec, bars, indexCloses) {
+  if (!bars.length) return null;
+
+  const dir = directionOf(rec.action);
+  const ref = num(rec.ref_price);
+  const target = num(rec.target_price);
+  const stop = num(rec.stop_price);
+  const horizon = Number(rec.horizon_days);
+
+  const returnAt = (price) => round(dir * (price / ref - 1) * 100, 2);
+  const excessOver = (index, ret, date) => {
+    const move = indexMovePct(rec, indexCloses, index, date);
+    return move == null ? null : round(ret - dir * move, 2);
+  };
+  const excessAt = (ret, date) => {
+    const byIndex = {};
+    for (const index of INDICES) {
+      const excess = excessOver(index, ret, date);
+      if (excess != null) byIndex[index] = excess;
+    }
+    return {
+      egx30: byIndex.EGX30 ?? null,
+      benchmark: rec.benchmark ? (byIndex[rec.benchmark] ?? null) : null,
+      byIndex: Object.keys(byIndex).length ? byIndex : null,
+    };
+  };
+
+  for (let i = 0; i < bars.length; i++) {
+    const bar = bars[i];
+    const open = num(bar.open);
+    const high = num(bar.high);
+    const low = num(bar.low);
+    const close = num(bar.close);
+    const sessions = i + 1;
+
+    const stopHit = stop != null && (dir > 0 ? low <= stop : high >= stop);
+    const targetHit = target != null && (dir > 0 ? high >= target : low <= target);
+
+    let status = null;
+    let exit = null;
+    if (stopHit) {
+      status = 'hit_stop';
+      exit = open == null ? stop : dir > 0 ? Math.min(stop, open) : Math.max(stop, open);
+    } else if (targetHit) {
+      status = 'hit_target';
+      exit = open == null ? target : dir > 0 ? Math.max(target, open) : Math.min(target, open);
+    } else if (sessions >= horizon) {
+      status = 'expired';
+      exit = close;
+    }
+
+    if (status) {
+      const ret = returnAt(exit);
+      const excess = excessAt(ret, bar.date);
+      return {
+        status,
+        closed_at: sessionCloseAt(bar.date),
+        exit_price: round(exit, 4),
+        return_pct: ret,
+        excess_return_pct: excess.egx30,
+        benchmark_excess_pct: excess.benchmark,
+        index_excess: excess.byIndex,
+        sessions_elapsed: sessions,
+        mark_price: round(exit, 4),
+        mark_return_pct: ret,
+        mark_excess_return_pct: excess.egx30,
+        mark_benchmark_excess_pct: excess.benchmark,
+        mark_index_excess: excess.byIndex,
+      };
+    }
+  }
+
+  const last = bars[bars.length - 1];
+  const markRet = returnAt(num(last.close));
+  const markExcess = excessAt(markRet, last.date);
+  return {
+    status: 'open',
+    sessions_elapsed: bars.length,
+    mark_price: round(num(last.close), 4),
+    mark_return_pct: markRet,
+    mark_excess_return_pct: markExcess.egx30,
+    mark_benchmark_excess_pct: markExcess.benchmark,
+    mark_index_excess: markExcess.byIndex,
+  };
+}

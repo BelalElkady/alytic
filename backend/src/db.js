@@ -890,4 +890,64 @@ export async function deleteBlogPost(id) {
   return data;
 }
 
+// ---- Recommendation track record (see the recommendations section of supabase/schema.sql) ----
+
+/** Logs issued calls. A call already logged for that User, stock and action today is skipped, not an error. */
+export async function insertRecommendations(rows) {
+  if (!rows.length) return;
+  const { error } = await supabase
+    .from('recommendations')
+    .upsert(rows, { onConflict: 'user_id,ticker,action,issued_on', ignoreDuplicates: true });
+  if (error) throw new Error(`insertRecommendations: ${error.message}`);
+}
+
+/** Every open call's ticker and issue date — what the daily price recording needs to cover. */
+export async function listOpenRecommendationTickers() {
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('recommendations')
+      .select('ticker, issued_on')
+      .eq('status', 'open')
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw new Error(`listOpenRecommendationTickers: ${error.message}`);
+    rows.push(...data);
+    if (data.length < 1000) return rows;
+  }
+}
+
+export async function upsertRecommendationPrices(rows) {
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await supabase
+      .from('recommendation_prices')
+      .upsert(rows.slice(i, i + 500), { onConflict: 'ticker,session_date' });
+    if (error) throw new Error(`upsertRecommendationPrices: ${error.message}`);
+  }
+}
+
+/**
+ * Recommendations for the track-record page, newest first. `userId` narrows
+ * to one User's calls; `from`/`to` are inclusive Cairo issue dates.
+ */
+export async function listRecommendations({ userId = null, from = null, to = null, limit = 5000 } = {}) {
+  const rows = [];
+  for (let offset = 0; offset < limit; offset += 1000) {
+    let query = supabase
+      .from('recommendations')
+      .select('id, user_id, ticker, action, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, model_version, issued_at, issued_on, source, style, status, closed_at, exit_price, return_pct, excess_return_pct, sessions_elapsed, mark_price, mark_return_pct, mark_excess_return_pct, evaluated_at, benchmark, indices_at_issue, benchmark_excess_pct, index_excess, mark_benchmark_excess_pct, mark_index_excess');
+    if (userId) query = query.eq('user_id', userId);
+    if (from) query = query.gte('issued_on', from);
+    if (to) query = query.lte('issued_on', to);
+    const { data, error } = await query
+      .order('issued_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, Math.min(offset + 999, limit - 1));
+    if (error) throw new Error(`listRecommendations: ${error.message}`);
+    rows.push(...data);
+    if (data.length < 1000) break;
+  }
+  return rows;
+}
+
 export { supabase };

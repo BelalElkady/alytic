@@ -47,6 +47,7 @@ import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, s
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
 import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
 import { mountPlatformRoutes } from './platform.js';
+import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFromScanRow, recordRecommendationPrices, trackRecord, HORIZON_BUCKETS, COMPARISONS } from '../recommendations.js';
 
 // Where the public contact form's messages and support-chat alerts land is
 // per site: config.contactEmail / config.supportNotifyEmail on the tenant
@@ -2358,7 +2359,17 @@ async function runDailyClose() {
       failed += 1;
     }
   }
-  return { ok: true, cairoNow, total: userIds.length, saved, failed };
+  // Bars for the evaluate-recommendations Edge Function, which pg_cron runs
+  // after this (see supabase/recommendations-cron.sql). Its own failure
+  // shouldn't hide the snapshot result above.
+  let recommendationPrices;
+  try {
+    recommendationPrices = await recordRecommendationPrices();
+  } catch (err) {
+    console.error('[daily-close] recommendation prices failed:', err.message);
+    recommendationPrices = { ok: false };
+  }
+  return { ok: true, cairoNow, total: userIds.length, saved, failed, recommendationPrices };
 }
 
 /**
@@ -2881,6 +2892,14 @@ async function runReview({ userId, style, force }) {
     const { getOrGenerateMarketAnalysis, reviewFromMarketReport } = await import('../agent/marketAnalysis.js');
     const report = await getOrGenerateMarketAnalysis({ rules, style: effectiveStyle });
     const review = reviewFromMarketReport(report, { cash: portfolio.cash }, trackedCodes(portfolio));
+    const opportunities = new Map((report.topOpportunities ?? []).map((op) => [op.code, op]));
+    void logRecommendations(
+      userId,
+      review.verdicts
+        .filter((v) => opportunities.has(v.code))
+        .map((v) => ({ code: v.code, action: v.action, levels: levelsFromOpportunity(opportunities.get(v.code), effectiveStyle) })),
+      { source: 'market_report', style: effectiveStyle, model: report._meta?.model },
+    );
     return { review, analyses: [], errors: [], style: effectiveStyle, source: 'daily_market_report', marketAnalysisAsOf: report.asOf };
   }
 
@@ -2901,6 +2920,17 @@ async function runReview({ userId, style, force }) {
     { cash: portfolio.cash, capital },
     { userId, rules, style: effectiveStyle, force },
   );
+  // Only a freshly written review is new advice; a cached one was logged when it was written.
+  if (source === 'ai') {
+    const byCode = new Map(results.map((a) => [a.code, a]));
+    void logRecommendations(
+      userId,
+      (review.verdicts ?? [])
+        .filter((v) => byCode.has(v.code))
+        .map((v) => ({ code: v.code, action: v.action, levels: levelsFromAnalysis(byCode.get(v.code), effectiveStyle) })),
+      { source: 'portfolio_review', style: effectiveStyle, model: review._meta?.model },
+    );
+  }
   return { review, analyses: results, errors, style: effectiveStyle, source };
 }
 
@@ -3002,6 +3032,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
     const startedAt = Date.now();
     const rules = pre.style ? rulesForStyle(RULES, pre.style) : RULES;
     const capital = capitalOf(portfolio);
+    let analyses = [];
     const { getOrGenerateStockReview } = await import('../agent/analyst.js');
     const { verdict, source } = await getOrGenerateStockReview(
       code,
@@ -3020,6 +3051,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
             userId,
           });
           console.log(`[review] ${code} analyzeMany ${Object.keys(portfolio.positions).length} holdings in ${Date.now() - t}ms`);
+          analyses = results;
           return results;
         },
       },
@@ -3032,6 +3064,12 @@ app.post('/api/review/stock', wrap(async (req, res) => {
       });
     }
     console.log(`[review] ${code} ${source} in ${Date.now() - startedAt}ms`);
+    const analysis = analyses.find((a) => a.code === code);
+    if (analysis && verdict?.action) {
+      void logRecommendations(userId, [{ code, action: verdict.action, levels: levelsFromAnalysis(analysis, pre.style ?? 'medium') }], {
+        source: 'stock_review', style: pre.style ?? 'medium', model: verdict._meta?.model,
+      });
+    }
     return { verdict, source, code };
   });
 }));
@@ -3067,6 +3105,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
 
   await startReviewJob(res, cashReviewJobKey(userId, pre.style, index), async () => {
     const startedAt = Date.now();
+    let scanRows = [];
     const { getOrGenerateCashReview } = await import('../agent/cashAnalysis.js');
     const { review, source } = await getOrGenerateCashReview(portfolio, {
       userId,
@@ -3078,9 +3117,23 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       index,
       rules: pre.style ? rulesForStyle(RULES, pre.style) : RULES,
       force: pre.force,
-      runScan: () => runScan(portfolio, { codes: indexCodes, style: pre.style, userId, focus: 'cash' }),
+      runScan: async () => {
+        const scan = await runScan(portfolio, { codes: indexCodes, style: pre.style, userId, focus: 'cash' });
+        scanRows = scan.payload.results ?? [];
+        return scan;
+      },
     });
     console.log(`[review] cash ${index} ${source} in ${Date.now() - startedAt}ms`);
+    if (source === 'ai') {
+      const byCode = new Map(scanRows.map((row) => [row.code, row]));
+      void logRecommendations(
+        userId,
+        (review.picks ?? [])
+          .filter((p) => byCode.has(p.code))
+          .map((p) => ({ code: p.code, action: p.action, levels: levelsFromScanRow(byCode.get(p.code)) })),
+        { source: 'cash_review', style: pre.style ?? 'medium', model: review._meta?.model },
+      );
+    }
     return { review, source, index };
   });
 }));
@@ -3123,7 +3176,34 @@ app.get('/api/market-analysis', wrap(async (req, res) => {
   const rules = style ? rulesForStyle(RULES, style) : RULES;
   const { getOrGenerateMarketAnalysis } = await import('../agent/marketAnalysis.js');
   const report = await getOrGenerateMarketAnalysis({ rules, style: style ?? 'medium' });
+  // The same shared report reaches many Users; each one's copy is logged once a day (the table's daily key).
+  void logRecommendations(
+    req.user.id,
+    (report.topOpportunities ?? []).map((op) => ({ code: op.code, action: op.action, levels: levelsFromOpportunity(op, style ?? 'medium') })),
+    { source: 'market_report', style: style ?? 'medium', model: report._meta?.model },
+  );
   res.json({ report });
+}));
+
+// The recommendation track record (see src/recommendations.js). Open to every
+// signed-in User, paid or not: it is the record of advice already given, and
+// shows no other User's identity, only whether a row is the viewer's own.
+const TRACK_RECORD_ACTIONS = ['buy', 'hold', 'sell', 'reduce'];
+app.get('/api/track-record', wrap(async (req, res) => {
+  const { scope = 'all', vs = 'own', action, horizon, from, to } = req.query;
+  if (!['all', 'mine'].includes(scope)) return res.status(400).json({ error: 'نطاق غير معروف' });
+  if (!Object.hasOwn(COMPARISONS, vs)) return res.status(400).json({ error: 'مؤشر مقارنة غير معروف' });
+  if (action && !TRACK_RECORD_ACTIONS.includes(action)) return res.status(400).json({ error: 'قرار غير معروف' });
+  if (horizon && !HORIZON_BUCKETS[horizon]) return res.status(400).json({ error: 'أفق غير معروف' });
+  if ((from && !isIsoDate(from)) || (to && !isIsoDate(to))) return res.status(400).json({ error: 'تاريخ غير صالح' });
+  res.json(await trackRecord(req.user.id, {
+    scope,
+    vs,
+    action: action || null,
+    horizon: horizon || null,
+    from: from || null,
+    to: to || null,
+  }));
 }));
 
 app.get('/api/fundamentals/:code', wrap(async (req, res) => {
