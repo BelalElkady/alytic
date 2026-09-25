@@ -1,0 +1,210 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import '../helpers/env.js';
+
+import { billingPeriod, createLiveQuotePool, liveQuotesConfigFromEnv } from '../../src/data/live-quote-pool.js';
+import { OanorError } from '../../src/data/oanor.js';
+
+const quiet = { info() {}, warn() {}, error() {} };
+const quote = (price) => ({ price, change: 0.1, changePct: 1, time: 1_700_000_000 });
+
+/**
+ * A pool with fake feeds and a hand-driven clock. `oanor` answers with price
+ * 100 for every code unless a test replaces it; `tv` answers 50. Every oanor
+ * call's codes are recorded in `h.oanorCalls`.
+ */
+function harness({ config = {}, stored = null, oanor, sessionOpen = true, ...overrides } = {}) {
+  const h = {
+    t: Date.UTC(2026, 8, 15, 9, 0), // 2026-09-15, inside the Sep billing period
+    oanorCalls: [],
+    tvCalls: [],
+    saved: [],
+    alerts: [],
+    stored,
+  };
+  h.pool = createLiveQuotePool({
+    config: { enabled: true, userIds: null, monthlyQuota: null, billingDay: 1, compare: false, ...config },
+    fetchOanor: async (codes) => {
+      h.oanorCalls.push(codes);
+      if (oanor) return oanor(codes);
+      return new Map(codes.map((code) => [code, quote(100)]));
+    },
+    fetchTv: async (codes) => {
+      h.tvCalls.push(codes);
+      return new Map(codes.map((code) => [code, quote(50)]));
+    },
+    sessionOpen: () => sessionOpen,
+    usageStore: {
+      load: async (periodStart) => (h.stored?.periodStart === periodStart ? h.stored : null),
+      save: async (periodStart, state) => {
+        h.saved.push({ periodStart, ...state });
+      },
+    },
+    onRollback: async (details) => {
+      h.alerts.push(details);
+    },
+    now: () => h.t,
+    log: quiet,
+    coalesceMs: 5,
+    ...overrides,
+  });
+  return h;
+}
+
+const subscriber = { subscribed: true, userId: 'u1' };
+
+test('non-subscribers get TradingView and oanor is never called', async () => {
+  const h = harness();
+  const quotes = await h.pool.fetchLiveQuotes(['comi', 'EGX:SWDY'], { subscribed: false, userId: 'u1' });
+  assert.deepEqual([...quotes.keys()].sort(), ['COMI', 'SWDY']);
+  assert.equal(quotes.get('COMI').price, 50);
+  assert.equal(h.oanorCalls.length, 0);
+});
+
+test('oanor stays off when disabled, and outside the EGX session', async () => {
+  const off = harness({ config: { enabled: false } });
+  assert.equal((await off.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
+  assert.equal(off.oanorCalls.length, 0);
+
+  const closed = harness({ sessionOpen: false });
+  assert.equal((await closed.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
+  assert.equal(closed.oanorCalls.length, 0);
+});
+
+test('subscribers get oanor, with no invented timestamp', async () => {
+  const h = harness();
+  const quotes = await h.pool.fetchLiveQuotes(['COMI'], subscriber);
+  assert.equal(quotes.get('COMI').price, 100);
+  assert.equal(quotes.get('COMI').time, null);
+  assert.equal(h.tvCalls.length, 0);
+});
+
+test('a code oanor does not answer for comes from TradingView in the same call', async () => {
+  const h = harness({ oanor: async () => new Map([['COMI', quote(100)]]) });
+  const quotes = await h.pool.fetchLiveQuotes(['COMI', 'SWDY'], subscriber);
+  assert.equal(quotes.get('COMI').price, 100);
+  assert.equal(quotes.get('SWDY').price, 50);
+  assert.deepEqual(h.tvCalls, [['SWDY']]);
+});
+
+test('concurrent subscribers share one oanor call, chunked 20 codes at a time', async () => {
+  const h = harness();
+  const a = Array.from({ length: 30 }, (_, i) => `A${i}`);
+  const b = [...a.slice(0, 10), ...Array.from({ length: 15 }, (_, i) => `B${i}`)];
+  await Promise.all([
+    h.pool.fetchLiveQuotes(a, { subscribed: true, userId: 'u1' }),
+    h.pool.fetchLiveQuotes(b, { subscribed: true, userId: 'u2' }),
+  ]);
+  const requested = h.oanorCalls.flat();
+  assert.equal(requested.length, 45, 'each distinct code requested once');
+  assert.equal(new Set(requested).size, 45);
+  assert.equal(h.oanorCalls.length, 3);
+  assert.ok(h.oanorCalls.every((chunk) => chunk.length <= 20));
+});
+
+test('a cached quote serves every subscriber until it is 15s old', async () => {
+  const h = harness();
+  await h.pool.fetchLiveQuotes(['COMI'], subscriber);
+  h.t += 14_000;
+  await h.pool.fetchLiveQuotes(['COMI'], { subscribed: true, userId: 'u2' });
+  assert.equal(h.oanorCalls.length, 1);
+  h.t += 2_000;
+  await h.pool.fetchLiveQuotes(['COMI'], subscriber);
+  assert.equal(h.oanorCalls.length, 2);
+});
+
+test('a rate limit opens the breaker: TradingView for 60s, then oanor again', async () => {
+  let fail = true;
+  const h = harness({
+    oanor: async (codes) => {
+      if (fail) throw new OanorError('429', { kind: 'transient', status: 429 });
+      return new Map(codes.map((code) => [code, quote(100)]));
+    },
+  });
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
+  fail = false;
+  h.t += 30_000;
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
+  assert.equal(h.oanorCalls.length, 1, 'no call while the breaker is open');
+  h.t += 31_000;
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 100);
+  assert.equal(h.alerts.length, 0, 'a rate limit is not a quota rollback');
+});
+
+test('a slow oanor falls back to TradingView after the timeout', async () => {
+  const h = harness({ oanor: () => new Promise(() => {}), timeoutMs: 20 });
+  const quotes = await h.pool.fetchLiveQuotes(['COMI'], subscriber);
+  assert.equal(quotes.get('COMI').price, 50);
+});
+
+test('oanor saying the quota is used up rolls back to TradingView until the reset', async () => {
+  const h = harness({ oanor: async () => { throw new OanorError('402', { kind: 'quota', status: 402 }); } });
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
+  assert.equal(h.alerts.length, 1);
+  assert.equal(h.alerts[0].reason, 'oanor');
+  assert.equal(h.alerts[0].resetsOn, '2026-10-01');
+  assert.ok(h.saved.at(-1).exhaustedAt, 'the rollback is persisted');
+
+  // Days later in the same period: no more oanor calls, no second alert.
+  h.t += 5 * 86_400_000;
+  assert.equal((await h.pool.fetchLiveQuotes(['SWDY'], subscriber)).get('SWDY').price, 50);
+  assert.equal(h.oanorCalls.length, 1);
+  assert.equal(h.alerts.length, 1);
+});
+
+test('our own count stops at 95% of OANOR_MONTHLY_QUOTA', async () => {
+  const h = harness({ config: { monthlyQuota: 100 }, stored: { periodStart: '2026-09-01', calls: 94 } });
+  await h.pool.fetchLiveQuotes(['COMI'], subscriber); // call 95: allowed
+  assert.equal(h.oanorCalls.length, 1);
+  h.t += 20_000;
+  const quotes = await h.pool.fetchLiveQuotes(['COMI'], subscriber); // call 96 would pass 95
+  assert.equal(quotes.get('COMI').price, 50);
+  assert.equal(h.oanorCalls.length, 1);
+  assert.equal(h.alerts.length, 1);
+  assert.equal(h.alerts[0].reason, 'count');
+  assert.equal(h.saved.at(-1).calls, 95);
+});
+
+test('a rollback stored before a restart still holds, and a new period resets it', async () => {
+  const stored = { periodStart: '2026-09-01', calls: 95, quota: 100, reason: 'count', exhaustedAt: '2026-09-10T10:00:00Z', alertedAt: '2026-09-10T10:00:00Z' };
+  const h = harness({ config: { monthlyQuota: 100 }, stored });
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
+  assert.equal(h.oanorCalls.length, 0);
+  assert.equal(h.alerts.length, 0, 'already alerted for this period');
+
+  h.t = Date.UTC(2026, 9, 1, 9, 0); // 2026-10-01: the next period
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 100);
+  assert.equal(h.oanorCalls.length, 1);
+});
+
+test('raising OANOR_MONTHLY_QUOTA after an upgrade lifts the rollback at once', async () => {
+  const stored = { periodStart: '2026-09-01', calls: 95, quota: 100, reason: 'count', exhaustedAt: '2026-09-10T10:00:00Z', alertedAt: '2026-09-10T10:00:00Z' };
+  const h = harness({ config: { monthlyQuota: 1000 }, stored });
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 100);
+});
+
+test('while the allowlist is set it alone decides who gets oanor', async () => {
+  const h = harness({ config: { userIds: new Set(['admin-1']) } });
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], { subscribed: true, userId: 'u1' })).get('COMI').price, 50);
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], { subscribed: false, userId: 'admin-1' })).get('COMI').price, 100);
+});
+
+test('billingPeriod: periods start on the billing day and run a month', () => {
+  assert.deepEqual(billingPeriod(Date.UTC(2026, 8, 15), 1), { start: '2026-09-01', next: '2026-10-01' });
+  assert.deepEqual(billingPeriod(Date.UTC(2026, 8, 3), 10), { start: '2026-08-10', next: '2026-09-10' });
+  assert.deepEqual(billingPeriod(Date.UTC(2026, 0, 5), 10), { start: '2025-12-10', next: '2026-01-10' });
+  assert.deepEqual(billingPeriod(Date.UTC(2026, 1, 28), 31), { start: '2026-02-28', next: '2026-03-28' }, 'capped at 28');
+});
+
+test('liveQuotesConfigFromEnv: oanor needs the flag, a key and a written client', () => {
+  const env = { OANOR_ENABLED: '1', OANOR_API_KEY: 'k', OANOR_MONTHLY_QUOTA: '50000', OANOR_USER_IDS: 'a, b' };
+  const ready = liveQuotesConfigFromEnv(env, true);
+  assert.equal(ready.enabled, true);
+  assert.equal(ready.monthlyQuota, 50000);
+  assert.deepEqual([...ready.userIds], ['a', 'b']);
+  assert.equal(liveQuotesConfigFromEnv(env, false).enabled, false);
+  assert.equal(liveQuotesConfigFromEnv({ ...env, OANOR_API_KEY: '' }, true).enabled, false);
+  assert.equal(liveQuotesConfigFromEnv({ ...env, OANOR_ENABLED: '' }, true).enabled, false);
+  assert.equal(liveQuotesConfigFromEnv({}, true).userIds, null);
+});

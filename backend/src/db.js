@@ -296,6 +296,41 @@ export async function logAiSpend(feature, model, usage) {
   if (error) throw new Error(`logAiSpend: ${error.message}`);
 }
 
+/**
+ * The oanor call count for one billing period (see data/live-quote-pool.js),
+ * or null if nothing was recorded for it yet. Platform-wide: every site shares
+ * the one oanor key, so the count lives in the platform database untagged.
+ */
+export async function getOanorUsage(periodStart) {
+  const { data, error } = await platformDb.from('oanor_usage').select('*').eq('period_start', periodStart).maybeSingle();
+  if (error) throw new Error(`getOanorUsage: ${error.message}`);
+  if (!data) return null;
+  return {
+    calls: data.calls,
+    quota: data.quota,
+    reason: data.rollback_reason,
+    exhaustedAt: data.exhausted_at,
+    alertedAt: data.alerted_at,
+  };
+}
+
+/** Overwrites the oanor call count and rollback state for one billing period. */
+export async function putOanorUsage(periodStart, { calls, quota, reason, exhaustedAt, alertedAt }) {
+  const { error } = await platformDb.from('oanor_usage').upsert(
+    {
+      period_start: periodStart,
+      calls,
+      quota: quota ?? null,
+      rollback_reason: reason ?? null,
+      exhausted_at: exhaustedAt ?? null,
+      alerted_at: alertedAt ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'period_start' },
+  );
+  if (error) throw new Error(`putOanorUsage: ${error.message}`);
+}
+
 /** @returns {object|null} cached fundamentals for one ticker, or null if never fetched. */
 export async function getFundamentalsCache(code) {
   const { data, error } = await platformDb.from('fundamentals_cache').select('*').eq('code', code).maybeSingle();

@@ -42,6 +42,15 @@ export function isTradingDay(isoDate) {
   return dow !== 5 && dow !== 6 && !EGX_HOLIDAYS.has(isoDate);
 }
 
+/** True during EGX's continuous session: 10:00-14:30 Cairo time on a trading day. */
+export function egxSessionOpen(moment = new Date()) {
+  const [hour, minute] = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(moment).split(':').map(Number);
+  const minutesNow = hour * 60 + minute;
+  return isTradingDay(cairoDateOf(moment)) && minutesNow >= 10 * 60 && minutesNow < 14 * 60 + 30;
+}
+
 async function ensureDir() {
   await fs.mkdir(BARS_DIR, { recursive: true });
 }

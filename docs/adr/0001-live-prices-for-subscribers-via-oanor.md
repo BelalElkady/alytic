@@ -51,7 +51,7 @@ Fallback happens per code, not per call. For a subscriber, `fetchLiveQuotes` doe
 
 1. It asks oanor for the codes. The call has a hard **4 s timeout**, so a slow oanor never stalls a 20 s poll.
 2. Any code that oanor didn't return goes to `fetchLatestQuotes` in the same cycle. This covers an error, a 402 or 429, a timeout, or a code missing from a successful response. The two maps are then merged.
-3. Each quote carries `source: 'oanor' | 'tv'`. The API response doesn't expose it (the fallback is silent to the User). It exists for logging and for measuring the rollout.
+3. Quotes keep the exact shape `fetchLatestQuotes` returns, so nothing in the API response shows which feed answered (the fallback is silent to the User). The pool counts instead: quotes served by oanor, quotes that fell back, cache hits and calls. Those counters are what the rollout measures.
 
 **Circuit breaker for short failures.** A per-minute rate limit (429), a 5xx or a timeout from oanor opens a process-wide breaker for **60 s**. While it is open, subscribers go straight to TradingView, so a struggling oanor isn't hit again by every poll. The first failure that opens it is logged once at warn level. The User sees nothing, but the operator does.
 
@@ -63,8 +63,8 @@ Fallback happens per code, not per call. For a subscriber, `fetchLiveQuotes` doe
 The rollback:
 
 - **Is silent to Users.** Subscribers keep getting prices, 15 minutes delayed, exactly as when oanor fails for a single poll.
-- **Is loud to the operator.** It logs an error once when it starts, with calls used against the quota and the reset date. It sends the same alert to the Admin by email through the existing `email.js`. The quota is the one oanor failure that needs a human, to upgrade the tier or wait.
-- **Ends on its own.** On the plan's reset date (the start of the next billing period) the pool resets its counter and tries oanor again. A successful call clears the rollback. Raising `OANOR_MONTHLY_QUOTA` after an upgrade also clears it without waiting.
+- **Is loud to the operator.** It logs an error once when it starts, with calls used against the quota and the reset date. It sends the same alert by email, through the existing `email.js`, to the platform admins (`PLATFORM_ADMIN_EMAILS`), since the oanor bill is the platform's and not any one site's. The quota is the one oanor failure that needs a human, to upgrade the tier or wait.
+- **Ends on its own.** On the plan's reset date the pool starts a fresh counter and tries oanor again. The reset date comes from `OANOR_BILLING_DAY`, the day of the month the plan renews (default 1). A successful call clears the rollback. Raising `OANOR_MONTHLY_QUOTA` after an upgrade also clears it without waiting.
 - **Survives a restart.** The call count and the rollback state are stored, not kept only in memory, so a redeploy mid-month doesn't wipe the count and overspend the quota again.
 
 **Timestamps.** oanor exposes no per-quote timestamp (a caveat from #44), so its quotes return `time: null`. This is safe: `store.tsx` stores it as `lastTradeTime` but never displays or compares it. Don't invent a timestamp from the time the request was made.
@@ -109,11 +109,11 @@ Start on the Free tier, behind a flag:
 
 1. **Build it off by default.**
    - `OANOR_ENABLED` is unset, so everyone gets TradingView and nothing changes.
-   - `OANOR_API_KEY` and `OANOR_MONTHLY_QUOTA` join `.env.example` next to `OPENROUTER_API_KEY` and `RESEND_API_KEY`.
+   - `OANOR_API_KEY`, `OANOR_MONTHLY_QUOTA`, `OANOR_BILLING_DAY`, `OANOR_USER_IDS` and `OANOR_COMPARE` join `.env.example` next to `OPENROUTER_API_KEY` and `RESEND_API_KEY`.
 2. **Allowlist stage, one trading week on the Free tier.**
    - Set `OANOR_ENABLED=1` and `OANOR_USER_IDS=<owner's test account>`.
    - The allowlist also lets an exempt admin account in for testing.
-   - Log each oanor call's code count, the cache hit rate, the fallback count, and, per code, the gap between oanor's price and TradingView's.
+   - Log each oanor call's code count, the cache hit rate, the fallback count, and, per code, the gap between oanor's price and TradingView's. The gap needs a TradingView fetch alongside each oanor batch, so it only runs with `OANOR_COMPARE=1`: on for this week, off afterwards.
 3. **Decide.** Use the week's D, peak rate and fallback rate to pick the tier with the rule above. A fallback rate high enough that subscribers mostly see TradingView prices anyway is a reason to stop.
 4. **Open to all subscribers.** Drop the allowlist so every User with an active Subscription is eligible.
 5. **Kill switch.** Unset `OANOR_ENABLED` to put everyone back on TradingView without a deploy.
