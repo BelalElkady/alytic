@@ -68,7 +68,27 @@ describe("parseAmount", () => {
     expect(parseAmount("1,250.5")).toBe(1250.5);
     expect(parseAmount("١٢٫٥")).toBe(12.5);
     expect(parseAmount("١٬٠٠٠")).toBe(1000);
+    expect(parseAmount("1,234,567")).toBe(1234567);
     expect(parseAmount("")).toBeNaN();
     expect(parseAmount("abc")).toBeNaN();
+  });
+});
+
+describe("parseAmount with a comma decimal", () => {
+  it("reads a lone comma not followed by three digits as a decimal point", () => {
+    expect(parseAmount("74,42")).toBe(74.42);
+    expect(parseAmount("8,5")).toBe(8.5);
+    expect(parseAmount("0,125")).toBe(0.125);
+    expect(parseAmount("1,021")).toBe(1021);
+  });
+
+  it("gives a sane plan for the reported case: 1021 shares at 74,42 → 74 buying at 50", () => {
+    const plan = planAveraging({
+      shares: parseAmount("1021"),
+      avgCost: parseAmount("74,42"),
+      target: parseAmount("74"),
+      price: parseAmount("50"),
+    });
+    expect(plan).toMatchObject({ ok: true, buyShares: 18 });
   });
 });

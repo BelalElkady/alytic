@@ -204,6 +204,10 @@ function AmountField({
   value: string;
   onChange: (value: string) => void;
 }) {
+  // A comma can mean a decimal point or a thousands separator, so say which
+  // way it was read ("74,42" → 74.42) instead of leaving the user to guess.
+  const parsed = parseAmount(value);
+  const showReading = /[,٫٬٠-٩۰-۹]/.test(value) && Number.isFinite(parsed);
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -216,6 +220,11 @@ function AmountField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
+      {showReading && (
+        <p className="text-[11.5px] text-muted-foreground">
+          هنحسب على: <span className="num">{fmt(parsed)}</span>
+        </p>
+      )}
     </div>
   );
 }

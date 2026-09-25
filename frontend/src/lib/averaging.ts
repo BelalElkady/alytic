@@ -34,14 +34,30 @@ export type AveragingResult = AveragingPlan | AveragingError;
 
 const isPositive = (value: number) => Number.isFinite(value) && value > 0;
 
-/** Arabic-Indic digits, the Arabic decimal mark and thousands separators all read as plain numbers. */
+/**
+ * Arabic-Indic digits, the Arabic decimal mark (٫) and separators all read as
+ * plain numbers. A lone comma is a decimal point ("74,42" is 74.42 — how a
+ * price is often typed here, and reading it as 7442 blew every result up a
+ * hundredfold) unless exactly three digits follow it ("1,021" is 1021) — but a leading 0
+ * always means a decimal ("0,125" is 0.125, a sub-pound EGX price). Once a
+ * "." is present, commas are only thousands separators ("1,250.5").
+ */
 export function parseAmount(text: string): number {
-  const normalized = text
+  let normalized = text
     .trim()
     .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
     .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0))
     .replace(/٫/g, ".")
-    .replace(/[,٬\s]/g, "");
+    .replace(/[٬\s]/g, "");
+  const commas = normalized.split(",").length - 1;
+  if (
+    !normalized.includes(".") &&
+    commas === 1 &&
+    (/^-?0,/.test(normalized) || !/,\d{3}$/.test(normalized))
+  ) {
+    normalized = normalized.replace(",", ".");
+  }
+  normalized = normalized.replace(/,/g, "");
   return normalized ? Number(normalized) : Number.NaN;
 }
 
