@@ -1,0 +1,40 @@
+# Alytic's layer on top of Supabase's official self-hosting docker-compose.yml.
+# Copy it next to that file and list it after the base one in .env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.alytic.yml
+#
+# Needs Docker Compose 2.24.4+ for `!override`. Check the merged result with
+# `docker compose config` before starting — service names follow upstream
+# (checked against supabase/docker as of Sep 2026) and can change.
+# See docs/self-hosting-supabase.md.
+
+services:
+  # Nothing Supabase publishes may be reachable from the internet: the backend
+  # runs on this same server and talks to it over loopback. Docker writes its
+  # own iptables rules, so a ufw "deny" would NOT cover these ports — binding
+  # them to 127.0.0.1 is what actually keeps them private.
+  api-gw:
+    ports: !override
+      - "127.0.0.1:8000:8000/tcp"
+
+  supavisor:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+      - "127.0.0.1:${POOLER_PROXY_PORT_TRANSACTION}:6543"
+    mem_limit: 512m
+
+  # Caps so a runaway container can't starve the app on the same 8 GB box.
+  db:
+    mem_limit: 2g
+  studio:
+    mem_limit: 512m
+  realtime:
+    mem_limit: 512m
+  storage:
+    mem_limit: 512m
+  functions:
+    mem_limit: 512m
+    environment:
+      # Checked by evaluate-recommendations against the X-Cron-Secret header
+      # its pg_cron job sends (backend/supabase/recommendations-cron.sql).
+      EVALUATE_CRON_SECRET: ${EVALUATE_CRON_SECRET}

@@ -27,6 +27,21 @@ export const createServiceClient = (url, key) => createClient(url, key, CLIENT_O
  */
 export const platformDb = createServiceClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// Where browsers reach the platform database's Storage, when that differs
+// from where the backend reaches it: a self-hosted Supabase on this server is
+// SUPABASE_URL=http://127.0.0.1:8000, which no visitor can load an image from,
+// so nginx serves its read-only object paths on the site's own domain instead
+// (docs/self-hosting-supabase.md). Unset, URLs pass through untouched — as do
+// a tenant's own project's, which already carry a public host.
+const PRIVATE_ORIGIN = SUPABASE_URL.replace(/\/+$/, '');
+const STORAGE_PUBLIC_ORIGIN = process.env.SUPABASE_STORAGE_PUBLIC_URL?.replace(/\/+$/, '') || null;
+
+/** A Storage URL (public or signed) as a browser should load it — see STORAGE_PUBLIC_ORIGIN. */
+export function browserStorageUrl(url) {
+  if (!STORAGE_PUBLIC_ORIGIN || typeof url !== 'string' || !url.startsWith(`${PRIVATE_ORIGIN}/`)) return url;
+  return STORAGE_PUBLIC_ORIGIN + url.slice(PRIVATE_ORIGIN.length);
+}
+
 let warnedNoContext = false;
 
 /**

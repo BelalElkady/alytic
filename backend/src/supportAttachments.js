@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { currentDb, supabase } from './supabaseClient.js';
+import { browserStorageUrl, currentDb, supabase } from './supabaseClient.js';
 
 // Private bucket: a support attachment (often an InstaPay receipt) can carry a
 // phone number or account name, so it's never served from a public/guessable
@@ -70,5 +70,5 @@ export async function signedUrlsFor(paths) {
   if (unique.length === 0) return new Map();
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(unique, SIGNED_URL_TTL_SECONDS);
   if (error) throw new Error(`signedUrlsFor: ${error.message}`);
-  return new Map(data.map((entry) => [entry.path, entry.signedUrl]));
+  return new Map(data.map((entry) => [entry.path, browserStorageUrl(entry.signedUrl)]));
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { currentDb, supabase } from './supabaseClient.js';
+import { browserStorageUrl, currentDb, supabase } from './supabaseClient.js';
 
 // Public bucket: a blog post's feature image is rendered on the public site
 // (hero image, og:image, schema.org, sitemap) so it needs a stable public
@@ -47,5 +47,5 @@ export async function uploadBlogImage({ mediaType, buffer }) {
     upsert: false,
   });
   if (error) throw new Error(`uploadBlogImage: ${error.message}`);
-  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  return browserStorageUrl(supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
 }

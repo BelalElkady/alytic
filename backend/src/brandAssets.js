@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { currentDb, supabase } from './supabaseClient.js';
+import { browserStorageUrl, currentDb, supabase } from './supabaseClient.js';
 import { sniffImageType } from './security.js';
 
 // A client's logo and favicon, uploaded from the platform panel. Public
@@ -76,5 +76,5 @@ export async function uploadBrandAsset({ kind, mediaType, buffer }) {
     upsert: false,
   });
   if (error) throw new Error(`uploadBrandAsset: ${error.message}`);
-  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  return browserStorageUrl(supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
 }
