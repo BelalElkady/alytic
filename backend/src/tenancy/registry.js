@@ -17,14 +17,16 @@ import { decryptSecret } from './secrets.js';
  * same env vars the app always used — so this branch runs unchanged as a
  * single site until a second tenant is added.
  *
- * Lookups are synchronous against an in-memory snapshot, refreshed every
- * minute and right after any platform-panel change, so resolving the tenant
+ * Lookups are synchronous against an in-memory snapshot, refreshed every ten
+ * minutes and right after any platform-panel change, so resolving the tenant
  * adds no database round trip to a request.
  */
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 export const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID ?? 'egxpert';
-const REFRESH_MS = 60_000;
+// Only a safety net: panel changes refresh at once (see above). Every refresh
+// is two Supabase requests, so a tight interval costs log quota around the clock.
+const REFRESH_MS = 10 * 60_000;
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 const listEnv = (value) => String(value ?? '').split(',').map((s) => s.trim()).filter(Boolean);

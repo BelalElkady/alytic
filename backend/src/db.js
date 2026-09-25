@@ -52,6 +52,44 @@ export async function getUserById(id) {
   return data;
 }
 
+// The signed-in user behind a session cookie, remembered for a short while.
+// Every authenticated request (and every poll) resolves its session, and
+// reading the users row each time was the bulk of the Supabase request
+// volume. Every write to a users row in this file forgets that user at once,
+// so a password reset, role change or deletion made through the app applies
+// to the very next request; only a change made outside this process (SQL
+// editor, another backend instance) can take up to the TTL to show.
+const SESSION_USER_TTL_MS = 30_000;
+const SESSION_USER_MAX = 10_000;
+const sessionUsers = new Map();
+// Bumped on every forget, which runs after the write lands, so a read already
+// in flight during the write can't put the pre-write row back into the cache.
+let sessionUserGeneration = 0;
+const sessionUserKey = (id) => `${currentTenant()?.id ?? ''}:${id}`;
+
+/** getUserById for resolving a session; see SESSION_USER_TTL_MS. Use getUserById anywhere a fresh row matters. */
+export async function getSessionUser(id) {
+  const key = sessionUserKey(id);
+  const now = Date.now();
+  const hit = sessionUsers.get(key);
+  if (hit && hit.expires > now) return hit.user;
+  const generation = sessionUserGeneration;
+  const user = await getUserById(id);
+  if (user && generation === sessionUserGeneration) {
+    if (sessionUsers.size >= SESSION_USER_MAX) {
+      for (const [k, entry] of sessionUsers) if (entry.expires <= now) sessionUsers.delete(k);
+      if (sessionUsers.size >= SESSION_USER_MAX) sessionUsers.clear();
+    }
+    sessionUsers.set(key, { user, expires: now + SESSION_USER_TTL_MS });
+  }
+  return user;
+}
+
+function forgetSessionUser(id) {
+  sessionUserGeneration += 1;
+  sessionUsers.delete(sessionUserKey(id));
+}
+
 export async function getUserByGoogleId(googleId) {
   const { data, error } = await supabase.from('users').select('*').eq('google_id', googleId).maybeSingle();
   if (error) throw new Error(`getUserByGoogleId: ${error.message}`);
@@ -114,6 +152,7 @@ export async function setVerificationToken(id, token, expiresAt) {
     await supabase.from('users').update({ verification_token: token, verification_token_expires: expiresAt }).eq('id', id),
     'setVerificationToken',
   );
+  forgetSessionUser(id);
 }
 
 export async function getUserByResetToken(token) {
@@ -127,6 +166,7 @@ export async function setResetToken(id, token, expiresAt) {
     await supabase.from('users').update({ reset_token: token, reset_token_expires: expiresAt }).eq('id', id),
     'setResetToken',
   );
+  forgetSessionUser(id);
 }
 
 /** Also clears the reset token so a used (or abandoned) link can't be replayed. */
@@ -137,6 +177,7 @@ export async function setUserPassword(id, { salt, hash }) {
       .eq('id', id),
     'setUserPassword',
   );
+  forgetSessionUser(id);
 }
 
 export async function markEmailVerified(id) {
@@ -146,6 +187,7 @@ export async function markEmailVerified(id) {
       .eq('id', id),
     'markEmailVerified',
   );
+  forgetSessionUser(id);
 }
 
 /** Attaches a Google account to an existing email/password user (same email on both). Google already confirmed the address. */
@@ -154,16 +196,19 @@ export async function linkGoogleAccount(id, googleId) {
     await supabase.from('users').update({ google_id: googleId, email_verified: true }).eq('id', id),
     'linkGoogleAccount',
   );
+  forgetSessionUser(id);
 }
 
 /** Google sign-in never collects a phone number, so an account created that way needs this filled in afterward. */
 export async function setUserPhone(id, phone) {
   mustUnlessDuplicate(await supabase.from('users').update({ phone }).eq('id', id), 'setUserPhone');
+  forgetSessionUser(id);
 }
 
 /** Lets a signed-in account correct its own display name from the profile page. */
 export async function setUserName(id, name) {
   must(await supabase.from('users').update({ name }).eq('id', id), 'setUserName');
+  forgetSessionUser(id);
 }
 
 export async function getPortfolio(userId) {
@@ -576,6 +621,7 @@ export const roleOf = (row) => (row?.is_admin ? 'admin' : row?.is_marketer ? 'ma
 export async function setUserRole(id, role) {
   if (!USER_ROLES.includes(role)) throw new Error(`setUserRole: unknown role ${role}`);
   must(await supabase.from('users').update({ is_admin: role === 'admin', is_marketer: role === 'marketer' }).eq('id', id), 'setUserRole');
+  forgetSessionUser(id);
 }
 
 export async function setUserAdmin(id, isAdmin) {
@@ -584,8 +630,9 @@ export async function setUserAdmin(id, isAdmin) {
 
 /** Granting replaces any other role; revoking only clears the marketer flag, so it can never demote an admin. */
 export async function setUserMarketer(id, isMarketer) {
-  if (isMarketer) await setUserRole(id, 'marketer');
-  else must(await supabase.from('users').update({ is_marketer: false }).eq('id', id), 'setUserMarketer');
+  if (isMarketer) return setUserRole(id, 'marketer');
+  must(await supabase.from('users').update({ is_marketer: false }).eq('id', id), 'setUserMarketer');
+  forgetSessionUser(id);
 }
 
 /**
@@ -605,6 +652,7 @@ export async function deleteUser(id) {
     must(await supabase.from(table).update({ [column]: null }).eq(column, id), `deleteUser(${table}.${column})`);
   }
   const data = must(await supabase.from('users').delete().eq('id', id).select('id'), 'deleteUser');
+  forgetSessionUser(id);
   return data.length > 0;
 }
 
