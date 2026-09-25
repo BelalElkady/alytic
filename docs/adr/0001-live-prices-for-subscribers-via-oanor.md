@@ -1,6 +1,6 @@
 # ADR 0001 — Live prices for subscribers via oanor
 
-- **Status:** Proposed. Wiring, fallback, batching and rollout are decided here. The paid tier stays open until the rollout measures real volume (see *Budget and tier*).
+- **Status:** Proposed. Wiring, fallback (including rollback when the quota runs out), batching and rollout are decided here. The paid tier stays open until the rollout measures real volume (see *Budget and tier*).
 - **Date:** 2026-09-25
 - **Resolves:** issue #48, a ticket on the #41 map ("Live EGX prices for subscribers: oanor vs. TradingView").
 - **Builds on:** #44, which confirmed that our free TradingView scrape runs about 15 min behind during the session and that oanor does not mirror that delayed feed.
@@ -53,7 +53,19 @@ Fallback happens per code, not per call. For a subscriber, `fetchLiveQuotes` doe
 2. Any code that oanor didn't return goes to `fetchLatestQuotes` in the same cycle. This covers an error, a 402 or 429, a timeout, or a code missing from a successful response. The two maps are then merged.
 3. Each quote carries `source: 'oanor' | 'tv'`. The API response doesn't expose it (the fallback is silent to the User). It exists for logging and for measuring the rollout.
 
-**Circuit breaker.** A 402, a 429 or a 5xx from oanor opens a process-wide breaker for **60 s**. While it is open, subscribers go straight to TradingView, so a rate-limited oanor isn't hit again by every poll. The first failure that opens it is logged once at warn level. The User sees nothing, but the operator does.
+**Circuit breaker for short failures.** A per-minute rate limit (429), a 5xx or a timeout from oanor opens a process-wide breaker for **60 s**. While it is open, subscribers go straight to TradingView, so a struggling oanor isn't hit again by every poll. The first failure that opens it is logged once at warn level. The User sees nothing, but the operator does.
+
+**Rollback to TradingView when the quota runs out.** When oanor's call quota for the billing period is used up, every subscriber goes back to TradingView **until the quota resets**, not for 60 s. Re-trying every minute would only collect more refusals for the rest of the period. The rollback is triggered two ways:
+
+- **oanor says so.** oanor answers that the quota is exhausted, or answers 402. #42 showed that 402 also means the plan itself isn't active, which a retry won't fix either. The exact quota status and body must be taken from oanor's docs when the client is written, so that a quota refusal is never mistaken for a per-minute 429.
+- **Our own count says so.** The pool counts every oanor call against `OANOR_MONTHLY_QUOTA`, the plan's allowance, set in `.env`. At **95 %** it stops calling oanor and rolls back. This leaves headroom and avoids running into overage charges, even if oanor's own signal changes or never arrives.
+
+The rollback:
+
+- **Is silent to Users.** Subscribers keep getting prices, 15 minutes delayed, exactly as when oanor fails for a single poll.
+- **Is loud to the operator.** It logs an error once when it starts, with calls used against the quota and the reset date. It sends the same alert to the Admin by email through the existing `email.js`. The quota is the one oanor failure that needs a human, to upgrade the tier or wait.
+- **Ends on its own.** On the plan's reset date (the start of the next billing period) the pool resets its counter and tries oanor again. A successful call clears the rollback. Raising `OANOR_MONTHLY_QUOTA` after an upgrade also clears it without waiting.
+- **Survives a restart.** The call count and the rollback state are stored, not kept only in memory, so a redeploy mid-month doesn't wipe the count and overspend the quota again.
 
 **Timestamps.** oanor exposes no per-quote timestamp (a caveat from #44), so its quotes return `time: null`. This is safe: `store.tsx` stores it as `lastTradeTime` but never displays or compares it. Don't invent a timestamp from the time the request was made.
 
@@ -97,7 +109,7 @@ Start on the Free tier, behind a flag:
 
 1. **Build it off by default.**
    - `OANOR_ENABLED` is unset, so everyone gets TradingView and nothing changes.
-   - `OANOR_API_KEY` joins `.env.example` next to `OPENROUTER_API_KEY` and `RESEND_API_KEY`.
+   - `OANOR_API_KEY` and `OANOR_MONTHLY_QUOTA` join `.env.example` next to `OPENROUTER_API_KEY` and `RESEND_API_KEY`.
 2. **Allowlist stage, one trading week on the Free tier.**
    - Set `OANOR_ENABLED=1` and `OANOR_USER_IDS=<owner's test account>`.
    - The allowlist also lets an exempt admin account in for testing.
@@ -106,9 +118,12 @@ Start on the Free tier, behind a flag:
 4. **Open to all subscribers.** Drop the allowlist so every User with an active Subscription is eligible.
 5. **Kill switch.** Unset `OANOR_ENABLED` to put everyone back on TradingView without a deploy.
 
+Set `OANOR_MONTHLY_QUOTA` from the first stage onward, to the Free tier's allowance at first. The quota rollback is then exercised on the Free tier before real money is involved. If the allowlist week hits it, that alone says the Free tier is too small.
+
 ## Consequences
 
 - Subscribers see prices about 15 minutes fresher at the desk and in their scans. A 20 s poll can't show sub-20 s freshness, but the gain over the delayed feed is the point.
 - Cost scales with distinct held codes, which is capped, instead of with subscribers, which isn't. The trade-off is up to 15 s of staleness from the shared cache, well inside the 20 s poll.
-- One new moving part: the pool and circuit breaker in `live-quotes.js`. Every other caller stays on the existing scrape and keeps working if oanor disappears.
+- One new moving part: the pool, the circuit breaker and the quota counter in `live-quotes.js`. Every other caller stays on the existing scrape and keeps working if oanor disappears.
+- An exhausted quota costs subscribers freshness for the rest of the billing period, but never their prices, and never an overage bill. The Admin email is how someone finds out and decides whether to upgrade.
 - oanor's lack of timestamps means its freshness can't be proven quote by quote. The rollout's price-gap log is the ongoing evidence #44 asked for.
