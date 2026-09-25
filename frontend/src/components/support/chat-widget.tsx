@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Spinner } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useVisibleInterval } from "@/hooks/use-visible-interval";
 import { api, post, postRaw } from "@/lib/api";
 import { useDesk } from "@/lib/store";
 import { useTenant, withBrand } from "@/lib/tenant";
@@ -43,6 +44,9 @@ type SubscribeInfo = {
 };
 
 const POLL_MS = 15 * 1000;
+// With the panel closed the poll only keeps the unread badge current, which
+// can lag a minute — and every signed-in visitor runs this poll.
+const CLOSED_POLL_MS = 60 * 1000;
 
 // The "اسألنا" nudge: a pulsing ring on the launcher plus a small bubble above
 // it. It waits a few seconds so it doesn't land on top of a page that's still
@@ -212,9 +216,12 @@ export function ChatWidget() {
   useEffect(() => {
     if (!user) return;
     void load({ markRead: open });
-    const timer = setInterval(() => void load({ markRead: open }), POLL_MS);
-    return () => clearInterval(timer);
   }, [user, open, load]);
+  useVisibleInterval(
+    () => void load({ markRead: open }),
+    open ? POLL_MS : CLOSED_POLL_MS,
+    Boolean(user),
+  );
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ block: "end" });
