@@ -1,69 +1,21 @@
 import { Calculator } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { StockPicker } from "@/components/desk/stock-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { averagingLadder, parseAmount, planAveraging } from "@/lib/averaging";
-import { api } from "@/lib/api";
 import { fmt, int } from "@/lib/format";
-import { type Stock, useDesk } from "@/lib/store";
 
 /**
- * "حاسبة المتوسط": pick a stock, enter the shares held and their average, the
- * average you want to reach and the price you'd buy at — and see how many
- * shares that takes. /api/universe is public, so visitors get the stock list
- * too; a signed-in User's own Position and live price fill in by themselves.
+ * "حاسبة المتوسط": enter the shares held and their average, the average you
+ * want to reach and the price you'd buy at — and see how many shares that
+ * takes. Pure arithmetic, so it works the same signed in or not.
  */
 export function AveragingCalculator() {
-  const { universe: deskUniverse, rows } = useDesk();
-  const [publicUniverse, setPublicUniverse] = useState<Stock[]>([]);
-  const universe = deskUniverse.length ? deskUniverse : publicUniverse;
-
-  const [code, setCode] = useState("");
   const [shares, setShares] = useState("");
   const [avgCost, setAvgCost] = useState("");
   const [target, setTarget] = useState("");
   const [price, setPrice] = useState("");
-
-  // A failed load used to leave an empty list with no hint why; now the
-  // picker says so, and opening it again retries.
-  const [listStatus, setListStatus] = useState<"loading" | "ready" | "failed">("loading");
-  const loadingList = useRef(false);
-  const loadPublicUniverse = useCallback(async () => {
-    if (loadingList.current) return;
-    loadingList.current = true;
-    setListStatus("loading");
-    try {
-      const { stocks } = await api<{ stocks: Stock[] }>("/api/universe");
-      setPublicUniverse([...(stocks ?? [])].sort((a, b) => a.code.localeCompare(b.code)));
-      setListStatus("ready");
-    } catch (error) {
-      console.error("averaging calculator: loading the stock list failed", error);
-      setListStatus("failed");
-    } finally {
-      loadingList.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!deskUniverse.length) void loadPublicUniverse();
-  }, [deskUniverse.length, loadPublicUniverse]);
-
-  const emptyText = universe.length
-    ? "مفيش نتائج."
-    : listStatus === "failed"
-      ? "تعذر تحميل قائمة الأسهم — اقفل القائمة وافتحها تاني. تقدر تكمّل الحسبة من غير ما تختار سهم."
-      : "بنحمّل قائمة الأسهم…";
-
-  const pickStock = (next: string) => {
-    setCode(next);
-    const row = rows.find((candidate) => candidate.code === next);
-    if (!row) return;
-    if (row.position?.shares) setShares(String(row.position.shares));
-    if (row.position?.avgCost) setAvgCost(String(row.position.avgCost));
-    if (row.price) setPrice(String(row.price));
-  };
 
   const input = {
     shares: parseAmount(shares),
@@ -93,19 +45,6 @@ export function AveragingCalculator() {
 
       <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
         <div className="grid content-start gap-4 rounded-xl border bg-card p-5 shadow-sm sm:grid-cols-2">
-          <div className="grid gap-1.5 sm:col-span-2">
-            <Label>السهم</Label>
-            <StockPicker
-              value={code}
-              onChange={pickStock}
-              stocks={universe}
-              emptyText={emptyText}
-              onOpen={() => {
-                if (!universe.length) void loadPublicUniverse();
-              }}
-              className="sm:w-full"
-            />
-          </div>
           <AmountField
             id="avg-shares"
             label="عدد الأسهم اللي معاك"

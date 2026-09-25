@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { searchStocks } from "@/lib/stock-search";
-import { type Stock, useDesk } from "@/lib/store";
+import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,9 +25,6 @@ export function StockPicker({
   className,
   placeholder = "اختار السهم…",
   modal = false,
-  stocks,
-  emptyText = "مفيش نتائج.",
-  onOpen,
 }: {
   value: string;
   onChange: (code: string) => void;
@@ -35,15 +32,8 @@ export function StockPicker({
   placeholder?: string;
   /** Set inside a Dialog: the portaled list is otherwise outside its scroll lock. */
   modal?: boolean;
-  /** The list to pick from, for pages outside the desk; defaults to the signed-in universe. */
-  stocks?: Stock[];
-  /** Shown when nothing matches — or when the list itself is still loading or failed. */
-  emptyText?: string;
-  /** Called each time the list opens, e.g. to retry loading `stocks`. */
-  onOpen?: () => void;
 }) {
-  const desk = useDesk();
-  const universe = stocks ?? desk.universe;
+  const { universe } = useDesk();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const selected = universe.find((stock) => stock.code === value);
@@ -55,7 +45,6 @@ export function StockPicker({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) onOpen?.();
         if (!next) setSearch("");
       }}
       modal={modal}
@@ -96,9 +85,7 @@ export function StockPicker({
             className="text-base sm:text-sm"
           />
           <CommandList className="max-h-none min-h-0 flex-1">
-            <CommandEmpty className="px-4 py-6 text-center text-sm leading-relaxed">
-              {emptyText}
-            </CommandEmpty>
+            <CommandEmpty>مفيش نتائج.</CommandEmpty>
             <CommandGroup>
               {results.map((stock) => (
                 <CommandItem
