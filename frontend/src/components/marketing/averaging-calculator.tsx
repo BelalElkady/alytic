@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { averagingLadder, parseAmount, planAveraging } from "@/lib/averaging";
 import { fmt, int } from "@/lib/format";
 import { useDesk } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 /**
  * "حاسبة المتوسط": enter the shares held and their average, the average you
@@ -48,40 +49,46 @@ export function AveragingCalculator() {
       </p>
 
       <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-        <div className="grid content-start gap-4 rounded-xl border bg-card p-5 shadow-sm sm:grid-cols-2">
-          <AmountField
-            id="avg-shares"
-            label="عدد الأسهم اللي معاك"
-            hint="كل الأسهم اللي في محفظتك من السهم ده دلوقتي."
-            value={shares}
-            onChange={setShares}
-          />
-          <AmountField
-            id="avg-cost"
-            label="متوسط الشراء الحالي"
-            hint={
-              <>
-                زي ما هو ظاهر في تطبيق السمسار — تقدر تكتبه <span className="num">74.42</span> أو{" "}
-                <span className="num">74,42</span>.
-              </>
-            }
-            value={avgCost}
-            onChange={setAvgCost}
-          />
-          <AmountField
-            id="avg-target"
-            label="المتوسط اللي عايز توصله"
-            hint="أقل من متوسطك لو عايز تنزّله، أو أعلى منه لو عايز ترفعه."
-            value={target}
-            onChange={setTarget}
-          />
-          <AmountField
-            id="avg-price"
-            label="هتشتري بسعر كام؟"
-            hint="غالبًا سعر السهم دلوقتي، أو سعر أمر الشراء اللي ناوي تحطه."
-            value={price}
-            onChange={setPrice}
-          />
+        <div className="flex flex-col gap-5 rounded-xl border bg-card p-5 shadow-sm">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <AmountField
+              id="avg-shares"
+              label="عدد الأسهم اللي معاك"
+              hint="كل الأسهم اللي في محفظتك من السهم ده دلوقتي."
+              value={shares}
+              onChange={setShares}
+            />
+            <AmountField
+              id="avg-cost"
+              label="متوسط الشراء الحالي"
+              hint={
+                <>
+                  زي ما هو ظاهر في تطبيق السمسار — تقدر تكتبه <span className="num">74.42</span> أو{" "}
+                  <span className="num">74,42</span>.
+                </>
+              }
+              value={avgCost}
+              onChange={setAvgCost}
+            />
+            <AmountField
+              id="avg-target"
+              label="المتوسط اللي عايز توصله"
+              hint="أقل من متوسطك لو عايز تنزّله، أو أعلى منه لو عايز ترفعه."
+              value={target}
+              onChange={setTarget}
+            />
+            <AmountField
+              id="avg-price"
+              label="هتشتري بسعر كام؟"
+              hint="غالبًا سعر السهم دلوقتي، أو سعر أمر الشراء اللي ناوي تحطه."
+              value={price}
+              onChange={setPrice}
+            />
+          </div>
+          {/* Fills the room left beside the taller result card on wide screens.
+              Stacked on phones the result comes right after the fields, so
+              the CTA moves below it there (see the copy after the grid). */}
+          <PortfolioCta signedIn={Boolean(user)} className="mt-auto hidden lg:flex" />
         </div>
 
         <div className="rounded-xl border bg-card p-5 shadow-sm" aria-live="polite">
@@ -151,28 +158,7 @@ export function AveragingCalculator() {
         </div>
       </div>
 
-      <div className="mt-4 flex flex-col items-start gap-4 rounded-xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
-            <Wallet className="size-4.5" />
-          </span>
-          <div>
-            <h3 className="text-[15px] font-semibold">عايز تتابع محفظتك كلها؟</h3>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-              ضيف أسهمك مرة واحدة، وتابع متوسطك وأرباحك ووقف الخسارة والأهداف لكل سهم بأسعار لحظية.
-            </p>
-          </div>
-        </div>
-        <Button asChild className="shrink-0">
-          {user ? (
-            <Link to="/portfolio">افتح محفظتك</Link>
-          ) : (
-            <Link to="/login" search={{ mode: "login" }}>
-              سجّل دخولك وتابع محفظتك
-            </Link>
-          )}
-        </Button>
-      </div>
+      <PortfolioCta signedIn={Boolean(user)} className="mt-4 flex lg:hidden" />
     </section>
   );
 }
@@ -216,6 +202,38 @@ function Stat({ label, hint, value }: { label: string; hint: string; value: stri
       <dt className="text-[11px] text-muted-foreground">{label}</dt>
       <dd className="num mt-0.5 text-[14px] font-semibold">{value}</dd>
       <dd className="mt-0.5 text-[10.5px] text-muted-foreground">{hint}</dd>
+    </div>
+  );
+}
+
+function PortfolioCta({ signedIn, className }: { signedIn: boolean; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex-col items-start gap-3 rounded-lg border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between lg:flex-col lg:items-start",
+        className,
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
+          <Wallet className="size-4.5" />
+        </span>
+        <div>
+          <h3 className="text-[15px] font-semibold">عايز تتابع محفظتك كلها؟</h3>
+          <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            ضيف أسهمك مرة واحدة، وتابع متوسطك وأرباحك ووقف الخسارة والأهداف لكل سهم بأسعار لحظية.
+          </p>
+        </div>
+      </div>
+      <Button asChild className="shrink-0">
+        {signedIn ? (
+          <Link to="/portfolio">افتح محفظتك</Link>
+        ) : (
+          <Link to="/login" search={{ mode: "login" }}>
+            سجّل دخولك وتابع محفظتك
+          </Link>
+        )}
+      </Button>
     </div>
   );
 }
