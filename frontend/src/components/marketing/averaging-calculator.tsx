@@ -136,9 +136,7 @@ export function AveragingCalculator() {
             <p className="text-[13.5px] leading-relaxed text-down">{result.reason}</p>
           ) : (
             <>
-              <p className="text-[13px] text-muted-foreground">
-                {code ? `${code} — ` : ""}محتاج تشتري
-              </p>
+              <p className="text-[13px] text-muted-foreground">محتاج تشتري</p>
               <p className="mt-1 text-[22px] font-bold">
                 <span className="num">{int(result.buyShares)}</span> سهم على سعر{" "}
                 <span className="num">{fmt(input.price)}</span>
