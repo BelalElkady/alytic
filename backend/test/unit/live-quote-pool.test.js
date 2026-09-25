@@ -188,10 +188,21 @@ test('raising OANOR_MONTHLY_QUOTA after an upgrade lifts the rollback at once', 
   assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 100);
 });
 
-test('while the allowlist is set it alone decides who gets oanor', async () => {
-  const h = harness({ config: { userIds: new Set(['admin-1']) } });
+test('the allowlist narrows subscribers; it never lets a non-subscriber in', async () => {
+  const h = harness({ config: { userIds: new Set(['owner']) } });
   assert.equal((await h.pool.fetchLiveQuotes(['COMI'], { subscribed: true, userId: 'u1' })).get('COMI').price, 50);
-  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], { subscribed: false, userId: 'admin-1' })).get('COMI').price, 100);
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], { subscribed: false, userId: 'owner' })).get('COMI').price, 50);
+  assert.equal(h.oanorCalls.length, 0);
+  assert.equal((await h.pool.fetchLiveQuotes(['COMI'], { subscribed: true, userId: 'owner' })).get('COMI').price, 100);
+});
+
+test('outside the EGX session even a subscriber gets TradingView, and oanor is never called', async () => {
+  const h = harness({ sessionOpen: false, config: { compare: true } });
+  for (const userId of ['u1', 'u2', 'u3']) {
+    assert.equal((await h.pool.fetchLiveQuotes(['COMI', 'SWDY'], { subscribed: true, userId })).get('COMI').price, 50);
+  }
+  assert.equal(h.oanorCalls.length, 0);
+  assert.equal((await h.pool.status()).counters.oanorCalls, 0);
 });
 
 test('billingPeriod: periods start on the billing day and run a month', () => {

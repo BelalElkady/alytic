@@ -34,7 +34,8 @@ The callers decide whether a User is subscribed. The module and `analyzeMany` ne
 - **`/api/quotes`** calls `fetchLiveQuotes(requested, { subscribed })` where it calls `fetchLatestQuotes(requested)` today.
 - **`/api/scan`** fetches the quotes for held codes in the handler, then passes them into `analyzeMany` as `opts.liveQuotes`. `analyzeMany` already accepts that option and skips its own fetch when given one. This keeps `analyzeMany` free of any per-User pricing rule, and the admin rebuild and `snapshotForUser` keep calling it unchanged.
 - **The second quote fetch in `/api/scan` must use the same map.** After `analyzeMany`, the handler fetches `latestQuotes` for every scanned code to display prices. For held codes it must reuse the map passed to `analyzeMany`. Otherwise a subscriber sees the oanor price in the P&L and the TradingView price beside it. Codes the User doesn't hold stay on TradingView: #41 rules out live repricing of the whole universe.
-- **Admins stay on TradingView.** `subscriptionActive` is false for exempt accounts (admin, marketer, local), and #41 counts only `subscriptionActive` as subscribed. Testing oanor therefore needs the allowlist described under *Rollout*.
+- **Only subscribers, and only during the session.** oanor is called only when both hold: the User's Subscription is active (`subscriptionActive`), and EGX is in session, 10:00–14:30 Cairo time on a trading day (`egxSessionOpen`). Everyone else, and everyone outside the session, gets TradingView. Any stock TradingView doesn't quote keeps its last daily close from the synced bars (Yahoo or TradingView history). Yahoo has no reliable live EGX quote to add.
+- **Admins stay on TradingView.** `subscriptionActive` is false for exempt accounts (admin, marketer, local), and #41 counts only `subscriptionActive` as subscribed. The allowlist doesn't change that (see *Rollout*): to try oanor, the owner's account needs an active Subscription, which an Admin can grant from the admin panel.
 - **These call sites stay on TradingView:**
   - `/api/indices/performance`, which prices indices, not Positions.
   - `currentPrices`, which values the cash-flow record.
@@ -138,7 +139,7 @@ Start on the Free tier, behind a flag:
    - `OANOR_API_KEY`, `OANOR_MONTHLY_QUOTA`, `OANOR_BILLING_DAY`, `OANOR_USER_IDS` and `OANOR_COMPARE` join `.env.example` next to `OPENROUTER_API_KEY` and `RESEND_API_KEY`.
 2. **Allowlist stage, one trading week on the Free tier.**
    - Set `OANOR_ENABLED=1` and `OANOR_USER_IDS=<owner's test account>`.
-   - The allowlist also lets an exempt admin account in for testing.
+   - The allowlist only narrows the subscribers who get oanor; it never lets a non-subscriber in. The owner's test account therefore needs an active Subscription (grant one from the admin panel).
    - Read the live-prices tab: oanor calls, the cache hit rate, the fallback count, and, per code, the gap between oanor's price and TradingView's. The gap needs a TradingView fetch alongside each oanor batch, so it only runs with `OANOR_COMPARE=1`: on for this week, off afterwards.
 3. **Decide.** Use the week's D, peak rate and fallback rate to pick the tier with the rule above. A fallback rate high enough that subscribers mostly see TradingView prices anyway is a reason to stop.
 4. **Open to all subscribers.** Drop the allowlist so every User with an active Subscription is eligible.

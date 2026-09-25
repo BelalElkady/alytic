@@ -5,9 +5,9 @@
  *
  * - OANOR_ENABLED=1       turns oanor on. Unset, everyone gets TradingView.
  * - OANOR_API_KEY         the key; oanor stays off without it.
- * - OANOR_USER_IDS        comma-separated user ids. While set, only these
- *                         accounts get oanor (the allowlist stage), whether
- *                         or not they're subscribed.
+ * - OANOR_USER_IDS        comma-separated user ids. While set, only the
+ *                         subscribers among these get oanor (the trial stage).
+ *                         A non-subscriber never does.
  * - OANOR_MONTHLY_QUOTA   the plan's calls per billing period. At 95% of it
  *                         subscribers roll back to TradingView until the reset.
  * - OANOR_BILLING_DAY     day of the month the quota resets (1-28, default 1).

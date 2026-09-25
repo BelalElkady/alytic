@@ -121,12 +121,12 @@ export function createLiveQuotePool({
 
   const stopAt = () => (config.monthlyQuota ? Math.floor(config.monthlyQuota * opts.quotaStopRatio) : Infinity);
 
+  // oanor is only ever for subscribers. The allowlist (the trial stage)
+  // narrows that to a few of them; it never lets a non-subscriber in.
   function eligible({ subscribed, userId }) {
-    if (!config.enabled) return false;
-    // While the allowlist is set, it alone decides — it's how the owner (an
-    // exempt admin, never "subscribed") tries oanor before anyone else.
+    if (!config.enabled || !subscribed) return false;
     if (config.userIds) return userId != null && config.userIds.has(String(userId));
-    return Boolean(subscribed);
+    return true;
   }
 
   async function loadUsage() {
@@ -334,8 +334,9 @@ export function createLiveQuotePool({
 
   /**
    * Latest quotes for `codes`, as Map<code, { price, change, changePct, time }> —
-   * the same shape fetchLatestQuotes returns. Subscribers (or, during the
-   * allowlist stage, allowlisted accounts) get oanor during the EGX session;
+   * the same shape fetchLatestQuotes returns. Only subscribers (only the
+   * allowlisted ones, during the trial stage) get oanor, and only during the
+   * EGX session (10:00-14:30 Cairo on a trading day);
    * any code oanor doesn't answer for comes from TradingView in the same call,
    * silently. Everyone else, and everyone outside the session, gets TradingView
    * exactly as before — including its errors, which callers already handle.
