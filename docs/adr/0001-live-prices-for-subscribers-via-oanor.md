@@ -113,7 +113,21 @@ For comparison, without batching a subscriber with *n* Positions costs ⌈n / 20
 
 **Rule:** commit to the smallest tier whose monthly quota is at least **1.5 ×** the measured volume, and whose per-minute limit covers the measured peak. The margin covers growth and the days when every subscriber is on the desk. Scans add close to nothing, because they read the same 15 s cache.
 
-**Inputs still needed:** oanor's current quota and price for each tier, and D as measured during the free-tier stage below. The active-subscriber count and Positions per subscriber only bound D, so D is the number that matters.
+**oanor's plans** (from its API docs):
+
+| Plan | Price | Calls per month | Requests per second |
+|---|---|---|---|
+| Free | free | 12,200 | 2 |
+| Basic | $24/mo | 263,000 | 10 |
+| Pro | $66/mo | 1,420,000 | 20 |
+| Scale | $145/mo | 7,520,000 | 50 |
+
+**What that means:**
+- **Free runs out.** It covers well under a month at even the smallest D: ⌈D/20⌉ = 1 already needs about 17,000 calls. It suits the allowlist week, and expect it to roll back partway through, which also exercises the rollback.
+- **Basic covers every case.** Even the whole-universe worst case (D = 235, about 204,000 calls) fits, and D ≤ 200 fits with the 1.5 × margin. Its 10 req/s covers the peak of 12 calls per 15 s.
+- **So the recommendation is Basic**, confirmed by the D measured in the allowlist week. Pro only makes sense if the poll ever gets faster than 20 s.
+
+The pool spaces call starts to `OANOR_RATE_PER_SEC` (2 by default, matching Free), so a batch of several chunks never trips the per-second limit.
 
 ### 5. Rollout
 

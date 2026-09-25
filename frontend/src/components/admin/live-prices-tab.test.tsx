@@ -15,6 +15,7 @@ const base: LivePricesStatus = {
     allowlist: null,
     monthlyQuota: 1000,
     billingDay: 1,
+    ratePerSec: 2,
     compare: false,
   },
   state: "ok",

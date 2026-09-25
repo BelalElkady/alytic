@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import '../helpers/env.js';
 
 import { billingPeriod, createLiveQuotePool, liveQuotesConfigFromEnv } from '../../src/data/live-quote-pool.js';
-import { OanorError } from '../../src/data/oanor.js';
+import { OanorError, classifyOanorStatus, fetchOanorQuotes } from '../../src/data/oanor.js';
 
 const quote = (price) => ({ price, change: 0.1, changePct: 1, time: 1_700_000_000 });
 
@@ -22,7 +22,7 @@ function harness({ config = {}, stored = null, oanor, sessionOpen = true, ...ove
     stored,
   };
   h.pool = createLiveQuotePool({
-    config: { enabled: true, userIds: null, monthlyQuota: null, billingDay: 1, compare: false, ...config },
+    config: { enabled: true, userIds: null, monthlyQuota: null, billingDay: 1, compare: false, ratePerSec: 1000, ...config },
     fetchOanor: async (codes) => {
       h.oanorCalls.push(codes);
       if (oanor) return oanor(codes);
@@ -249,4 +249,82 @@ test('status: off when disabled, ok with counters and gaps otherwise', async () 
   assert.equal(status.counters.fromOanor, 2);
   assert.deepEqual(status.gaps.map((g) => g.code).sort(), ['COMI', 'SWDY']);
   assert.equal(Math.round(status.gaps[0].pct), 100, 'oanor 100 vs TradingView 50');
+});
+
+test('calls start no faster than the plan allows per second', async () => {
+  const starts = [];
+  const h = harness({
+    config: { ratePerSec: 10 },
+    now: () => Date.now(),
+    oanor: async (codes) => {
+      starts.push(Date.now());
+      return new Map(codes.map((code) => [code, quote(100)]));
+    },
+  });
+  await h.pool.fetchLiveQuotes(Array.from({ length: 60 }, (_, i) => `C${i}`), subscriber);
+  assert.equal(starts.length, 3);
+  assert.ok(starts[2] - starts[0] >= 180, `3 calls at 10/s span at least ~200ms, got ${starts[2] - starts[0]}ms`);
+});
+
+// ---------------------------------------------------------------------------
+// The oanor client itself, against a fake fetch shaped like its documented API.
+// ---------------------------------------------------------------------------
+
+function fakeFetch(status, body) {
+  const calls = [];
+  const impl = async (url, init) => {
+    calls.push({ url, init });
+    return { ok: status >= 200 && status < 300, status, text: async () => (typeof body === 'string' ? body : JSON.stringify(body)) };
+  };
+  return { impl, calls };
+}
+
+test('fetchOanorQuotes: sends the key and codes, reads price/change/change_percent', async () => {
+  const { impl, calls } = fakeFetch(200, {
+    success: true,
+    status: 'ok',
+    data: {
+      count: 3,
+      quotes: [
+        { ticker: 'COMI', price: 134.76, change: 3.07, change_percent: 2.33 },
+        { ticker: 'TMGH', price: 95.68, change: 2.77, change_percent: 2.98 },
+        { ticker: 'XXXX', price: 1, change: 0, change_percent: 0 },
+      ],
+    },
+  });
+  const quotes = await fetchOanorQuotes(['comi', 'TMGH', 'SWDY'], { apiKey: 'oanor_live_x', fetchImpl: impl });
+  assert.equal(calls[0].url, 'https://api.oanor.com/egx-api/v1/quote?codes=COMI%2CTMGH%2CSWDY');
+  assert.equal(calls[0].init.headers['x-oanor-key'], 'oanor_live_x');
+  assert.deepEqual(quotes.get('COMI'), { price: 134.76, change: 3.07, changePct: 2.33 });
+  assert.equal(quotes.get('TMGH').price, 95.68);
+  assert.equal(quotes.has('SWDY'), false, 'a code oanor skipped is just missing');
+  assert.equal(quotes.has('XXXX'), false, 'a code we did not ask for is ignored');
+});
+
+test('fetchOanorQuotes: 402 and a quota-worded 429 are quota; other failures are transient', async () => {
+  const kindOf = async (status, body) => {
+    try {
+      await fetchOanorQuotes(['COMI'], { apiKey: 'k', fetchImpl: fakeFetch(status, body).impl });
+    } catch (err) {
+      return err.kind;
+    }
+    return 'no error';
+  };
+  assert.equal(await kindOf(402, { success: false, message: 'subscription_required' }), 'quota');
+  assert.equal(await kindOf(429, { message: 'Monthly quota exceeded' }), 'quota');
+  assert.equal(await kindOf(429, { message: 'Too many requests' }), 'transient');
+  assert.equal(await kindOf(503, 'upstream down'), 'transient');
+  assert.equal(await kindOf(200, 'not json'), 'transient');
+  assert.equal(await kindOf(200, { success: false, message: 'monthly quota reached' }), 'quota');
+  assert.equal(classifyOanorStatus(500), 'transient');
+});
+
+test('fetchOanorQuotes: a network failure or timeout is transient', async () => {
+  const down = async () => { throw new TypeError('fetch failed'); };
+  await assert.rejects(fetchOanorQuotes(['COMI'], { apiKey: 'k', fetchImpl: down }), (err) => err.kind === 'transient');
+  const hang = (_url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)));
+  await assert.rejects(
+    fetchOanorQuotes(['COMI'], { apiKey: 'k', timeoutMs: 20, fetchImpl: hang }),
+    (err) => err.kind === 'transient' && /timed out/.test(err.message),
+  );
 });

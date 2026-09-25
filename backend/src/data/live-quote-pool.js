@@ -30,6 +30,9 @@ const DEFAULTS = {
   quotaStopRatio: 0.95,
 };
 
+/** oanor's per-second limit on its Free plan; OANOR_RATE_PER_SEC raises it for paid plans. */
+const DEFAULT_RATE_PER_SEC = 2;
+
 /**
  * The first day (YYYY-MM-DD, UTC) of the billing period `moment` falls in,
  * and the first day of the next one. A period starts on `billingDay` of each
@@ -62,6 +65,7 @@ export function liveQuotesConfigFromEnv(env = process.env, clientReady = OANOR_C
     userIds: userIds.length ? new Set(userIds) : null,
     monthlyQuota: Number.isFinite(quota) && quota > 0 ? quota : null,
     billingDay: Number.parseInt(env.OANOR_BILLING_DAY ?? '1', 10) || 1,
+    ratePerSec: Number(env.OANOR_RATE_PER_SEC) > 0 ? Number(env.OANOR_RATE_PER_SEC) : DEFAULT_RATE_PER_SEC,
     compare: env.OANOR_COMPARE === '1',
   };
 }
@@ -103,6 +107,7 @@ export function createLiveQuotePool({
   let queued = new Set();
   let batchPromise = null;
   let breakerUntil = 0;
+  let nextCallAt = 0; // earliest start for the next oanor call, to stay under the plan's req/s
   let usage = null; // { periodStart, next, calls, rolledBack, exhaustedAt, reason, quota }
   let usageLoading = null;
   const stats = { oanorCalls: 0, oanorCodes: 0, cacheHits: 0, fromOanor: 0, fellBack: 0, rollbacks: 0, breakerOpens: 0 };
@@ -213,7 +218,23 @@ export function createLiveQuotePool({
       .catch(() => {});
   }
 
+  /** Waits for this call's turn so calls start at most ratePerSec a second. */
+  async function takeSlot() {
+    const gap = 1000 / (config.ratePerSec || DEFAULT_RATE_PER_SEC);
+    const start = Math.max(nextCallAt, now());
+    nextCallAt = start + gap;
+    const wait = start - now();
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+
   async function callChunk(chunk) {
+    await takeSlot();
+    // Something may have paused oanor or used up the quota while this call
+    // waited its turn: don't send it, and give back the call it had reserved.
+    if (now() < breakerUntil || usage?.rolledBack) {
+      if (usage) usage.calls -= 1;
+      return;
+    }
     stats.oanorCalls += 1;
     stats.oanorCodes += chunk.length;
     try {

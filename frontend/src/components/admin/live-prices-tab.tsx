@@ -25,6 +25,7 @@ export type LivePricesStatus = {
     allowlist: string[] | null;
     monthlyQuota: number | null;
     billingDay: number;
+    ratePerSec: number;
     compare: boolean;
   };
   state: "off" | "ok" | "paused" | "rolled_back";
@@ -284,6 +285,10 @@ export function LivePricesTab() {
           <Setting
             label="يوم تجديد الحصة"
             value={<span className="num">{config.billingDay}</span>}
+          />
+          <Setting
+            label="OANOR_RATE_PER_SEC"
+            value={<span className="num">{config.ratePerSec}</span>}
           />
           <Setting label="OANOR_COMPARE" value={config.compare ? "شغّال" : "مقفول"} />
         </dl>

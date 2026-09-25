@@ -11,6 +11,8 @@
  * - OANOR_MONTHLY_QUOTA   the plan's calls per billing period. At 95% of it
  *                         subscribers roll back to TradingView until the reset.
  * - OANOR_BILLING_DAY     day of the month the quota resets (1-28, default 1).
+ * - OANOR_RATE_PER_SEC    the plan's requests per second (Free 2, Basic 10,
+ *                         Pro 20, Scale 50); default 2.
  * - OANOR_COMPARE=1       also fetch TradingView for each oanor batch and keep
  *                         the price gap — the rollout's evidence, off after it.
  *
@@ -51,6 +53,7 @@ export async function liveQuoteStatus() {
       allowlist: config.userIds ? [...config.userIds] : null,
       monthlyQuota: config.monthlyQuota,
       billingDay: config.billingDay,
+      ratePerSec: config.ratePerSec,
       compare: config.compare,
     },
     ...(await pool.status()),
