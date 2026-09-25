@@ -143,10 +143,9 @@ export function AveragingCalculator() {
                 <span className="num">{int(result.buyShares)}</span> سهم على سعر{" "}
                 <span className="num">{fmt(input.price)}</span>
               </p>
-              <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <dl className="mt-4 grid grid-cols-3 gap-2">
                 <Stat label="تكلفة الشراء" value={fmt(result.buyCost)} />
                 <Stat label="إجمالي الأسهم" value={int(result.totalShares)} />
-                <Stat label="إجمالي التكلفة" value={fmt(result.totalCost)} />
                 <Stat label="المتوسط الجديد" value={fmt(result.newAvg)} />
               </dl>
             </>
