@@ -7,6 +7,7 @@ import type { SupportMessage } from "@/components/support/chat-widget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useVisibleInterval } from "@/hooks/use-visible-interval";
 import { api, post } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -49,9 +50,8 @@ export function SupportTab() {
 
   useEffect(() => {
     void loadThreads();
-    const timer = setInterval(() => void loadThreads(), POLL_MS);
-    return () => clearInterval(timer);
   }, [loadThreads]);
+  useVisibleInterval(() => void loadThreads(), POLL_MS);
 
   if (error)
     return (
@@ -123,9 +123,8 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
   useEffect(() => {
     setMessages(null);
     void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
   }, [load]);
+  useVisibleInterval(() => void load(), POLL_MS);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });

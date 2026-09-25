@@ -6,6 +6,7 @@ import {
   getUserByCanonicalEmail,
   getUserByEmail,
   getUserById,
+  getSessionUser,
   getUserByGoogleId,
   getUserByPhone,
   getUserByResetToken,
@@ -494,7 +495,7 @@ export async function userFromRequest(req) {
   // CLI user id that exists in every tenant database. Tokens from before
   // tenants existed carry no tn and belong to the default site.
   if ((session.tn ?? DEFAULT_TENANT_ID) !== tenantId()) return null;
-  const user = await getUserById(session.sub);
+  const user = await getSessionUser(session.sub);
   if (!user) return null;
   // A token issued before the most recent password change carries the old
   // fingerprint and is rejected here — this is what makes reset-password

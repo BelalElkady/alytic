@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,6 +52,7 @@ import { arDay, exact, signed } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
+import { useVisibleInterval } from "@/hooks/use-visible-interval";
 import { useTenant } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
 
@@ -122,10 +123,17 @@ function useUnreadTitleBadge(enabled: boolean): number {
       }
     };
     void poll();
-    const timer = setInterval(poll, 20 * 1000);
+    // Skipped while the tab is hidden (see useVisibleInterval for why);
+    // catches up the moment it's shown again.
+    const pollIfVisible = () => {
+      if (!document.hidden) void poll();
+    };
+    const timer = setInterval(pollIfVisible, 20 * 1000);
+    document.addEventListener("visibilitychange", pollIfVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", pollIfVisible);
       document.title = title;
     };
   }, [enabled, title]);
@@ -572,19 +580,13 @@ type OnlineNow = { signedIn: number; visitors: number; windowSeconds: number; as
 /** Polls who is on the site now. Failures keep the last good numbers rather than blanking the card. */
 function useOnlineNow() {
   const [online, setOnline] = useState<OnlineNow | null>(null);
-  useEffect(() => {
-    let alive = true;
-    const poll = () =>
-      api<OnlineNow>("/api/admin/online")
-        .then((result) => alive && setOnline(result))
-        .catch(() => {});
-    poll();
-    const timer = window.setInterval(poll, 30_000);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
+  const poll = useCallback(() => {
+    api<OnlineNow>("/api/admin/online")
+      .then(setOnline)
+      .catch(() => {});
   }, []);
+  useEffect(poll, [poll]);
+  useVisibleInterval(poll, 30_000);
   return online;
 }
 
