@@ -1,10 +1,13 @@
-import { Calculator } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { Calculator, Wallet } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { averagingLadder, parseAmount, planAveraging } from "@/lib/averaging";
 import { fmt, int } from "@/lib/format";
+import { useDesk } from "@/lib/store";
 
 /**
  * "حاسبة المتوسط": enter the shares held and their average, the average you
@@ -12,6 +15,7 @@ import { fmt, int } from "@/lib/format";
  * takes. Pure arithmetic, so it works the same signed in or not.
  */
 export function AveragingCalculator() {
+  const { user } = useDesk();
   const [shares, setShares] = useState("");
   const [avgCost, setAvgCost] = useState("");
   const [target, setTarget] = useState("");
@@ -48,22 +52,36 @@ export function AveragingCalculator() {
           <AmountField
             id="avg-shares"
             label="عدد الأسهم اللي معاك"
+            hint="كل الأسهم اللي في محفظتك من السهم ده دلوقتي."
             value={shares}
             onChange={setShares}
           />
           <AmountField
             id="avg-cost"
             label="متوسط الشراء الحالي"
+            hint={
+              <>
+                زي ما هو ظاهر في تطبيق السمسار — تقدر تكتبه <span className="num">74.42</span> أو{" "}
+                <span className="num">74,42</span>.
+              </>
+            }
             value={avgCost}
             onChange={setAvgCost}
           />
           <AmountField
             id="avg-target"
             label="المتوسط اللي عايز توصله"
+            hint="أقل من متوسطك لو عايز تنزّله، أو أعلى منه لو عايز ترفعه."
             value={target}
             onChange={setTarget}
           />
-          <AmountField id="avg-price" label="هتشتري بسعر كام؟" value={price} onChange={setPrice} />
+          <AmountField
+            id="avg-price"
+            label="هتشتري بسعر كام؟"
+            hint="غالبًا سعر السهم دلوقتي، أو سعر أمر الشراء اللي ناوي تحطه."
+            value={price}
+            onChange={setPrice}
+          />
         </div>
 
         <div className="rounded-xl border bg-card p-5 shadow-sm" aria-live="polite">
@@ -81,9 +99,13 @@ export function AveragingCalculator() {
                 <span className="num">{fmt(input.price)}</span>
               </p>
               <dl className="mt-4 grid grid-cols-3 gap-2">
-                <Stat label="تكلفة الشراء" value={fmt(result.buyCost)} />
-                <Stat label="إجمالي الأسهم" value={int(result.totalShares)} />
-                <Stat label="المتوسط الجديد" value={fmt(result.newAvg)} />
+                <Stat label="تكلفة الشراء" hint="هتدفعه دلوقتي" value={fmt(result.buyCost)} />
+                <Stat
+                  label="إجمالي الأسهم"
+                  hint="القديم + الجديد"
+                  value={int(result.totalShares)}
+                />
+                <Stat label="المتوسط الجديد" hint="بعد الشراء" value={fmt(result.newAvg)} />
               </dl>
             </>
           )}
@@ -92,6 +114,9 @@ export function AveragingCalculator() {
             <div className="mt-5">
               <p className="text-[12.5px] font-medium text-muted-foreground">
                 لو اشتريت بسعر تاني:
+              </p>
+              <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                كل ما سعر الشراء يبعد عن المتوسط اللي عايزه، هتحتاج أسهم أقل.
               </p>
               <table className="mt-2 w-full text-[13px]">
                 <thead className="text-muted-foreground">
@@ -125,6 +150,29 @@ export function AveragingCalculator() {
           </p>
         </div>
       </div>
+
+      <div className="mt-4 flex flex-col items-start gap-4 rounded-xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
+            <Wallet className="size-4.5" />
+          </span>
+          <div>
+            <h3 className="text-[15px] font-semibold">عايز تتابع محفظتك كلها؟</h3>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+              ضيف أسهمك مرة واحدة، وتابع متوسطك وأرباحك ووقف الخسارة والأهداف لكل سهم بأسعار لحظية.
+            </p>
+          </div>
+        </div>
+        <Button asChild className="shrink-0">
+          {user ? (
+            <Link to="/portfolio">افتح محفظتك</Link>
+          ) : (
+            <Link to="/login" search={{ mode: "login" }}>
+              سجّل دخولك وتابع محفظتك
+            </Link>
+          )}
+        </Button>
+      </div>
     </section>
   );
 }
@@ -132,11 +180,13 @@ export function AveragingCalculator() {
 function AmountField({
   id,
   label,
+  hint,
   value,
   onChange,
 }: {
   id: string;
   label: string;
+  hint: ReactNode;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -146,21 +196,26 @@ function AmountField({
       {/* 16px on phones: iOS zooms the page into any smaller input. */}
       <Input
         id={id}
+        aria-describedby={`${id}-hint`}
         inputMode="decimal"
         dir="ltr"
         className="num text-base sm:text-sm"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
+      <p id={`${id}-hint`} className="text-[11.5px] leading-relaxed text-muted-foreground">
+        {hint}
+      </p>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, hint, value }: { label: string; hint: string; value: string }) {
   return (
     <div className="rounded-lg border bg-surface px-3 py-2 text-end">
       <dt className="text-[11px] text-muted-foreground">{label}</dt>
       <dd className="num mt-0.5 text-[14px] font-semibold">{value}</dd>
+      <dd className="mt-0.5 text-[10.5px] text-muted-foreground">{hint}</dd>
     </div>
   );
 }
