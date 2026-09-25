@@ -210,7 +210,6 @@ create table if not exists oanor_usage (
   quota integer,
   rollback_reason text check (rollback_reason in ('count', 'oanor')),
   exhausted_at timestamptz,
-  alerted_at timestamptz,
   updated_at timestamptz not null default now()
 );
 

@@ -6,7 +6,6 @@ import '../helpers/env.js';
 import { billingPeriod, createLiveQuotePool, liveQuotesConfigFromEnv } from '../../src/data/live-quote-pool.js';
 import { OanorError } from '../../src/data/oanor.js';
 
-const quiet = { info() {}, warn() {}, error() {} };
 const quote = (price) => ({ price, change: 0.1, changePct: 1, time: 1_700_000_000 });
 
 /**
@@ -20,7 +19,6 @@ function harness({ config = {}, stored = null, oanor, sessionOpen = true, ...ove
     oanorCalls: [],
     tvCalls: [],
     saved: [],
-    alerts: [],
     stored,
   };
   h.pool = createLiveQuotePool({
@@ -41,11 +39,7 @@ function harness({ config = {}, stored = null, oanor, sessionOpen = true, ...ove
         h.saved.push({ periodStart, ...state });
       },
     },
-    onRollback: async (details) => {
-      h.alerts.push(details);
-    },
     now: () => h.t,
-    log: quiet,
     coalesceMs: 5,
     ...overrides,
   });
@@ -129,7 +123,10 @@ test('a rate limit opens the breaker: TradingView for 60s, then oanor again', as
   assert.equal(h.oanorCalls.length, 1, 'no call while the breaker is open');
   h.t += 31_000;
   assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 100);
-  assert.equal(h.alerts.length, 0, 'a rate limit is not a quota rollback');
+  const status = await h.pool.status();
+  assert.equal(status.period.rolledBack, false, 'a rate limit is not a quota rollback');
+  assert.equal(status.counters.breakerOpens, 1);
+  assert.equal(status.events[0].type, 'breaker');
 });
 
 test('a slow oanor falls back to TradingView after the timeout', async () => {
@@ -141,16 +138,19 @@ test('a slow oanor falls back to TradingView after the timeout', async () => {
 test('oanor saying the quota is used up rolls back to TradingView until the reset', async () => {
   const h = harness({ oanor: async () => { throw new OanorError('402', { kind: 'quota', status: 402 }); } });
   assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
-  assert.equal(h.alerts.length, 1);
-  assert.equal(h.alerts[0].reason, 'oanor');
-  assert.equal(h.alerts[0].resetsOn, '2026-10-01');
   assert.ok(h.saved.at(-1).exhaustedAt, 'the rollback is persisted');
+  let status = await h.pool.status();
+  assert.equal(status.state, 'rolled_back');
+  assert.equal(status.period.reason, 'oanor');
+  assert.equal(status.period.resetsOn, '2026-10-01');
+  assert.equal(status.events.filter((e) => e.type === 'rollback').length, 1);
 
-  // Days later in the same period: no more oanor calls, no second alert.
+  // Days later in the same period: no more oanor calls, still one rollback.
   h.t += 5 * 86_400_000;
   assert.equal((await h.pool.fetchLiveQuotes(['SWDY'], subscriber)).get('SWDY').price, 50);
   assert.equal(h.oanorCalls.length, 1);
-  assert.equal(h.alerts.length, 1);
+  status = await h.pool.status();
+  assert.equal(status.counters.rollbacks, 1);
 });
 
 test('our own count stops at 95% of OANOR_MONTHLY_QUOTA', async () => {
@@ -161,17 +161,21 @@ test('our own count stops at 95% of OANOR_MONTHLY_QUOTA', async () => {
   const quotes = await h.pool.fetchLiveQuotes(['COMI'], subscriber); // call 96 would pass 95
   assert.equal(quotes.get('COMI').price, 50);
   assert.equal(h.oanorCalls.length, 1);
-  assert.equal(h.alerts.length, 1);
-  assert.equal(h.alerts[0].reason, 'count');
+  const status = await h.pool.status();
+  assert.equal(status.state, 'rolled_back');
+  assert.equal(status.period.reason, 'count');
+  assert.equal(status.period.stopAt, 95);
   assert.equal(h.saved.at(-1).calls, 95);
 });
 
 test('a rollback stored before a restart still holds, and a new period resets it', async () => {
-  const stored = { periodStart: '2026-09-01', calls: 95, quota: 100, reason: 'count', exhaustedAt: '2026-09-10T10:00:00Z', alertedAt: '2026-09-10T10:00:00Z' };
+  const stored = { periodStart: '2026-09-01', calls: 95, quota: 100, reason: 'count', exhaustedAt: '2026-09-10T10:00:00Z' };
   const h = harness({ config: { monthlyQuota: 100 }, stored });
   assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 50);
   assert.equal(h.oanorCalls.length, 0);
-  assert.equal(h.alerts.length, 0, 'already alerted for this period');
+  const status = await h.pool.status();
+  assert.equal(status.state, 'rolled_back', 'the admin tab still shows it after a restart');
+  assert.equal(status.period.since, '2026-09-10T10:00:00Z');
 
   h.t = Date.UTC(2026, 9, 1, 9, 0); // 2026-10-01: the next period
   assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 100);
@@ -179,7 +183,7 @@ test('a rollback stored before a restart still holds, and a new period resets it
 });
 
 test('raising OANOR_MONTHLY_QUOTA after an upgrade lifts the rollback at once', async () => {
-  const stored = { periodStart: '2026-09-01', calls: 95, quota: 100, reason: 'count', exhaustedAt: '2026-09-10T10:00:00Z', alertedAt: '2026-09-10T10:00:00Z' };
+  const stored = { periodStart: '2026-09-01', calls: 95, quota: 100, reason: 'count', exhaustedAt: '2026-09-10T10:00:00Z' };
   const h = harness({ config: { monthlyQuota: 1000 }, stored });
   assert.equal((await h.pool.fetchLiveQuotes(['COMI'], subscriber)).get('COMI').price, 100);
 });
@@ -207,4 +211,42 @@ test('liveQuotesConfigFromEnv: oanor needs the flag, a key and a written client'
   assert.equal(liveQuotesConfigFromEnv({ ...env, OANOR_API_KEY: '' }, true).enabled, false);
   assert.equal(liveQuotesConfigFromEnv({ ...env, OANOR_ENABLED: '' }, true).enabled, false);
   assert.equal(liveQuotesConfigFromEnv({}, true).userIds, null);
+});
+
+test('falling back is silent: nothing is written to the server log', async () => {
+  const written = [];
+  const saved = { ...console };
+  for (const level of ['log', 'info', 'warn', 'error', 'debug']) console[level] = (...args) => written.push(args);
+  try {
+    const failing = harness({ oanor: async () => { throw new OanorError('429', { kind: 'transient', status: 429 }); } });
+    await failing.pool.fetchLiveQuotes(['COMI'], subscriber);
+    const quota = harness({ oanor: async () => { throw new OanorError('402', { kind: 'quota', status: 402 }); } });
+    await quota.pool.fetchLiveQuotes(['COMI'], subscriber);
+    const counted = harness({ config: { monthlyQuota: 10 }, stored: { periodStart: '2026-09-01', calls: 9 } });
+    await counted.pool.fetchLiveQuotes(['COMI'], subscriber);
+    const slow = harness({ oanor: () => new Promise(() => {}), timeoutMs: 20 });
+    await slow.pool.fetchLiveQuotes(['COMI'], subscriber);
+    const brokenStore = harness({ usageStore: { load: async () => { throw new Error('db down'); }, save: async () => { throw new Error('db down'); } } });
+    await brokenStore.pool.fetchLiveQuotes(['COMI'], subscriber);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    Object.assign(console, saved);
+  }
+  assert.deepEqual(written, []);
+});
+
+test('status: off when disabled, ok with counters and gaps otherwise', async () => {
+  const off = harness({ config: { enabled: false } });
+  assert.equal((await off.pool.status()).state, 'off');
+
+  const h = harness({ config: { compare: true, monthlyQuota: 1000 } });
+  await h.pool.fetchLiveQuotes(['COMI', 'SWDY'], subscriber);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const status = await h.pool.status();
+  assert.equal(status.state, 'ok');
+  assert.equal(status.period.calls, 1);
+  assert.equal(status.period.quota, 1000);
+  assert.equal(status.counters.fromOanor, 2);
+  assert.deepEqual(status.gaps.map((g) => g.code).sort(), ['COMI', 'SWDY']);
+  assert.equal(Math.round(status.gaps[0].pct), 100, 'oanor 100 vs TradingView 50');
 });

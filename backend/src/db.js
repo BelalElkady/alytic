@@ -310,12 +310,11 @@ export async function getOanorUsage(periodStart) {
     quota: data.quota,
     reason: data.rollback_reason,
     exhaustedAt: data.exhausted_at,
-    alertedAt: data.alerted_at,
   };
 }
 
 /** Overwrites the oanor call count and rollback state for one billing period. */
-export async function putOanorUsage(periodStart, { calls, quota, reason, exhaustedAt, alertedAt }) {
+export async function putOanorUsage(periodStart, { calls, quota, reason, exhaustedAt }) {
   const { error } = await platformDb.from('oanor_usage').upsert(
     {
       period_start: periodStart,
@@ -323,7 +322,6 @@ export async function putOanorUsage(periodStart, { calls, quota, reason, exhaust
       quota: quota ?? null,
       rollback_reason: reason ?? null,
       exhausted_at: exhaustedAt ?? null,
-      alerted_at: alertedAt ?? null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'period_start' },

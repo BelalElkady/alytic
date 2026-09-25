@@ -245,8 +245,6 @@ const PLATFORM_ADMIN_EMAILS = new Set(
   listEnv(process.env.PLATFORM_ADMIN_EMAILS ?? process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com').map((e) => e.toLowerCase()),
 );
 export const isPlatformAdminEmail = (email) => PLATFORM_ADMIN_EMAILS.has(String(email).toLowerCase());
-/** Where platform-level alerts go (e.g. the oanor quota running out). */
-export const platformAdminEmails = () => [...PLATFORM_ADMIN_EMAILS];
 export function isPlatformAdmin(user, tenant) {
   return Boolean(tenant?.isDefault && user?.isAdmin && user.emailVerified && isPlatformAdminEmail(user.email));
 }

@@ -39,7 +39,7 @@ import { readBars, cairoToday, cairoDateOf, isTradingDay, egxSessionOpen } from 
 import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { fetchFundamentals } from '../data/tradingview.js';
-import { fetchLiveQuotes } from '../data/live-quotes.js';
+import { fetchLiveQuotes, liveQuoteStatus } from '../data/live-quotes.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
@@ -916,6 +916,15 @@ app.use('/api/platform', (req, res, next) => {
   next();
 });
 mountPlatformRoutes(app, { wrap });
+
+// How subscribers' live prices are doing: oanor on or off, quota used this
+// period, whether they've silently fallen back to TradingView and why. The
+// fallback never reaches Users or the server log; this is the only place it
+// shows. Platform admins only, like the rest of /api/platform: one oanor key
+// and one bill for every site.
+app.get('/api/platform/live-prices', wrap(async (_req, res) => {
+  res.json(await liveQuoteStatus());
+}));
 
 const TICKER_HEADERS = ['TICKER', 'CODE', 'SYMBOL', 'REUTERS CODE', 'RIC'];
 const NAME_HEADERS = ['COMPANY NAME', 'NAME', 'COMPANY'];

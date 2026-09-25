@@ -5,9 +5,14 @@
  * below, come from docs/adr/0001-live-prices-for-subscribers-via-oanor.md.
  *
  * This file only holds the logic; every dependency (the two feeds, the clock,
- * the market-hours check, where the quota count is stored, how the admin is
- * alerted) is passed in, so it runs in tests without Supabase or the network.
- * live-quotes.js builds the one real instance.
+ * the market-hours check, where the quota count is stored) is passed in, so it
+ * runs in tests without Supabase or the network. live-quotes.js builds the one
+ * real instance.
+ *
+ * Falling back to TradingView is silent everywhere: nothing reaches the User,
+ * and nothing is written to the server log either. What happened is kept in
+ * memory (recent events, counters, price gaps) plus the stored quota state,
+ * and read only by the admin panel's live-prices tab through status().
  */
 
 import { OANOR_CLIENT_READY, OANOR_MAX_CODES_PER_CALL, OanorError } from './oanor.js';
@@ -61,6 +66,9 @@ export function liveQuotesConfigFromEnv(env = process.env, clientReady = OANOR_C
   };
 }
 
+/** How many recent events the admin tab keeps. */
+const MAX_EVENTS = 50;
+
 const normalizeCodes = (codes) =>
   [...new Set((codes ?? []).map((code) => String(code).toUpperCase().replace(/^EGX:/, '').trim()))].filter(Boolean);
 
@@ -79,7 +87,6 @@ function withTimeout(promise, ms) {
  * @param {(codes: string[]) => Promise<Map>} deps.fetchTv
  * @param {() => boolean} deps.sessionOpen  is EGX trading right now
  * @param {{ load(periodStart): Promise<object|null>, save(periodStart, state): Promise<void> }} deps.usageStore
- * @param {(details: object) => Promise<void>} [deps.onRollback]  alerts the admin once per period
  */
 export function createLiveQuotePool({
   config,
@@ -87,9 +94,7 @@ export function createLiveQuotePool({
   fetchTv,
   sessionOpen,
   usageStore,
-  onRollback = async () => {},
   now = () => Date.now(),
-  log = console,
   ...overrides
 }) {
   const opts = { ...DEFAULTS, ...overrides };
@@ -98,9 +103,16 @@ export function createLiveQuotePool({
   let queued = new Set();
   let batchPromise = null;
   let breakerUntil = 0;
-  let usage = null; // { periodStart, next, calls, rolledBack, exhaustedAt, reason, quota, alerted, alertedAt }
+  let usage = null; // { periodStart, next, calls, rolledBack, exhaustedAt, reason, quota }
   let usageLoading = null;
   const stats = { oanorCalls: 0, oanorCodes: 0, cacheHits: 0, fromOanor: 0, fellBack: 0, rollbacks: 0, breakerOpens: 0 };
+  const events = []; // newest first, for the admin tab
+  const gaps = new Map(); // code -> { pct, at }: oanor vs TradingView, with config.compare
+
+  function record(type, message) {
+    events.unshift({ at: new Date(now()).toISOString(), type, message });
+    if (events.length > MAX_EVENTS) events.length = MAX_EVENTS;
+  }
 
   const stopAt = () => (config.monthlyQuota ? Math.floor(config.monthlyQuota * opts.quotaStopRatio) : Infinity);
 
@@ -118,7 +130,7 @@ export function createLiveQuotePool({
     try {
       stored = await usageStore.load(period.start);
     } catch (err) {
-      log.error('[oanor] reading the quota count failed; starting this period from 0:', err.message);
+      record('error', `تعذر قراءة عدد الطلبات المحفوظ، فالعدّ بدأ من صفر للفترة دي: ${err.message}`);
     }
     const state = {
       periodStart: period.start,
@@ -126,19 +138,15 @@ export function createLiveQuotePool({
       calls: stored?.calls ?? 0,
       rolledBack: Boolean(stored?.exhaustedAt),
       exhaustedAt: stored?.exhaustedAt ?? null,
-      alertedAt: stored?.alertedAt ?? null,
       reason: stored?.reason ?? null,
       quota: stored?.quota ?? null,
-      alerted: Boolean(stored?.alertedAt),
     };
     // Raising OANOR_MONTHLY_QUOTA after an upgrade lifts the rollback right
     // away instead of waiting out the period.
     if (state.rolledBack && config.monthlyQuota && state.quota && config.monthlyQuota > state.quota) {
       state.rolledBack = false;
       state.reason = null;
-      state.alerted = false;
       state.exhaustedAt = null;
-      state.alertedAt = null;
     }
     return state;
   }
@@ -164,9 +172,8 @@ export function createLiveQuotePool({
         quota: state.quota ?? config.monthlyQuota ?? null,
         reason: state.reason,
         exhaustedAt: state.rolledBack ? state.exhaustedAt : null,
-        alertedAt: state.alerted ? state.alertedAt : null,
       })
-      .catch((err) => log.error('[oanor] saving the quota count failed:', err.message));
+      .catch((err) => record('error', `تعذر حفظ عدد الطلبات: ${err.message}`));
   }
 
   function rollBack(reason) {
@@ -176,22 +183,12 @@ export function createLiveQuotePool({
     usage.reason = reason;
     usage.quota = config.monthlyQuota ?? null;
     stats.rollbacks += 1;
-    const details = {
-      reason,
-      callsUsed: usage.calls,
-      quota: config.monthlyQuota ?? null,
-      periodStart: usage.periodStart,
-      resetsOn: usage.next,
-    };
-    log.error(
-      `[oanor] quota ${reason === 'count' ? 'nearly used up by our count' : 'exhausted per oanor'}` +
-        ` (${details.callsUsed}/${details.quota ?? '?'} calls); subscribers are on TradingView until ${details.resetsOn}`,
+    record(
+      'rollback',
+      reason === 'count'
+        ? `وصلنا ${usage.calls} من ${config.monthlyQuota} طلب (٩٥٪ من الحصة) — TradingView لحد ${usage.next}`
+        : `oanor رفض: الحصة خلصت أو الباقة مش مفعّلة (${usage.calls} طلب مستخدم) — TradingView لحد ${usage.next}`,
     );
-    if (!usage.alerted) {
-      usage.alerted = true;
-      usage.alertedAt = new Date(now()).toISOString();
-      onRollback(details).catch((err) => log.error('[oanor] quota alert failed:', err.message));
-    }
     saveUsage();
   }
 
@@ -200,7 +197,7 @@ export function createLiveQuotePool({
     breakerUntil = now() + opts.breakerMs;
     if (wasClosed) {
       stats.breakerOpens += 1;
-      log.warn(`[oanor] ${err?.message ?? err}; subscribers are on TradingView for ${opts.breakerMs / 1000}s`);
+      record('breaker', `${err?.message ?? err} — TradingView لمدة ${opts.breakerMs / 1000} ثانية`);
     }
   }
 
@@ -208,10 +205,10 @@ export function createLiveQuotePool({
     const codes = [...fetched.keys()];
     fetchTv(codes)
       .then((tv) => {
-        const gaps = codes
-          .filter((code) => tv.get(code)?.price > 0)
-          .map((code) => `${code}:${((fetched.get(code).price / tv.get(code).price - 1) * 100).toFixed(2)}%`);
-        if (gaps.length) log.info(`[oanor] gap vs TradingView ${gaps.join(' ')}`);
+        for (const code of codes) {
+          const tvPrice = tv.get(code)?.price;
+          if (tvPrice > 0) gaps.set(code, { pct: (fetched.get(code).price / tvPrice - 1) * 100, at: new Date(now()).toISOString() });
+        }
       })
       .catch(() => {});
   }
@@ -270,7 +267,7 @@ export function createLiveQuotePool({
           try {
             await runBatch(batch);
           } catch (err) {
-            log.error('[oanor] batch failed:', err.message);
+            record('error', `فشل طلب مجمّع: ${err.message}`);
           } finally {
             for (const c of batch) inflight.delete(c);
             resolve();
@@ -338,9 +335,37 @@ export function createLiveQuotePool({
     return quotes;
   }
 
+  /**
+   * Everything the admin panel's live-prices tab shows. `state` is the one
+   * word it leads with: 'off' (not enabled), 'rolled_back' (quota, until
+   * resetsOn), 'paused' (breaker open), or 'ok'.
+   */
+  async function status() {
+    const period = config.enabled ? await currentUsage() : null;
+    const breakerOpen = now() < breakerUntil;
+    const state = !config.enabled ? 'off' : period.rolledBack ? 'rolled_back' : breakerOpen ? 'paused' : 'ok';
+    return {
+      state,
+      sessionOpen: sessionOpen(),
+      pausedUntil: breakerOpen ? new Date(breakerUntil).toISOString() : null,
+      period: period && {
+        start: period.periodStart,
+        resetsOn: period.next,
+        calls: period.calls,
+        quota: config.monthlyQuota,
+        stopAt: Number.isFinite(stopAt()) ? stopAt() : null,
+        rolledBack: period.rolledBack,
+        reason: period.reason,
+        since: period.exhaustedAt,
+      },
+      counters: { ...stats },
+      events: events.map((event) => ({ ...event })),
+      gaps: [...gaps].map(([code, gap]) => ({ code, ...gap })).sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)),
+    };
+  }
+
   return {
     fetchLiveQuotes,
-    /** Counters since start, for the rollout's measurements. */
-    stats: () => ({ ...stats, callsThisPeriod: usage?.calls ?? null, rolledBack: usage?.rolledBack ?? false }),
+    status,
   };
 }

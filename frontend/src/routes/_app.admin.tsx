@@ -45,6 +45,7 @@ import { api, del, post, postRaw } from "@/lib/api";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
+import { LivePricesTab, useLivePricesAlert } from "@/components/admin/live-prices-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
 import { RENEWAL_LABEL, UsersScreen, renewalStatus } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
@@ -135,6 +136,8 @@ function useUnreadTitleBadge(enabled: boolean): number {
 function AdminPage() {
   const { user } = useDesk();
   const supportUnread = useUnreadTitleBadge(Boolean(user?.isAdmin));
+  // Above the early returns below: hooks must run on every render.
+  const livePricesAlert = useLivePricesAlert(Boolean(user?.isPlatformAdmin));
 
   // A marketer sees the users table and nothing else, with every control that
   // changes data left out — the backend refuses those calls for them anyway.
@@ -171,6 +174,17 @@ function AdminPage() {
         </TabsTrigger>
         <TabsTrigger value="blog">المدونة</TabsTrigger>
         {isPlatformAdmin && <TabsTrigger value="platform">العملاء</TabsTrigger>}
+        {isPlatformAdmin && (
+          <TabsTrigger value="live-prices" className="relative">
+            الأسعار اللحظية
+            {livePricesAlert && (
+              <span
+                aria-label="المشتركين رجعوا لأسعار TradingView"
+                className="pointer-events-none absolute -top-1 left-1 size-2.5 rounded-full bg-down shadow"
+              />
+            )}
+          </TabsTrigger>
+        )}
       </TabsList>
       {canEditIndices && (
         <TabsContent value="indices">
@@ -180,6 +194,11 @@ function AdminPage() {
       {isPlatformAdmin && (
         <TabsContent value="platform">
           <PlatformTab />
+        </TabsContent>
+      )}
+      {isPlatformAdmin && (
+        <TabsContent value="live-prices">
+          <LivePricesTab />
         </TabsContent>
       )}
       <TabsContent value="users">
