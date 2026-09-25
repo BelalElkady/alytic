@@ -1,5 +1,5 @@
 import { Calculator } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { StockPicker } from "@/components/desk/stock-picker";
 import { Input } from "@/components/ui/input";
@@ -26,20 +26,35 @@ export function AveragingCalculator() {
   const [target, setTarget] = useState("");
   const [price, setPrice] = useState("");
 
+  // A failed load used to leave an empty list with no hint why; now the
+  // picker says so, and opening it again retries.
+  const [listStatus, setListStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const loadingList = useRef(false);
+  const loadPublicUniverse = useCallback(async () => {
+    if (loadingList.current) return;
+    loadingList.current = true;
+    setListStatus("loading");
+    try {
+      const { stocks } = await api<{ stocks: Stock[] }>("/api/universe");
+      setPublicUniverse([...(stocks ?? [])].sort((a, b) => a.code.localeCompare(b.code)));
+      setListStatus("ready");
+    } catch (error) {
+      console.error("averaging calculator: loading the stock list failed", error);
+      setListStatus("failed");
+    } finally {
+      loadingList.current = false;
+    }
+  }, []);
+
   useEffect(() => {
-    if (deskUniverse.length) return;
-    let cancelled = false;
-    api<{ stocks: Stock[] }>("/api/universe")
-      .then(({ stocks }) => {
-        if (!cancelled) {
-          setPublicUniverse([...stocks].sort((a, b) => a.code.localeCompare(b.code)));
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [deskUniverse.length]);
+    if (!deskUniverse.length) void loadPublicUniverse();
+  }, [deskUniverse.length, loadPublicUniverse]);
+
+  const emptyText = universe.length
+    ? "مفيش نتائج."
+    : listStatus === "failed"
+      ? "تعذر تحميل قائمة الأسهم — اقفل القائمة وافتحها تاني. تقدر تكمّل الحسبة من غير ما تختار سهم."
+      : "بنحمّل قائمة الأسهم…";
 
   const pickStock = (next: string) => {
     setCode(next);
@@ -84,6 +99,10 @@ export function AveragingCalculator() {
               value={code}
               onChange={pickStock}
               stocks={universe}
+              emptyText={emptyText}
+              onOpen={() => {
+                if (!universe.length) void loadPublicUniverse();
+              }}
               className="sm:w-full"
             />
           </div>

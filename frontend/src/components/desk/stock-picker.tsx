@@ -26,6 +26,8 @@ export function StockPicker({
   placeholder = "اختار السهم…",
   modal = false,
   stocks,
+  emptyText = "مفيش نتائج.",
+  onOpen,
 }: {
   value: string;
   onChange: (code: string) => void;
@@ -35,6 +37,10 @@ export function StockPicker({
   modal?: boolean;
   /** The list to pick from, for pages outside the desk; defaults to the signed-in universe. */
   stocks?: Stock[];
+  /** Shown when nothing matches — or when the list itself is still loading or failed. */
+  emptyText?: string;
+  /** Called each time the list opens, e.g. to retry loading `stocks`. */
+  onOpen?: () => void;
 }) {
   const desk = useDesk();
   const universe = stocks ?? desk.universe;
@@ -49,6 +55,7 @@ export function StockPicker({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
+        if (next) onOpen?.();
         if (!next) setSearch("");
       }}
       modal={modal}
@@ -89,7 +96,9 @@ export function StockPicker({
             className="text-base sm:text-sm"
           />
           <CommandList className="max-h-none min-h-0 flex-1">
-            <CommandEmpty>مفيش نتائج.</CommandEmpty>
+            <CommandEmpty className="px-4 py-6 text-center text-sm leading-relaxed">
+              {emptyText}
+            </CommandEmpty>
             <CommandGroup>
               {results.map((stock) => (
                 <CommandItem
