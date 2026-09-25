@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { searchStocks } from "@/lib/stock-search";
-import { useDesk } from "@/lib/store";
+import { type Stock, useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,6 +25,7 @@ export function StockPicker({
   className,
   placeholder = "اختار السهم…",
   modal = false,
+  stocks,
 }: {
   value: string;
   onChange: (code: string) => void;
@@ -32,8 +33,11 @@ export function StockPicker({
   placeholder?: string;
   /** Set inside a Dialog: the portaled list is otherwise outside its scroll lock. */
   modal?: boolean;
+  /** The list to pick from, for pages outside the desk; defaults to the signed-in universe. */
+  stocks?: Stock[];
 }) {
-  const { universe } = useDesk();
+  const desk = useDesk();
+  const universe = stocks ?? desk.universe;
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const selected = universe.find((stock) => stock.code === value);
