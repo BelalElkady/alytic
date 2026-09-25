@@ -77,7 +77,7 @@ export function AveragingCalculator() {
       </p>
 
       <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-        <div className="grid gap-4 rounded-xl border bg-card p-5 shadow-sm sm:grid-cols-2">
+        <div className="grid content-start gap-4 rounded-xl border bg-card p-5 shadow-sm sm:grid-cols-2">
           <div className="grid gap-1.5 sm:col-span-2">
             <Label>السهم</Label>
             <StockPicker
