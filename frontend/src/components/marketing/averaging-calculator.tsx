@@ -40,26 +40,29 @@ export function AveragingCalculator() {
     // out from the neutral sections around it on the landing page.
     <section
       id="averaging-calculator"
-      className="relative overflow-hidden border-y border-primary/20 bg-gradient-to-b from-primary/10 via-primary/5 to-primary/10"
+      className="relative overflow-hidden border-y-2 border-primary/40 bg-gradient-to-b from-primary/25 via-primary/15 to-primary/25"
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-72 max-w-3xl rounded-full bg-primary/15 blur-3xl"
+        className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-80 max-w-4xl rounded-full bg-primary/30 blur-3xl"
       />
       <div className="relative mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
-        <div className="flex items-center gap-2.5">
-          <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+        <span className="inline-flex items-center rounded-full bg-primary px-3 py-1 text-[12px] font-semibold text-primary-foreground shadow-sm">
+          أداة مجانية
+        </span>
+        <div className="mt-3 flex items-center gap-2.5">
+          <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground shadow-md ring-4 ring-primary/20">
             <Calculator className="size-4.5" />
           </span>
-          <h2 className="text-2xl font-bold tracking-tight">حاسبة المتوسط</h2>
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">حاسبة المتوسط</h2>
         </div>
-        <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted-foreground">
+        <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-foreground/80">
           معاك سهم وعايز تنزّل متوسطك (أو ترفعه)؟ اكتب عدد أسهمك ومتوسطك الحالي والمتوسط اللي عايز
           توصله، وسعر الشراء — ونقولك تشتري كام سهم.
         </p>
 
         <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-          <div className="flex flex-col gap-5 rounded-xl border border-primary/20 bg-card p-5 shadow-md">
+          <div className="flex flex-col gap-5 rounded-xl border border-primary/40 bg-card p-5 shadow-lg shadow-primary/10">
             <div className="grid gap-4 sm:grid-cols-2">
               <AmountField
                 id="avg-shares"
@@ -102,7 +105,7 @@ export function AveragingCalculator() {
           </div>
 
           <div
-            className="rounded-xl border border-primary/20 bg-card p-5 shadow-md"
+            className="rounded-xl border border-primary/40 bg-card p-5 shadow-lg shadow-primary/10"
             aria-live="polite"
           >
             {!touched ? (
