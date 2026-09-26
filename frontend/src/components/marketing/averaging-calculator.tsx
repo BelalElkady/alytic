@@ -36,129 +36,143 @@ export function AveragingCalculator() {
   );
 
   return (
-    <section id="averaging-calculator" className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
-      <div className="flex items-center gap-2.5">
-        <span className="grid size-9 place-items-center rounded-lg bg-secondary text-foreground">
-          <Calculator className="size-4.5" />
-        </span>
-        <h2 className="text-2xl font-bold tracking-tight">حاسبة المتوسط</h2>
-      </div>
-      <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted-foreground">
-        معاك سهم وعايز تنزّل متوسطك (أو ترفعه)؟ اكتب عدد أسهمك ومتوسطك الحالي والمتوسط اللي عايز
-        توصله، وسعر الشراء — ونقولك تشتري كام سهم.
-      </p>
+    // A full-width band tinted with the brand colour so the calculator stands
+    // out from the neutral sections around it on the landing page.
+    <section
+      id="averaging-calculator"
+      className="relative overflow-hidden border-y border-primary/20 bg-gradient-to-b from-primary/10 via-primary/5 to-primary/10"
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-72 max-w-3xl rounded-full bg-primary/15 blur-3xl"
+      />
+      <div className="relative mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <Calculator className="size-4.5" />
+          </span>
+          <h2 className="text-2xl font-bold tracking-tight">حاسبة المتوسط</h2>
+        </div>
+        <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted-foreground">
+          معاك سهم وعايز تنزّل متوسطك (أو ترفعه)؟ اكتب عدد أسهمك ومتوسطك الحالي والمتوسط اللي عايز
+          توصله، وسعر الشراء — ونقولك تشتري كام سهم.
+        </p>
 
-      <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-        <div className="flex flex-col gap-5 rounded-xl border bg-card p-5 shadow-sm">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <AmountField
-              id="avg-shares"
-              label="عدد الأسهم اللي معاك"
-              hint="كل الأسهم اللي في محفظتك من السهم ده دلوقتي."
-              value={shares}
-              onChange={setShares}
-            />
-            <AmountField
-              id="avg-cost"
-              label="متوسط الشراء الحالي"
-              hint={
-                <>
-                  زي ما هو ظاهر في تطبيق السمسار — تقدر تكتبه <span className="num">74.42</span> أو{" "}
-                  <span className="num">74,42</span>.
-                </>
-              }
-              value={avgCost}
-              onChange={setAvgCost}
-            />
-            <AmountField
-              id="avg-target"
-              label="المتوسط اللي عايز توصله"
-              hint="أقل من متوسطك لو عايز تنزّله، أو أعلى منه لو عايز ترفعه."
-              value={target}
-              onChange={setTarget}
-            />
-            <AmountField
-              id="avg-price"
-              label="هتشتري بسعر كام؟"
-              hint="غالبًا سعر السهم دلوقتي، أو سعر أمر الشراء اللي ناوي تحطه."
-              value={price}
-              onChange={setPrice}
-            />
-          </div>
-          {/* Fills the room left beside the taller result card on wide screens.
+        <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+          <div className="flex flex-col gap-5 rounded-xl border border-primary/20 bg-card p-5 shadow-md">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <AmountField
+                id="avg-shares"
+                label="عدد الأسهم اللي معاك"
+                hint="كل الأسهم اللي في محفظتك من السهم ده دلوقتي."
+                value={shares}
+                onChange={setShares}
+              />
+              <AmountField
+                id="avg-cost"
+                label="متوسط الشراء الحالي"
+                hint={
+                  <>
+                    زي ما هو ظاهر في تطبيق السمسار — تقدر تكتبه <span className="num">74.42</span>{" "}
+                    أو <span className="num">74,42</span>.
+                  </>
+                }
+                value={avgCost}
+                onChange={setAvgCost}
+              />
+              <AmountField
+                id="avg-target"
+                label="المتوسط اللي عايز توصله"
+                hint="أقل من متوسطك لو عايز تنزّله، أو أعلى منه لو عايز ترفعه."
+                value={target}
+                onChange={setTarget}
+              />
+              <AmountField
+                id="avg-price"
+                label="هتشتري بسعر كام؟"
+                hint="غالبًا سعر السهم دلوقتي، أو سعر أمر الشراء اللي ناوي تحطه."
+                value={price}
+                onChange={setPrice}
+              />
+            </div>
+            {/* Fills the room left beside the taller result card on wide screens.
               Stacked on phones the result comes right after the fields, so
               the CTA moves below it there (see the copy after the grid). */}
-          <PortfolioCta signedIn={Boolean(user)} className="mt-auto hidden lg:flex" />
-        </div>
+            <PortfolioCta signedIn={Boolean(user)} className="mt-auto hidden lg:flex" />
+          </div>
 
-        <div className="rounded-xl border bg-card p-5 shadow-sm" aria-live="polite">
-          {!touched ? (
-            <p className="text-[13.5px] leading-relaxed text-muted-foreground">
-              املا الخانات الأربعة وهتظهر النتيجة هنا.
-            </p>
-          ) : !result.ok ? (
-            <p className="text-[13.5px] leading-relaxed text-down">{result.reason}</p>
-          ) : (
-            <>
-              <p className="text-[13px] text-muted-foreground">محتاج تشتري</p>
-              <p className="mt-1 text-[22px] font-bold">
-                <span className="num">{int(result.buyShares)}</span> سهم على سعر{" "}
-                <span className="num">{fmt(input.price)}</span>
+          <div
+            className="rounded-xl border border-primary/20 bg-card p-5 shadow-md"
+            aria-live="polite"
+          >
+            {!touched ? (
+              <p className="text-[13.5px] leading-relaxed text-muted-foreground">
+                املا الخانات الأربعة وهتظهر النتيجة هنا.
               </p>
-              <dl className="mt-4 grid grid-cols-3 gap-2">
-                <Stat label="تكلفة الشراء" hint="هتدفعه دلوقتي" value={fmt(result.buyCost)} />
-                <Stat
-                  label="إجمالي الأسهم"
-                  hint="القديم + الجديد"
-                  value={int(result.totalShares)}
-                />
-                <Stat label="المتوسط الجديد" hint="بعد الشراء" value={fmt(result.newAvg)} />
-              </dl>
-            </>
-          )}
+            ) : !result.ok ? (
+              <p className="text-[13.5px] leading-relaxed text-down">{result.reason}</p>
+            ) : (
+              <>
+                <p className="text-[13px] text-muted-foreground">محتاج تشتري</p>
+                <p className="mt-1 text-[22px] font-bold">
+                  <span className="num">{int(result.buyShares)}</span> سهم على سعر{" "}
+                  <span className="num">{fmt(input.price)}</span>
+                </p>
+                <dl className="mt-4 grid grid-cols-3 gap-2">
+                  <Stat label="تكلفة الشراء" hint="هتدفعه دلوقتي" value={fmt(result.buyCost)} />
+                  <Stat
+                    label="إجمالي الأسهم"
+                    hint="القديم + الجديد"
+                    value={int(result.totalShares)}
+                  />
+                  <Stat label="المتوسط الجديد" hint="بعد الشراء" value={fmt(result.newAvg)} />
+                </dl>
+              </>
+            )}
 
-          {touched && ladder.length > 0 && (
-            <div className="mt-5">
-              <p className="text-[12.5px] font-medium text-muted-foreground">
-                لو اشتريت بسعر تاني:
-              </p>
-              <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-                كل ما سعر الشراء يبعد عن المتوسط اللي عايزه، هتحتاج أسهم أقل.
-              </p>
-              <table className="mt-2 w-full text-[13px]">
-                <thead className="text-muted-foreground">
-                  <tr className="border-b">
-                    <th className="py-1.5 text-start font-normal">السعر</th>
-                    <th className="py-1.5 text-start font-normal">عدد الأسهم</th>
-                    <th className="py-1.5 text-start font-normal">التكلفة</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ladder.map(({ price: rowPrice, plan }) => (
-                    <tr key={rowPrice} className="border-b last:border-0">
-                      <td className="py-1.5">
-                        <span className="num">{fmt(rowPrice)}</span>
-                      </td>
-                      <td className="py-1.5">
-                        <span className="num">{int(plan.buyShares)}</span>
-                      </td>
-                      <td className="py-1.5">
-                        <span className="num">{fmt(plan.buyCost)}</span>
-                      </td>
+            {touched && ladder.length > 0 && (
+              <div className="mt-5">
+                <p className="text-[12.5px] font-medium text-muted-foreground">
+                  لو اشتريت بسعر تاني:
+                </p>
+                <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                  كل ما سعر الشراء يبعد عن المتوسط اللي عايزه، هتحتاج أسهم أقل.
+                </p>
+                <table className="mt-2 w-full text-[13px]">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="py-1.5 text-start font-normal">السعر</th>
+                      <th className="py-1.5 text-start font-normal">عدد الأسهم</th>
+                      <th className="py-1.5 text-start font-normal">التكلفة</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="mt-4 text-[11.5px] leading-relaxed text-muted-foreground">
-            الأرقام من غير مصاريف السمسرة، وعدد الأسهم مقرّب لأعلى عشان توصل للمتوسط أو أحسن منه
-            شوية.
-          </p>
+                  </thead>
+                  <tbody>
+                    {ladder.map(({ price: rowPrice, plan }) => (
+                      <tr key={rowPrice} className="border-b last:border-0">
+                        <td className="py-1.5">
+                          <span className="num">{fmt(rowPrice)}</span>
+                        </td>
+                        <td className="py-1.5">
+                          <span className="num">{int(plan.buyShares)}</span>
+                        </td>
+                        <td className="py-1.5">
+                          <span className="num">{fmt(plan.buyCost)}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="mt-4 text-[11.5px] leading-relaxed text-muted-foreground">
+              الأرقام من غير مصاريف السمسرة، وعدد الأسهم مقرّب لأعلى عشان توصل للمتوسط أو أحسن منه
+              شوية.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <PortfolioCta signedIn={Boolean(user)} className="mt-4 flex lg:hidden" />
+        <PortfolioCta signedIn={Boolean(user)} className="mt-4 flex lg:hidden" />
+      </div>
     </section>
   );
 }
