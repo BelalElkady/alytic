@@ -668,7 +668,7 @@ function Bubble({
       {at && (
         <p
           className={cn(
-            "num mt-1 text-[10.5px]",
+            "mt-1 text-[10.5px] tabular-nums",
             side === "user" ? "text-primary-foreground/70" : "text-muted-foreground",
           )}
         >

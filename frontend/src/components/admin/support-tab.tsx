@@ -91,7 +91,9 @@ export function SupportTab() {
               {thread.lastSender === "admin" ? "أنت: " : ""}
               {thread.lastMessage}
             </p>
-            <p className="num mt-1 text-[11px] text-muted-foreground">{time(thread.lastAt)}</p>
+            <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+              {time(thread.lastAt)}
+            </p>
           </button>
         ))}
       </div>
@@ -174,7 +176,7 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
               <p className="whitespace-pre-wrap break-words">{message.body}</p>
               <p
                 className={cn(
-                  "num mt-1 text-[10.5px]",
+                  "mt-1 text-[10.5px] tabular-nums",
                   message.sender === "admin"
                     ? "text-primary-foreground/70"
                     : "text-muted-foreground",
