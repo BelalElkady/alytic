@@ -133,7 +133,7 @@ export function AveragingCalculator() {
                   هتشتري <span className="num">{int(result.buyShares)}</span> سهم على سعر{" "}
                   <span className="num">{fmt(input.price)}</span>
                 </p>
-                <dl className="mt-4 grid grid-cols-3 gap-2">
+                <dl className="mt-4 grid grid-cols-2 gap-2">
                   <Stat
                     label="تكلفة الشراء"
                     hint={result.leftover > 0 ? `يفضل معاك ${fmt(result.leftover)}` : "المبلغ كله"}
@@ -144,7 +144,6 @@ export function AveragingCalculator() {
                     hint="القديم + الجديد"
                     value={int(result.totalShares)}
                   />
-                  <Stat label="المتوسط القديم" hint="قبل الشراء" value={fmt(input.avgCost)} />
                 </dl>
               </>
             )}
