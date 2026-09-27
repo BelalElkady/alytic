@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Calculator, Wallet } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,29 +11,25 @@ import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 /**
- * "حاسبة المتوسط": enter the shares held and their average, the average you
- * want to reach and the price you'd buy at — and see how many shares that
- * takes. Pure arithmetic, so it works the same signed in or not.
+ * "حاسبة المتوسط": enter the shares held and their average, the money you
+ * want to put in and the price you'd buy at — and see the average that leaves. Pure arithmetic, so it works the same signed in or not.
  */
 export function AveragingCalculator() {
   const { user } = useDesk();
   const [shares, setShares] = useState("");
   const [avgCost, setAvgCost] = useState("");
-  const [target, setTarget] = useState("");
+  const [amount, setAmount] = useState("");
   const [price, setPrice] = useState("");
 
   const input = {
     shares: parseAmount(shares),
     avgCost: parseAmount(avgCost),
-    target: parseAmount(target),
+    amount: parseAmount(amount),
     price: parseAmount(price),
   };
-  const touched = [shares, avgCost, target, price].every((value) => value.trim() !== "");
+  const touched = [shares, avgCost, amount, price].every((value) => value.trim() !== "");
   const result = planAveraging(input);
-  const ladder = useMemo(
-    () => averagingLadder({ shares: input.shares, avgCost: input.avgCost, target: input.target }),
-    [input.shares, input.avgCost, input.target],
-  );
+  const ladder = averagingLadder(input);
 
   return (
     // A full-width band tinted with the brand colour so the calculator stands
@@ -57,8 +53,8 @@ export function AveragingCalculator() {
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">حاسبة المتوسط</h2>
         </div>
         <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-foreground/80">
-          معاك سهم وعايز تنزّل متوسطك (أو ترفعه)؟ اكتب عدد أسهمك ومتوسطك الحالي والمتوسط اللي عايز
-          توصله، وسعر الشراء — ونقولك تشتري كام سهم.
+          معاك سهم وعايز تنزّل متوسطك (أو ترفعه)؟ اكتب عدد أسهمك ومتوسطك الحالي والمبلغ اللي عايز
+          تدفعه، وسعر الشراء — ونقولك متوسطك هيبقى كام.
         </p>
 
         <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
@@ -84,11 +80,11 @@ export function AveragingCalculator() {
                 onChange={setAvgCost}
               />
               <AmountField
-                id="avg-target"
-                label="المتوسط اللي عايز توصله"
-                hint="أقل من متوسطك لو عايز تنزّله، أو أعلى منه لو عايز ترفعه."
-                value={target}
-                onChange={setTarget}
+                id="avg-amount"
+                label="المبلغ اللي عايز تدفعه"
+                hint="الفلوس اللي ناوي تشتري بيها أسهم زيادة."
+                value={amount}
+                onChange={setAmount}
               />
               <AmountField
                 id="avg-price"
@@ -116,19 +112,39 @@ export function AveragingCalculator() {
               <p className="text-[13.5px] leading-relaxed text-down">{result.reason}</p>
             ) : (
               <>
-                <p className="text-[13px] text-muted-foreground">محتاج تشتري</p>
+                <p className="text-[13px] text-muted-foreground">متوسطك الجديد هيبقى</p>
                 <p className="mt-1 text-[22px] font-bold">
-                  <span className="num">{int(result.buyShares)}</span> سهم على سعر{" "}
+                  <span className="num">{fmt(result.newAvg)}</span>{" "}
+                  <span
+                    className={cn(
+                      "text-[14px] font-semibold",
+                      result.avgChange < 0 ? "text-up" : result.avgChange > 0 ? "text-down" : "",
+                    )}
+                  >
+                    (
+                    <span className="num" dir="ltr">
+                      {result.avgChange > 0 ? "+" : ""}
+                      {fmt(result.avgChange)}
+                    </span>
+                    )
+                  </span>
+                </p>
+                <p className="mt-1 text-[13px] text-muted-foreground">
+                  هتشتري <span className="num">{int(result.buyShares)}</span> سهم على سعر{" "}
                   <span className="num">{fmt(input.price)}</span>
                 </p>
                 <dl className="mt-4 grid grid-cols-3 gap-2">
-                  <Stat label="تكلفة الشراء" hint="هتدفعه دلوقتي" value={fmt(result.buyCost)} />
+                  <Stat
+                    label="تكلفة الشراء"
+                    hint={result.leftover > 0 ? `يفضل معاك ${fmt(result.leftover)}` : "المبلغ كله"}
+                    value={fmt(result.buyCost)}
+                  />
                   <Stat
                     label="إجمالي الأسهم"
                     hint="القديم + الجديد"
                     value={int(result.totalShares)}
                   />
-                  <Stat label="المتوسط الجديد" hint="بعد الشراء" value={fmt(result.newAvg)} />
+                  <Stat label="المتوسط القديم" hint="قبل الشراء" value={fmt(input.avgCost)} />
                 </dl>
               </>
             )}
@@ -139,14 +155,14 @@ export function AveragingCalculator() {
                   لو اشتريت بسعر تاني:
                 </p>
                 <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-                  كل ما سعر الشراء يبعد عن المتوسط اللي عايزه، هتحتاج أسهم أقل.
+                  بنفس المبلغ — كل ما السعر يقل، هتاخد أسهم أكتر ومتوسطك ينزل أكتر.
                 </p>
                 <table className="mt-2 w-full text-[13px]">
                   <thead className="text-muted-foreground">
                     <tr className="border-b">
                       <th className="py-1.5 text-start font-normal">السعر</th>
                       <th className="py-1.5 text-start font-normal">عدد الأسهم</th>
-                      <th className="py-1.5 text-start font-normal">التكلفة</th>
+                      <th className="py-1.5 text-start font-normal">المتوسط الجديد</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -159,7 +175,7 @@ export function AveragingCalculator() {
                           <span className="num">{int(plan.buyShares)}</span>
                         </td>
                         <td className="py-1.5">
-                          <span className="num">{fmt(plan.buyCost)}</span>
+                          <span className="num">{fmt(plan.newAvg)}</span>
                         </td>
                       </tr>
                     ))}
@@ -168,8 +184,8 @@ export function AveragingCalculator() {
               </div>
             )}
             <p className="mt-4 text-[11.5px] leading-relaxed text-muted-foreground">
-              الأرقام من غير مصاريف السمسرة، وعدد الأسهم مقرّب لأعلى عشان توصل للمتوسط أو أحسن منه
-              شوية.
+              الأرقام من غير مصاريف السمسرة، وعدد الأسهم مقرّب لتحت عشان ماتدفعش أكتر من المبلغ اللي
+              كتبته.
             </p>
           </div>
         </div>

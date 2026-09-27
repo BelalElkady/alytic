@@ -3,63 +3,64 @@ import { describe, expect, it } from "vitest";
 import { averagingLadder, parseAmount, planAveraging } from "./averaging";
 
 describe("planAveraging", () => {
-  it("averages down: 100 shares at 20, target 18, buying at 15", () => {
-    const plan = planAveraging({ shares: 100, avgCost: 20, target: 18, price: 15 });
-    expect(plan).toMatchObject({ ok: true, buyShares: 67, totalShares: 167 });
+  it("averages down: 100 shares at 20, spending 1000 at 10", () => {
+    const plan = planAveraging({ shares: 100, avgCost: 20, amount: 1000, price: 10 });
+    expect(plan).toMatchObject({
+      ok: true,
+      buyShares: 100,
+      buyCost: 1000,
+      leftover: 0,
+      totalShares: 200,
+      newAvg: 15,
+      avgChange: -5,
+    });
+  });
+
+  it("averages up when buying above the current average", () => {
+    const plan = planAveraging({ shares: 100, avgCost: 10, amount: 1400, price: 14 });
+    expect(plan).toMatchObject({ ok: true, buyShares: 100, newAvg: 12, avgChange: 2 });
+  });
+
+  it("buys only whole shares the amount covers and reports the leftover", () => {
+    const plan = planAveraging({ shares: 100, avgCost: 20, amount: 1000, price: 15 });
     if (!plan.ok) throw new Error("expected a plan");
-    expect(plan.buyCost).toBe(1005);
-    // Rounded up to whole shares, so the average lands on or just under the target.
-    expect(plan.newAvg).toBeLessThanOrEqual(18);
-    expect(plan.newAvg).toBeGreaterThan(17.9);
+    expect(plan.buyShares).toBe(66);
+    expect(plan.buyCost).toBe(990);
+    expect(plan.leftover).toBe(10);
+    expect(plan.newAvg).toBeCloseTo(2990 / 166);
   });
 
-  it("hits the target exactly when the numbers divide", () => {
-    const plan = planAveraging({ shares: 100, avgCost: 20, target: 15, price: 10 });
-    expect(plan).toMatchObject({ ok: true, buyShares: 100, newAvg: 15 });
+  it("refuses an amount too small for one share", () => {
+    expect(planAveraging({ shares: 100, avgCost: 20, amount: 9, price: 10 }).ok).toBe(false);
   });
 
-  it("averages up when the target is above the current average", () => {
-    const plan = planAveraging({ shares: 100, avgCost: 10, target: 12, price: 14 });
-    expect(plan).toMatchObject({ ok: true, buyShares: 100, newAvg: 12 });
-  });
-
-  it("refuses a buy price on the wrong side of the target", () => {
-    expect(planAveraging({ shares: 100, avgCost: 20, target: 18, price: 18 }).ok).toBe(false);
-    expect(planAveraging({ shares: 100, avgCost: 20, target: 18, price: 25 }).ok).toBe(false);
-    expect(planAveraging({ shares: 100, avgCost: 10, target: 12, price: 11 }).ok).toBe(false);
-  });
-
-  it("refuses missing or non-positive inputs and an unchanged target", () => {
-    expect(planAveraging({ shares: 0, avgCost: 20, target: 18, price: 15 }).ok).toBe(false);
-    expect(planAveraging({ shares: 100, avgCost: Number.NaN, target: 18, price: 15 }).ok).toBe(
+  it("refuses missing or non-positive inputs", () => {
+    expect(planAveraging({ shares: 0, avgCost: 20, amount: 1000, price: 15 }).ok).toBe(false);
+    expect(planAveraging({ shares: 100, avgCost: Number.NaN, amount: 1000, price: 15 }).ok).toBe(
       false,
     );
-    expect(planAveraging({ shares: 100, avgCost: 20, target: 20, price: 15 }).ok).toBe(false);
+    expect(planAveraging({ shares: 100, avgCost: 20, amount: 0, price: 15 }).ok).toBe(false);
+    expect(planAveraging({ shares: 100, avgCost: 20, amount: 1000, price: -1 }).ok).toBe(false);
   });
 
-  it("doesn't round floating-point noise up an extra share", () => {
-    const plan = planAveraging({ shares: 3, avgCost: 0.3, target: 0.2, price: 0.1 });
+  it("doesn't round floating-point noise down a share", () => {
+    const plan = planAveraging({ shares: 3, avgCost: 0.3, amount: 0.3, price: 0.1 });
     expect(plan).toMatchObject({ ok: true, buyShares: 3 });
   });
 });
 
 describe("averagingLadder", () => {
-  it("lists prices below the target when averaging down, fewer shares the cheaper", () => {
-    const ladder = averagingLadder({ shares: 100, avgCost: 20, target: 18 });
-    expect(ladder.length).toBeGreaterThan(0);
-    expect(ladder.every((row) => row.price < 18)).toBe(true);
+  it("spends the same amount at prices around the entered one", () => {
+    const ladder = averagingLadder({ shares: 100, avgCost: 20, amount: 1000, price: 10 });
+    expect(ladder.map((row) => row.price)).toEqual([8.5, 9, 9.5, 10.5, 11]);
+    // Cheaper fills buy more shares and pull the average further down.
     for (let i = 1; i < ladder.length; i++) {
-      expect(ladder[i]!.plan.buyShares).toBeLessThanOrEqual(ladder[i - 1]!.plan.buyShares);
+      expect(ladder[i]!.plan.newAvg).toBeGreaterThan(ladder[i - 1]!.plan.newAvg);
     }
   });
 
-  it("lists prices above the target when averaging up", () => {
-    const ladder = averagingLadder({ shares: 100, avgCost: 10, target: 12 });
-    expect(ladder.every((row) => row.price > 12)).toBe(true);
-  });
-
-  it("is empty without a usable target", () => {
-    expect(averagingLadder({ shares: 100, avgCost: 20, target: 20 })).toEqual([]);
+  it("is empty without a usable price", () => {
+    expect(averagingLadder({ shares: 100, avgCost: 20, amount: 1000, price: 0 })).toEqual([]);
   });
 });
 
@@ -82,13 +83,15 @@ describe("parseAmount with a comma decimal", () => {
     expect(parseAmount("1,021")).toBe(1021);
   });
 
-  it("gives a sane plan for the reported case: 1021 shares at 74,42 → 74 buying at 50", () => {
+  it("gives a sane plan for the reported case: 1021 shares at 74,42, 1000 spent at 50", () => {
     const plan = planAveraging({
       shares: parseAmount("1021"),
       avgCost: parseAmount("74,42"),
-      target: parseAmount("74"),
+      amount: parseAmount("1000"),
       price: parseAmount("50"),
     });
-    expect(plan).toMatchObject({ ok: true, buyShares: 18 });
+    expect(plan).toMatchObject({ ok: true, buyShares: 20 });
+    if (!plan.ok) throw new Error("expected a plan");
+    expect(plan.newAvg).toBeCloseTo((1021 * 74.42 + 1000) / 1041);
   });
 });
