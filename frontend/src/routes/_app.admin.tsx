@@ -47,7 +47,7 @@ import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { LivePricesTab, useLivePricesAlert } from "@/components/admin/live-prices-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
-import { RENEWAL_LABEL, UsersScreen, renewalStatus } from "@/components/admin/users-screen";
+import { RENEWAL_LABEL, UsersScreen, renewalStatus, type FollowUpChannel } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, exact, signed } from "@/lib/format";
 import { INVEST_STYLES, MIN_CLOSED_TRADES, type StyleKey } from "@/lib/invest-style";
@@ -482,6 +482,8 @@ export type AdminUserRow = {
   trialActive: boolean;
   trialEndsAt: string;
   tier: Tier | null;
+  /** When an admin ticked each follow-up box in the users table; null = not followed up on that channel yet. */
+  followUp: { whatsappAt: string | null; emailAt: string | null };
   subscription: AdminSubscription | null;
   portfolio: AdminUserPortfolio | null;
   behavior: AdminUserBehavior | null;
@@ -513,17 +515,25 @@ const matchesUser = (row: AdminUserRow, query: string) =>
   [row.email, row.name, row.signupIp, row.lastLoginIp].some((field) => field?.toLowerCase().includes(query)) ||
   (!!row.phone && stripPhoneFormatting(row.phone.toLowerCase()).includes(stripPhoneFormatting(query)));
 
-type UserSort = "createdAt" | "lastLoginAt" | "lastSeenAt";
+type UserSort = "createdAt" | "lastLoginAt" | "lastSeenAt" | "capital";
 
 const USER_SORTS: { key: UserSort; label: string }[] = [
   { key: "createdAt", label: "آخر تسجيل" },
   { key: "lastLoginAt", label: "آخر دخول" },
   { key: "lastSeenAt", label: "آخر ظهور" },
+  { key: "capital", label: "رأس المال" },
 ];
 
-/** Newest first; accounts with no such timestamp (never logged in / seen) sink to the bottom. */
-const byRecent = (key: UserSort) => (a: AdminUserRow, b: AdminUserRow) =>
-  (b[key] ? Date.parse(b[key]) : -Infinity) - (a[key] ? Date.parse(a[key]) : -Infinity) || 0;
+const capitalOf = (row: AdminUserRow) => (row.portfolio ? row.portfolio.cash + row.portfolio.positionsValue : -Infinity);
+
+/**
+ * Newest first, or largest capital first; accounts with no such timestamp
+ * (never logged in / seen) or no portfolio sink to the bottom.
+ */
+const byUserSort = (key: UserSort) => (a: AdminUserRow, b: AdminUserRow) => {
+  if (key === "capital") return capitalOf(b) - capitalOf(a) || 0;
+  return (b[key] ? Date.parse(b[key]) : -Infinity) - (a[key] ? Date.parse(a[key]) : -Infinity) || 0;
+};
 
 const csvCell = (value: unknown) => {
   const str = value === null || value === undefined ? "" : String(value);
@@ -550,6 +560,8 @@ const CSV_HEADERS = [
   "بريد مفعّل",
   "مرتبط بجوجل",
   "مشرف",
+  "متابعة واتساب",
+  "متابعة إيميل",
 ];
 
 /** Downloads the given rows as a CSV file — Excel-friendly (UTF-8 BOM, CRLF rows). */
@@ -577,6 +589,8 @@ function downloadUsersCsv(rows: AdminUserRow[]) {
       row.emailVerified ? "نعم" : "لا",
       row.googleLinked ? "نعم" : "لا",
       row.isAdmin ? "نعم" : "لا",
+      row.followUp.whatsappAt ?? "",
+      row.followUp.emailAt ?? "",
     ]
       .map(csvCell)
       .join(",");
@@ -631,6 +645,17 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
     load();
   }, []);
 
+  // Patched into the loaded rows in place rather than reloading every user, so ticking
+  // a box down a long list is instant and doesn't reshuffle anything.
+  const setFollowUp = async (row: AdminUserRow, channel: FollowUpChannel, done: boolean) => {
+    try {
+      const result = await post<{ followUp: AdminUserRow["followUp"] }>(`/api/admin/users/${row.id}/follow-up`, { channel, done });
+      setRows((current) => current?.map((r) => (r.id === row.id ? { ...r, followUp: result.followUp } : r)) ?? current);
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر حفظ المتابعة");
+    }
+  };
+
   const stats = useMemo(() => {
     if (!rows) return null;
     let capital = 0;
@@ -666,7 +691,7 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
   // Search and sort only: the screen filters by Renewal status itself, so its chips can count every status.
   const query = search.trim().toLowerCase();
   const searched = useMemo(
-    () => (rows ?? []).filter((row) => !query || matchesUser(row, query)).sort(byRecent(sortBy)),
+    () => (rows ?? []).filter((row) => !query || matchesUser(row, query)).sort(byUserSort(sortBy)),
     [rows, query, sortBy],
   );
 
@@ -713,6 +738,7 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
       }
       readOnly={readOnly}
       onChanged={load}
+      onFollowUp={setFollowUp}
       editors={{
         Subscription: SubscriptionCell,
         Credits: CreditsCell,

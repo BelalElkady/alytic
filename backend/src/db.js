@@ -666,6 +666,45 @@ export async function getAllUsers() {
   return data;
 }
 
+let warnedMissingFollowUps = false;
+
+/** Every user's follow-up checklist row — for the admin users list. Empty (with one warning) until the user_follow_ups table from supabase/schema.sql is applied. */
+export async function getAllFollowUps() {
+  const { data, error } = await supabase.from('user_follow_ups').select('user_id, whatsapp_at, email_at');
+  if (isMissingTable(error)) {
+    if (!warnedMissingFollowUps) {
+      warnedMissingFollowUps = true;
+      console.error('getAllFollowUps: the user_follow_ups table is missing — apply backend/supabase/schema.sql.');
+    }
+    return [];
+  }
+  if (error) throw new Error(`getAllFollowUps: ${error.message}`);
+  return data;
+}
+
+export const FOLLOW_UP_CHANNELS = ['whatsapp', 'email'];
+
+/**
+ * Ticks (done) or clears one channel of a user's follow-up checklist, leaving
+ * the other channel as it was. Returns the row after the change.
+ */
+export async function setUserFollowUp(userId, channel, done, updatedBy) {
+  if (!FOLLOW_UP_CHANNELS.includes(channel)) throw new Error(`setUserFollowUp: unknown channel ${channel}`);
+  const now = new Date().toISOString();
+  const data = must(
+    await supabase
+      .from('user_follow_ups')
+      .upsert(
+        { user_id: userId, [`${channel}_at`]: done ? now : null, updated_by: updatedBy ?? null, updated_at: now },
+        { onConflict: 'user_id' },
+      )
+      .select('user_id, whatsapp_at, email_at')
+      .single(),
+    'setUserFollowUp',
+  );
+  return data;
+}
+
 /** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. */
 export async function getAllPortfolios() {
   const { data, error } = await supabase.from('portfolios').select('user_id, state_json');
