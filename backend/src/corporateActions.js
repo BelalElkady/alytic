@@ -37,12 +37,22 @@ const MIN_FACTOR_MOVE = 0.04;
 const SAME_SIDE_TOLERANCE = 0.02;
 /** An announced ratio must land this close to the one the prices imply. */
 const RESEARCH_TOLERANCE = 0.03;
+/**
+ * ...or this close to a same-day gap, whose factor also carries the day's own
+ * move (EGX's limit is ±10–20%). Still far apart enough to tell 2.69 from 3.69.
+ */
+const GAP_RESEARCH_TOLERANCE = 0.15;
 /** An overnight move this large can't be the market on EGX. */
 const GAP_MOVE = 0.3;
+/** How far back an unadjusted jump in a feed's own bars is looked for. */
+const RECENT_GAP_SESSIONS = 5;
 /** Saved prices read from each side of an event. */
 const MAX_PRE_ANCHORS = 5;
 /** Records kept on the portfolio. */
 const MAX_RECORDS = 50;
+/** A stock-level event older than this isn't applied to a holding with no saved closes. */
+const STORED_EVENT_DAYS = 30;
+const daysBetween = (from, to) => (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
 
 /** Kinds that hand out (or consolidate) shares, so the holding follows. */
 const SHARE_KINDS = new Set(['bonus', 'split', 'reverse_split', 'merger']);
@@ -177,6 +187,68 @@ export function adjustHolding(pos, factor) {
   };
 }
 
+/**
+ * Whether a stop or target is still on the old basis: on the new one it sits
+ * closer to the price once divided by the factor than as it is. A 35.48 stop
+ * against a 14.2 price after a 2.69 bonus: 13.2 is the real level, not a
+ * breached stop.
+ */
+export function onOldScale(level, factor, price) {
+  if (!(level > 0) || !(price > 0) || !(factor > 0)) return false;
+  return logDistance(level / factor, price) < logDistance(level, price);
+}
+
+/** Only the stop and target moved to the new basis: the share count already was. */
+export function adjustLevels(pos, factor) {
+  const scale = (level) => (level > 0 ? +(level / factor).toFixed(2) : level ?? null);
+  return { ...pos, stop: scale(pos.stop), target: scale(pos.target) };
+}
+
+/** Whether a holding's stored stop/target need moving to the new basis. */
+function levelsOnOldScale(pos, factor, price) {
+  if (pos.stop > 0) return onOldScale(pos.stop, factor, price);
+  return pos.target > 0 && onOldScale(pos.target, factor, price);
+}
+
+// ---- The stock's own prices -------------------------------------------------
+
+/**
+ * A stock's live quote this far from its last cached close is the event
+ * itself, seen before the feed adjusts — as is the same jump between two
+ * recent bars of a feed that doesn't adjust at all. Returns a suspected event
+ * (its factor still carries the day's own move until research pins it down)
+ * or null.
+ */
+export function gapEvent(code, bars, livePrice, today) {
+  const isGap = (before, after) => before > 0 && after > 0 && logDistance(before / after, 1) >= Math.log(1 + GAP_MOVE);
+  const event = (bar, after) => ({ code, lastBefore: bar.date, rawBefore: bar.c, factor: bar.c / after, status: 'suspected', source: 'gap' });
+  const last = bars?.at(-1);
+  if (!last) return null;
+  if (last.date < today && isGap(last.c, livePrice)) return event(last, livePrice);
+  // A feed that never adjusts keeps the jump in its history.
+  for (let i = bars.length - 1; i >= Math.max(1, bars.length - RECENT_GAP_SESSIONS); i--) {
+    if (isGap(bars[i - 1].c, bars[i].c)) return event(bars[i - 1], bars[i].c);
+  }
+  return null;
+}
+
+/**
+ * The bars on the event's new basis. A feed that already adjusted them is
+ * left as it is; one still showing the raw close on the last old-basis
+ * session has everything up to it divided by the factor (volume multiplied).
+ * @returns {{bars: object[], rescaled: boolean}}
+ */
+export function onNewBasis(bars, event) {
+  if (!event || !bars?.length) return { bars, rescaled: false };
+  const pivot = bars.find((b) => b.date === event.lastBefore);
+  if (!pivot || logDistance(pivot.c, event.rawBefore) > 0.02) return { bars, rescaled: false };
+  const k = event.factor;
+  const scaled = bars.map((b) =>
+    b.date > event.lastBefore ? b : { ...b, o: b.o / k, h: b.h / k, l: b.l / k, c: b.c / k, v: Math.round((b.v ?? 0) * k) },
+  );
+  return { bars: scaled, rescaled: true };
+}
+
 const levelsOf = (pos) => ({ shares: pos.shares, avgCost: pos.avgCost, stop: pos.stop ?? null, target: pos.target ?? null });
 
 export const CorporateActionResearchSchema = z.object({
@@ -233,7 +305,8 @@ export function confirmedFactor(research, candidate) {
   if (!research?.found || !SHARE_KINDS.has(research.kind)) return null;
   const stated = research.sharesAfterPerShare;
   if (!(stated > 0)) return null;
-  const options = [stated, stated + 1].filter((f) => logDistance(f, candidate.factor) <= RESEARCH_TOLERANCE);
+  const tolerance = candidate.source === 'gap' ? GAP_RESEARCH_TOLERANCE : RESEARCH_TOLERANCE;
+  const options = [stated, stated + 1].filter((f) => logDistance(f, candidate.factor) <= tolerance);
   if (!options.length) return null;
   return options.sort((a, b) => logDistance(a, candidate.factor) - logDistance(b, candidate.factor))[0];
 }
@@ -276,16 +349,25 @@ const alreadySeen = (portfolio, code, lastBefore) => {
  * @param {string} deps.today - Cairo YYYY-MM-DD
  * @returns {Promise<object[]>} proposals
  */
-export async function detectCorporateActions(portfolio, { barsFor, freshBarsFor = null, livePrices = new Map(), research = null, today }) {
+export async function detectCorporateActions(portfolio, { barsFor, freshBarsFor = null, livePrices = new Map(), research = null, eventFor = null, today }) {
   const proposals = [];
   for (const [code, pos] of Object.entries(portfolio.positions ?? {})) {
     try {
       const anchors = savedPrices(portfolio, code);
-      if (!anchors.length) continue;
       const live = livePrices.get(code) ?? null;
+      // No saved closes of its own (a fresh import, say): the stock-level
+      // record the analysis keeps (data/corporateEvents.js) stands in.
+      if (!anchors.length) {
+        const event = eventFor ? await eventFor(code) : null;
+        if (!event || alreadySeen(portfolio, code, event.lastBefore) || daysBetween(event.lastBefore, today) > STORED_EVENT_DAYS) continue;
+        anchors.push({ date: event.lastBefore, price: event.rawBefore, stored: event });
+      }
 
-      let candidate = findAdjustment(anchors, await barsFor(code));
-      const gap = findGap(anchors, live, today);
+      const stored = anchors[0]?.stored;
+      let candidate = stored
+        ? { factor: stored.factor, lastBefore: stored.lastBefore, firstAfter: null, anchors: 0, spread: 0, strong: stored.status === 'confirmed', source: stored.status === 'confirmed' ? 'prices' : 'gap' }
+        : findAdjustment(anchors, await barsFor(code));
+      const gap = stored ? null : findGap(anchors, live, today);
       // The feed may not have adjusted yet on the day itself — or the cache
       // predates the event. Ask it again before settling for the gap alone.
       if (gap && (!candidate || alreadySeen(portfolio, code, candidate.lastBefore)) && freshBarsFor) {
@@ -295,7 +377,33 @@ export async function detectCorporateActions(portfolio, { barsFor, freshBarsFor 
       if (!candidate || alreadySeen(portfolio, code, candidate.lastBefore)) continue;
 
       const price = live ?? (await barsFor(code))?.at(-1)?.c ?? null;
-      if (!holdsOldBasis(pos, basisDate(portfolio, code), candidate, price)) continue;
+      const rawBefore = anchors.find((a) => a.date === candidate.lastBefore)?.price ?? null;
+      if (!holdsOldBasis(pos, basisDate(portfolio, code), candidate, price)) {
+        // The shares are already right (a fresh broker screenshot, a hand
+        // fix) but a stop or target set before the event isn't: moved alone,
+        // so it doesn't read as a breach.
+        if (!levelsOnOldScale(pos, candidate.factor, price)) continue;
+        const found = research ? await research(code, candidate) : null;
+        const factor = confirmedFactor(found, candidate) ?? candidate.factor;
+        proposals.push({
+          code,
+          lastBefore: candidate.lastBefore,
+          firstAfter: candidate.firstAfter,
+          rawBefore,
+          source: candidate.source,
+          priceFactor: +candidate.factor.toFixed(6),
+          factor: +factor.toFixed(9),
+          status: 'applied',
+          levelsOnly: true,
+          confirmedBy: factor === candidate.factor ? 'prices' : 'research',
+          kind: found?.found ? found.kind : null,
+          summary: found?.found ? found.summaryAr : null,
+          sourceUrl: found?.found ? found.sourceUrl : null,
+          effectiveDate: found?.found ? found.effectiveDate : null,
+          before: levelsOf(pos),
+        });
+        continue;
+      }
 
       const found = research ? await research(code, candidate) : null;
       const { status, factor, confirmedBy } = decide(candidate, found);
@@ -303,6 +411,8 @@ export async function detectCorporateActions(portfolio, { barsFor, freshBarsFor 
         code,
         lastBefore: candidate.lastBefore,
         firstAfter: candidate.firstAfter,
+        rawBefore,
+        source: candidate.source,
         priceFactor: +candidate.factor.toFixed(6),
         factor: +factor.toFixed(9),
         status,
@@ -339,7 +449,7 @@ export function applyCorporateActions(portfolio, proposals, now = new Date()) {
     if (pending && proposal.status === 'pending') continue;
     const record = { ...proposal, at: now.toISOString() };
     if (proposal.status === 'applied') {
-      const next = adjustHolding(pos, proposal.factor);
+      const next = proposal.levelsOnly ? adjustLevels(pos, proposal.factor) : adjustHolding(pos, proposal.factor);
       positions = { ...positions, [proposal.code]: next };
       record.after = levelsOf(next);
     }
@@ -375,7 +485,7 @@ export function resolveCorporateAction(portfolio, { code, lastBefore, action }, 
   } else if (action === 'apply') {
     if (record.status !== 'pending' && record.status !== 'undone') throw new Error('الإجراء ده متطبق بالفعل.');
     if (!same(record.before)) throw new Error(`عدد أسهم ${code} اتغير من وقتها — صحّحه من «إدخال يدوي».`);
-    const adjusted = adjustHolding(pos, record.factor);
+    const adjusted = record.levelsOnly ? adjustLevels(pos, record.factor) : adjustHolding(pos, record.factor);
     positions = { ...positions, [code]: adjusted };
     next = { ...record, status: 'applied', after: levelsOf(adjusted), resolvedAt: now.toISOString() };
   } else {

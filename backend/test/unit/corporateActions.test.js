@@ -6,6 +6,7 @@ import '../helpers/env.js';
 import {
   savedPrices, findAdjustment, findGap, basisDate, holdsOldBasis, adjustHolding,
   confirmedFactor, decide, detectCorporateActions, applyCorporateActions, resolveCorporateAction,
+  gapEvent, onNewBasis, onOldScale,
 } from '../../src/corporateActions.js';
 import { stampSharesSetAt } from '../../src/portfolio.js';
 
@@ -146,4 +147,66 @@ test('stampSharesSetAt marks only holdings whose numbers changed', () => {
   assert.equal(stamped.positions.A.sharesSetAt, undefined);
   assert.equal(stamped.positions.B.sharesSetAt, '2026-09-27');
   assert.equal(stamped.positions.C.sharesSetAt, '2026-09-27');
+});
+
+// ---- The event day: the price drops by the ratio before the feed adjusts ----
+
+test('event day: the live quote gap is a suspected event on the cached bars', () => {
+  const cached = DATES.slice(0, EVENT_AT).map((date, i) => ({ date, c: RAW[i] }));
+  const event = gapEvent('POUL', cached, 38.1, '2026-09-22');
+  assert.equal(event.lastBefore, '2026-09-21');
+  assert.equal(event.rawBefore, 102.37);
+  assert.equal(event.status, 'suspected');
+  assert.equal(gapEvent('POUL', cached, 95, '2026-09-22'), null, 'a limit-down day is the market');
+});
+
+test('a feed that never adjusts keeps the jump in its bars, and it is found there', () => {
+  const raw = DATES.map((date, i) => ({ date, c: RAW[i] }));
+  const event = gapEvent('POUL', raw, 38.2, '2026-09-27');
+  assert.equal(event.lastBefore, '2026-09-21');
+});
+
+test('bars are rebased only while the feed still shows the old basis', () => {
+  const event = { lastBefore: '2026-09-21', rawBefore: 102.37, factor: FACTOR };
+  const raw = DATES.map((date, i) => ({ date, o: RAW[i], h: RAW[i], l: RAW[i], c: RAW[i], v: 1000 }));
+  const { bars, rescaled } = onNewBasis(raw, event);
+  assert.equal(rescaled, true);
+  assert.ok(Math.abs(bars[EVENT_AT - 1].c - 102.37 / FACTOR) < 1e-9);
+  assert.equal(bars[EVENT_AT - 1].v, Math.round(1000 * FACTOR));
+  assert.equal(bars[EVENT_AT].c, RAW[EVENT_AT], 'new-basis sessions untouched');
+
+  const again = onNewBasis(adjustedBars, event);
+  assert.equal(again.rescaled, false, 'an adjusted feed is left alone');
+});
+
+test('a stop set before the event is read on the new basis, not as a breach', () => {
+  assert.equal(onOldScale(35.48, FACTOR, 14.2), true);
+  assert.equal(onOldScale(13.2, FACTOR, 14.2), false, 'already on the new basis');
+  assert.equal(onOldScale(8, FACTOR, 14.2), false, 'a far stop on the new basis stays');
+});
+
+test('shares already updated by hand: only the stop and target move', async () => {
+  // Broker credited 1,035 → the User fixed the count on the 22nd; the stop is from before.
+  const p = book({ shares: 1035, avgCost: 38.08, stop: 95, target: 120, sharesSetAt: '2026-09-22' });
+  const proposals = await detectCorporateActions(p, { barsFor: async () => adjustedBars, today: '2026-09-27', livePrices: new Map([['POUL', 38.2]]) });
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].levelsOnly, true);
+  const applied = applyCorporateActions(p, proposals);
+  assert.equal(applied.positions.POUL.shares, 1035);
+  assert.ok(Math.abs(applied.positions.POUL.stop - 95 / FACTOR) < 0.05);
+  assert.ok(applied.positions.POUL.stop < 38.2, 'no longer a breached stop');
+});
+
+test('a same-day gap is confirmed by research despite the day\'s own move', () => {
+  const gap = { factor: 102.37 / 36.5, source: 'gap', strong: false }; // stock also fell 4% on the day
+  assert.equal(confirmedFactor({ found: true, kind: 'merger', sharesAfterPerShare: FACTOR }, gap), FACTOR);
+  assert.equal(confirmedFactor({ found: true, kind: 'bonus', sharesAfterPerShare: FACTOR - 1 }, gap), FACTOR);
+});
+
+test('a holding with no saved closes follows the stock-level record', async () => {
+  const p = { ...book({ openedAt: '2026-09-01' }), log: {} };
+  const eventFor = async () => ({ code: 'POUL', lastBefore: '2026-09-21', rawBefore: 102.37, factor: FACTOR, status: 'confirmed' });
+  const proposals = await detectCorporateActions(p, { barsFor: async () => adjustedBars, eventFor, today: '2026-09-27', livePrices: new Map([['POUL', 38.2]]) });
+  assert.equal(proposals[0].status, 'applied');
+  assert.equal(applyCorporateActions(p, proposals).positions.POUL.shares, 1035);
 });

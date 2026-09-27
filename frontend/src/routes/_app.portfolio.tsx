@@ -523,6 +523,7 @@ type CorporateActionRecord = {
   summary: string | null;
   sourceUrl: string | null;
   confirmedBy: "research" | "prices" | null;
+  levelsOnly?: boolean;
   before: HoldingLevels;
   after?: HoldingLevels;
   at: string;
@@ -582,7 +583,17 @@ function CorporateActionNotice({ code }: { code: string }) {
       onKeyDown={stop}
       className="mt-3 cursor-default rounded-lg border border-warn/40 bg-warn-soft px-3.5 py-2.5 text-right text-[12.5px] leading-relaxed"
     >
-      {record.status === "applied" && record.after ? (
+      {record.status === "applied" && record.after && record.levelsOnly ? (
+        <p>
+          <span className="font-medium">{kind} — الوقف والهدف اتعدّلوا على السعر الجديد</span>
+          <br />
+          <span className="text-muted-foreground">
+            السعر نزل بنسبة الأسهم الجديدة ({ratio} سهم لكل سهم) مش بحركة السوق، فالوقف{" "}
+            <span className="num">{fmt(record.before.stop)}</span> بقى{" "}
+            <span className="num">{fmt(record.after.stop)}</span> — مش كسر وقف.
+          </span>
+        </p>
+      ) : record.status === "applied" && record.after ? (
         <p>
           <span className="font-medium">
             {kind} — اتحدّث عدد الأسهم تلقائيًا:{" "}

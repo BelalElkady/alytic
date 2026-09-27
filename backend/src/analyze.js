@@ -15,7 +15,9 @@
  */
 
 import { fetchDailyAuto } from './data/yahoo.js';
-import { getBars } from './data/cache.js';
+import { getBars, cairoToday } from './data/cache.js';
+import { latestEventFor, recordEvent } from './data/corporateEvents.js';
+import { gapEvent, onNewBasis, onOldScale } from './corporateActions.js';
 import { checkQuality } from './data/quality.js';
 import { fetchFundamentals } from './data/tradingview.js';
 import { fetchLatestQuotes } from './data/tv-history.js';
@@ -125,7 +127,8 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
  *   that position's own AI trailing-stop cache.
  */
 export async function analyzeTicker(code, opts = {}) {
-  const { range = '2y', force = false, position = null, capital = null, rules = RULES, style = DEFAULT_STYLE, userId = null } = opts;
+  const { range = '2y', force = false, capital = null, rules = RULES, style = DEFAULT_STYLE, userId = null } = opts;
+  let position = opts.position ?? null;
 
   const meta = lookup(code) ?? { code, ar: code, sector: null, shariah: 'review' };
   // Accept either a pre-fetched Map (batch path) or fetch for this one ticker.
@@ -162,7 +165,10 @@ export async function analyzeTicker(code, opts = {}) {
       error: `تعذر جلب بيانات السعر لهذا السهم: ${err.message}`,
     };
   }
-  const bars = data.bars;
+  // A bonus issue, split or merger: the bars are put on the new share basis
+  // (the feed may not have done it yet — on the day itself it usually
+  // hasn't), so a price that fell by the ratio isn't read as a crash.
+  const { bars, corporateAction } = await rebaseBars(code, data.bars, opts.live);
 
   // Refuse to analyze data we don't trust. Returning a scored verdict on a
   // frozen or delisted series is worse than returning nothing.
@@ -213,7 +219,13 @@ export async function analyzeTicker(code, opts = {}) {
     entryNote = `السهم بعيد ${supportGapPct}% عن أقرب دعم حقيقي (${nearestSupport.price}) — ممتد أوي، استنى تصحيح. أي أمر عند ${r2(nearestSupport.price * 1.005)} غالبًا مش هيتنفذ قريب.`;
   }
 
-  const stopPlanAi = await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, suggestedEntry, style, rules);
+  // Stop plans are cached per session, so on the event day the cached one can
+  // still be on the old basis.
+  const rebaseStop = (plan) =>
+    corporateAction && onOldScale(plan.stop, corporateAction.factor, price)
+      ? { ...plan, stop: r2(plan.stop / corporateAction.factor) }
+      : plan;
+  const stopPlanAi = rebaseStop(await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, suggestedEntry, style, rules));
   const stopPlan = { stop: stopPlanAi.stop, riskPct: r2(((suggestedEntry - stopPlanAi.stop) / suggestedEntry) * 100), basis: stopPlanAi.basis };
   const targets = buildTargets(snapshot, bars, { entry: suggestedEntry, stop: stopPlan.stop }, rules);
 
@@ -221,7 +233,7 @@ export async function analyzeTicker(code, opts = {}) {
   // this is the ratio to judge "should I buy today" by. Priced at market
   // rather than the suggested entry, so it needs its own AI stop call.
   const stopNowAi =
-    price === suggestedEntry ? stopPlanAi : await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, price, style, rules);
+    price === suggestedEntry ? stopPlanAi : rebaseStop(await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, price, style, rules));
   const stopNow = { stop: stopNowAi.stop, riskPct: r2(((price - stopNowAi.stop) / price) * 100) };
   const buyingNow = {
     entry: r2(price),
@@ -260,6 +272,20 @@ export async function analyzeTicker(code, opts = {}) {
   // Likewise the targets: the close-based ones, unless the live price has
   // passed one and a new one had to be set (see below).
   let resultTargets = targets;
+  // A stop or target the User set before the event is still on the old
+  // basis until the portfolio catches up (see corporateActions.js); read it
+  // on the new one so it isn't a false breach.
+  if (corporateAction && position) {
+    const k = corporateAction.factor;
+    const scale = (level) => (onOldScale(level, k, opts.live?.price > 0 ? opts.live.price : price) ? r2(level / k) : level);
+    position = { ...position, stop: position.stop != null ? scale(position.stop) : position.stop, target: position.target != null ? scale(position.target) : position.target };
+    // The holding itself too, until the portfolio check writes it: the same
+    // money in more shares, not a loss by the ratio.
+    if (position.avgCost > 0 && position.shares > 0 && scale(position.avgCost) !== position.avgCost) {
+      position = { ...position, shares: Math.round(position.shares * k), avgCost: (position.shares * position.avgCost) / Math.round(position.shares * k), sharesPendingCorporateAction: true };
+    }
+  }
+
   if (position?.shares > 0 && position.avgCost > 0) {
     // The cached bars stop at the last completed session, so on their own
     // they value a position at a price that can be days old — a recommendation
@@ -277,7 +303,11 @@ export async function analyzeTicker(code, opts = {}) {
             ...snapshot.price,
             dailyClose: closePrice,
             close: livePrice,
-            changePct: opts.live.changePct ?? snapshot.price.changePct,
+            // Against the rebased close: the feed's own change is measured
+            // across the jump on the event day.
+            changePct: corporateAction?.rescaled
+              ? r2(((livePrice - closePrice) / closePrice) * 100)
+              : opts.live.changePct ?? snapshot.price.changePct,
             lastTradePrice: livePrice,
             lastTradeTime: opts.live.time ?? null,
           },
@@ -488,6 +518,40 @@ export async function analyzeTicker(code, opts = {}) {
     },
 
     position: positionState,
+    corporateAction,
+  };
+}
+
+/** Sessions after an event during which the analysis still says it happened. */
+const CORPORATE_ACTION_NOTICE_SESSIONS = 5;
+
+/**
+ * The stock's bars on its current share basis, and the event that moved it
+ * if it's recent. A live quote 30%+ off the last close is recorded as a
+ * suspected event here; the portfolio check (api/server.js) confirms the
+ * ratio with a search and upgrades it.
+ */
+async function rebaseBars(code, bars, live) {
+  let event = await latestEventFor(code).catch(() => null);
+  const gap = gapEvent(code.toUpperCase(), bars, live?.price, cairoToday());
+  if (gap && gap.lastBefore !== event?.lastBefore) {
+    event = await recordEvent(gap).catch(() => gap);
+  }
+  if (!event) return { bars, corporateAction: null };
+  const { bars: rebased, rescaled } = onNewBasis(bars, event);
+  const at = rebased.findIndex((b) => b.date === event.lastBefore);
+  const recent = at >= 0 && rebased.length - 1 - at <= CORPORATE_ACTION_NOTICE_SESSIONS;
+  if (!rescaled && !recent) return { bars: rebased, corporateAction: null };
+  return {
+    bars: rebased,
+    corporateAction: {
+      factor: event.factor,
+      lastBefore: event.lastBefore,
+      status: event.status,
+      kind: event.kind ?? null,
+      summary: event.summary ?? null,
+      rescaled,
+    },
   };
 }
 

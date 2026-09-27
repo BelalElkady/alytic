@@ -38,6 +38,7 @@ const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5
 import { readBars, getBars, cairoToday, cairoDateOf, isTradingDay } from '../data/cache.js';
 import { fetchDailyAuto } from '../data/yahoo.js';
 import { detectCorporateActions, applyCorporateActions, resolveCorporateAction, researchCorporateAction } from '../corporateActions.js';
+import { latestEventFor, recordEvent } from '../data/corporateEvents.js';
 import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
@@ -1651,6 +1652,15 @@ app.get('/api/quotes', wrap(async (req, res) => {
     ? knownCodesFrom(req.query.codes)
     : Object.keys(portfolio.positions);
   const quotes = await fetchLatestQuotes(requested);
+  // On a bonus issue / split / merger day the feed's change can be measured
+  // against the old-basis close: a -63% "day" that is only the share ratio.
+  for (const [code, quote] of quotes) {
+    if (!(Math.abs(quote.changePct ?? 0) >= 30)) continue;
+    const event = await latestEventFor(code).catch(() => null);
+    if (!event || Date.now() - Date.parse(`${event.lastBefore}T00:00:00Z`) > 7 * 86_400_000) continue;
+    const changePct = +(((1 + quote.changePct / 100) * event.factor - 1) * 100).toFixed(2);
+    quotes.set(code, { ...quote, changePct, change: quote.price * (changePct / (100 + changePct)) });
+  }
   res.json({ asOf: new Date().toISOString(), quotes: Object.fromEntries(quotes) });
 }));
 
@@ -1788,6 +1798,11 @@ async function runScan(portfolio, { codes, style, userId, force = false, focus =
     style,
     userId,
   });
+  // A held stock that just jumped by a share ratio: settle the holding now
+  // rather than on the next half-hourly check.
+  if (userId && results.some((r) => r.position && r.corporateAction?.status === 'suspected')) {
+    checkCorporateActionsSoon(userId, portfolio, { now: true });
+  }
   const latestQuotes = await fetchLatestQuotes(results.map((result) => result.code));
 
   // analyzeTicker sizes each stock in isolation — it has no visibility into
@@ -2146,7 +2161,15 @@ async function reconcileCorporateActions(userId) {
           return corporateActionResearch.get(key);
         }
       : null,
+    eventFor: (code) => latestEventFor(code).catch(() => null),
   });
+  // What was confirmed is the stock's, not just this User's: the analysis
+  // rebases everyone's bars with the exact ratio from here on.
+  for (const p of proposals) {
+    if (!(p.confirmedBy === 'research' || p.source === 'prices') || !(p.rawBefore > 0)) continue;
+    await recordEvent({ code: p.code, lastBefore: p.lastBefore, rawBefore: p.rawBefore, factor: p.factor, status: 'confirmed', kind: p.kind, summary: p.summary })
+      .catch((err) => console.warn('[corporate-actions] event save failed:', err.message));
+  }
   if (!proposals.length) return [];
   await withPortfolio(userId, (p) => applyCorporateActions(p, proposals));
   console.log(`[corporate-actions] ${userId}:`, JSON.stringify(proposals.map(({ code, factor, status, confirmedBy }) => ({ code, factor, status, confirmedBy }))));
@@ -2156,14 +2179,22 @@ async function reconcileCorporateActions(userId) {
 // Opening the desk looks again at most every half hour per user, in the
 // background: the answer lands on the next reload, never holding this one up.
 const CORPORATE_ACTION_RECHECK_MS = 30 * 60 * 1000;
+// A scan that sees a fresh jump asks sooner, but not on every scan while a
+// search is still coming up empty.
+const CORPORATE_ACTION_URGENT_RECHECK_MS = 2 * 60 * 1000;
 const corporateActionCheckedAt = new Map();
-function checkCorporateActionsSoon(userId, portfolio) {
+const corporateActionRunning = new Set();
+function checkCorporateActionsSoon(userId, portfolio, { now = false } = {}) {
   if (!Object.keys(portfolio.positions ?? {}).length) return;
   const key = `${currentTenant()?.id ?? ''}:${userId}`;
   const last = corporateActionCheckedAt.get(key);
-  if (last && Date.now() - last < CORPORATE_ACTION_RECHECK_MS) return;
+  if (corporateActionRunning.has(key)) return;
+  if (last && Date.now() - last < (now ? CORPORATE_ACTION_URGENT_RECHECK_MS : CORPORATE_ACTION_RECHECK_MS)) return;
   corporateActionCheckedAt.set(key, Date.now());
-  reconcileCorporateActions(userId).catch((err) => console.warn('[corporate-actions] check failed:', err.message));
+  corporateActionRunning.add(key);
+  reconcileCorporateActions(userId)
+    .catch((err) => console.warn('[corporate-actions] check failed:', err.message))
+    .finally(() => corporateActionRunning.delete(key));
 }
 
 app.post('/api/portfolio/corporate-action', wrap(async (req, res) => {
