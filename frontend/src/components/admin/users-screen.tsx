@@ -1,11 +1,13 @@
 // The admin users screen: a stats strip whose Renewal status chips double as the filter, then a slim table
-// (Identity · phone · Renewal · activity · capital · style) where a row opens a drawer (bottom sheet on phone)
-// with everything else, including every editor. Designed on map #26 (decisions in #27, #28, #29, #40).
+// (Identity · phone · Renewal · activity · capital · style · follow-up) where a row opens a drawer (bottom
+// sheet on phone) with everything else, including every editor. The two follow-up boxes (WhatsApp, email) are
+// the admin's own checklist and get their own filter chips. Designed on map #26 (decisions in #27, #28, #29, #40).
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { arDay, exact, int, signed, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -41,6 +43,8 @@ type Props = {
   controls: ReactNode;
   readOnly: boolean;
   onChanged: () => void;
+  /** Ticks or clears one follow-up box; resolves once saved (or once the failure has been shown). */
+  onFollowUp: (row: AdminUserRow, channel: FollowUpChannel, done: boolean) => Promise<void>;
   editors: UsersScreenEditors;
   systemUserId: string;
 };
@@ -162,6 +166,86 @@ function Style({ row }: { row: AdminUserRow }) {
   );
 }
 
+// ---------- follow-up ----------
+
+export type FollowUpChannel = "whatsapp" | "email";
+
+const CHANNEL_LABEL: Record<FollowUpChannel, string> = { whatsapp: "واتساب", email: "إيميل" };
+const followedAt = (row: AdminUserRow, channel: FollowUpChannel) =>
+  channel === "whatsapp" ? row.followUp.whatsappAt : row.followUp.emailAt;
+
+type FollowUpFilter = "all" | "none" | "any" | "whatsapp_done" | "whatsapp_pending" | "email_done" | "email_pending";
+
+const FOLLOW_UP_CHIPS: { key: FollowUpFilter; label: string; match: (row: AdminUserRow) => boolean }[] = [
+  { key: "all", label: "الكل", match: () => true },
+  { key: "none", label: "لم يُتابَع بعد", match: (r) => !r.followUp.whatsappAt && !r.followUp.emailAt },
+  { key: "any", label: "تمت متابعته", match: (r) => !!r.followUp.whatsappAt || !!r.followUp.emailAt },
+  { key: "whatsapp_pending", label: "ناقص واتساب", match: (r) => !r.followUp.whatsappAt },
+  { key: "whatsapp_done", label: "تم على واتساب", match: (r) => !!r.followUp.whatsappAt },
+  { key: "email_pending", label: "ناقص إيميل", match: (r) => !r.followUp.emailAt },
+  { key: "email_done", label: "تم على الإيميل", match: (r) => !!r.followUp.emailAt },
+];
+
+/**
+ * One follow-up box. Shows the new state while the save is in flight so a
+ * click feels instant; the cell swallows the click so ticking doesn't open the drawer.
+ */
+function FollowUpBox({ row, channel, p }: { row: AdminUserRow; channel: FollowUpChannel; p: Props }) {
+  const [pending, setPending] = useState<boolean | null>(null);
+  const at = followedAt(row, channel);
+  const checked = pending ?? !!at;
+  const toggle = async (next: boolean) => {
+    setPending(next);
+    try {
+      await p.onFollowUp(row, channel, next);
+    } finally {
+      setPending(null);
+    }
+  };
+  return (
+    <div
+      className="flex items-center justify-center"
+      onClick={(event) => event.stopPropagation()}
+      title={at ? `${CHANNEL_LABEL[channel]} · ${fullTime(at)}` : `لم تتم المتابعة على ${CHANNEL_LABEL[channel]}`}
+    >
+      <Checkbox
+        checked={checked}
+        disabled={p.readOnly || pending !== null}
+        onCheckedChange={(value) => void toggle(value === true)}
+        aria-label={`متابعة ${row.name || row.email} على ${CHANNEL_LABEL[channel]}`}
+        className="size-5"
+      />
+    </div>
+  );
+}
+
+function FollowUpChips({
+  rows,
+  filter,
+  onFilter,
+}: {
+  rows: AdminUserRow[];
+  filter: FollowUpFilter;
+  onFilter: (key: FollowUpFilter) => void;
+}) {
+  return (
+    <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 whitespace-nowrap">
+      <span className="shrink-0 text-[12px] text-muted-foreground">المتابعة:</span>
+      {FOLLOW_UP_CHIPS.map((c) => (
+        <Button
+          key={c.key}
+          size="sm"
+          variant={filter === c.key ? "default" : "outline"}
+          className="tabular-nums shrink-0 rounded-full"
+          onClick={() => onFilter(c.key)}
+        >
+          {c.label} <span className="font-semibold">{int(rows.filter(c.match).length)}</span>
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 // ---------- drawer ----------
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -192,6 +276,17 @@ function Detail({ row, p }: { row: AdminUserRow; p: Props }) {
         <E.History row={row} />
       </Section>
       <Section title="التواصل">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+          {(["whatsapp", "email"] as const).map((channel) => (
+            <label key={channel} className="flex items-center gap-2">
+              <FollowUpBox row={row} channel={channel} p={p} />
+              تمت المتابعة على {CHANNEL_LABEL[channel]}
+              {followedAt(row, channel) && (
+                <span className="text-[12px] text-muted-foreground">({fullTime(followedAt(row, channel))})</span>
+              )}
+            </label>
+          ))}
+        </div>
         <dl className="tabular-nums grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
           <dt className="text-muted-foreground">البريد</dt>
           <dd className="truncate">{row.email}</dd>
@@ -353,8 +448,8 @@ const ROW_TINT: Record<RenewalStatus, string> = {
 };
 
 /**
- * Slim table — 6 columns on desktop, 4 on phone (phone and activity stay
- * desktop-only; capital and style show on both), scrolling sideways on a
+ * Slim table — 8 columns on desktop, 6 on phone (phone and activity stay
+ * desktop-only; capital, style and the two follow-up boxes show on both), scrolling sideways on a
  * narrow screen instead of squeezing the columns — a row opens the drawer, a
  * bottom sheet on phone. The drawer looks its row up in `allRows`, not the Renewal-filtered
  * `p.rows`: an action that changes the selected row's status (e.g.
@@ -368,7 +463,7 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
   return (
     <>
       <div className="scrollbar-slim overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-muted/40 text-[12px] text-muted-foreground">
             <tr>
               <th className="p-3 text-start font-medium">المستخدم</th>
@@ -377,6 +472,8 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
               <th className="hidden p-3 text-start font-medium sm:table-cell">النشاط</th>
               <th className="p-3 text-start font-medium">رأس المال</th>
               <th className="p-3 text-start font-medium">الأسلوب</th>
+              <th className="p-3 text-center font-medium">واتساب</th>
+              <th className="p-3 text-center font-medium">إيميل</th>
             </tr>
           </thead>
           <tbody>
@@ -409,6 +506,12 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
                 <td className="p-3">
                   <Style row={row} />
                 </td>
+                <td className="p-3">
+                  <FollowUpBox row={row} channel="whatsapp" p={p} />
+                </td>
+                <td className="p-3">
+                  <FollowUpBox row={row} channel="email" p={p} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -435,12 +538,18 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
 
 export function UsersScreen(props: Props) {
   const [chip, setChip] = useState<"all" | RenewalStatus>("all");
+  const [followUp, setFollowUp] = useState<FollowUpFilter>("all");
   const counts = { all: props.rows.length, active: 0, expired: 0, trial: 0, never: 0 };
   for (const row of props.rows) counts[renewalStatus(row)] += 1;
-  const p = { ...props, rows: chip === "all" ? props.rows : props.rows.filter((row) => renewalStatus(row) === chip) };
+  // The follow-up chips count within the selected Renewal status, so "ناقص واتساب" under
+  // "تجربة" reads as "trial users still to message".
+  const byRenewal = chip === "all" ? props.rows : props.rows.filter((row) => renewalStatus(row) === chip);
+  const followUpMatch = FOLLOW_UP_CHIPS.find((c) => c.key === followUp)!.match;
+  const p = { ...props, rows: byRenewal.filter(followUpMatch) };
   return (
     <div className="space-y-4">
       <StatsStrip p={p} counts={counts} chip={chip} onChip={setChip} />
+      <FollowUpChips rows={byRenewal} filter={followUp} onFilter={setFollowUp} />
       {p.controls}
       <div className="text-[12px] text-muted-foreground">
         {p.rows.length} من {p.totalCount} مستخدم

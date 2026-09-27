@@ -20,7 +20,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -1108,14 +1108,19 @@ app.get('/api/admin/online', wrap(async (req, res) => {
   res.json({ signedIn, visitors, windowSeconds: PRESENCE_WINDOW_MS / 1000, asOf: new Date(now).toISOString() });
 }));
 
+/** A user_follow_ups row as the admin users table reads it: when each channel was ticked, null if not yet. */
+const followUpOf = (row) => ({ whatsappAt: row?.whatsapp_at ?? null, emailAt: row?.email_at ?? null });
+
 app.get('/api/admin/users', wrap(async (req, res) => {
-  const [users, portfolios, subscriptions] = await Promise.all([
+  const [users, portfolios, subscriptions, followUps] = await Promise.all([
     getAllUsers(),
     getAllPortfolios(),
     getAllSubscriptions(),
+    getAllFollowUps(),
   ]);
   const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
+  const followUpByUser = new Map(followUps.map((row) => [row.user_id, row]));
 
   const rows = users.map((u) => {
     const pf = portfolioByUser.get(u.id);
@@ -1146,6 +1151,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       trialActive: trial.trialActive,
       trialEndsAt: trial.trialEndsAt.toISOString(),
       tier,
+      followUp: followUpOf(followUpByUser.get(u.id)),
       subscription: subscription && {
         plan: subscription.plan,
         tier: subscription.tier,
@@ -1316,6 +1322,19 @@ app.delete('/api/admin/users/:id', wrap(async (req, res) => {
   await removeSupportImagesFor(target.id);
   await deleteUser(target.id);
   res.json({ ok: true });
+}));
+
+// Ticks or clears one box of the admin's follow-up checklist in the users
+// table — "reached on WhatsApp" / "reached by email". Body: { channel:
+// 'whatsapp' | 'email', done: boolean }. Admins only: it isn't in
+// MARKETER_READS, so a marketer sees the boxes but can't change them.
+app.post('/api/admin/users/:id/follow-up', wrap(async (req, res) => {
+  const channel = String(req.body?.channel ?? '');
+  if (!FOLLOW_UP_CHANNELS.includes(channel)) return res.status(400).json({ error: 'القناة لازم تكون واتساب أو إيميل' });
+  if (typeof req.body?.done !== 'boolean') return res.status(400).json({ error: 'done لازم يكون true أو false' });
+  if (!(await getUserById(req.params.id))) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  const row = await setUserFollowUp(req.params.id, channel, req.body.done, req.user.id);
+  res.json({ ok: true, followUp: followUpOf(row) });
 }));
 
 // Sets a user's role from the users table: 'admin' (everything in this panel),

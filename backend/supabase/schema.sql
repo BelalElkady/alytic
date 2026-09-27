@@ -290,6 +290,19 @@ create table if not exists credits_grants (
 );
 create index if not exists idx_credits_grants_user on credits_grants (user_id, created_at desc);
 
+-- The admin's own follow-up checklist in the users table: whether someone on
+-- the team has already reached this user on WhatsApp and/or by email (e.g.
+-- about an ending trial). One row per user, a null timestamp meaning "not yet".
+-- updated_by is a plain id, not a reference, so deleting the admin who ticked
+-- a box never has to touch this table.
+create table if not exists user_follow_ups (
+  user_id text primary key references users(id) on delete cascade,
+  whatsapp_at timestamptz,
+  email_at timestamptz,
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+
 -- The in-app support chat. One thread per user (there is nothing to key a
 -- second conversation on), so a "thread" is just every row sharing a user_id
 -- read in created_at order. This is the subscription path as well as support:
