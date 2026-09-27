@@ -35,12 +35,14 @@ import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } 
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars, getBars, cairoToday, cairoDateOf, isTradingDay, tradingHalted } from '../data/cache.js';
+import { readBars, getBars, cairoToday, cairoDateOf, isTradingDay, tradingHalted, egxSessionOpen } from '../data/cache.js';
 import { fetchDailyAuto } from '../data/yahoo.js';
 import { detectCorporateActions, applyCorporateActions, resolveCorporateAction, researchCorporateAction } from '../corporateActions.js';
 import { latestEventFor, recordEvent } from '../data/corporateEvents.js';
 import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
+import { fetchFundamentals } from '../data/tradingview.js';
+import { fetchLiveQuotes, liveQuoteStatus } from '../data/live-quotes.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
@@ -823,16 +825,9 @@ app.get('/api/universe', (_req, res) => {
 });
 
 // EGX trades 10:00-14:30 Cairo time, Sunday-Thursday, minus bank holidays —
-// isTradingDay already carries that (see src/config/holidays.js), so this
-// just adds the intraday clock check on top of it.
+// see egxSessionOpen in src/data/cache.js.
 app.get('/api/market-status', (_req, res) => {
-  const today = cairoToday();
-  const [hour, minute] = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date()).split(':').map(Number);
-  const minutesNow = hour * 60 + minute;
-  const open = isTradingDay(today) && minutesNow >= 10 * 60 && minutesNow < 14 * 60 + 30;
-  res.json({ open, asOf: today });
+  res.json({ open: egxSessionOpen(), asOf: cairoToday() });
 });
 
 // Membership lists for EGX's four headline indices, so the market scan can be
@@ -924,6 +919,15 @@ app.use('/api/platform', (req, res, next) => {
   next();
 });
 mountPlatformRoutes(app, { wrap });
+
+// How subscribers' live prices are doing: oanor on or off, quota used this
+// period, whether they've silently fallen back to TradingView and why. The
+// fallback never reaches Users or the server log; this is the only place it
+// shows. Platform admins only, like the rest of /api/platform: one oanor key
+// and one bill for every site.
+app.get('/api/platform/live-prices', wrap(async (_req, res) => {
+  res.json(await liveQuoteStatus());
+}));
 
 const TICKER_HEADERS = ['TICKER', 'CODE', 'SYMBOL', 'REUTERS CODE', 'RIC'];
 const NAME_HEADERS = ['COMPANY NAME', 'NAME', 'COMPANY'];
@@ -1651,7 +1655,8 @@ app.get('/api/quotes', wrap(async (req, res) => {
   const requested = req.query.codes
     ? knownCodesFrom(req.query.codes)
     : Object.keys(portfolio.positions);
-  const quotes = await fetchLatestQuotes(requested);
+  // oanor for subscribers, TradingView for everyone else — see data/live-quotes.js.
+  const quotes = await fetchLiveQuotes(requested, { subscribed: req.access?.subscriptionActive, userId: req.user.id });
   // On a bonus issue / split / merger day the feed's change can be measured
   // against the old-basis close: a -63% "day" that is only the share ratio.
   for (const [code, quote] of quotes) {
@@ -1761,6 +1766,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     codes,
     style,
     userId: req.user.id,
+    subscribed: req.access?.subscriptionActive,
     force: req.query.force === '1',
     focus: req.query.focus,
     cashScansLeftNow,
@@ -1776,7 +1782,7 @@ app.get('/api/scan', wrap(async (req, res) => {
  * exactly the plan the dialog shows. Returns the response payload plus the
  * full analyses its compact rows were cut from.
  */
-async function runScan(portfolio, { codes, style, userId, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
+async function runScan(portfolio, { codes, style, userId, subscribed = false, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
   // A cash plan has to see the whole book, even holdings outside the index
   // being browsed: the sector limits it sizes against and the AI cash review
   // both depend on every position, not just the ones in that index.
@@ -1786,9 +1792,21 @@ async function runScan(portfolio, { codes, style, userId, force = false, focus =
   // inputs, exactly like every other `rules` param it already accepts.
   const rules = style ? rulesForStyle(RULES, style) : RULES;
   const capital = capitalOf(portfolio) || 1_000_000;
+  // Held positions are priced from the same source as this user's desk ticker
+  // (oanor when subscribed), fetched here rather than inside analyzeMany so
+  // the engine stays unaware of who's asking. Background runs pass no
+  // `subscribed` and stay on TradingView, spending none of oanor's quota.
+  // Fetched alongside the fundamentals, as analyzeMany itself did before.
+  const heldCodes = codes.filter((code) => portfolio.positions[code.toUpperCase()]);
+  const [heldQuotes, fundamentals] = await Promise.all([
+    heldCodes.length ? fetchLiveQuotes(heldCodes, { subscribed, userId }).catch(() => new Map()) : new Map(),
+    fetchFundamentals(),
+  ]);
   const { results, errors } = await analyzeMany(codes, {
     capital,
     positions: portfolio.positions,
+    liveQuotes: heldQuotes,
+    fundamentals,
     // AI-backed now (see agent/stopPlanner.js) — lowered from the old
     // pure-math default (was 5) to match REVIEW_CONCURRENCY elsewhere, so a
     // whole-universe scan on a cold cache doesn't fire dozens of simultaneous
@@ -1804,7 +1822,10 @@ async function runScan(portfolio, { codes, style, userId, force = false, focus =
   if (userId && results.some((r) => r.position && r.corporateAction?.status === 'suspected')) {
     checkCorporateActionsSoon(userId, portfolio, { now: true });
   }
-  const latestQuotes = await fetchLatestQuotes(results.map((result) => result.code));
+  // Held codes reuse heldQuotes, so a position's P&L and the price shown
+  // beside it never come from two different feeds.
+  const otherCodes = results.map((result) => result.code).filter((code) => !heldQuotes.has(code));
+  const latestQuotes = new Map([...(await fetchLatestQuotes(otherCodes)), ...heldQuotes]);
 
   // analyzeTicker sizes each stock in isolation — it has no visibility into
   // sibling results, so it always sizes as if the sector were untouched. Once

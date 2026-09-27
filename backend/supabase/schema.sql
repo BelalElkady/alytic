@@ -198,6 +198,21 @@ create table if not exists fundamentals_cache (
   fetched_at timestamptz not null default now()
 );
 
+-- How many oanor calls this billing period has used, and whether subscribers
+-- have rolled back to TradingView for the rest of it (see
+-- src/data/live-quote-pool.js and docs/adr/0001). Kept here, not in memory,
+-- so a redeploy mid-period doesn't reset the count and overspend the quota.
+-- One row per period, keyed by its first day. Platform-wide: every site
+-- shares the one oanor key.
+create table if not exists oanor_usage (
+  period_start date primary key,
+  calls integer not null default 0,
+  quota integer,
+  rollback_reason text check (rollback_reason in ('count', 'oanor')),
+  exhausted_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
 -- A user's paid access. There is no payment gateway: the user sends the fee
 -- over InstaPay and an admin activates the account from the admin panel, so
 -- this row is written by a human action, never by a callback. One row per

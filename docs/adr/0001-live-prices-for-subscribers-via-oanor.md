@@ -34,7 +34,8 @@ The callers decide whether a User is subscribed. The module and `analyzeMany` ne
 - **`/api/quotes`** calls `fetchLiveQuotes(requested, { subscribed })` where it calls `fetchLatestQuotes(requested)` today.
 - **`/api/scan`** fetches the quotes for held codes in the handler, then passes them into `analyzeMany` as `opts.liveQuotes`. `analyzeMany` already accepts that option and skips its own fetch when given one. This keeps `analyzeMany` free of any per-User pricing rule, and the admin rebuild and `snapshotForUser` keep calling it unchanged.
 - **The second quote fetch in `/api/scan` must use the same map.** After `analyzeMany`, the handler fetches `latestQuotes` for every scanned code to display prices. For held codes it must reuse the map passed to `analyzeMany`. Otherwise a subscriber sees the oanor price in the P&L and the TradingView price beside it. Codes the User doesn't hold stay on TradingView: #41 rules out live repricing of the whole universe.
-- **Admins stay on TradingView.** `subscriptionActive` is false for exempt accounts (admin, marketer, local), and #41 counts only `subscriptionActive` as subscribed. Testing oanor therefore needs the allowlist described under *Rollout*.
+- **Only subscribers, and only during the session.** oanor is called only when both hold: the User's Subscription is active (`subscriptionActive`), and EGX is in session, 10:00–14:30 Cairo time on a trading day (`egxSessionOpen`). Everyone else, and everyone outside the session, gets TradingView. Any stock TradingView doesn't quote keeps its last daily close from the synced bars (Yahoo or TradingView history). Yahoo has no reliable live EGX quote to add.
+- **Admins stay on TradingView.** `subscriptionActive` is false for exempt accounts (admin, marketer, local), and #41 counts only `subscriptionActive` as subscribed. The allowlist doesn't change that (see *Rollout*): to try oanor, the owner's account needs an active Subscription, which an Admin can grant from the admin panel.
 - **These call sites stay on TradingView:**
   - `/api/indices/performance`, which prices indices, not Positions.
   - `currentPrices`, which values the cash-flow record.
@@ -51,9 +52,9 @@ Fallback happens per code, not per call. For a subscriber, `fetchLiveQuotes` doe
 
 1. It asks oanor for the codes. The call has a hard **4 s timeout**, so a slow oanor never stalls a 20 s poll.
 2. Any code that oanor didn't return goes to `fetchLatestQuotes` in the same cycle. This covers an error, a 402 or 429, a timeout, or a code missing from a successful response. The two maps are then merged.
-3. Each quote carries `source: 'oanor' | 'tv'`. The API response doesn't expose it (the fallback is silent to the User). It exists for logging and for measuring the rollout.
+3. Quotes keep the exact shape `fetchLatestQuotes` returns, so nothing in the API response shows which feed answered (the fallback is silent to the User). The pool counts instead: quotes served by oanor, quotes that fell back, cache hits and calls. Those counters are what the rollout measures.
 
-**Circuit breaker for short failures.** A per-minute rate limit (429), a 5xx or a timeout from oanor opens a process-wide breaker for **60 s**. While it is open, subscribers go straight to TradingView, so a struggling oanor isn't hit again by every poll. The first failure that opens it is logged once at warn level. The User sees nothing, but the operator does.
+**Circuit breaker for short failures.** A per-minute rate limit (429), a 5xx or a timeout from oanor opens a process-wide breaker for **60 s**. While it is open, subscribers go straight to TradingView, so a struggling oanor isn't hit again by every poll. The first failure that opens it is recorded for the admin panel (see *Where the admin sees it*). Nothing is logged.
 
 **Rollback to TradingView when the quota runs out.** When oanor's call quota for the billing period is used up, every subscriber goes back to TradingView **until the quota resets**, not for 60 s. Re-trying every minute would only collect more refusals for the rest of the period. The rollback is triggered two ways:
 
@@ -63,11 +64,23 @@ Fallback happens per code, not per call. For a subscriber, `fetchLiveQuotes` doe
 The rollback:
 
 - **Is silent to Users.** Subscribers keep getting prices, 15 minutes delayed, exactly as when oanor fails for a single poll.
-- **Is loud to the operator.** It logs an error once when it starts, with calls used against the quota and the reset date. It sends the same alert to the Admin by email through the existing `email.js`. The quota is the one oanor failure that needs a human, to upgrade the tier or wait.
-- **Ends on its own.** On the plan's reset date (the start of the next billing period) the pool resets its counter and tries oanor again. A successful call clears the rollback. Raising `OANOR_MONTHLY_QUOTA` after an upgrade also clears it without waiting.
+- **Shows only in the admin panel.** No server log line and no email: the admin learns of it from the live-prices tab, which leads with the rollback, its reason, calls used against the quota and the reset date, and puts a red dot on the tab's name. The quota is the one oanor failure that needs a human, to upgrade the tier or wait.
+- **Ends on its own.** On the plan's reset date the pool starts a fresh counter and tries oanor again. The reset date comes from `OANOR_BILLING_DAY`, the day of the month the plan renews (default 1). A successful call clears the rollback. Raising `OANOR_MONTHLY_QUOTA` after an upgrade also clears it without waiting.
 - **Survives a restart.** The call count and the rollback state are stored, not kept only in memory, so a redeploy mid-month doesn't wipe the count and overspend the quota again.
 
-**Timestamps.** oanor exposes no per-quote timestamp (a caveat from #44), so its quotes return `time: null`. This is safe: `store.tsx` stores it as `lastTradeTime` but never displays or compares it. Don't invent a timestamp from the time the request was made.
+**Timestamps.** oanor exposes no per-quote timestamp (a caveat from #44), but the quote's `time` matters: `tradingHalted` reads it to spot a suspended or halted stock, and a halted stock gets no stop breach and no recommendation. So for subscribers TradingView is fetched alongside oanor, in the same call a non-subscriber makes anyway. The quote is oanor's price with TradingView's last-trade `time`, and suspension detection works the same on both tiers. When TradingView has no time for a code, `time` stays null. Never invent one from the time the request was made.
+
+### Where the admin sees it
+
+Falling back is silent twice over: Users never see it, and nothing about it goes to the server log or out by email. The only place it shows is a **"الأسعار اللحظية" tab in the admin panel**, for platform admins only, since one oanor key and one bill serve every site. The tab shows:
+
+- **The current state:** oanor off (and why), healthy, paused after an error (until when), or rolled back for the quota (why, since when, until the reset).
+- **The period's calls** against `OANOR_MONTHLY_QUOTA` and the 95 % stop.
+- **Counters** since the server started.
+- **The last 50 events.**
+- **The price-gap table** while `OANOR_COMPARE=1`.
+
+A red dot on the tab's name marks a pause or a rollback, so the admin notices without opening it. The rollback itself is stored, so the tab still shows it after a restart. The events and counters are kept in memory and start over after a restart.
 
 ### 3. Batching
 
@@ -101,7 +114,21 @@ For comparison, without batching a subscriber with *n* Positions costs ⌈n / 20
 
 **Rule:** commit to the smallest tier whose monthly quota is at least **1.5 ×** the measured volume, and whose per-minute limit covers the measured peak. The margin covers growth and the days when every subscriber is on the desk. Scans add close to nothing, because they read the same 15 s cache.
 
-**Inputs still needed:** oanor's current quota and price for each tier, and D as measured during the free-tier stage below. The active-subscriber count and Positions per subscriber only bound D, so D is the number that matters.
+**oanor's plans** (from its API docs):
+
+| Plan | Price | Calls per month | Requests per second |
+|---|---|---|---|
+| Free | free | 12,200 | 2 |
+| Basic | $24/mo | 263,000 | 10 |
+| Pro | $66/mo | 1,420,000 | 20 |
+| Scale | $145/mo | 7,520,000 | 50 |
+
+**What that means:**
+- **Free runs out.** It covers well under a month at even the smallest D: ⌈D/20⌉ = 1 already needs about 17,000 calls. It suits the allowlist week, and expect it to roll back partway through, which also exercises the rollback.
+- **Basic covers every case.** Even the whole-universe worst case (D = 235, about 204,000 calls) fits, and D ≤ 200 fits with the 1.5 × margin. Its 10 req/s covers the peak of 12 calls per 15 s.
+- **So the recommendation is Basic**, confirmed by the D measured in the allowlist week. Pro only makes sense if the poll ever gets faster than 20 s.
+
+The pool spaces call starts to `OANOR_RATE_PER_SEC` (2 by default, matching Free), so a batch of several chunks never trips the per-second limit.
 
 ### 5. Rollout
 
@@ -109,11 +136,11 @@ Start on the Free tier, behind a flag:
 
 1. **Build it off by default.**
    - `OANOR_ENABLED` is unset, so everyone gets TradingView and nothing changes.
-   - `OANOR_API_KEY` and `OANOR_MONTHLY_QUOTA` join `.env.example` next to `OPENROUTER_API_KEY` and `RESEND_API_KEY`.
+   - `OANOR_API_KEY`, `OANOR_MONTHLY_QUOTA`, `OANOR_BILLING_DAY`, `OANOR_USER_IDS` and `OANOR_COMPARE` join `.env.example` next to `OPENROUTER_API_KEY` and `RESEND_API_KEY`.
 2. **Allowlist stage, one trading week on the Free tier.**
    - Set `OANOR_ENABLED=1` and `OANOR_USER_IDS=<owner's test account>`.
-   - The allowlist also lets an exempt admin account in for testing.
-   - Log each oanor call's code count, the cache hit rate, the fallback count, and, per code, the gap between oanor's price and TradingView's.
+   - The allowlist only narrows the subscribers who get oanor; it never lets a non-subscriber in. The owner's test account therefore needs an active Subscription (grant one from the admin panel).
+   - Read the live-prices tab: oanor calls, the cache hit rate, the fallback count, and, per code, the gap between oanor's price and TradingView's. The gap needs a TradingView fetch alongside each oanor batch, so it only runs with `OANOR_COMPARE=1`: on for this week, off afterwards.
 3. **Decide.** Use the week's D, peak rate and fallback rate to pick the tier with the rule above. A fallback rate high enough that subscribers mostly see TradingView prices anyway is a reason to stop.
 4. **Open to all subscribers.** Drop the allowlist so every User with an active Subscription is eligible.
 5. **Kill switch.** Unset `OANOR_ENABLED` to put everyone back on TradingView without a deploy.
@@ -125,5 +152,5 @@ Set `OANOR_MONTHLY_QUOTA` from the first stage onward, to the Free tier's allowa
 - Subscribers see prices about 15 minutes fresher at the desk and in their scans. A 20 s poll can't show sub-20 s freshness, but the gain over the delayed feed is the point.
 - Cost scales with distinct held codes, which is capped, instead of with subscribers, which isn't. The trade-off is up to 15 s of staleness from the shared cache, well inside the 20 s poll.
 - One new moving part: the pool, the circuit breaker and the quota counter in `live-quotes.js`. Every other caller stays on the existing scrape and keeps working if oanor disappears.
-- An exhausted quota costs subscribers freshness for the rest of the billing period, but never their prices, and never an overage bill. The Admin email is how someone finds out and decides whether to upgrade.
-- oanor's lack of timestamps means its freshness can't be proven quote by quote. The rollout's price-gap log is the ongoing evidence #44 asked for.
+- An exhausted quota costs subscribers freshness for the rest of the billing period, but never their prices, and never an overage bill. The admin panel's live-prices tab is how someone finds out and decides whether to upgrade.
+- oanor's lack of timestamps means its freshness can't be proven quote by quote. The rollout's price-gap table is the ongoing evidence #44 asked for.
