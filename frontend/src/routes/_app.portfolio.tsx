@@ -596,12 +596,52 @@ type CorporateActionRecord = {
   dismissedAt?: string;
 };
 
-/** Applied notices stay on the card this long unless dismissed. */
-const CORPORATE_ACTION_SHOW_DAYS = 14;
+/** EGX's session closes at 14:30 Cairo, Sunday to Thursday. */
+const SESSION_CLOSE_MINUTE = 14 * 60 + 30;
+const cairoParts = (ms: number) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Cairo",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(ms);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    day: cairoDay(ms),
+    weekday: get("weekday"),
+    minute: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+};
+const isSessionDay = (weekday: string) => weekday !== "Fri" && weekday !== "Sat";
+
+/**
+ * An applied notice is news for the session it lands in: it stays on the card
+ * until that session closes — the first 14:30 Cairo close on a trading day
+ * after it was applied — unless the user presses "تمام" before then.
+ */
+function appliedNoticeExpired(at: string, now = Date.now()): boolean {
+  const appliedAt = Date.parse(at);
+  if (!Number.isFinite(appliedAt)) return true;
+  const applied = cairoParts(appliedAt);
+  let closeDay = applied.day;
+  if (!isSessionDay(applied.weekday) || applied.minute >= SESSION_CLOSE_MINUTE) {
+    // Walk forward a day at a time (from noon, clear of any DST shift) to the next trading day.
+    let probe = Date.parse(`${applied.day}T12:00:00Z`);
+    do {
+      probe += 86_400_000;
+    } while (!isSessionDay(cairoParts(probe).weekday));
+    closeDay = cairoDay(probe);
+  }
+  const current = cairoParts(now);
+  return (
+    current.day > closeDay || (current.day === closeDay && current.minute >= SESSION_CLOSE_MINUTE)
+  );
+}
 
 /**
  * A bonus issue, split or merger the backend found on this holding (see
- * backend/src/corporateActions.js): what it changed, with an undo — or, when
+ * backend/src/corporateActions.js): what it changed — or, when
  * the ratio couldn't be confirmed, the suggested numbers to apply by hand.
  */
 function CorporateActionNotice({ code }: { code: string }) {
@@ -614,13 +654,11 @@ function CorporateActionNotice({ code }: { code: string }) {
       (r) =>
         r.code === code &&
         !r.dismissedAt &&
-        (r.status === "pending" ||
-          (r.status === "applied" &&
-            Date.now() - Date.parse(r.at) < CORPORATE_ACTION_SHOW_DAYS * 86_400_000)),
+        (r.status === "pending" || (r.status === "applied" && !appliedNoticeExpired(r.at))),
     );
   if (!record) return null;
 
-  const act = async (action: "undo" | "apply" | "dismiss", done: string) => {
+  const act = async (action: "apply" | "dismiss", done: string) => {
     setBusy(true);
     try {
       await post("/api/portfolio/corporate-action", {
@@ -641,6 +679,11 @@ function CorporateActionNotice({ code }: { code: string }) {
   const ratio = Number(record.factor).toLocaleString("en-US", { maximumFractionDigits: 6 });
   const suggestedShares = Math.max(1, Math.round(record.before.shares * record.factor));
   const stop = (e: SyntheticEvent) => e.stopPropagation();
+  // An applied change is already done; the notice just says what happened.
+  const showSource =
+    record.status !== "applied" &&
+    record.sourceUrl != null &&
+    /^https?:\/\//.test(record.sourceUrl);
 
   return (
     <div
@@ -696,7 +739,7 @@ function CorporateActionNotice({ code }: { code: string }) {
         </p>
       )}
       <div className="mt-2 flex flex-wrap justify-end gap-2">
-        {record.sourceUrl && /^https?:\/\//.test(record.sourceUrl) && (
+        {showSource && record.sourceUrl && (
           <a
             href={record.sourceUrl}
             target="_blank"
@@ -706,26 +749,15 @@ function CorporateActionNotice({ code }: { code: string }) {
             المصدر
           </a>
         )}
-        {record.status === "applied" ? (
+        {record.status !== "applied" && record.kind !== "rights" && (
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             disabled={busy}
-            onClick={() => act("undo", "رجّعنا العدد زي ما كان")}
+            onClick={() => act("apply", "اتحدّث عدد الأسهم")}
           >
-            تراجع
+            حدّث العدد
           </Button>
-        ) : (
-          record.kind !== "rights" && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => act("apply", "اتحدّث عدد الأسهم")}
-            >
-              حدّث العدد
-            </Button>
-          )
         )}
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => act("dismiss", "تمام")}>
           {record.status === "applied" ? "تمام" : "تجاهل"}
