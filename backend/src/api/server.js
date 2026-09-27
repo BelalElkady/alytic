@@ -18,15 +18,15 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
-import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
+import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
-import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow } from '../portfolio.js';
-import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/clientOpenRouter.js';
+import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict } from '../portfolio.js';
+import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
 // change for the text-analysis path can never silently redirect vision too.
@@ -35,7 +35,10 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars, cairoToday, cairoDateOf, isTradingDay, egxSessionOpen } from '../data/cache.js';
+import { readBars, getBars, cairoToday, cairoDateOf, isTradingDay, tradingHalted, egxSessionOpen } from '../data/cache.js';
+import { fetchDailyAuto } from '../data/yahoo.js';
+import { detectCorporateActions, applyCorporateActions, resolveCorporateAction, researchCorporateAction } from '../corporateActions.js';
+import { latestEventFor, recordEvent } from '../data/corporateEvents.js';
 import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { fetchFundamentals } from '../data/tradingview.js';
@@ -1654,6 +1657,16 @@ app.get('/api/quotes', wrap(async (req, res) => {
     : Object.keys(portfolio.positions);
   // oanor for subscribers, TradingView for everyone else — see data/live-quotes.js.
   const quotes = await fetchLiveQuotes(requested, { subscribed: req.access?.subscriptionActive, userId: req.user.id });
+  // On a bonus issue / split / merger day the feed's change can be measured
+  // against the old-basis close: a -63% "day" that is only the share ratio.
+  for (const [code, quote] of quotes) {
+    if (!(Math.abs(quote.changePct ?? 0) >= 30)) continue;
+    const event = await latestEventFor(code).catch(() => null);
+    if (!event || Date.now() - Date.parse(`${event.lastBefore}T00:00:00Z`) > 7 * 86_400_000) continue;
+    const changePct = +(((1 + quote.changePct / 100) * event.factor - 1) * 100).toFixed(2);
+    quotes.set(code, { ...quote, changePct, change: quote.price * (changePct / (100 + changePct)) });
+  }
+  for (const [code, quote] of quotes) quotes.set(code, { ...quote, halted: tradingHalted(quote.time) });
   res.json({ asOf: new Date().toISOString(), quotes: Object.fromEntries(quotes) });
 }));
 
@@ -1804,6 +1817,11 @@ async function runScan(portfolio, { codes, style, userId, subscribed = false, fo
     style,
     userId,
   });
+  // A held stock that just jumped by a share ratio: settle the holding now
+  // rather than on the next half-hourly check.
+  if (userId && results.some((r) => r.position && r.corporateAction?.status === 'suspected')) {
+    checkCorporateActionsSoon(userId, portfolio, { now: true });
+  }
   // Held codes reuse heldQuotes, so a position's P&L and the price shown
   // beside it never come from two different feeds.
   const otherCodes = results.map((result) => result.code).filter((code) => !heldQuotes.has(code));
@@ -1970,6 +1988,8 @@ async function runScan(portfolio, { codes, style, userId, subscribed = false, fo
       price: livePrice,
       lastTradePrice: live?.price ?? null,
       lastTradeTime: live?.time ?? null,
+      // Priced after the analysis ran, so judged again on this quote.
+      halted: live ? tradingHalted(live.time) : r.halted ?? null,
       changePct: live?.changePct ?? r.snapshot.price.changePct,
       score: r.technical.score,
       signal: r.technical.signal,
@@ -2016,6 +2036,7 @@ async function runScan(portfolio, { codes, style, userId, subscribed = false, fo
 
 app.get('/api/portfolio', wrap(async (req, res) => {
   const p = await loadPortfolio(req.user.id);
+  checkCorporateActionsSoon(req.user.id, p);
   // /api/portfolio isn't a PAID_PATHS entry (a lapsed account can still read
   // its own data), so req.access isn't guaranteed to be set the way it is on
   // /api/scan — compute it directly rather than assume.
@@ -2131,6 +2152,85 @@ async function currentPrices(codes) {
   }
   return prices;
 }
+
+/**
+ * Bonus shares, splits and mergers on held stocks. Found in the background
+ * (checkCorporateActionsSoon) and at the daily close; see corporateActions.js.
+ * The shares move with the feed's own adjustment, and the announced ratio
+ * when a search finds one that agrees with it.
+ */
+const corporateActionResearch = new Map(); // one search per event, shared across users
+async function reconcileCorporateActions(userId) {
+  const portfolio = await loadPortfolio(userId);
+  const codes = Object.keys(portfolio.positions);
+  if (!codes.length) return [];
+  const quotes = await fetchLatestQuotes(codes).catch(() => new Map());
+  const livePrices = new Map([...quotes].map(([code, q]) => [code, q.price]));
+  const proposals = await detectCorporateActions(portfolio, {
+    today: cairoToday(),
+    livePrices,
+    barsFor: async (code) => (await readBars(code).catch(() => null))?.bars ?? null,
+    freshBarsFor: async (code) => (await getBars(
+      code,
+      toYahoo(code),
+      (yahooSymbol, o) => fetchDailyAuto(code, { ...o, yahooSymbol, source: lookup(code)?.source }),
+      { force: true },
+    )).bars,
+    research: aiAvailable()
+      ? (code, candidate) => {
+          const key = `${code}:${candidate.lastBefore}:${candidate.factor.toFixed(2)}`;
+          if (!corporateActionResearch.has(key)) {
+            corporateActionResearch.set(key, researchCorporateAction(code, candidate, { name: lookup(code)?.ar, request: requestStructuredOR }));
+          }
+          return corporateActionResearch.get(key);
+        }
+      : null,
+    eventFor: (code) => latestEventFor(code).catch(() => null),
+  });
+  // What was confirmed is the stock's, not just this User's: the analysis
+  // rebases everyone's bars with the exact ratio from here on.
+  for (const p of proposals) {
+    if (!(p.confirmedBy === 'research' || p.source === 'prices') || !(p.rawBefore > 0)) continue;
+    await recordEvent({ code: p.code, lastBefore: p.lastBefore, rawBefore: p.rawBefore, factor: p.factor, status: 'confirmed', kind: p.kind, summary: p.summary })
+      .catch((err) => console.warn('[corporate-actions] event save failed:', err.message));
+  }
+  if (!proposals.length) return [];
+  await withPortfolio(userId, (p) => applyCorporateActions(p, proposals));
+  console.log(`[corporate-actions] ${userId}:`, JSON.stringify(proposals.map(({ code, factor, status, confirmedBy }) => ({ code, factor, status, confirmedBy }))));
+  return proposals;
+}
+
+// Opening the desk looks again at most every half hour per user, in the
+// background: the answer lands on the next reload, never holding this one up.
+const CORPORATE_ACTION_RECHECK_MS = 30 * 60 * 1000;
+// A scan that sees a fresh jump asks sooner, but not on every scan while a
+// search is still coming up empty.
+const CORPORATE_ACTION_URGENT_RECHECK_MS = 2 * 60 * 1000;
+const corporateActionCheckedAt = new Map();
+const corporateActionRunning = new Set();
+function checkCorporateActionsSoon(userId, portfolio, { now = false } = {}) {
+  if (!Object.keys(portfolio.positions ?? {}).length) return;
+  const key = `${currentTenant()?.id ?? ''}:${userId}`;
+  const last = corporateActionCheckedAt.get(key);
+  if (corporateActionRunning.has(key)) return;
+  if (last && Date.now() - last < (now ? CORPORATE_ACTION_URGENT_RECHECK_MS : CORPORATE_ACTION_RECHECK_MS)) return;
+  corporateActionCheckedAt.set(key, Date.now());
+  corporateActionRunning.add(key);
+  reconcileCorporateActions(userId)
+    .catch((err) => console.warn('[corporate-actions] check failed:', err.message))
+    .finally(() => corporateActionRunning.delete(key));
+}
+
+app.post('/api/portfolio/corporate-action', wrap(async (req, res) => {
+  const { code, lastBefore, action } = req.body ?? {};
+  if (typeof code !== 'string' || !isDayString(lastBefore) || !['undo', 'apply', 'dismiss'].includes(action)) {
+    return res.status(400).json({ error: 'محتاج code و lastBefore و action (undo/apply/dismiss)' });
+  }
+  const updated = await withPortfolio(req.user.id, (portfolio) =>
+    resolveCorporateAction(portfolio, { code: code.toUpperCase(), lastBefore, action }),
+  );
+  res.json(updated);
+}));
 
 app.post('/api/portfolio/levels', wrap(async (req, res) => {
   const { code, stop, target } = req.body ?? {};
@@ -2373,6 +2473,9 @@ async function runDailyClose() {
   let saved = 0;
   let failed = 0;
   for (const userId of userIds) {
+    // Before the close is saved, so a bonus issue or split landing today
+    // doesn't go into the log as a day's loss.
+    await reconcileCorporateActions(userId).catch((err) => console.warn(`[daily-close] corporate actions for ${userId}:`, err.message));
     try {
       await snapshotForUser(userId);
       saved += 1;
@@ -3037,6 +3140,10 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   const userId = req.user.id;
   const tier = req.access.tier;
   const jobKey = reviewJobKey(userId, pre.style, code);
+  // The live price on the card when it was asked for — only used to tell the
+  // user later how far the price has moved since this recommendation.
+  const sentPrice = Number(req.body?.price);
+  const requestPrice = Number.isFinite(sentPrice) && sentPrice > 0 && sentPrice <= MAX_PRICE ? sentPrice : null;
 
   // A recommendation is a pure spend-until-empty credit: every explicit
   // request pays for a fresh model call and draws one use from that
@@ -3045,6 +3152,12 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   // cache. Joining a review that's already running (a duplicate click, not a
   // second ask) is the only free case.
   const joiningRunningJob = reviewJobs.get(jobKey)?.status === 'running';
+  // Suspended: no order could be filled, so a recommendation would only
+  // spend a credit on advice nobody can act on.
+  const halted = tradingHalted((await fetchLatestQuotes([code]).catch(() => new Map())).get(code)?.time);
+  if (!joiningRunningJob && halted) {
+    return res.status(409).json({ error: `${code} موقوف عن التداول من ${halted.since} — التوصية هتتاح أول ما التداول يرجع.`, reason: 'halted' });
+  }
   if (!joiningRunningJob && leftFor('recommendations', portfolio, tier) <= 0) {
     return res.status(429).json({ error: 'خلص رصيد التوصيات المتاح.', reason: 'recommendation_credit_limit' });
   }
@@ -3078,12 +3191,18 @@ app.post('/api/review/stock', wrap(async (req, res) => {
       },
     );
     // A duplicate click joining the same in-flight job spends nothing extra.
-    if (!joiningRunningJob) {
-      await withPortfolio(userId, (p) => {
-        const next = bumpUsage(p, 'recommendations');
-        return baseLeftFor('recommendations', p, tier) > 0 ? next : addCredits(next, { recommendations: -1 });
+    // The verdict itself is kept on the portfolio as the stock's last
+    // recommendation: the card shows it on every device until the user asks
+    // for a new one (see rememberVerdict).
+    await withPortfolio(userId, (p) => {
+      const kept = rememberVerdict(p, code, verdict, {
+        style: pre.style ?? 'medium',
+        price: requestPrice,
       });
-    }
+      if (joiningRunningJob) return kept;
+      const next = bumpUsage(kept, 'recommendations');
+      return baseLeftFor('recommendations', p, tier) > 0 ? next : addCredits(next, { recommendations: -1 });
+    });
     console.log(`[review] ${code} ${source} in ${Date.now() - startedAt}ms`);
     const analysis = analyses.find((a) => a.code === code);
     if (analysis && verdict?.action) {

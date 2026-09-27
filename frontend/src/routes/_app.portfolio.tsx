@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { ArrowDownUp, PencilLine, Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
@@ -65,6 +65,7 @@ const REC_TONE: Record<string, string> = {
   hold: "border-border bg-surface-2 text-foreground",
   sell: "border-down/40 bg-down-soft text-down",
   sell_part: "border-warn/40 bg-warn-soft text-foreground",
+  halted: "border-warn/40 bg-warn-soft text-foreground",
 };
 
 // backend/src/agent/schemas.js ACTIONS — the AI analyst's own action enum,
@@ -135,6 +136,10 @@ type StoredVerdict = {
   at: number | null;
   /** The live price on the card when it was requested; null for an entry saved before this was recorded. */
   price: number | null;
+  /** The investor style it was written under; null when unknown. */
+  style: StyleKey | null;
+  /** The holding (`shares@avgCost`) it was written about; null when unknown. */
+  positionKey: string | null;
 };
 
 /** A move this large since a verdict was written is enough to call it outdated on its own. */
@@ -170,30 +175,81 @@ function verdictStaleReason(
   return null;
 }
 
-// The last verdict the user asked for stays on the card — across days and
-// reloads — until they press the button again; nothing refreshes it by
-// itself. Only a change to what it was written about drops it: a trade on the
-// position (e.g. acting on the verdict — its "sell 223 shares" order would be
-// stale) or a different investor style. This is purely a "what to display"
-// convenience, not a billing cache (see the block comment above).
-function readStoredVerdict(code: string, style: StyleKey, positionKey: string): StoredVerdict | null {
+// The last verdict the user asked for stays on the card — across days,
+// reloads, trades and style changes — until they press the button again;
+// nothing replaces or hides it by itself. When what it was written about has
+// changed since (a trade on the position, a different investor style, a big
+// price move) it is flagged as outdated instead (see verdictStaleReason).
+// The server keeps each stock's last verdict on the portfolio
+// (pf.lastVerdicts), so it shows on every device; this browser's copy covers
+// a verdict saved before that existed. Purely a "what to display" record, not
+// a billing cache (see the block comment above).
+function readLocalVerdict(code: string): StoredVerdict | null {
   try {
     const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
-    if (!stored || stored.style !== style || stored.positionKey !== positionKey || !stored.verdict) return null;
+    if (!stored?.verdict) return null;
     // Entries saved before `at` existed only carry `day` (a Date.toDateString()).
     const at = Number.isFinite(stored.at) ? stored.at : Date.parse(stored.day);
     return {
       verdict: stored.verdict,
       at: Number.isFinite(at) ? at : null,
       price: typeof stored.price === "number" ? stored.price : null,
+      style: stored.style ?? null,
+      positionKey: stored.positionKey ?? null,
     };
   } catch {
     return null;
   }
 }
 
+/** A stock's last verdict as the server keeps it (rememberVerdict in backend/src/portfolio.js). */
+type ServerVerdict = {
+  verdict?: Verdict;
+  at?: number;
+  price?: number | null;
+  style?: StyleKey;
+  shares?: number;
+  avgCost?: number;
+};
+
+function serverVerdict(entry: ServerVerdict | null | undefined): StoredVerdict | null {
+  if (!entry?.verdict) return null;
+  return {
+    verdict: entry.verdict,
+    at: typeof entry.at === "number" && Number.isFinite(entry.at) ? entry.at : null,
+    price: typeof entry.price === "number" ? entry.price : null,
+    style: entry.style ?? null,
+    positionKey:
+      entry.shares != null && entry.avgCost != null ? `${entry.shares}@${entry.avgCost}` : null,
+  };
+}
+
+/** The newest of this stock's last verdict on the server and in this browser. */
+function lastVerdict(
+  code: string,
+  serverEntry: ServerVerdict | null | undefined,
+): StoredVerdict | null {
+  const remote = serverVerdict(serverEntry);
+  const local = readLocalVerdict(code);
+  if (!remote || !local) return remote ?? local;
+  return (local.at ?? 0) > (remote.at ?? 0) ? local : remote;
+}
+
+/** Why the verdict was written about something else than what the card shows now, or null. */
+function verdictChangedReason(
+  saved: StoredVerdict,
+  style: StyleKey,
+  positionKey: string,
+): string | null {
+  if (saved.positionKey && saved.positionKey !== positionKey)
+    return "اتسجلت حركة على السهم بعد التوصية";
+  if (saved.style && saved.style !== style) return "غيّرت أسلوب الاستثمار بعد التوصية";
+  return null;
+}
+
 function useStockReview(code: string, style: StyleKey, positionKey: string, livePrice: number | undefined) {
-  const { refreshUser, reloadPortfolio } = useDesk();
+  const { refreshUser, reloadPortfolio, pf } = useDesk();
+  const serverEntry = pf?.lastVerdicts?.[code];
   const [saved, setSaved] = useState<StoredVerdict | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,8 +259,8 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
   livePriceRef.current = livePrice;
 
   useEffect(() => {
-    setSaved(readStoredVerdict(code, style, positionKey));
-  }, [code, style, positionKey]);
+    setSaved(lastVerdict(code, serverEntry));
+  }, [code, serverEntry]);
 
   const request = useCallback(
     async (force: boolean) => {
@@ -215,7 +271,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
         // Usually answered inline; a slow model call becomes a server-side
         // job that this polls, so no request outlives nginx's 180s timeout.
         const result = await withReviewSlot(async () => {
-          let res = await post("/api/review/stock", { code, style, force });
+          let res = await post("/api/review/stock", { code, style, force, price: priceAtRequest });
           const giveUpAt = Date.now() + REVIEW_MAX_WAIT_MS;
           while (res?.status === "running") {
             if (Date.now() > giveUpAt) throw new Error("التحليل أخد وقت أطول من المتوقع — جرّب تاني بعد شوية.");
@@ -225,7 +281,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
           return res;
         });
         const at = Date.now();
-        setSaved({ verdict: result.verdict, at, price: priceAtRequest });
+        setSaved({ verdict: result.verdict, at, price: priceAtRequest, style, positionKey });
         try {
           window.localStorage.setItem(
             reviewStorageKey(code),
@@ -234,8 +290,8 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
         } catch {
           /* storage unavailable — the verdict still shows for this session */
         }
-        // A forced review may have spent a recommendation credit.
-        if (force) void reloadPortfolio().catch(() => {});
+        // Picks up the credit it spent and the verdict the server now keeps.
+        void reloadPortfolio().catch(() => {});
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 402) {
           await refreshUser();
@@ -253,6 +309,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
     verdict: saved?.verdict ?? null,
     verdictAt: saved?.at ?? null,
     verdictPrice: saved?.price ?? null,
+    verdictChanged: saved ? verdictChangedReason(saved, style, positionKey) : null,
     loading,
     error,
     request,
@@ -355,16 +412,25 @@ function PositionsPage() {
   }, []);
 
   const openBatchConfirm = () => {
-    const missing = rows
-      .filter(
-        (row) =>
-          !isFromToday(readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`)?.at),
-      )
-      .map((row) => row.code);
+    const needVerdict = rows.filter((row) => {
+      const saved = lastVerdict(row.code, pf?.lastVerdicts?.[row.code]);
+      const positionKey = `${row.position.shares}@${row.position.avgCost}`;
+      return (
+        !saved || !isFromToday(saved.at) || verdictChangedReason(saved, style, positionKey) != null
+      );
+    });
+    // A suspended stock is skipped: no order could be filled until it trades again.
+    const halted = needVerdict.filter((row) => row.halted).map((row) => row.code);
+    const missing = needVerdict.filter((row) => !row.halted).map((row) => row.code);
     if (missing.length === 0) {
-      toast.info("كل الأسهم عندها توصية النهاردة بالفعل");
+      toast.info(
+        halted.length
+          ? `مفيش أسهم محتاجة توصية — ${halted.join("، ")} موقوف عن التداول`
+          : "كل الأسهم عندها توصية النهاردة بالفعل",
+      );
       return;
     }
+    if (halted.length) toast.info(`${halted.join("، ")} موقوف عن التداول — مش هيتحلل`);
     setBatchConfirm(missing);
   };
 
@@ -500,6 +566,207 @@ function PositionsPage() {
   );
 }
 
+const CORPORATE_ACTION_KIND: Record<string, string> = {
+  bonus: "أسهم مجانية",
+  split: "تجزئة",
+  reverse_split: "تجميع أسهم",
+  merger: "اندماج",
+  rights: "اكتتاب (حقوق أولوية)",
+};
+
+type HoldingLevels = {
+  shares: number;
+  avgCost: number;
+  stop: number | null;
+  target: number | null;
+};
+type CorporateActionRecord = {
+  code: string;
+  lastBefore: string;
+  status: "applied" | "pending" | "undone";
+  factor: number;
+  kind: string | null;
+  summary: string | null;
+  sourceUrl: string | null;
+  confirmedBy: "research" | "prices" | null;
+  levelsOnly?: boolean;
+  before: HoldingLevels;
+  after?: HoldingLevels;
+  at: string;
+  dismissedAt?: string;
+};
+
+/** EGX's session closes at 14:30 Cairo, Sunday to Thursday. */
+const SESSION_CLOSE_MINUTE = 14 * 60 + 30;
+const cairoParts = (ms: number) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Cairo",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(ms);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    day: cairoDay(ms),
+    weekday: get("weekday"),
+    minute: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+};
+const isSessionDay = (weekday: string) => weekday !== "Fri" && weekday !== "Sat";
+
+/**
+ * An applied notice is news for the session it lands in: it stays on the card
+ * until that session closes — the first 14:30 Cairo close on a trading day
+ * after it was applied — unless the user presses "تمام" before then.
+ */
+function appliedNoticeExpired(at: string, now = Date.now()): boolean {
+  const appliedAt = Date.parse(at);
+  if (!Number.isFinite(appliedAt)) return true;
+  const applied = cairoParts(appliedAt);
+  let closeDay = applied.day;
+  if (!isSessionDay(applied.weekday) || applied.minute >= SESSION_CLOSE_MINUTE) {
+    // Walk forward a day at a time (from noon, clear of any DST shift) to the next trading day.
+    let probe = Date.parse(`${applied.day}T12:00:00Z`);
+    do {
+      probe += 86_400_000;
+    } while (!isSessionDay(cairoParts(probe).weekday));
+    closeDay = cairoDay(probe);
+  }
+  const current = cairoParts(now);
+  return (
+    current.day > closeDay || (current.day === closeDay && current.minute >= SESSION_CLOSE_MINUTE)
+  );
+}
+
+/**
+ * A bonus issue, split or merger the backend found on this holding (see
+ * backend/src/corporateActions.js): what it changed — or, when
+ * the ratio couldn't be confirmed, the suggested numbers to apply by hand.
+ */
+function CorporateActionNotice({ code }: { code: string }) {
+  const { pf, reload } = useDesk();
+  const [busy, setBusy] = useState(false);
+  const records: CorporateActionRecord[] = pf?.corporateActions ?? [];
+  const record = [...records]
+    .reverse()
+    .find(
+      (r) =>
+        r.code === code &&
+        !r.dismissedAt &&
+        (r.status === "pending" || (r.status === "applied" && !appliedNoticeExpired(r.at))),
+    );
+  if (!record) return null;
+
+  const act = async (action: "apply" | "dismiss", done: string) => {
+    setBusy(true);
+    try {
+      await post("/api/portfolio/corporate-action", {
+        code,
+        lastBefore: record.lastBefore,
+        action,
+      });
+      toast.success(done);
+      void reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تنفيذ الطلب");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const kind = (record.kind && CORPORATE_ACTION_KIND[record.kind]) || "تعديل في عدد أسهم الشركة";
+  const ratio = Number(record.factor).toLocaleString("en-US", { maximumFractionDigits: 6 });
+  const suggestedShares = Math.max(1, Math.round(record.before.shares * record.factor));
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
+  // An applied change is already done; the notice just says what happened.
+  const showSource =
+    record.status !== "applied" &&
+    record.sourceUrl != null &&
+    /^https?:\/\//.test(record.sourceUrl);
+
+  return (
+    <div
+      dir="rtl"
+      onClick={stop}
+      onKeyDown={stop}
+      className="mt-3 cursor-default rounded-lg border border-warn/40 bg-warn-soft px-3.5 py-2.5 text-right text-[12.5px] leading-relaxed"
+    >
+      {record.status === "applied" && record.after && record.levelsOnly ? (
+        <p>
+          <span className="font-medium">{kind} — الوقف والهدف اتعدّلوا على السعر الجديد</span>
+          <br />
+          <span className="text-muted-foreground">
+            السعر نزل بنسبة الأسهم الجديدة ({ratio} سهم لكل سهم) مش بحركة السوق، فالوقف{" "}
+            <span className="num">{fmt(record.before.stop)}</span> بقى{" "}
+            <span className="num">{fmt(record.after.stop)}</span> — مش كسر وقف.
+          </span>
+        </p>
+      ) : record.status === "applied" && record.after ? (
+        <p>
+          <span className="font-medium">
+            {kind} — اتحدّث عدد الأسهم تلقائيًا:{" "}
+            <span className="num">{int(record.before.shares)}</span> ←{" "}
+            <span className="num">{int(record.after.shares)}</span> سهم
+          </span>
+          <br />
+          <span className="text-muted-foreground">
+            النسبة <span className="num">{ratio}</span> سهم لكل سهم، ومتوسط الشراء{" "}
+            <span className="num">{fmt(record.before.avgCost)}</span> ←{" "}
+            <span className="num">{fmt(record.after.avgCost)}</span> — قيمة الشراء زي ما هي.
+            {record.confirmedBy === "prices" &&
+              " النسبة محسوبة من الأسعار، راجع العدد مع شركة السمسرة."}
+          </span>
+          {record.summary && (
+            <>
+              <br />
+              <span className="text-muted-foreground">{record.summary}</span>
+            </>
+          )}
+        </p>
+      ) : (
+        <p>
+          <span className="font-medium">
+            سعر {code} اتعدّل بنسبة حوالي <span className="num">{ratio}</span> — غالبًا {kind}
+          </span>
+          <br />
+          <span className="text-muted-foreground">
+            {record.kind === "rights"
+              ? "لو اكتتبت في الزيادة سجّل الأسهم الجديدة كصفقة شراء. "
+              : `لو شركة السمسرة زودت أسهمك، عددك هيبقى حوالي ${int(suggestedShares)} سهم. `}
+            {record.summary}
+          </span>
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap justify-end gap-2">
+        {showSource && record.sourceUrl && (
+          <a
+            href={record.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="self-center text-[12px] text-muted-foreground underline"
+          >
+            المصدر
+          </a>
+        )}
+        {record.status !== "applied" && record.kind !== "rights" && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => act("apply", "اتحدّث عدد الأسهم")}
+          >
+            حدّث العدد
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => act("dismiss", "تمام")}>
+          {record.status === "applied" ? "تمام" : "تجاهل"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function PositionCard({
   row,
   onOpen,
@@ -517,8 +784,11 @@ function PositionCard({
   const p = row.position;
   const { style } = useActiveInvestStyle(pf?.trades);
   const rec = styleRecommendation(row, p, style);
-  const critical = p.stopBreached;
-  const near = !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
+  // Suspended: the rule-book call and any AI verdict wait until it trades again.
+  const halted = Boolean(row.halted);
+  const critical = !halted && p.stopBreached;
+  const near =
+    !halted && !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
   // The server reports the exact level its own target distance is measured to
@@ -535,15 +805,19 @@ function PositionCard({
     verdict,
     verdictAt,
     verdictPrice,
+    verdictChanged,
     loading: reviewLoading,
     error: reviewError,
     request: requestReview,
   } = useStockReview(row.code, style, `${p.shares}@${p.avgCost}`, row.price);
   const staleReason = verdict
-    ? verdictStaleReason(verdictPrice, row.price, p.stop, [primaryTarget, p.reachedTarget?.price])
+    ? (verdictChanged ??
+      verdictStaleReason(verdictPrice, row.price, p.stop, [primaryTarget, p.reachedTarget?.price]))
     : null;
-  // A verdict stays on the card until the next request, so it can be from an earlier day.
-  const verdictIsToday = isFromToday(verdictAt);
+  // A verdict stays on the card until the next request, so it can be from an
+  // earlier day — or written before a trade or style change, which the batch
+  // treats like one from an earlier day.
+  const verdictIsToday = isFromToday(verdictAt) && !verdictChanged;
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
   const recommendationsLeft =
     typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
@@ -557,19 +831,28 @@ function PositionCard({
   useEffect(() => {
     if (!batchId || handledBatchId.current === batchId) return;
     handledBatchId.current = batchId;
-    if (verdictIsToday || reviewLoading) {
+    if (verdictIsToday || reviewLoading || halted) {
       onBatchSettled(row.code);
       return;
     }
     void requestReview(false).finally(() => onBatchSettled(row.code));
-  }, [batchId, verdictIsToday, reviewLoading, requestReview, onBatchSettled, row.code]);
+  }, [batchId, verdictIsToday, reviewLoading, halted, requestReview, onBatchSettled, row.code]);
 
   // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
   // over the badge and recommendation box when one has been fetched for this
   // stock; the mechanical rec above stays the fallback (and still drives
   // critical/near, which are the engine's own triggers, not the AI's opinion).
-  const badgeLabel = verdict ? (AI_ACTION_LABEL[verdict.action] ?? verdict.action) : rec.label;
-  const badgeTone = verdict ? (AI_ACTION_TONE[verdict.action] ?? AI_ACTION_TONE["hold"]) : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
+  // A suspended stock's badge says so, but its last verdict still stays in
+  // the box until a new one is requested.
+  const shownVerdict = verdict;
+  const badgeLabel =
+    shownVerdict && !halted
+      ? (AI_ACTION_LABEL[shownVerdict.action] ?? shownVerdict.action)
+      : rec.label;
+  const badgeTone =
+    shownVerdict && !halted
+      ? (AI_ACTION_TONE[shownVerdict.action] ?? AI_ACTION_TONE["hold"])
+      : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -612,8 +895,10 @@ function PositionCard({
             <Badge variant="outline" className={badgeTone}>
               {badgeLabel}
             </Badge>
-            {verdict?.conviction && (
-              <span className="text-[11px] text-muted-foreground">ثقة {verdict.conviction}</span>
+            {shownVerdict?.conviction && !halted && (
+              <span className="text-[11px] text-muted-foreground">
+                ثقة {shownVerdict.conviction}
+              </span>
             )}
             {p.sharesEstimated && (
               <TooltipProvider delayDuration={200}>
@@ -679,6 +964,8 @@ function PositionCard({
         </div>
       </div>
 
+      <CorporateActionNotice code={row.code} />
+
       <PriceRail
         className="mt-4"
         price={row.price}
@@ -709,16 +996,16 @@ function PositionCard({
       </div>
 
       <div className={cn("mt-3 rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed", badgeTone)}>
-        {verdict ? (
+        {shownVerdict ? (
           // The decision, then the order (or the level to watch on a hold),
           // each shown in full: clamped to two lines, a narrow phone screen
           // cut the order off mid-sentence.
           <p dir="rtl" className="text-right">
-            <span className="font-medium">{verdict.headline}</span>
-            {(verdict.orderInstruction ?? verdict.invalidation) && (
+            <span className="font-medium">{shownVerdict.headline}</span>
+            {(shownVerdict.orderInstruction ?? shownVerdict.invalidation) && (
               <>
                 <br />
-                <span className="text-muted-foreground">{verdict.orderInstruction ?? verdict.invalidation}</span>
+                <span className="text-muted-foreground">{shownVerdict.orderInstruction ?? shownVerdict.invalidation}</span>
               </>
             )}
           </p>
@@ -743,10 +1030,16 @@ function PositionCard({
         )}
       </div>
 
-      {staleReason && (
+      {shownVerdict && halted ? (
         <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
-          ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
+          ⚠️ دي آخر توصية قبل إيقاف السهم عن التداول — اطلب توصية جديدة أول ما التداول يرجع.
         </p>
+      ) : (
+        staleReason && (
+          <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
+            ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
+          </p>
+        )
       )}
 
       {aiAvailable && (
@@ -768,17 +1061,20 @@ function PositionCard({
           <Button
             // Filled while a recommendation is still on offer, so it stands out
             // on the card; once used it drops back to the quiet outline style.
-            variant={verdict ? "outline" : "default"}
+            variant={verdict || halted ? "outline" : "default"}
             size="sm"
-            className={cn(!verdict && "font-semibold shadow-sm")}
-            disabled={reviewLoading || (!isAdmin && recommendationsExhausted)}
+            className={cn(!verdict && !halted && "font-semibold shadow-sm")}
+            disabled={halted || reviewLoading || (!isAdmin && recommendationsExhausted)}
+            title={
+              halted ? "السهم موقوف عن التداول — التوصية هتتاح أول ما التداول يرجع" : undefined
+            }
             onClick={(e) => {
               e.stopPropagation();
               setConfirmReviewOpen(true);
             }}
           >
-            {reviewLoading ? <Spinner /> : !verdict && <Sparkles className="size-4" />}
-            {verdict ? "توصية جديدة" : "قولي توصية اليوم"}
+            {reviewLoading ? <Spinner /> : !verdict && !halted && <Sparkles className="size-4" />}
+            {halted ? "موقوف عن التداول" : verdict ? "توصية جديدة" : "قولي توصية اليوم"}
           </Button>
         </div>
       )}

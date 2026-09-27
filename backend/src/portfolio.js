@@ -16,7 +16,7 @@ import { currentTenant } from './tenancy/context.js';
 
 const EMPTY = {
   cash: 0,
-  positions: {},   // code -> { shares, avgCost, stop, target, openedAt, addedOrder }
+  positions: {},   // code -> { shares, avgCost, stop, target, openedAt, addedOrder, sharesSetAt }
   watchlist: {},   // favorites the user picked to watch — code -> { addedAt, note }
   trades: [],      // { date, code, side, shares, price, commission, note } — a 'dividend' row's price is the cash paid per share
   // One entry per saved close, keyed YYYY-MM-DD. This is what the calendar and
@@ -24,6 +24,7 @@ const EMPTY = {
   // memory, so "how did the book do this month" is unanswerable.
   log: {},         // date -> { total, positionsValue, cash, cashFlow, dayChange, pl, prices, stops, note, changes, savedAt }
   cashFlows: [],   // { at, amount, source } — money moved in or out other than by the market; see recordCashFlow
+  corporateActions: [], // bonus shares, splits, mergers found on held stocks — see corporateActions.js
   settings: { commissionPct: 0.20 },
   realizedPnl: 0,
   updatedAt: null,
@@ -94,7 +95,7 @@ export async function withPortfolio(userId, mutator) {
     .catch(() => {}) // a prior failure must not jam the queue for later callers
     .then(async () => {
       const portfolio = await loadPortfolio(userId);
-      return savePortfolio(await mutator(portfolio), userId);
+      return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), userId);
     });
   writeQueues.set(queueKey, run);
   try {
@@ -104,6 +105,25 @@ export async function withPortfolio(userId, mutator) {
     // drop the reference to the run a later caller is chained onto.
     if (writeQueues.get(queueKey) === run) writeQueues.delete(queueKey);
   }
+}
+
+/**
+ * Marks each holding whose share count or average cost this write changed
+ * with the Cairo day it happened. A corporate action (see corporateActions.js)
+ * only rewrites a holding whose numbers were set before it — one set after it,
+ * say from a fresh broker screenshot, is already on the new basis.
+ */
+export function stampSharesSetAt(before, after, now = new Date()) {
+  const day = now.toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' });
+  let positions = null;
+  for (const [code, pos] of Object.entries(after.positions ?? {})) {
+    const was = before.positions?.[code];
+    if (was && was.shares === pos.shares && was.avgCost === pos.avgCost) continue;
+    if (pos.sharesSetAt === day) continue;
+    positions ??= { ...after.positions };
+    positions[code] = { ...pos, sharesSetAt: day };
+  }
+  return positions ? { ...after, positions } : after;
 }
 
 /**
@@ -460,4 +480,36 @@ export function setNote(portfolio, date, note) {
   const existing = portfolio.log?.[date];
   if (!existing) throw new Error(`مفيش بيانات محفوظة ليوم ${date}`);
   return { ...portfolio, log: { ...portfolio.log, [date]: { ...existing, note } } };
+}
+
+/**
+ * Keeps a stock's AI recommendation on the portfolio as its last one — the
+ * position card shows it, on any device, until the user asks for a new one.
+ * Only what the card shows is kept (the full verdict's prose would bloat the
+ * row every request loads), along with what it was written against: the
+ * style, the price, and the holding, so the card can say when it's outdated
+ * instead of hiding it. Entries for stocks no longer held are dropped.
+ */
+export function rememberVerdict(p, code, verdict, { style, price = null, now = Date.now() } = {}) {
+  const c = String(code).toUpperCase();
+  const pos = p.positions?.[c];
+  const kept = {};
+  for (const [k, v] of Object.entries(p.lastVerdicts ?? {})) if (p.positions?.[k]) kept[k] = v;
+  if (pos && verdict?.action) {
+    kept[c] = {
+      at: now,
+      style,
+      price,
+      shares: pos.shares,
+      avgCost: pos.avgCost,
+      verdict: {
+        action: verdict.action,
+        conviction: verdict.conviction ?? null,
+        headline: verdict.headline ?? '',
+        orderInstruction: verdict.orderInstruction ?? null,
+        invalidation: verdict.invalidation ?? null,
+      },
+    };
+  }
+  return { ...p, lastVerdicts: kept };
 }

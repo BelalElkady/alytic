@@ -66,12 +66,19 @@ test('oanor stays off when disabled, and outside the EGX session', async () => {
   assert.equal(closed.oanorCalls.length, 0);
 });
 
-test('subscribers get oanor, with no invented timestamp', async () => {
+test("subscribers get oanor's price with TradingView's last-trade time", async () => {
   const h = harness();
   const quotes = await h.pool.fetchLiveQuotes(['COMI'], subscriber);
   assert.equal(quotes.get('COMI').price, 100);
+  // The time tradingHalted needs to spot a suspended stock; oanor has none.
+  assert.equal(quotes.get('COMI').time, 1_700_000_000);
+});
+
+test('a subscriber quote has no time when TradingView has none, rather than a made-up one', async () => {
+  const h = harness({ fetchTv: async () => new Map() });
+  const quotes = await h.pool.fetchLiveQuotes(['COMI'], subscriber);
+  assert.equal(quotes.get('COMI').price, 100);
   assert.equal(quotes.get('COMI').time, null);
-  assert.equal(h.tvCalls.length, 0);
 });
 
 test('a code oanor does not answer for comes from TradingView in the same call', async () => {
@@ -79,7 +86,7 @@ test('a code oanor does not answer for comes from TradingView in the same call',
   const quotes = await h.pool.fetchLiveQuotes(['COMI', 'SWDY'], subscriber);
   assert.equal(quotes.get('COMI').price, 100);
   assert.equal(quotes.get('SWDY').price, 50);
-  assert.deepEqual(h.tvCalls, [['SWDY']]);
+  assert.equal((await h.pool.status()).counters.fellBack, 1);
 });
 
 test('concurrent subscribers share one oanor call, chunked 20 codes at a time', async () => {

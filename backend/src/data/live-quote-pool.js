@@ -246,7 +246,8 @@ export function createLiveQuotePool({
           price: quote.price,
           change: quote.change ?? null,
           changePct: quote.changePct ?? null,
-          // oanor has no per-quote timestamp; don't invent one from the request time.
+          // oanor has no per-quote timestamp; fetchLiveQuotes adds TradingView's
+          // last-trade time, never one made up from the request time.
           time: null,
         };
         cache.set(String(code).toUpperCase(), { quote: clean, at: now() });
@@ -340,19 +341,30 @@ export function createLiveQuotePool({
    * any code oanor doesn't answer for comes from TradingView in the same call,
    * silently. Everyone else, and everyone outside the session, gets TradingView
    * exactly as before — including its errors, which callers already handle.
+   *
+   * TradingView is fetched alongside oanor even for subscribers, for its
+   * last-trade time: oanor has none, and that time is how a suspended or
+   * halted stock is spotted (tradingHalted in data/cache.js). So an oanor
+   * quote is oanor's price with TradingView's `time`. It is the same call a
+   * non-subscriber makes anyway, and it doubles as the fallback.
    */
   async function fetchLiveQuotes(codes, { subscribed = false, userId = null } = {}) {
     const wanted = normalizeCodes(codes);
     if (!wanted.length) return new Map();
     if (!eligible({ subscribed, userId }) || !sessionOpen()) return fetchTv(wanted);
 
-    const quotes = await fromOanor(wanted);
-    stats.fromOanor += quotes.size;
-    const rest = wanted.filter((code) => !quotes.has(code));
-    if (rest.length) {
-      stats.fellBack += rest.length;
-      const tv = await fetchTv(rest).catch(() => new Map());
-      for (const [code, quote] of tv) quotes.set(code, quote);
+    const [fromFeed, tv] = await Promise.all([fromOanor(wanted), fetchTv(wanted).catch(() => new Map())]);
+    const quotes = new Map();
+    for (const code of wanted) {
+      const oanor = fromFeed.get(code);
+      const fallback = tv.get(code);
+      if (oanor) {
+        stats.fromOanor += 1;
+        quotes.set(code, { ...oanor, time: fallback?.time ?? null });
+      } else if (fallback) {
+        stats.fellBack += 1;
+        quotes.set(code, fallback);
+      }
     }
     return quotes;
   }

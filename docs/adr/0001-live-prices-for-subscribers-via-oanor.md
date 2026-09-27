@@ -68,7 +68,7 @@ The rollback:
 - **Ends on its own.** On the plan's reset date the pool starts a fresh counter and tries oanor again. The reset date comes from `OANOR_BILLING_DAY`, the day of the month the plan renews (default 1). A successful call clears the rollback. Raising `OANOR_MONTHLY_QUOTA` after an upgrade also clears it without waiting.
 - **Survives a restart.** The call count and the rollback state are stored, not kept only in memory, so a redeploy mid-month doesn't wipe the count and overspend the quota again.
 
-**Timestamps.** oanor exposes no per-quote timestamp (a caveat from #44), so its quotes return `time: null`. This is safe: `store.tsx` stores it as `lastTradeTime` but never displays or compares it. Don't invent a timestamp from the time the request was made.
+**Timestamps.** oanor exposes no per-quote timestamp (a caveat from #44), but the quote's `time` matters: `tradingHalted` reads it to spot a suspended or halted stock, and a halted stock gets no stop breach and no recommendation. So for subscribers TradingView is fetched alongside oanor, in the same call a non-subscriber makes anyway. The quote is oanor's price with TradingView's last-trade `time`, and suspension detection works the same on both tiers. When TradingView has no time for a code, `time` stays null. Never invent one from the time the request was made.
 
 ### Where the admin sees it
 

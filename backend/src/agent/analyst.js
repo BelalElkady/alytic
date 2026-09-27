@@ -197,6 +197,21 @@ export function briefFor(a) {
   const signed = (x) => `${x >= 0 ? '+' : ''}${x}`;
 
   lines.push(`### ${a.code} — ${a.name} (${a.sectorAr ?? '?'})`);
+  if (a.halted) {
+    lines.push(
+      `TRADING HALTED: no trade since ${a.halted.since} — the stock is suspended or not trading. No order can be filled until it reopens: ` +
+        'the verdict is hold (for a holding) or wait (otherwise), with no order instruction, and says the stock is suspended.',
+    );
+  }
+  if (a.corporateAction) {
+    const ca = a.corporateAction;
+    lines.push(
+      `CORPORATE ACTION: the share basis changed after ${ca.lastBefore} (${ca.kind ?? 'bonus shares / split / merger'}, ` +
+        `${ca.factor.toFixed(4)} shares per old share${ca.status === 'suspected' ? ', ratio not yet confirmed' : ''})` +
+        `${ca.summary ? ` — ${ca.summary}` : ''}. Every price, level and the position below is already on the new basis. ` +
+        'The price drop by that ratio is NOT a market move and NOT a stop break — never recommend selling or exiting because of it.',
+    );
+  }
   lines.push(
     `Price ${price} EGP${isLive ? ` — LIVE now (last completed close ${s.price.dailyClose})` : ''} (${signed(s.price.changePct)}% today) | ` +
       `from 52w high ${s.price.high52w ? away(s.price.high52w) : s.price.pctFrom52wHigh}% | return 3m ${n(s.returns.m3, '%')} · 1y ${n(s.returns.y1, '%')}`,
@@ -565,6 +580,7 @@ export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = 
 export async function reviewStock(analyses, code, ctx = {}, { model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = {}) {
   const target = analyses.find((a) => a.code === code && a.position);
   if (!target) throw new Error(`مفيش مركز مفتوح في ${code}`);
+  if (target.halted) throw new Error(`${code} موقوف عن التداول من ${target.halted.since} — التوصية هتتاح أول ما التداول يرجع.`);
   const { text: contextText } = portfolioContext(analyses, ctx, rules);
 
   const pricedLive = target.position.pricedAt === 'live';

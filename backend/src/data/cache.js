@@ -51,6 +51,41 @@ export function egxSessionOpen(moment = new Date()) {
   return isTradingDay(cairoDateOf(moment)) && minutesNow >= 10 * 60 && minutesNow < 14 * 60 + 30;
 }
 
+/** The last trading day before `isoDate`. */
+export function previousTradingDay(isoDate) {
+  const day = new Date(`${isoDate}T12:00:00Z`);
+  do {
+    day.setUTCDate(day.getUTCDate() - 1);
+  } while (!isTradingDay(day.toISOString().slice(0, 10)));
+  return day.toISOString().slice(0, 10);
+}
+
+/** Minutes into the EGX session before a stock with no trade yet counts as not trading. */
+const HALT_GRACE_AFTER_OPEN = 10 * 60 + 30;
+
+/**
+ * Whether a stock's last trade says it isn't trading — suspended by the
+ * exchange (a merger, a capital change, a pending disclosure) or otherwise
+ * halted: it missed a whole session, or today's has been open half an hour
+ * without a single trade in it. Every stock the analysis accepts trades
+ * daily (see data/quality.js's volume gate), so neither happens to a quiet
+ * one. Null when trading, or when the time is unknown.
+ * @param {number} lastTradeUnix - the quote's last-trade time, epoch seconds
+ * @returns {{since: string}|null} since: the Cairo date of the last trade
+ */
+export function tradingHalted(lastTradeUnix, now = new Date()) {
+  if (!Number.isFinite(lastTradeUnix) || lastTradeUnix <= 0) return null;
+  const traded = cairoDateOf(new Date(lastTradeUnix * 1000));
+  const today = cairoDateOf(now);
+  if (traded < previousTradingDay(today)) return { since: traded };
+  const [h, m] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .format(now)
+    .split(':')
+    .map(Number);
+  if (isTradingDay(today) && h * 60 + m >= HALT_GRACE_AFTER_OPEN && traded < today) return { since: traded };
+  return null;
+}
+
 async function ensureDir() {
   await fs.mkdir(BARS_DIR, { recursive: true });
 }
@@ -90,11 +125,7 @@ export async function writeBars(code, payload) {
 export function expectedLastSession() {
   const today = cairoToday();
   if (isTradingDay(today) && cairoHour() >= 16) return today;
-  const day = new Date(`${today}T12:00:00Z`);
-  do {
-    day.setUTCDate(day.getUTCDate() - 1);
-  } while (!isTradingDay(day.toISOString().slice(0, 10)));
-  return day.toISOString().slice(0, 10);
+  return previousTradingDay(today);
 }
 
 /**
