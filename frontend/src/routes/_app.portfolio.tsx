@@ -65,6 +65,7 @@ const REC_TONE: Record<string, string> = {
   hold: "border-border bg-surface-2 text-foreground",
   sell: "border-down/40 bg-down-soft text-down",
   sell_part: "border-warn/40 bg-warn-soft text-foreground",
+  halted: "border-warn/40 bg-warn-soft text-foreground",
 };
 
 // backend/src/agent/schemas.js ACTIONS — the AI analyst's own action enum,
@@ -686,8 +687,11 @@ function PositionCard({
   const p = row.position;
   const { style } = useActiveInvestStyle(pf?.trades);
   const rec = styleRecommendation(row, p, style);
-  const critical = p.stopBreached;
-  const near = !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
+  // Suspended: the rule-book call and any AI verdict wait until it trades again.
+  const halted = Boolean(row.halted);
+  const critical = !halted && p.stopBreached;
+  const near =
+    !halted && !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
   // The server reports the exact level its own target distance is measured to
@@ -737,8 +741,13 @@ function PositionCard({
   // over the badge and recommendation box when one has been fetched for this
   // stock; the mechanical rec above stays the fallback (and still drives
   // critical/near, which are the engine's own triggers, not the AI's opinion).
-  const badgeLabel = verdict ? (AI_ACTION_LABEL[verdict.action] ?? verdict.action) : rec.label;
-  const badgeTone = verdict ? (AI_ACTION_TONE[verdict.action] ?? AI_ACTION_TONE["hold"]) : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
+  const shownVerdict = halted ? null : verdict;
+  const badgeLabel = shownVerdict
+    ? (AI_ACTION_LABEL[shownVerdict.action] ?? shownVerdict.action)
+    : rec.label;
+  const badgeTone = shownVerdict
+    ? (AI_ACTION_TONE[shownVerdict.action] ?? AI_ACTION_TONE["hold"])
+    : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -781,8 +790,10 @@ function PositionCard({
             <Badge variant="outline" className={badgeTone}>
               {badgeLabel}
             </Badge>
-            {verdict?.conviction && (
-              <span className="text-[11px] text-muted-foreground">ثقة {verdict.conviction}</span>
+            {shownVerdict?.conviction && (
+              <span className="text-[11px] text-muted-foreground">
+                ثقة {shownVerdict.conviction}
+              </span>
             )}
             {p.sharesEstimated && (
               <TooltipProvider delayDuration={200}>
@@ -880,16 +891,16 @@ function PositionCard({
       </div>
 
       <div className={cn("mt-3 rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed", badgeTone)}>
-        {verdict ? (
+        {shownVerdict ? (
           // The decision, then the order (or the level to watch on a hold),
           // each shown in full: clamped to two lines, a narrow phone screen
           // cut the order off mid-sentence.
           <p dir="rtl" className="text-right">
-            <span className="font-medium">{verdict.headline}</span>
-            {(verdict.orderInstruction ?? verdict.invalidation) && (
+            <span className="font-medium">{shownVerdict.headline}</span>
+            {(shownVerdict.orderInstruction ?? shownVerdict.invalidation) && (
               <>
                 <br />
-                <span className="text-muted-foreground">{verdict.orderInstruction ?? verdict.invalidation}</span>
+                <span className="text-muted-foreground">{shownVerdict.orderInstruction ?? shownVerdict.invalidation}</span>
               </>
             )}
           </p>
@@ -914,7 +925,7 @@ function PositionCard({
         )}
       </div>
 
-      {staleReason && (
+      {staleReason && !halted && (
         <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
           ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
         </p>

@@ -197,6 +197,12 @@ export function briefFor(a) {
   const signed = (x) => `${x >= 0 ? '+' : ''}${x}`;
 
   lines.push(`### ${a.code} — ${a.name} (${a.sectorAr ?? '?'})`);
+  if (a.halted) {
+    lines.push(
+      `TRADING HALTED: no trade since ${a.halted.since} — the stock is suspended or not trading. No order can be filled until it reopens: ` +
+        'the verdict is hold (for a holding) or wait (otherwise), with no order instruction, and says the stock is suspended.',
+    );
+  }
   if (a.corporateAction) {
     const ca = a.corporateAction;
     lines.push(

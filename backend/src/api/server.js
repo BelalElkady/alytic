@@ -35,7 +35,7 @@ import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } 
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars, getBars, cairoToday, cairoDateOf, isTradingDay } from '../data/cache.js';
+import { readBars, getBars, cairoToday, cairoDateOf, isTradingDay, tradingHalted } from '../data/cache.js';
 import { fetchDailyAuto } from '../data/yahoo.js';
 import { detectCorporateActions, applyCorporateActions, resolveCorporateAction, researchCorporateAction } from '../corporateActions.js';
 import { latestEventFor, recordEvent } from '../data/corporateEvents.js';
@@ -1661,6 +1661,7 @@ app.get('/api/quotes', wrap(async (req, res) => {
     const changePct = +(((1 + quote.changePct / 100) * event.factor - 1) * 100).toFixed(2);
     quotes.set(code, { ...quote, changePct, change: quote.price * (changePct / (100 + changePct)) });
   }
+  for (const [code, quote] of quotes) quotes.set(code, { ...quote, halted: tradingHalted(quote.time) });
   res.json({ asOf: new Date().toISOString(), quotes: Object.fromEntries(quotes) });
 }));
 
@@ -1966,6 +1967,8 @@ async function runScan(portfolio, { codes, style, userId, force = false, focus =
       price: livePrice,
       lastTradePrice: live?.price ?? null,
       lastTradeTime: live?.time ?? null,
+      // Priced after the analysis ran, so judged again on this quote.
+      halted: live ? tradingHalted(live.time) : r.halted ?? null,
       changePct: live?.changePct ?? r.snapshot.price.changePct,
       score: r.technical.score,
       signal: r.technical.signal,

@@ -240,7 +240,13 @@ export type Recommendation = {
  * server's own verdict is used as-is for cases the rules don't parameterise.
  */
 export function styleRecommendation(
-  row: { price?: number; midTarget?: { price?: number } | null; longTarget?: { price?: number } | null },
+  row: {
+    price?: number;
+    midTarget?: { price?: number } | null;
+    longTarget?: { price?: number } | null;
+    /** Set by the server when the stock isn't trading (suspended) — see tradingHalted in backend/src/data/cache.js. */
+    halted?: { since: string } | null;
+  },
   position: {
     avgCost?: number;
     shares?: number;
@@ -264,6 +270,16 @@ export function styleRecommendation(
     text: "التوصية مش متاحة — أعد تشغيل الخادم.",
     order: null,
   };
+
+  // Nothing can be bought or sold until it reopens, so no rule applies.
+  if (row.halted) {
+    return {
+      action: "halted",
+      label: "موقوف عن التداول",
+      text: `السهم مفيهوش تداول من ${row.halted.since} — غالبًا موقوف. مفيش أمر هيتنفذ دلوقتي، استنى لحد ما التداول يرجع.`,
+      order: null,
+    };
+  }
 
   const rules = STYLE_RULES[style];
   const price = row.price;

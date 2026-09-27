@@ -15,7 +15,7 @@
  */
 
 import { fetchDailyAuto } from './data/yahoo.js';
-import { getBars, cairoToday } from './data/cache.js';
+import { getBars, cairoToday, tradingHalted } from './data/cache.js';
 import { latestEventFor, recordEvent } from './data/corporateEvents.js';
 import { gapEvent, onNewBasis, onOldScale } from './corporateActions.js';
 import { checkQuality } from './data/quality.js';
@@ -169,6 +169,9 @@ export async function analyzeTicker(code, opts = {}) {
   // (the feed may not have done it yet — on the day itself it usually
   // hasn't), so a price that fell by the ratio isn't read as a crash.
   const { bars, corporateAction } = await rebaseBars(code, data.bars, opts.live);
+  // Suspended or otherwise not trading today (see tradingHalted): nothing can
+  // be bought or sold, so no call on it is actionable until it reopens.
+  const halted = tradingHalted(opts.live?.time);
 
   // Refuse to analyze data we don't trust. Returning a scored verdict on a
   // frozen or delisted series is worse than returning nothing.
@@ -241,7 +244,7 @@ export async function analyzeTicker(code, opts = {}) {
     riskPct: stopNow.riskPct,
     riskReward: targets.mid?.price ? riskReward(price, stopNow.stop, targets.mid.price) : null,
   };
-  buyingNow.worthIt = buyingNow.riskReward != null && buyingNow.riskReward >= rules.entry.minRiskReward;
+  buyingNow.worthIt = !halted && buyingNow.riskReward != null && buyingNow.riskReward >= rules.entry.minRiskReward;
 
   // Screening gate, not a technical one: a stock the universe tags
   // non-compliant is never offered as a fresh buy, independent of how good
@@ -426,7 +429,7 @@ export async function analyzeTicker(code, opts = {}) {
       // session close; this one is informational context for the long
       // horizon, never the trigger the AI or the recommendation rules act on.
       longTermStop,
-      stopBreached: stopFired,
+      stopBreached: stopFired && !halted,
       distanceToStopPct: r2(((posPrice - effectiveStop) / posPrice) * 100),
       // The level distanceToTargetPct is measured to — so the UI draws the
       // same target it quotes a distance to, whatever style it is showing.
@@ -446,8 +449,10 @@ export async function analyzeTicker(code, opts = {}) {
         sessions: governingTarget?.horizon?.sessions ?? null,
       }, rules),
       partialTaken,
-      // What the desk view shows on this position's card.
-      recommendation: positionRecommendation(
+      halted,
+      // What the desk view shows on this position's card. A stock that isn't
+      // trading gets no order: none could be filled until it reopens.
+      recommendation: halted ? haltedRecommendation(halted) : positionRecommendation(
         {
           snapshot: posSnapshot,
           position,
@@ -461,10 +466,10 @@ export async function analyzeTicker(code, opts = {}) {
       ),
       // The rule set, applied. These are the mechanical triggers the AI must respect.
       triggers: {
-        exitOnStop: ruleBook.stop.fired,
-        takePartial: ruleBook.partialProfit.fired,
-        atTarget: ruleBook.target.fired,
-        canAverageDown: ruleBook.averagingDown.fired,
+        exitOnStop: !halted && ruleBook.stop.fired,
+        takePartial: !halted && ruleBook.partialProfit.fired,
+        atTarget: !halted && ruleBook.target.fired,
+        canAverageDown: !halted && ruleBook.averagingDown.fired,
       },
       // Each rule from the settings panel, evaluated with the exact order
       // numbers the analyst is allowed to quote — see briefFor in analyst.js.
@@ -509,7 +514,7 @@ export async function analyzeTicker(code, opts = {}) {
       entryStatus,
       entryNote,
       supportGapPct,
-      actionable: !shariahExcluded && (entryStatus === 'buy_now' || entryStatus === 'limit_pullback'),
+      actionable: !halted && !shariahExcluded && (entryStatus === 'buy_now' || entryStatus === 'limit_pullback'),
       shariahExcluded,
       buyingNow,
       stop: stopPlan,
@@ -519,6 +524,17 @@ export async function analyzeTicker(code, opts = {}) {
 
     position: positionState,
     corporateAction,
+    halted,
+  };
+}
+
+/** The card's call for a held stock that isn't trading. */
+export function haltedRecommendation(halted) {
+  return {
+    action: 'halted',
+    label: 'موقوف عن التداول',
+    text: `السهم مفيهوش تداول من ${halted.since} — غالبًا موقوف. مفيش أمر هيتنفذ دلوقتي، استنى لحد ما التداول يرجع وبعدين راجع التوصية.`,
+    order: null,
   };
 }
 
