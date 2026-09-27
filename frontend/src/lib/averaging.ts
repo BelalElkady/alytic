@@ -1,31 +1,34 @@
 /**
- * The averaging calculator's math: how many shares to buy at a given price so
- * a Position's average cost lands on a target average.
+ * The averaging calculator's math: spend an amount of money on more shares of
+ * a Position and see where its average cost lands.
  *
- * Holding `shares` at `avgCost`, buying `n` more at `price` gives
- *   newAvg = (shares·avgCost + n·price) / (shares + n)
- * so reaching `target` exactly needs
- *   n = shares·(avgCost − target) / (target − price).
- * That is only positive when the target sits strictly between the buy price
- * and the current average: to pull the average down you must buy below the
- * target, and to push it up you must buy above it.
+ * Holding `shares` at `avgCost` and spending `amount` at `price` buys
+ *   n = floor(amount / price)
+ * whole shares (never more than the money covers), giving
+ *   newAvg = (shares·avgCost + n·price) / (shares + n).
+ * Buying below the current average pulls it down; buying above pushes it up.
  */
 
 export type AveragingInput = {
   shares: number;
   avgCost: number;
-  target: number;
+  /** The money the user is willing to put in. */
+  amount: number;
   price: number;
 };
 
 export type AveragingPlan = {
   ok: true;
-  /** Whole shares to buy — rounded up, so the average reaches the target or just past it. */
+  /** Whole shares the amount buys — rounded down, so the cost never exceeds it. */
   buyShares: number;
   buyCost: number;
+  /** What's left of the amount after buying whole shares. */
+  leftover: number;
   totalShares: number;
   totalCost: number;
   newAvg: number;
+  /** newAvg − avgCost: negative when the average came down. */
+  avgChange: number;
 };
 
 export type AveragingError = { ok: false; reason: string };
@@ -61,58 +64,44 @@ export function parseAmount(text: string): number {
   return normalized ? Number(normalized) : Number.NaN;
 }
 
-export function planAveraging({ shares, avgCost, target, price }: AveragingInput): AveragingResult {
+export function planAveraging({ shares, avgCost, amount, price }: AveragingInput): AveragingResult {
   if (!isPositive(shares)) return { ok: false, reason: "اكتب عدد الأسهم اللي معاك." };
   if (!isPositive(avgCost)) return { ok: false, reason: "اكتب متوسط الشراء الحالي." };
-  if (!isPositive(target)) return { ok: false, reason: "اكتب المتوسط اللي عايز توصله." };
+  if (!isPositive(amount)) return { ok: false, reason: "اكتب المبلغ اللي عايز تدفعه." };
   if (!isPositive(price)) return { ok: false, reason: "اكتب سعر الشراء الجديد." };
-  if (target === avgCost) {
-    return { ok: false, reason: "متوسطك الحالي هو نفس المتوسط اللي عايز توصله." };
-  }
-  if (target < avgCost && price >= target) {
-    return {
-      ok: false,
-      reason: "عشان تنزّل متوسطك لازم تشتري بسعر أقل من المتوسط المستهدف.",
-    };
-  }
-  if (target > avgCost && price <= target) {
-    return {
-      ok: false,
-      reason: "عشان ترفع متوسطك لازم تشتري بسعر أعلى من المتوسط المستهدف.",
-    };
-  }
 
-  const exact = (shares * (avgCost - target)) / (target - price);
-  // The epsilon keeps a floating-point 99.99999999 from rounding up to 101.
-  const buyShares = Math.max(1, Math.ceil(exact - 1e-9));
+  // The epsilon keeps a floating-point 2.9999999 from rounding down to 2.
+  const buyShares = Math.floor(amount / price + 1e-9);
+  if (buyShares < 1) {
+    return { ok: false, reason: "المبلغ ده مايكفيش تشتري بيه ولا سهم على السعر ده." };
+  }
   const buyCost = buyShares * price;
   const totalShares = shares + buyShares;
   const totalCost = shares * avgCost + buyCost;
+  const newAvg = totalCost / totalShares;
   return {
     ok: true,
     buyShares,
     buyCost,
+    leftover: Math.max(0, amount - buyCost),
     totalShares,
     totalCost,
-    newAvg: totalCost / totalShares,
+    newAvg,
+    avgChange: newAvg - avgCost,
   };
 }
 
-/** Steps away from the target, as a fraction of it, for the "other prices" table. */
-const LADDER_STEPS = [0.02, 0.05, 0.1, 0.15, 0.2];
+/** Steps away from the buy price, as a fraction of it, for the "other prices" table. */
+const LADDER_STEPS = [-0.15, -0.1, -0.05, 0.05, 0.1];
 
 /**
- * A few buy prices on the useful side of the target (below it when averaging
- * down, above it when averaging up), each with the shares it would take —
- * so the user can see how much a cheaper or dearer fill changes the order.
+ * The same amount spent at a few prices around the entered one, each with the
+ * average it would leave — so the user can see how much a cheaper or dearer
+ * fill moves the result.
  */
-export function averagingLadder(
-  input: Omit<AveragingInput, "price">,
-): { price: number; plan: AveragingPlan }[] {
-  const { avgCost, target } = input;
-  if (!isPositive(target) || !isPositive(avgCost) || target === avgCost) return [];
-  const direction = target < avgCost ? -1 : 1;
-  return LADDER_STEPS.map((step) => Math.round(target * (1 + direction * step) * 100) / 100)
+export function averagingLadder(input: AveragingInput): { price: number; plan: AveragingPlan }[] {
+  if (!isPositive(input.price)) return [];
+  return LADDER_STEPS.map((step) => Math.round(input.price * (1 + step) * 100) / 100)
     .map((price) => ({ price, result: planAveraging({ ...input, price }) }))
     .filter((row): row is { price: number; result: AveragingPlan } => row.result.ok)
     .map(({ price, result }) => ({ price, plan: result }));
