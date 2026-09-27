@@ -1334,6 +1334,7 @@ app.post('/api/admin/users/:id/follow-up', wrap(async (req, res) => {
   if (typeof req.body?.done !== 'boolean') return res.status(400).json({ error: 'done لازم يكون true أو false' });
   if (!(await getUserById(req.params.id))) return res.status(404).json({ error: 'المستخدم غير موجود' });
   const row = await setUserFollowUp(req.params.id, channel, req.body.done, req.user.id);
+  if (!row) return res.status(503).json({ error: 'جدول المتابعة مش موجود في قاعدة البيانات لسه — شغّل backend/supabase/schema.sql في Supabase الأول' });
   res.json({ ok: true, followUp: followUpOf(row) });
 }));
 

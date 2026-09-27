@@ -686,23 +686,27 @@ export const FOLLOW_UP_CHANNELS = ['whatsapp', 'email'];
 
 /**
  * Ticks (done) or clears one channel of a user's follow-up checklist, leaving
- * the other channel as it was. Returns the row after the change.
+ * the other channel as it was. Returns the row after the change, or null when
+ * the user_follow_ups table hasn't been created in this database yet — the
+ * caller tells the admin to apply supabase/schema.sql rather than failing
+ * with a bare server error.
  */
 export async function setUserFollowUp(userId, channel, done, updatedBy) {
   if (!FOLLOW_UP_CHANNELS.includes(channel)) throw new Error(`setUserFollowUp: unknown channel ${channel}`);
   const now = new Date().toISOString();
-  const data = must(
-    await supabase
-      .from('user_follow_ups')
-      .upsert(
-        { user_id: userId, [`${channel}_at`]: done ? now : null, updated_by: updatedBy ?? null, updated_at: now },
-        { onConflict: 'user_id' },
-      )
-      .select('user_id, whatsapp_at, email_at')
-      .single(),
-    'setUserFollowUp',
-  );
-  return data;
+  const result = await supabase
+    .from('user_follow_ups')
+    .upsert(
+      { user_id: userId, [`${channel}_at`]: done ? now : null, updated_by: updatedBy ?? null, updated_at: now },
+      { onConflict: 'user_id' },
+    )
+    .select('user_id, whatsapp_at, email_at')
+    .single();
+  if (isMissingTable(result.error)) {
+    console.error('setUserFollowUp: the user_follow_ups table is missing — apply backend/supabase/schema.sql.');
+    return null;
+  }
+  return must(result, 'setUserFollowUp');
 }
 
 /** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. */
