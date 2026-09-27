@@ -18,7 +18,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
-import { ALL_CODES, UNIVERSE, lookup, registerCustomStocks } from '../config/universe.js';
+import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
@@ -26,7 +26,7 @@ import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow } from '../portfolio.js';
-import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/clientOpenRouter.js';
+import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
 // change for the text-analysis path can never silently redirect vision too.
@@ -35,7 +35,9 @@ import { aiAvailable, callWithRetry, getOpenRouterClient } from '../agent/client
 // text-only "thinking" model with zero vision-capable endpoints, producing
 // an opaque 404 — verified live.
 const SCREENSHOT_VISION_MODEL = process.env.ALYTIC_VISION_MODEL ?? 'qwen/qwen2.5-vl-72b-instruct:free';
-import { readBars, cairoToday, cairoDateOf, isTradingDay } from '../data/cache.js';
+import { readBars, getBars, cairoToday, cairoDateOf, isTradingDay } from '../data/cache.js';
+import { fetchDailyAuto } from '../data/yahoo.js';
+import { detectCorporateActions, applyCorporateActions, resolveCorporateAction, researchCorporateAction } from '../corporateActions.js';
 import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
@@ -1995,6 +1997,7 @@ async function runScan(portfolio, { codes, style, userId, force = false, focus =
 
 app.get('/api/portfolio', wrap(async (req, res) => {
   const p = await loadPortfolio(req.user.id);
+  checkCorporateActionsSoon(req.user.id, p);
   // /api/portfolio isn't a PAID_PATHS entry (a lapsed account can still read
   // its own data), so req.access isn't guaranteed to be set the way it is on
   // /api/scan — compute it directly rather than assume.
@@ -2110,6 +2113,69 @@ async function currentPrices(codes) {
   }
   return prices;
 }
+
+/**
+ * Bonus shares, splits and mergers on held stocks. Found in the background
+ * (checkCorporateActionsSoon) and at the daily close; see corporateActions.js.
+ * The shares move with the feed's own adjustment, and the announced ratio
+ * when a search finds one that agrees with it.
+ */
+const corporateActionResearch = new Map(); // one search per event, shared across users
+async function reconcileCorporateActions(userId) {
+  const portfolio = await loadPortfolio(userId);
+  const codes = Object.keys(portfolio.positions);
+  if (!codes.length) return [];
+  const quotes = await fetchLatestQuotes(codes).catch(() => new Map());
+  const livePrices = new Map([...quotes].map(([code, q]) => [code, q.price]));
+  const proposals = await detectCorporateActions(portfolio, {
+    today: cairoToday(),
+    livePrices,
+    barsFor: async (code) => (await readBars(code).catch(() => null))?.bars ?? null,
+    freshBarsFor: async (code) => (await getBars(
+      code,
+      toYahoo(code),
+      (yahooSymbol, o) => fetchDailyAuto(code, { ...o, yahooSymbol, source: lookup(code)?.source }),
+      { force: true },
+    )).bars,
+    research: aiAvailable()
+      ? (code, candidate) => {
+          const key = `${code}:${candidate.lastBefore}:${candidate.factor.toFixed(2)}`;
+          if (!corporateActionResearch.has(key)) {
+            corporateActionResearch.set(key, researchCorporateAction(code, candidate, { name: lookup(code)?.ar, request: requestStructuredOR }));
+          }
+          return corporateActionResearch.get(key);
+        }
+      : null,
+  });
+  if (!proposals.length) return [];
+  await withPortfolio(userId, (p) => applyCorporateActions(p, proposals));
+  console.log(`[corporate-actions] ${userId}:`, JSON.stringify(proposals.map(({ code, factor, status, confirmedBy }) => ({ code, factor, status, confirmedBy }))));
+  return proposals;
+}
+
+// Opening the desk looks again at most every half hour per user, in the
+// background: the answer lands on the next reload, never holding this one up.
+const CORPORATE_ACTION_RECHECK_MS = 30 * 60 * 1000;
+const corporateActionCheckedAt = new Map();
+function checkCorporateActionsSoon(userId, portfolio) {
+  if (!Object.keys(portfolio.positions ?? {}).length) return;
+  const key = `${currentTenant()?.id ?? ''}:${userId}`;
+  const last = corporateActionCheckedAt.get(key);
+  if (last && Date.now() - last < CORPORATE_ACTION_RECHECK_MS) return;
+  corporateActionCheckedAt.set(key, Date.now());
+  reconcileCorporateActions(userId).catch((err) => console.warn('[corporate-actions] check failed:', err.message));
+}
+
+app.post('/api/portfolio/corporate-action', wrap(async (req, res) => {
+  const { code, lastBefore, action } = req.body ?? {};
+  if (typeof code !== 'string' || !isDayString(lastBefore) || !['undo', 'apply', 'dismiss'].includes(action)) {
+    return res.status(400).json({ error: 'محتاج code و lastBefore و action (undo/apply/dismiss)' });
+  }
+  const updated = await withPortfolio(req.user.id, (portfolio) =>
+    resolveCorporateAction(portfolio, { code: code.toUpperCase(), lastBefore, action }),
+  );
+  res.json(updated);
+}));
 
 app.post('/api/portfolio/levels', wrap(async (req, res) => {
   const { code, stop, target } = req.body ?? {};
@@ -2352,6 +2418,9 @@ async function runDailyClose() {
   let saved = 0;
   let failed = 0;
   for (const userId of userIds) {
+    // Before the close is saved, so a bonus issue or split landing today
+    // doesn't go into the log as a day's loss.
+    await reconcileCorporateActions(userId).catch((err) => console.warn(`[daily-close] corporate actions for ${userId}:`, err.message));
     try {
       await snapshotForUser(userId);
       saved += 1;

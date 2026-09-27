@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { ArrowDownUp, PencilLine, Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
@@ -500,6 +500,164 @@ function PositionsPage() {
   );
 }
 
+const CORPORATE_ACTION_KIND: Record<string, string> = {
+  bonus: "أسهم مجانية",
+  split: "تجزئة",
+  reverse_split: "تجميع أسهم",
+  merger: "اندماج",
+  rights: "اكتتاب (حقوق أولوية)",
+};
+
+type HoldingLevels = {
+  shares: number;
+  avgCost: number;
+  stop: number | null;
+  target: number | null;
+};
+type CorporateActionRecord = {
+  code: string;
+  lastBefore: string;
+  status: "applied" | "pending" | "undone";
+  factor: number;
+  kind: string | null;
+  summary: string | null;
+  sourceUrl: string | null;
+  confirmedBy: "research" | "prices" | null;
+  before: HoldingLevels;
+  after?: HoldingLevels;
+  at: string;
+  dismissedAt?: string;
+};
+
+/** Applied notices stay on the card this long unless dismissed. */
+const CORPORATE_ACTION_SHOW_DAYS = 14;
+
+/**
+ * A bonus issue, split or merger the backend found on this holding (see
+ * backend/src/corporateActions.js): what it changed, with an undo — or, when
+ * the ratio couldn't be confirmed, the suggested numbers to apply by hand.
+ */
+function CorporateActionNotice({ code }: { code: string }) {
+  const { pf, reload } = useDesk();
+  const [busy, setBusy] = useState(false);
+  const records: CorporateActionRecord[] = pf?.corporateActions ?? [];
+  const record = [...records]
+    .reverse()
+    .find(
+      (r) =>
+        r.code === code &&
+        !r.dismissedAt &&
+        (r.status === "pending" ||
+          (r.status === "applied" &&
+            Date.now() - Date.parse(r.at) < CORPORATE_ACTION_SHOW_DAYS * 86_400_000)),
+    );
+  if (!record) return null;
+
+  const act = async (action: "undo" | "apply" | "dismiss", done: string) => {
+    setBusy(true);
+    try {
+      await post("/api/portfolio/corporate-action", {
+        code,
+        lastBefore: record.lastBefore,
+        action,
+      });
+      toast.success(done);
+      void reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تنفيذ الطلب");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const kind = (record.kind && CORPORATE_ACTION_KIND[record.kind]) || "تعديل في عدد أسهم الشركة";
+  const ratio = Number(record.factor).toLocaleString("en-US", { maximumFractionDigits: 6 });
+  const suggestedShares = Math.max(1, Math.round(record.before.shares * record.factor));
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
+
+  return (
+    <div
+      dir="rtl"
+      onClick={stop}
+      onKeyDown={stop}
+      className="mt-3 cursor-default rounded-lg border border-warn/40 bg-warn-soft px-3.5 py-2.5 text-right text-[12.5px] leading-relaxed"
+    >
+      {record.status === "applied" && record.after ? (
+        <p>
+          <span className="font-medium">
+            {kind} — اتحدّث عدد الأسهم تلقائيًا:{" "}
+            <span className="num">{int(record.before.shares)}</span> ←{" "}
+            <span className="num">{int(record.after.shares)}</span> سهم
+          </span>
+          <br />
+          <span className="text-muted-foreground">
+            النسبة <span className="num">{ratio}</span> سهم لكل سهم، ومتوسط الشراء{" "}
+            <span className="num">{fmt(record.before.avgCost)}</span> ←{" "}
+            <span className="num">{fmt(record.after.avgCost)}</span> — قيمة الشراء زي ما هي.
+            {record.confirmedBy === "prices" &&
+              " النسبة محسوبة من الأسعار، راجع العدد مع شركة السمسرة."}
+          </span>
+          {record.summary && (
+            <>
+              <br />
+              <span className="text-muted-foreground">{record.summary}</span>
+            </>
+          )}
+        </p>
+      ) : (
+        <p>
+          <span className="font-medium">
+            سعر {code} اتعدّل بنسبة حوالي <span className="num">{ratio}</span> — غالبًا {kind}
+          </span>
+          <br />
+          <span className="text-muted-foreground">
+            {record.kind === "rights"
+              ? "لو اكتتبت في الزيادة سجّل الأسهم الجديدة كصفقة شراء. "
+              : `لو شركة السمسرة زودت أسهمك، عددك هيبقى حوالي ${int(suggestedShares)} سهم. `}
+            {record.summary}
+          </span>
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap justify-end gap-2">
+        {record.sourceUrl && /^https?:\/\//.test(record.sourceUrl) && (
+          <a
+            href={record.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="self-center text-[12px] text-muted-foreground underline"
+          >
+            المصدر
+          </a>
+        )}
+        {record.status === "applied" ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => act("undo", "رجّعنا العدد زي ما كان")}
+          >
+            تراجع
+          </Button>
+        ) : (
+          record.kind !== "rights" && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => act("apply", "اتحدّث عدد الأسهم")}
+            >
+              حدّث العدد
+            </Button>
+          )
+        )}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => act("dismiss", "تمام")}>
+          {record.status === "applied" ? "تمام" : "تجاهل"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function PositionCard({
   row,
   onOpen,
@@ -678,6 +836,8 @@ function PositionCard({
           </Button>
         </div>
       </div>
+
+      <CorporateActionNotice code={row.code} />
 
       <PriceRail
         className="mt-4"

@@ -48,6 +48,10 @@ _Avoid_: Risk profile, persona
 A stock a User currently holds in their portfolio, with its share count and average cost.
 _Avoid_: Holding, stock (when meaning the User's stake)
 
+**Corporate action**:
+A bonus-share issue, split, reverse split or merger share swap that changes how many shares a Position holds without money moving. The app finds it by comparing the prices it saved at each daily close with the feed's adjusted history, confirms the ratio with a web search, and rewrites the Position's share count and average cost (purchase value unchanged), with an undo on the card.
+_Avoid_: Split (when meaning any of them), dividend (a cash dividend is a trade, not this)
+
 **Order added**:
 The order a User's Positions arrived in: Positions from a broker screenshot keep the screenshot's row order, and Positions added by hand afterwards go to the end. Labelled "ترتيب الإضافة".
 _Avoid_: Screenshot order, manual order, insertion order
