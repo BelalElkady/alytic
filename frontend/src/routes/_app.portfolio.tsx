@@ -136,6 +136,10 @@ type StoredVerdict = {
   at: number | null;
   /** The live price on the card when it was requested; null for an entry saved before this was recorded. */
   price: number | null;
+  /** The investor style it was written under; null when unknown. */
+  style: StyleKey | null;
+  /** The holding (`shares@avgCost`) it was written about; null when unknown. */
+  positionKey: string | null;
 };
 
 /** A move this large since a verdict was written is enough to call it outdated on its own. */
@@ -171,30 +175,81 @@ function verdictStaleReason(
   return null;
 }
 
-// The last verdict the user asked for stays on the card — across days and
-// reloads — until they press the button again; nothing refreshes it by
-// itself. Only a change to what it was written about drops it: a trade on the
-// position (e.g. acting on the verdict — its "sell 223 shares" order would be
-// stale) or a different investor style. This is purely a "what to display"
-// convenience, not a billing cache (see the block comment above).
-function readStoredVerdict(code: string, style: StyleKey, positionKey: string): StoredVerdict | null {
+// The last verdict the user asked for stays on the card — across days,
+// reloads, trades and style changes — until they press the button again;
+// nothing replaces or hides it by itself. When what it was written about has
+// changed since (a trade on the position, a different investor style, a big
+// price move) it is flagged as outdated instead (see verdictStaleReason).
+// The server keeps each stock's last verdict on the portfolio
+// (pf.lastVerdicts), so it shows on every device; this browser's copy covers
+// a verdict saved before that existed. Purely a "what to display" record, not
+// a billing cache (see the block comment above).
+function readLocalVerdict(code: string): StoredVerdict | null {
   try {
     const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
-    if (!stored || stored.style !== style || stored.positionKey !== positionKey || !stored.verdict) return null;
+    if (!stored?.verdict) return null;
     // Entries saved before `at` existed only carry `day` (a Date.toDateString()).
     const at = Number.isFinite(stored.at) ? stored.at : Date.parse(stored.day);
     return {
       verdict: stored.verdict,
       at: Number.isFinite(at) ? at : null,
       price: typeof stored.price === "number" ? stored.price : null,
+      style: stored.style ?? null,
+      positionKey: stored.positionKey ?? null,
     };
   } catch {
     return null;
   }
 }
 
+/** A stock's last verdict as the server keeps it (rememberVerdict in backend/src/portfolio.js). */
+type ServerVerdict = {
+  verdict?: Verdict;
+  at?: number;
+  price?: number | null;
+  style?: StyleKey;
+  shares?: number;
+  avgCost?: number;
+};
+
+function serverVerdict(entry: ServerVerdict | null | undefined): StoredVerdict | null {
+  if (!entry?.verdict) return null;
+  return {
+    verdict: entry.verdict,
+    at: typeof entry.at === "number" && Number.isFinite(entry.at) ? entry.at : null,
+    price: typeof entry.price === "number" ? entry.price : null,
+    style: entry.style ?? null,
+    positionKey:
+      entry.shares != null && entry.avgCost != null ? `${entry.shares}@${entry.avgCost}` : null,
+  };
+}
+
+/** The newest of this stock's last verdict on the server and in this browser. */
+function lastVerdict(
+  code: string,
+  serverEntry: ServerVerdict | null | undefined,
+): StoredVerdict | null {
+  const remote = serverVerdict(serverEntry);
+  const local = readLocalVerdict(code);
+  if (!remote || !local) return remote ?? local;
+  return (local.at ?? 0) > (remote.at ?? 0) ? local : remote;
+}
+
+/** Why the verdict was written about something else than what the card shows now, or null. */
+function verdictChangedReason(
+  saved: StoredVerdict,
+  style: StyleKey,
+  positionKey: string,
+): string | null {
+  if (saved.positionKey && saved.positionKey !== positionKey)
+    return "اتسجلت حركة على السهم بعد التوصية";
+  if (saved.style && saved.style !== style) return "غيّرت أسلوب الاستثمار بعد التوصية";
+  return null;
+}
+
 function useStockReview(code: string, style: StyleKey, positionKey: string, livePrice: number | undefined) {
-  const { refreshUser, reloadPortfolio } = useDesk();
+  const { refreshUser, reloadPortfolio, pf } = useDesk();
+  const serverEntry = pf?.lastVerdicts?.[code];
   const [saved, setSaved] = useState<StoredVerdict | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -204,8 +259,8 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
   livePriceRef.current = livePrice;
 
   useEffect(() => {
-    setSaved(readStoredVerdict(code, style, positionKey));
-  }, [code, style, positionKey]);
+    setSaved(lastVerdict(code, serverEntry));
+  }, [code, serverEntry]);
 
   const request = useCallback(
     async (force: boolean) => {
@@ -216,7 +271,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
         // Usually answered inline; a slow model call becomes a server-side
         // job that this polls, so no request outlives nginx's 180s timeout.
         const result = await withReviewSlot(async () => {
-          let res = await post("/api/review/stock", { code, style, force });
+          let res = await post("/api/review/stock", { code, style, force, price: priceAtRequest });
           const giveUpAt = Date.now() + REVIEW_MAX_WAIT_MS;
           while (res?.status === "running") {
             if (Date.now() > giveUpAt) throw new Error("التحليل أخد وقت أطول من المتوقع — جرّب تاني بعد شوية.");
@@ -226,7 +281,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
           return res;
         });
         const at = Date.now();
-        setSaved({ verdict: result.verdict, at, price: priceAtRequest });
+        setSaved({ verdict: result.verdict, at, price: priceAtRequest, style, positionKey });
         try {
           window.localStorage.setItem(
             reviewStorageKey(code),
@@ -235,8 +290,8 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
         } catch {
           /* storage unavailable — the verdict still shows for this session */
         }
-        // A forced review may have spent a recommendation credit.
-        if (force) void reloadPortfolio().catch(() => {});
+        // Picks up the credit it spent and the verdict the server now keeps.
+        void reloadPortfolio().catch(() => {});
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 402) {
           await refreshUser();
@@ -254,6 +309,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
     verdict: saved?.verdict ?? null,
     verdictAt: saved?.at ?? null,
     verdictPrice: saved?.price ?? null,
+    verdictChanged: saved ? verdictChangedReason(saved, style, positionKey) : null,
     loading,
     error,
     request,
@@ -356,12 +412,13 @@ function PositionsPage() {
   }, []);
 
   const openBatchConfirm = () => {
-    const needVerdict = rows.filter(
-      (row) =>
-        !isFromToday(
-          readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`)?.at,
-        ),
-    );
+    const needVerdict = rows.filter((row) => {
+      const saved = lastVerdict(row.code, pf?.lastVerdicts?.[row.code]);
+      const positionKey = `${row.position.shares}@${row.position.avgCost}`;
+      return (
+        !saved || !isFromToday(saved.at) || verdictChangedReason(saved, style, positionKey) != null
+      );
+    });
     // A suspended stock is skipped: no order could be filled until it trades again.
     const halted = needVerdict.filter((row) => row.halted).map((row) => row.code);
     const missing = needVerdict.filter((row) => !row.halted).map((row) => row.code);
@@ -539,12 +596,52 @@ type CorporateActionRecord = {
   dismissedAt?: string;
 };
 
-/** Applied notices stay on the card this long unless dismissed. */
-const CORPORATE_ACTION_SHOW_DAYS = 14;
+/** EGX's session closes at 14:30 Cairo, Sunday to Thursday. */
+const SESSION_CLOSE_MINUTE = 14 * 60 + 30;
+const cairoParts = (ms: number) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Cairo",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(ms);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    day: cairoDay(ms),
+    weekday: get("weekday"),
+    minute: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+};
+const isSessionDay = (weekday: string) => weekday !== "Fri" && weekday !== "Sat";
+
+/**
+ * An applied notice is news for the session it lands in: it stays on the card
+ * until that session closes — the first 14:30 Cairo close on a trading day
+ * after it was applied — unless the user presses "تمام" before then.
+ */
+function appliedNoticeExpired(at: string, now = Date.now()): boolean {
+  const appliedAt = Date.parse(at);
+  if (!Number.isFinite(appliedAt)) return true;
+  const applied = cairoParts(appliedAt);
+  let closeDay = applied.day;
+  if (!isSessionDay(applied.weekday) || applied.minute >= SESSION_CLOSE_MINUTE) {
+    // Walk forward a day at a time (from noon, clear of any DST shift) to the next trading day.
+    let probe = Date.parse(`${applied.day}T12:00:00Z`);
+    do {
+      probe += 86_400_000;
+    } while (!isSessionDay(cairoParts(probe).weekday));
+    closeDay = cairoDay(probe);
+  }
+  const current = cairoParts(now);
+  return (
+    current.day > closeDay || (current.day === closeDay && current.minute >= SESSION_CLOSE_MINUTE)
+  );
+}
 
 /**
  * A bonus issue, split or merger the backend found on this holding (see
- * backend/src/corporateActions.js): what it changed, with an undo — or, when
+ * backend/src/corporateActions.js): what it changed — or, when
  * the ratio couldn't be confirmed, the suggested numbers to apply by hand.
  */
 function CorporateActionNotice({ code }: { code: string }) {
@@ -557,13 +654,11 @@ function CorporateActionNotice({ code }: { code: string }) {
       (r) =>
         r.code === code &&
         !r.dismissedAt &&
-        (r.status === "pending" ||
-          (r.status === "applied" &&
-            Date.now() - Date.parse(r.at) < CORPORATE_ACTION_SHOW_DAYS * 86_400_000)),
+        (r.status === "pending" || (r.status === "applied" && !appliedNoticeExpired(r.at))),
     );
   if (!record) return null;
 
-  const act = async (action: "undo" | "apply" | "dismiss", done: string) => {
+  const act = async (action: "apply" | "dismiss", done: string) => {
     setBusy(true);
     try {
       await post("/api/portfolio/corporate-action", {
@@ -584,6 +679,11 @@ function CorporateActionNotice({ code }: { code: string }) {
   const ratio = Number(record.factor).toLocaleString("en-US", { maximumFractionDigits: 6 });
   const suggestedShares = Math.max(1, Math.round(record.before.shares * record.factor));
   const stop = (e: SyntheticEvent) => e.stopPropagation();
+  // An applied change is already done; the notice just says what happened.
+  const showSource =
+    record.status !== "applied" &&
+    record.sourceUrl != null &&
+    /^https?:\/\//.test(record.sourceUrl);
 
   return (
     <div
@@ -639,7 +739,7 @@ function CorporateActionNotice({ code }: { code: string }) {
         </p>
       )}
       <div className="mt-2 flex flex-wrap justify-end gap-2">
-        {record.sourceUrl && /^https?:\/\//.test(record.sourceUrl) && (
+        {showSource && record.sourceUrl && (
           <a
             href={record.sourceUrl}
             target="_blank"
@@ -649,26 +749,15 @@ function CorporateActionNotice({ code }: { code: string }) {
             المصدر
           </a>
         )}
-        {record.status === "applied" ? (
+        {record.status !== "applied" && record.kind !== "rights" && (
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             disabled={busy}
-            onClick={() => act("undo", "رجّعنا العدد زي ما كان")}
+            onClick={() => act("apply", "اتحدّث عدد الأسهم")}
           >
-            تراجع
+            حدّث العدد
           </Button>
-        ) : (
-          record.kind !== "rights" && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => act("apply", "اتحدّث عدد الأسهم")}
-            >
-              حدّث العدد
-            </Button>
-          )
         )}
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => act("dismiss", "تمام")}>
           {record.status === "applied" ? "تمام" : "تجاهل"}
@@ -716,15 +805,19 @@ function PositionCard({
     verdict,
     verdictAt,
     verdictPrice,
+    verdictChanged,
     loading: reviewLoading,
     error: reviewError,
     request: requestReview,
   } = useStockReview(row.code, style, `${p.shares}@${p.avgCost}`, row.price);
   const staleReason = verdict
-    ? verdictStaleReason(verdictPrice, row.price, p.stop, [primaryTarget, p.reachedTarget?.price])
+    ? (verdictChanged ??
+      verdictStaleReason(verdictPrice, row.price, p.stop, [primaryTarget, p.reachedTarget?.price]))
     : null;
-  // A verdict stays on the card until the next request, so it can be from an earlier day.
-  const verdictIsToday = isFromToday(verdictAt);
+  // A verdict stays on the card until the next request, so it can be from an
+  // earlier day — or written before a trade or style change, which the batch
+  // treats like one from an earlier day.
+  const verdictIsToday = isFromToday(verdictAt) && !verdictChanged;
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false);
   const recommendationsLeft =
     typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
@@ -749,13 +842,17 @@ function PositionCard({
   // over the badge and recommendation box when one has been fetched for this
   // stock; the mechanical rec above stays the fallback (and still drives
   // critical/near, which are the engine's own triggers, not the AI's opinion).
-  const shownVerdict = halted ? null : verdict;
-  const badgeLabel = shownVerdict
-    ? (AI_ACTION_LABEL[shownVerdict.action] ?? shownVerdict.action)
-    : rec.label;
-  const badgeTone = shownVerdict
-    ? (AI_ACTION_TONE[shownVerdict.action] ?? AI_ACTION_TONE["hold"])
-    : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
+  // A suspended stock's badge says so, but its last verdict still stays in
+  // the box until a new one is requested.
+  const shownVerdict = verdict;
+  const badgeLabel =
+    shownVerdict && !halted
+      ? (AI_ACTION_LABEL[shownVerdict.action] ?? shownVerdict.action)
+      : rec.label;
+  const badgeTone =
+    shownVerdict && !halted
+      ? (AI_ACTION_TONE[shownVerdict.action] ?? AI_ACTION_TONE["hold"])
+      : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -798,7 +895,7 @@ function PositionCard({
             <Badge variant="outline" className={badgeTone}>
               {badgeLabel}
             </Badge>
-            {shownVerdict?.conviction && (
+            {shownVerdict?.conviction && !halted && (
               <span className="text-[11px] text-muted-foreground">
                 ثقة {shownVerdict.conviction}
               </span>
@@ -933,10 +1030,16 @@ function PositionCard({
         )}
       </div>
 
-      {staleReason && !halted && (
+      {shownVerdict && halted ? (
         <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
-          ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
+          ⚠️ دي آخر توصية قبل إيقاف السهم عن التداول — اطلب توصية جديدة أول ما التداول يرجع.
         </p>
+      ) : (
+        staleReason && (
+          <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
+            ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
+          </p>
+        )
       )}
 
       {aiAvailable && (

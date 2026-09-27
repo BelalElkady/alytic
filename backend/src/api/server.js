@@ -25,7 +25,7 @@ import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } fro
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
-import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -3119,6 +3119,10 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   const userId = req.user.id;
   const tier = req.access.tier;
   const jobKey = reviewJobKey(userId, pre.style, code);
+  // The live price on the card when it was asked for — only used to tell the
+  // user later how far the price has moved since this recommendation.
+  const sentPrice = Number(req.body?.price);
+  const requestPrice = Number.isFinite(sentPrice) && sentPrice > 0 && sentPrice <= MAX_PRICE ? sentPrice : null;
 
   // A recommendation is a pure spend-until-empty credit: every explicit
   // request pays for a fresh model call and draws one use from that
@@ -3166,12 +3170,18 @@ app.post('/api/review/stock', wrap(async (req, res) => {
       },
     );
     // A duplicate click joining the same in-flight job spends nothing extra.
-    if (!joiningRunningJob) {
-      await withPortfolio(userId, (p) => {
-        const next = bumpUsage(p, 'recommendations');
-        return baseLeftFor('recommendations', p, tier) > 0 ? next : addCredits(next, { recommendations: -1 });
+    // The verdict itself is kept on the portfolio as the stock's last
+    // recommendation: the card shows it on every device until the user asks
+    // for a new one (see rememberVerdict).
+    await withPortfolio(userId, (p) => {
+      const kept = rememberVerdict(p, code, verdict, {
+        style: pre.style ?? 'medium',
+        price: requestPrice,
       });
-    }
+      if (joiningRunningJob) return kept;
+      const next = bumpUsage(kept, 'recommendations');
+      return baseLeftFor('recommendations', p, tier) > 0 ? next : addCredits(next, { recommendations: -1 });
+    });
     console.log(`[review] ${code} ${source} in ${Date.now() - startedAt}ms`);
     const analysis = analyses.find((a) => a.code === code);
     if (analysis && verdict?.action) {

@@ -481,3 +481,35 @@ export function setNote(portfolio, date, note) {
   if (!existing) throw new Error(`مفيش بيانات محفوظة ليوم ${date}`);
   return { ...portfolio, log: { ...portfolio.log, [date]: { ...existing, note } } };
 }
+
+/**
+ * Keeps a stock's AI recommendation on the portfolio as its last one — the
+ * position card shows it, on any device, until the user asks for a new one.
+ * Only what the card shows is kept (the full verdict's prose would bloat the
+ * row every request loads), along with what it was written against: the
+ * style, the price, and the holding, so the card can say when it's outdated
+ * instead of hiding it. Entries for stocks no longer held are dropped.
+ */
+export function rememberVerdict(p, code, verdict, { style, price = null, now = Date.now() } = {}) {
+  const c = String(code).toUpperCase();
+  const pos = p.positions?.[c];
+  const kept = {};
+  for (const [k, v] of Object.entries(p.lastVerdicts ?? {})) if (p.positions?.[k]) kept[k] = v;
+  if (pos && verdict?.action) {
+    kept[c] = {
+      at: now,
+      style,
+      price,
+      shares: pos.shares,
+      avgCost: pos.avgCost,
+      verdict: {
+        action: verdict.action,
+        conviction: verdict.conviction ?? null,
+        headline: verdict.headline ?? '',
+        orderInstruction: verdict.orderInstruction ?? null,
+        invalidation: verdict.invalidation ?? null,
+      },
+    };
+  }
+  return { ...p, lastVerdicts: kept };
+}
