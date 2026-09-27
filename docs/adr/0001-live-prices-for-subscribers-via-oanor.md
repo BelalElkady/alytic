@@ -44,7 +44,7 @@ The callers decide whether a User is subscribed. The module and `analyzeMany` ne
   - `recommendations.js`.
 
   None of them is a subscriber's live view.
-- **Open question for the map:** `/api/analyze/:code` powers the stock-detail dialog, and it prices an open Position live (`fetchLatestQuotes([code])`). It is not one of #41's two call sites. But a subscriber who opens the dialog next to the desk row would see a 15-minute-older price there. The recommended answer is to add it as a third call site, since it is one line with the same `subscribed` flag. It is recorded here instead of decided silently, because it widens #41's settled scope.
+- **Third call site: the stock-detail dialog.** `/api/analyze/:code` powers the dialog and prices the stock it opens live, including an open Position's P&L and stop distance. It wasn't one of #41's two call sites, so it was left as an open question. The owner then decided to include it: a subscriber saw the dialog's 15-minute-older price next to the desk's oanor price. It now calls `fetchLiveQuotes` with the same `subscribed` flag. The dialog can open any stock, held or not, so each open costs at most one oanor call, and none when the stock is already in the 15 s cache.
 
 ### 2. Fallback
 

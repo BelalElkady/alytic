@@ -1600,7 +1600,11 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
   const rules = style ? rulesForStyle(RULES, style) : RULES;
   // Fetched first so an open position's P&L, stop distance and rule triggers
   // are priced at it (see analyzeTicker), not just the price shown beside them.
-  const live = (await fetchLatestQuotes([code]).catch(() => new Map())).get(code);
+  // Same source as the desk ticker (oanor for subscribers during the session),
+  // so the dialog never shows an older price than the card it was opened from.
+  const live = (
+    await fetchLiveQuotes([code], { subscribed: req.access?.subscriptionActive, userId: req.user.id }).catch(() => new Map())
+  ).get(code);
   const analysis = await analyzeTicker(code, {
     position: portfolio.positions[code] ?? null,
     capital: capitalOf(portfolio) || 1_000_000,
