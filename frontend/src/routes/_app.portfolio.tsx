@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { ArrowDownUp, PencilLine, Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
@@ -65,6 +65,7 @@ const REC_TONE: Record<string, string> = {
   hold: "border-border bg-surface-2 text-foreground",
   sell: "border-down/40 bg-down-soft text-down",
   sell_part: "border-warn/40 bg-warn-soft text-foreground",
+  halted: "border-warn/40 bg-warn-soft text-foreground",
 };
 
 // backend/src/agent/schemas.js ACTIONS — the AI analyst's own action enum,
@@ -355,16 +356,24 @@ function PositionsPage() {
   }, []);
 
   const openBatchConfirm = () => {
-    const missing = rows
-      .filter(
-        (row) =>
-          !isFromToday(readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`)?.at),
-      )
-      .map((row) => row.code);
+    const needVerdict = rows.filter(
+      (row) =>
+        !isFromToday(
+          readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`)?.at,
+        ),
+    );
+    // A suspended stock is skipped: no order could be filled until it trades again.
+    const halted = needVerdict.filter((row) => row.halted).map((row) => row.code);
+    const missing = needVerdict.filter((row) => !row.halted).map((row) => row.code);
     if (missing.length === 0) {
-      toast.info("كل الأسهم عندها توصية النهاردة بالفعل");
+      toast.info(
+        halted.length
+          ? `مفيش أسهم محتاجة توصية — ${halted.join("، ")} موقوف عن التداول`
+          : "كل الأسهم عندها توصية النهاردة بالفعل",
+      );
       return;
     }
+    if (halted.length) toast.info(`${halted.join("، ")} موقوف عن التداول — مش هيتحلل`);
     setBatchConfirm(missing);
   };
 
@@ -500,6 +509,175 @@ function PositionsPage() {
   );
 }
 
+const CORPORATE_ACTION_KIND: Record<string, string> = {
+  bonus: "أسهم مجانية",
+  split: "تجزئة",
+  reverse_split: "تجميع أسهم",
+  merger: "اندماج",
+  rights: "اكتتاب (حقوق أولوية)",
+};
+
+type HoldingLevels = {
+  shares: number;
+  avgCost: number;
+  stop: number | null;
+  target: number | null;
+};
+type CorporateActionRecord = {
+  code: string;
+  lastBefore: string;
+  status: "applied" | "pending" | "undone";
+  factor: number;
+  kind: string | null;
+  summary: string | null;
+  sourceUrl: string | null;
+  confirmedBy: "research" | "prices" | null;
+  levelsOnly?: boolean;
+  before: HoldingLevels;
+  after?: HoldingLevels;
+  at: string;
+  dismissedAt?: string;
+};
+
+/** Applied notices stay on the card this long unless dismissed. */
+const CORPORATE_ACTION_SHOW_DAYS = 14;
+
+/**
+ * A bonus issue, split or merger the backend found on this holding (see
+ * backend/src/corporateActions.js): what it changed, with an undo — or, when
+ * the ratio couldn't be confirmed, the suggested numbers to apply by hand.
+ */
+function CorporateActionNotice({ code }: { code: string }) {
+  const { pf, reload } = useDesk();
+  const [busy, setBusy] = useState(false);
+  const records: CorporateActionRecord[] = pf?.corporateActions ?? [];
+  const record = [...records]
+    .reverse()
+    .find(
+      (r) =>
+        r.code === code &&
+        !r.dismissedAt &&
+        (r.status === "pending" ||
+          (r.status === "applied" &&
+            Date.now() - Date.parse(r.at) < CORPORATE_ACTION_SHOW_DAYS * 86_400_000)),
+    );
+  if (!record) return null;
+
+  const act = async (action: "undo" | "apply" | "dismiss", done: string) => {
+    setBusy(true);
+    try {
+      await post("/api/portfolio/corporate-action", {
+        code,
+        lastBefore: record.lastBefore,
+        action,
+      });
+      toast.success(done);
+      void reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تنفيذ الطلب");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const kind = (record.kind && CORPORATE_ACTION_KIND[record.kind]) || "تعديل في عدد أسهم الشركة";
+  const ratio = Number(record.factor).toLocaleString("en-US", { maximumFractionDigits: 6 });
+  const suggestedShares = Math.max(1, Math.round(record.before.shares * record.factor));
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
+
+  return (
+    <div
+      dir="rtl"
+      onClick={stop}
+      onKeyDown={stop}
+      className="mt-3 cursor-default rounded-lg border border-warn/40 bg-warn-soft px-3.5 py-2.5 text-right text-[12.5px] leading-relaxed"
+    >
+      {record.status === "applied" && record.after && record.levelsOnly ? (
+        <p>
+          <span className="font-medium">{kind} — الوقف والهدف اتعدّلوا على السعر الجديد</span>
+          <br />
+          <span className="text-muted-foreground">
+            السعر نزل بنسبة الأسهم الجديدة ({ratio} سهم لكل سهم) مش بحركة السوق، فالوقف{" "}
+            <span className="num">{fmt(record.before.stop)}</span> بقى{" "}
+            <span className="num">{fmt(record.after.stop)}</span> — مش كسر وقف.
+          </span>
+        </p>
+      ) : record.status === "applied" && record.after ? (
+        <p>
+          <span className="font-medium">
+            {kind} — اتحدّث عدد الأسهم تلقائيًا:{" "}
+            <span className="num">{int(record.before.shares)}</span> ←{" "}
+            <span className="num">{int(record.after.shares)}</span> سهم
+          </span>
+          <br />
+          <span className="text-muted-foreground">
+            النسبة <span className="num">{ratio}</span> سهم لكل سهم، ومتوسط الشراء{" "}
+            <span className="num">{fmt(record.before.avgCost)}</span> ←{" "}
+            <span className="num">{fmt(record.after.avgCost)}</span> — قيمة الشراء زي ما هي.
+            {record.confirmedBy === "prices" &&
+              " النسبة محسوبة من الأسعار، راجع العدد مع شركة السمسرة."}
+          </span>
+          {record.summary && (
+            <>
+              <br />
+              <span className="text-muted-foreground">{record.summary}</span>
+            </>
+          )}
+        </p>
+      ) : (
+        <p>
+          <span className="font-medium">
+            سعر {code} اتعدّل بنسبة حوالي <span className="num">{ratio}</span> — غالبًا {kind}
+          </span>
+          <br />
+          <span className="text-muted-foreground">
+            {record.kind === "rights"
+              ? "لو اكتتبت في الزيادة سجّل الأسهم الجديدة كصفقة شراء. "
+              : `لو شركة السمسرة زودت أسهمك، عددك هيبقى حوالي ${int(suggestedShares)} سهم. `}
+            {record.summary}
+          </span>
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap justify-end gap-2">
+        {record.sourceUrl && /^https?:\/\//.test(record.sourceUrl) && (
+          <a
+            href={record.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="self-center text-[12px] text-muted-foreground underline"
+          >
+            المصدر
+          </a>
+        )}
+        {record.status === "applied" ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => act("undo", "رجّعنا العدد زي ما كان")}
+          >
+            تراجع
+          </Button>
+        ) : (
+          record.kind !== "rights" && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => act("apply", "اتحدّث عدد الأسهم")}
+            >
+              حدّث العدد
+            </Button>
+          )
+        )}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => act("dismiss", "تمام")}>
+          {record.status === "applied" ? "تمام" : "تجاهل"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function PositionCard({
   row,
   onOpen,
@@ -517,8 +695,11 @@ function PositionCard({
   const p = row.position;
   const { style } = useActiveInvestStyle(pf?.trades);
   const rec = styleRecommendation(row, p, style);
-  const critical = p.stopBreached;
-  const near = !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
+  // Suspended: the rule-book call and any AI verdict wait until it trades again.
+  const halted = Boolean(row.halted);
+  const critical = !halted && p.stopBreached;
+  const near =
+    !halted && !critical && (p.distanceToStopPct ?? 99) <= STYLE_RULES[style].nearStopPct;
   // Mirrors the server's governingTarget (analyze.js) — the long style reads
   // its target off the long-horizon price, every other style off the mid one.
   // The server reports the exact level its own target distance is measured to
@@ -557,19 +738,24 @@ function PositionCard({
   useEffect(() => {
     if (!batchId || handledBatchId.current === batchId) return;
     handledBatchId.current = batchId;
-    if (verdictIsToday || reviewLoading) {
+    if (verdictIsToday || reviewLoading || halted) {
       onBatchSettled(row.code);
       return;
     }
     void requestReview(false).finally(() => onBatchSettled(row.code));
-  }, [batchId, verdictIsToday, reviewLoading, requestReview, onBatchSettled, row.code]);
+  }, [batchId, verdictIsToday, reviewLoading, halted, requestReview, onBatchSettled, row.code]);
 
   // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
   // over the badge and recommendation box when one has been fetched for this
   // stock; the mechanical rec above stays the fallback (and still drives
   // critical/near, which are the engine's own triggers, not the AI's opinion).
-  const badgeLabel = verdict ? (AI_ACTION_LABEL[verdict.action] ?? verdict.action) : rec.label;
-  const badgeTone = verdict ? (AI_ACTION_TONE[verdict.action] ?? AI_ACTION_TONE["hold"]) : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
+  const shownVerdict = halted ? null : verdict;
+  const badgeLabel = shownVerdict
+    ? (AI_ACTION_LABEL[shownVerdict.action] ?? shownVerdict.action)
+    : rec.label;
+  const badgeTone = shownVerdict
+    ? (AI_ACTION_TONE[shownVerdict.action] ?? AI_ACTION_TONE["hold"])
+    : (REC_TONE[rec.action] ?? REC_TONE["hold"]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -612,8 +798,10 @@ function PositionCard({
             <Badge variant="outline" className={badgeTone}>
               {badgeLabel}
             </Badge>
-            {verdict?.conviction && (
-              <span className="text-[11px] text-muted-foreground">ثقة {verdict.conviction}</span>
+            {shownVerdict?.conviction && (
+              <span className="text-[11px] text-muted-foreground">
+                ثقة {shownVerdict.conviction}
+              </span>
             )}
             {p.sharesEstimated && (
               <TooltipProvider delayDuration={200}>
@@ -679,6 +867,8 @@ function PositionCard({
         </div>
       </div>
 
+      <CorporateActionNotice code={row.code} />
+
       <PriceRail
         className="mt-4"
         price={row.price}
@@ -709,16 +899,16 @@ function PositionCard({
       </div>
 
       <div className={cn("mt-3 rounded-lg border px-3.5 py-2.5 text-[13px] leading-relaxed", badgeTone)}>
-        {verdict ? (
+        {shownVerdict ? (
           // The decision, then the order (or the level to watch on a hold),
           // each shown in full: clamped to two lines, a narrow phone screen
           // cut the order off mid-sentence.
           <p dir="rtl" className="text-right">
-            <span className="font-medium">{verdict.headline}</span>
-            {(verdict.orderInstruction ?? verdict.invalidation) && (
+            <span className="font-medium">{shownVerdict.headline}</span>
+            {(shownVerdict.orderInstruction ?? shownVerdict.invalidation) && (
               <>
                 <br />
-                <span className="text-muted-foreground">{verdict.orderInstruction ?? verdict.invalidation}</span>
+                <span className="text-muted-foreground">{shownVerdict.orderInstruction ?? shownVerdict.invalidation}</span>
               </>
             )}
           </p>
@@ -743,7 +933,7 @@ function PositionCard({
         )}
       </div>
 
-      {staleReason && (
+      {staleReason && !halted && (
         <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
           ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
         </p>
@@ -768,17 +958,20 @@ function PositionCard({
           <Button
             // Filled while a recommendation is still on offer, so it stands out
             // on the card; once used it drops back to the quiet outline style.
-            variant={verdict ? "outline" : "default"}
+            variant={verdict || halted ? "outline" : "default"}
             size="sm"
-            className={cn(!verdict && "font-semibold shadow-sm")}
-            disabled={reviewLoading || (!isAdmin && recommendationsExhausted)}
+            className={cn(!verdict && !halted && "font-semibold shadow-sm")}
+            disabled={halted || reviewLoading || (!isAdmin && recommendationsExhausted)}
+            title={
+              halted ? "السهم موقوف عن التداول — التوصية هتتاح أول ما التداول يرجع" : undefined
+            }
             onClick={(e) => {
               e.stopPropagation();
               setConfirmReviewOpen(true);
             }}
           >
-            {reviewLoading ? <Spinner /> : !verdict && <Sparkles className="size-4" />}
-            {verdict ? "توصية جديدة" : "قولي توصية اليوم"}
+            {reviewLoading ? <Spinner /> : !verdict && !halted && <Sparkles className="size-4" />}
+            {halted ? "موقوف عن التداول" : verdict ? "توصية جديدة" : "قولي توصية اليوم"}
           </Button>
         </div>
       )}

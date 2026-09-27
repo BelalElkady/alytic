@@ -33,6 +33,8 @@ export type Row = {
   midTarget?: any;
   longTarget?: any;
   position: Position;
+  /** Not trading today (suspended) — see tradingHalted in backend/src/data/cache.js. */
+  halted?: { since: string } | null;
   [key: string]: any;
 };
 export type Portfolio = any;
@@ -378,6 +380,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
               lastTradePrice: quote.price,
               lastTradeTime: quote.time,
               changePct: quote.changePct ?? row.changePct,
+              halted: "halted" in quote ? quote.halted : row.halted,
               position,
             };
           }),
