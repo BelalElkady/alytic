@@ -3127,6 +3127,12 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   // cache. Joining a review that's already running (a duplicate click, not a
   // second ask) is the only free case.
   const joiningRunningJob = reviewJobs.get(jobKey)?.status === 'running';
+  // Suspended: no order could be filled, so a recommendation would only
+  // spend a credit on advice nobody can act on.
+  const halted = tradingHalted((await fetchLatestQuotes([code]).catch(() => new Map())).get(code)?.time);
+  if (!joiningRunningJob && halted) {
+    return res.status(409).json({ error: `${code} موقوف عن التداول من ${halted.since} — التوصية هتتاح أول ما التداول يرجع.`, reason: 'halted' });
+  }
   if (!joiningRunningJob && leftFor('recommendations', portfolio, tier) <= 0) {
     return res.status(429).json({ error: 'خلص رصيد التوصيات المتاح.', reason: 'recommendation_credit_limit' });
   }

@@ -580,6 +580,7 @@ export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = 
 export async function reviewStock(analyses, code, ctx = {}, { model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = {}) {
   const target = analyses.find((a) => a.code === code && a.position);
   if (!target) throw new Error(`مفيش مركز مفتوح في ${code}`);
+  if (target.halted) throw new Error(`${code} موقوف عن التداول من ${target.halted.since} — التوصية هتتاح أول ما التداول يرجع.`);
   const { text: contextText } = portfolioContext(analyses, ctx, rules);
 
   const pricedLive = target.position.pricedAt === 'live';

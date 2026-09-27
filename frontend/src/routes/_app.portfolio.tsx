@@ -356,16 +356,24 @@ function PositionsPage() {
   }, []);
 
   const openBatchConfirm = () => {
-    const missing = rows
-      .filter(
-        (row) =>
-          !isFromToday(readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`)?.at),
-      )
-      .map((row) => row.code);
+    const needVerdict = rows.filter(
+      (row) =>
+        !isFromToday(
+          readStoredVerdict(row.code, style, `${row.position.shares}@${row.position.avgCost}`)?.at,
+        ),
+    );
+    // A suspended stock is skipped: no order could be filled until it trades again.
+    const halted = needVerdict.filter((row) => row.halted).map((row) => row.code);
+    const missing = needVerdict.filter((row) => !row.halted).map((row) => row.code);
     if (missing.length === 0) {
-      toast.info("كل الأسهم عندها توصية النهاردة بالفعل");
+      toast.info(
+        halted.length
+          ? `مفيش أسهم محتاجة توصية — ${halted.join("، ")} موقوف عن التداول`
+          : "كل الأسهم عندها توصية النهاردة بالفعل",
+      );
       return;
     }
+    if (halted.length) toast.info(`${halted.join("، ")} موقوف عن التداول — مش هيتحلل`);
     setBatchConfirm(missing);
   };
 
@@ -730,12 +738,12 @@ function PositionCard({
   useEffect(() => {
     if (!batchId || handledBatchId.current === batchId) return;
     handledBatchId.current = batchId;
-    if (verdictIsToday || reviewLoading) {
+    if (verdictIsToday || reviewLoading || halted) {
       onBatchSettled(row.code);
       return;
     }
     void requestReview(false).finally(() => onBatchSettled(row.code));
-  }, [batchId, verdictIsToday, reviewLoading, requestReview, onBatchSettled, row.code]);
+  }, [batchId, verdictIsToday, reviewLoading, halted, requestReview, onBatchSettled, row.code]);
 
   // The AI analyst's own verdict — see backend/src/agent/schemas.js — takes
   // over the badge and recommendation box when one has been fetched for this
@@ -950,17 +958,20 @@ function PositionCard({
           <Button
             // Filled while a recommendation is still on offer, so it stands out
             // on the card; once used it drops back to the quiet outline style.
-            variant={verdict ? "outline" : "default"}
+            variant={verdict || halted ? "outline" : "default"}
             size="sm"
-            className={cn(!verdict && "font-semibold shadow-sm")}
-            disabled={reviewLoading || (!isAdmin && recommendationsExhausted)}
+            className={cn(!verdict && !halted && "font-semibold shadow-sm")}
+            disabled={halted || reviewLoading || (!isAdmin && recommendationsExhausted)}
+            title={
+              halted ? "السهم موقوف عن التداول — التوصية هتتاح أول ما التداول يرجع" : undefined
+            }
             onClick={(e) => {
               e.stopPropagation();
               setConfirmReviewOpen(true);
             }}
           >
-            {reviewLoading ? <Spinner /> : !verdict && <Sparkles className="size-4" />}
-            {verdict ? "توصية جديدة" : "قولي توصية اليوم"}
+            {reviewLoading ? <Spinner /> : !verdict && !halted && <Sparkles className="size-4" />}
+            {halted ? "موقوف عن التداول" : verdict ? "توصية جديدة" : "قولي توصية اليوم"}
           </Button>
         </div>
       )}
