@@ -20,7 +20,7 @@ import {
   type StyleKey,
 } from "@/lib/invest-style";
 import { searchStocks } from "@/lib/stock-search";
-import { useDesk } from "@/lib/store";
+import { applyQuote, useDesk } from "@/lib/store";
 import { mergedTarget } from "@/lib/targets";
 import { cn } from "@/lib/utils";
 
@@ -121,6 +121,8 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
     reloadPortfolio,
     aiAvailable,
     refreshUser,
+    quotes,
+    watchQuotes,
   } = useDesk();
   const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
@@ -217,12 +219,22 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, cashToReview]);
 
+  // Keep this scan's stocks on the desk's shared price poll, so each one shows
+  // the same live price here as on the portfolio page, updated on the same tick.
+  const scannedCodes = (data?.results ?? []).map((row: ScanRow) => row.code).join(",");
+  useEffect(
+    () => (scannedCodes ? watchQuotes(scannedCodes.split(",")) : undefined),
+    [scannedCodes, watchQuotes],
+  );
+
   const isCash = focus === "cash";
   const pickByCode = new Map((review?.picks ?? []).map((pick) => [pick.code, pick]));
-  const rows = [...(data?.results ?? [])].sort(
-    (a: ScanRow, b: ScanRow) =>
-      (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
-  );
+  const rows = (data?.results ?? [])
+    .map((row: ScanRow) => applyQuote(row, quotes[row.code]))
+    .sort(
+      (a: ScanRow, b: ScanRow) =>
+        (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
+    );
   const actionable = rows.filter((row: ScanRow) => row.worthBuyingNow).length;
   const held = rows.filter((row: ScanRow) => row.position).length;
 

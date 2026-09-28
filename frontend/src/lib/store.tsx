@@ -38,6 +38,30 @@ export type Row = {
   [key: string]: any;
 };
 export type Portfolio = any;
+/** One /api/quotes entry. */
+export type Quote = {
+  price?: number;
+  changePct?: number | null;
+  time?: number | null;
+  halted?: { since: string } | null;
+};
+
+/**
+ * A row priced at the desk's shared live quote — the same price, change and
+ * halted state every page shows for that stock, from the same poll.
+ */
+export function applyQuote<T extends Row>(row: T, quote: Quote | undefined): T {
+  if (!quote?.price) return row;
+  return {
+    ...row,
+    price: quote.price,
+    lastTradePrice: quote.price,
+    lastTradeTime: quote.time,
+    changePct: quote.changePct ?? row.changePct,
+    halted: "halted" in quote ? quote.halted : row.halted,
+    position: row.position ? repricePosition(row.position, quote.price) : row.position,
+  };
+}
 
 /**
  * Re-derives every price-dependent field of an open position at a live price.
@@ -159,6 +183,13 @@ type DeskValue = {
   reloadPortfolio: () => Promise<void>;
   reloadLog: () => Promise<void>;
   refreshPrices: (options?: { force?: boolean }) => Promise<void>;
+  /**
+   * The latest live quote per code — the one price source for every page.
+   * Held stocks are always polled; other codes only while a page watches them.
+   */
+  quotes: Record<string, Quote>;
+  /** Adds codes to the shared price poll (fetched right away); call the returned function to stop. */
+  watchQuotes: (codes: string[]) => () => void;
   detailCode: string | null;
   openDetail: (code: string | null) => void;
   marketFocus: "cash" | null;
@@ -205,6 +236,10 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const rowsRef = useRef<Row[]>([]);
   rowsRef.current = rows;
   const lastRefreshAt = useRef(0);
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  // Codes a page (the market or cash scan) wants priced beyond the held ones,
+  // counted so two views watching the same code don't drop it for each other.
+  const watchedRef = useRef(new Map<string, number>());
 
   // Which rule set the engine sizes and gates recommendations with — the
   // same style the settings/portfolio pages already show, kept in the
@@ -354,12 +389,23 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const refreshPrices = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
       const current = rowsRef.current;
-      if (!current.length || (typeof document !== "undefined" && document.hidden) || !egxSessionLikelyOpen()) return;
+      // One request for every code on any page, so the portfolio, market and
+      // cash views never show a stock at two different prices.
+      const codes = [...new Set([...current.map((row) => row.code), ...watchedRef.current.keys()])];
+      if (
+        !codes.length ||
+        (typeof document !== "undefined" && document.hidden) ||
+        !egxSessionLikelyOpen()
+      )
+        return;
       if (!force && Date.now() - lastRefreshAt.current < PRICE_REFRESH_MS - 1000) return;
       lastRefreshAt.current = Date.now();
       try {
-        const codes = current.map((row) => row.code).join(",");
-        const { quotes } = await api(`/api/quotes?codes=${encodeURIComponent(codes)}`);
+        const { quotes } = (await api(
+          `/api/quotes?codes=${encodeURIComponent(codes.join(","))}`,
+        )) as {
+          quotes?: Record<string, Quote>;
+        };
         // A price that has just run past a stock's target needs a new one, and
         // only the server sets it — don't wait out the interval for that.
         // `reachedTarget` being set means the server already handled this one.
@@ -369,22 +415,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
           return q && p && typeof p.targetLevel === "number" && q >= p.targetLevel && !p.reachedTarget;
         });
         if (crossedTarget) void refreshLevels({ soon: true });
-        setRows((previous) =>
-          previous.map((row) => {
-            const quote = quotes?.[row.code];
-            if (!quote?.price) return row;
-            const position = row.position ? repricePosition(row.position, quote.price) : row.position;
-            return {
-              ...row,
-              price: quote.price,
-              lastTradePrice: quote.price,
-              lastTradeTime: quote.time,
-              changePct: quote.changePct ?? row.changePct,
-              halted: "halted" in quote ? quote.halted : row.halted,
-              position,
-            };
-          }),
-        );
+        setQuotes((previous) => ({ ...previous, ...quotes }));
+        setRows((previous) => previous.map((row) => applyQuote(row, quotes?.[row.code])));
         setPriceError(false);
         setLastPriceSync(
           new Date().toLocaleTimeString("ar-EG", {
@@ -399,6 +431,24 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       }
     },
     [handledExpiry, refreshLevels],
+  );
+
+  const watchQuotes = useCallback(
+    (codes: string[]) => {
+      const watched = watchedRef.current;
+      for (const code of codes) watched.set(code, (watched.get(code) ?? 0) + 1);
+      // Price the new codes now — and the held ones with them, in the same
+      // request — rather than leaving them on the scan's price until the next tick.
+      void refreshPrices({ force: true });
+      return () => {
+        for (const code of codes) {
+          const count = (watched.get(code) ?? 0) - 1;
+          if (count > 0) watched.set(code, count);
+          else watched.delete(code);
+        }
+      };
+    },
+    [refreshPrices],
   );
 
   /* Session check on mount — unchanged endpoint and cookie behaviour. */
@@ -565,6 +615,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     reloadPortfolio,
     reloadLog,
     refreshPrices,
+    quotes,
+    watchQuotes,
     detailCode,
     openDetail: setDetailCode,
     marketFocus,
