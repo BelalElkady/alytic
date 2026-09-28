@@ -73,6 +73,23 @@ export const FREE_MODEL = process.env.ALYTIC_MODEL_FREE || null;
  * entirely. */
 export const MODEL_CHAIN = FREE_MODEL ? [FREE_MODEL, MODEL] : MODEL;
 
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
+
+/** Optional thinking for the research phase (runToolPhase) only — where the
+ * judgment actually happens. Set ALYTIC_REASONING_EFFORT to one of
+ * REASONING_EFFORTS; unset or anything else keeps reasoning off, as before.
+ * The JSON-formatting phase always stays off: it only reformats a decision
+ * already made. Measured on deepseek-v4-flash (2026-09): `low` spent ~300
+ * reasoning tokens and ~1.3s per turn over off, `medium` ~560 and ~7s. */
+const REASONING_EFFORT = REASONING_EFFORTS.includes(process.env.ALYTIC_REASONING_EFFORT)
+  ? process.env.ALYTIC_REASONING_EFFORT
+  : null;
+
+/** Extra output tokens a research turn gets while reasoning is on, since the
+ * thinking is billed against the same max_tokens as the reply. Only spent if
+ * the model actually uses it. */
+const REASONING_HEADROOM_TOKENS = 3000;
+
 let client = null;
 
 export function getOpenRouterClient() {
@@ -187,6 +204,7 @@ function extractJson(text) {
 // decide whether a failure is "this model doesn't support X" rather than
 // something genuinely fatal that should propagate immediately.
 const REASONING_MANDATORY_RE = /reasoning.*(mandatory|cannot be disabled|is required)/i;
+const REASONING_EFFORT_UNSUPPORTED_RE = /(reasoning|effort).*(not support|unsupported|invalid|unknown)/i;
 const TOOLS_UNSUPPORTED_RE = /tool.*(not support|unsupported)|function.calling.*not support|no endpoints found/i;
 const STRUCTURED_UNSUPPORTED_RE = /response_format|json_schema|structured.output/i;
 
@@ -199,8 +217,9 @@ const STRUCTURED_UNSUPPORTED_RE = /response_format|json_schema|structured.output
  * message back per call.
  *
  * Adapts to whatever model is configured: if it rejects `reasoning:
- * {enabled:false}` or tool calling outright, the offending parameter is
- * dropped and the same turn retried — see the file header.
+ * {enabled:false}`, a reasoning effort level, or tool calling outright, the
+ * offending parameter is dropped and the same turn retried — see the file
+ * header. Thinks at ALYTIC_REASONING_EFFORT when that is set.
  *
  * Bounded two ways, and either one just forces a final tools-free turn
  * rather than failing the whole review: `maxTurns` caps round trips, and
@@ -220,7 +239,13 @@ async function runToolPhase(client, { model, system, messages, clientTools, maxT
   ];
   let convo = [{ role: 'system', content: system }, ...messages];
   let toolsEnabled = baseTools.length > 0;
-  let reasoningOff = true;
+  // 'effort' → think at REASONING_EFFORT; 'off' → reasoning disabled;
+  // 'omit' → the model insists on reasoning, so the param is left out.
+  let reasoningMode = REASONING_EFFORT ? 'effort' : 'off';
+  const reasoningParam = () =>
+    reasoningMode === 'effort' ? { reasoning: { effort: REASONING_EFFORT } }
+    : reasoningMode === 'off' ? { reasoning: { enabled: false } }
+    : {};
   const deadline = Date.now() + budgetMs;
 
   // <= maxTurns, not <: the last allowed iteration is reserved for a forced
@@ -233,16 +258,21 @@ async function runToolPhase(client, { model, system, messages, clientTools, maxT
       res = await callWithRetry(() =>
         client.chat.completions.create({
           model,
-          max_tokens: maxTokens,
-          ...(reasoningOff ? { reasoning: { enabled: false } } : {}),
+          max_tokens: reasoningMode === 'effort' ? maxTokens + REASONING_HEADROOM_TOKENS : maxTokens,
+          ...reasoningParam(),
           ...(tools.length ? { tools } : {}),
           messages: convo,
         }),
       );
     } catch (err) {
       const msg = err?.message ?? '';
-      if (reasoningOff && REASONING_MANDATORY_RE.test(msg)) {
-        reasoningOff = false;
+      if (reasoningMode === 'off' && REASONING_MANDATORY_RE.test(msg)) {
+        reasoningMode = 'omit';
+        continue;
+      }
+      // A model without effort levels: carry on without thinking rather than fail.
+      if (reasoningMode === 'effort' && REASONING_EFFORT_UNSUPPORTED_RE.test(msg)) {
+        reasoningMode = 'off';
         continue;
       }
       if (toolsEnabled && TOOLS_UNSUPPORTED_RE.test(msg)) {
@@ -277,7 +307,8 @@ async function runToolPhase(client, { model, system, messages, clientTools, maxT
       turn++;
       continue;
     }
-    return { finalMessage: message, convo: [...convo, message], reasoningOff };
+    // The format phase keeps reasoning off unless this model refused that.
+    return { finalMessage: message, convo: [...convo, message], reasoningOff: reasoningMode !== 'omit' };
   }
   // Unreachable in practice: the final iteration always sends `tools: []`,
   // so a compliant model has nothing to call and returns above. Kept only in
