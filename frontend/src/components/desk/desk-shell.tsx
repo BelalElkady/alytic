@@ -676,6 +676,20 @@ function DeskHeader() {
                   >
                     {marketAnalysisExhausted ? marketButtonLabel : <Link to="/market">{marketButtonLabel}</Link>}
                   </Button>
+                  {marketAnalysisLeft !== null && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "num pointer-events-none absolute -top-2 -end-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10.5px] font-semibold leading-none ring-2 ring-background",
+                        // Inverted against the filled button so the count doesn't blend into it.
+                        marketAnalysisExhausted
+                          ? "bg-down text-white"
+                          : "border border-primary bg-background text-primary",
+                      )}
+                    >
+                      {marketAnalysisLeft}
+                    </span>
+                  )}
                 </span>
               </TooltipTrigger>
               {marketAnalysisHint && <TooltipContent>{marketAnalysisHint}</TooltipContent>}
