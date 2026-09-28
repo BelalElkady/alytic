@@ -13,7 +13,12 @@ import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError, api, post } from "@/lib/api";
 import { fmt, int, pct } from "@/lib/format";
-import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
+import {
+  INVEST_STYLES,
+  styleRecommendation,
+  useActiveInvestStyle,
+  type StyleKey,
+} from "@/lib/invest-style";
 import { searchStocks } from "@/lib/stock-search";
 import { useDesk } from "@/lib/store";
 import { mergedTarget } from "@/lib/targets";
@@ -31,9 +36,16 @@ const INDEX_OPTIONS = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ScanRow = any;
 
-const action = (row: ScanRow) => {
-  if (row.position)
-    return { label: `موجود عندك · ${row.signal?.ar ?? "راجع المركز"}`, tone: "wait" };
+// A held stock shows the same position recommendation as its card on the
+// portfolio page — not the raw technical-score signal, which is a verdict for
+// someone deciding whether to enter and would contradict that card.
+const HELD_TONE: Record<string, string> = { buy_more: "buy", hold: "avoid" };
+
+const action = (row: ScanRow, style: StyleKey) => {
+  if (row.position) {
+    const rec = styleRecommendation(row, row.position, style);
+    return { label: `موجود عندك · ${rec.label}`, tone: HELD_TONE[rec.action] ?? "wait" };
+  }
   if (row.worthBuyingNow) return { label: "فرصة قابلة للتنفيذ الآن", tone: "buy" };
   if (row.entryStatus === "limit_pullback") return { label: "استنى تصحيح وأمر محدد", tone: "wait" };
   if (row.entryStatus === "too_extended") return { label: "ممتد — لا تطارد السعر", tone: "wait" };
@@ -353,7 +365,7 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
 
           <div className={cn(isCash ? "space-y-3" : "grid gap-3 md:grid-cols-2")}>
             {shown.map((row: ScanRow) => {
-              const state = action(row);
+              const state = action(row, style);
               return (
                 <div
                   key={row.code}
