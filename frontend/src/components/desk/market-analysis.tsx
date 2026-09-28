@@ -13,9 +13,14 @@ import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError, api, post } from "@/lib/api";
 import { fmt, int, pct } from "@/lib/format";
-import { INVEST_STYLES, useActiveInvestStyle } from "@/lib/invest-style";
+import {
+  INVEST_STYLES,
+  styleRecommendation,
+  useActiveInvestStyle,
+  type StyleKey,
+} from "@/lib/invest-style";
 import { searchStocks } from "@/lib/stock-search";
-import { useDesk } from "@/lib/store";
+import { applyQuote, useDesk } from "@/lib/store";
 import { mergedTarget } from "@/lib/targets";
 import { cn } from "@/lib/utils";
 
@@ -31,9 +36,16 @@ const INDEX_OPTIONS = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ScanRow = any;
 
-const action = (row: ScanRow) => {
-  if (row.position)
-    return { label: `موجود عندك · ${row.signal?.ar ?? "راجع المركز"}`, tone: "wait" };
+// A held stock shows the same position recommendation as its card on the
+// portfolio page — not the raw technical-score signal, which is a verdict for
+// someone deciding whether to enter and would contradict that card.
+const HELD_TONE: Record<string, string> = { buy_more: "buy", hold: "avoid" };
+
+const action = (row: ScanRow, style: StyleKey) => {
+  if (row.position) {
+    const rec = styleRecommendation(row, row.position, style);
+    return { label: `موجود عندك · ${rec.label}`, tone: HELD_TONE[rec.action] ?? "wait" };
+  }
   if (row.worthBuyingNow) return { label: "فرصة قابلة للتنفيذ الآن", tone: "buy" };
   if (row.entryStatus === "limit_pullback") return { label: "استنى تصحيح وأمر محدد", tone: "wait" };
   if (row.entryStatus === "too_extended") return { label: "ممتد — لا تطارد السعر", tone: "wait" };
@@ -109,6 +121,8 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
     reloadPortfolio,
     aiAvailable,
     refreshUser,
+    quotes,
+    watchQuotes,
   } = useDesk();
   const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,12 +219,22 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, cashToReview]);
 
+  // Keep this scan's stocks on the desk's shared price poll, so each one shows
+  // the same live price here as on the portfolio page, updated on the same tick.
+  const scannedCodes = (data?.results ?? []).map((row: ScanRow) => row.code).join(",");
+  useEffect(
+    () => (scannedCodes ? watchQuotes(scannedCodes.split(",")) : undefined),
+    [scannedCodes, watchQuotes],
+  );
+
   const isCash = focus === "cash";
   const pickByCode = new Map((review?.picks ?? []).map((pick) => [pick.code, pick]));
-  const rows = [...(data?.results ?? [])].sort(
-    (a: ScanRow, b: ScanRow) =>
-      (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
-  );
+  const rows = (data?.results ?? [])
+    .map((row: ScanRow) => applyQuote(row, quotes[row.code]))
+    .sort(
+      (a: ScanRow, b: ScanRow) =>
+        (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
+    );
   const actionable = rows.filter((row: ScanRow) => row.worthBuyingNow).length;
   const held = rows.filter((row: ScanRow) => row.position).length;
 
@@ -353,7 +377,7 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
 
           <div className={cn(isCash ? "space-y-3" : "grid gap-3 md:grid-cols-2")}>
             {shown.map((row: ScanRow) => {
-              const state = action(row);
+              const state = action(row, style);
               return (
                 <div
                   key={row.code}
