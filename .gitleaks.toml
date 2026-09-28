@@ -8,7 +8,13 @@ useDefault = true
 # scoring-rule name, not a secret. Scoped to this one file and this one rule,
 # so a real secret pasted here, or the same rule firing anywhere else, is still
 # reported.
-[[allowlists]]
+#
+# Attached to the rule itself on purpose: a top-level [[allowlists]] with
+# targetRules = ["generic-api-key"] has no effect on the extended default rule
+# (gitleaks 8.24.3, which gitleaks-action installs, and 8.28.0 both still
+# reported it), which failed the scheduled full-history scan.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
 description = "scoring rule definitions in classification.js"
-targetRules = ["generic-api-key"]
 paths = ['''backend/src/scoring/classification\.js$''']
