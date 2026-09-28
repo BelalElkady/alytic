@@ -33,6 +33,20 @@ export const RULES = {
     maxStopPct: 12,          // hard cap on risk per position
     minStopPct: 3,           // a stop closer than this is not a stop
     honorOn: 'close',        // stops trigger on a session close, not an intraday wick
+
+    // A breached stop still means exit — except that a fundamentally strong
+    // stock whose long-term trend is intact may keep a *core* instead of being
+    // sold outright. The engine only decides whether that option exists and
+    // its exact quantities (analyze.js buildRuleBook); the analyst decides
+    // whether to take it, and only after research finds nothing that breaks
+    // the thesis. The kept core sits under the wider long-term stop (price
+    // under the 200-day average), so the risk is still capped — just further out.
+    fundamentalHold: {
+      allowed: true,
+      keepFraction: 0.5,        // share of the position the core keeps
+      minInvestmentScore: 65,   // scoring/classification.js — same bar as an INVESTMENT label
+      minConfidence: 50,        // classification confidence; a data-poor score doesn't earn the exception
+    },
   },
 
   trailing: {

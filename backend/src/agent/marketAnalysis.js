@@ -331,6 +331,8 @@ export function reviewFromMarketReport(report, ctx = {}, watchlistCodes = []) {
         timingNote: 'غير متاح.',
         riskFlags: [],
         externalContext: [],
+        scenarios: null,
+        reentryPlan: null,
         reviewDepth: 'unreviewed',
       };
     }
@@ -350,6 +352,8 @@ export function reviewFromMarketReport(report, ctx = {}, watchlistCodes = []) {
       timingNote: op.midTarget?.horizon?.ar ?? 'غير متاح.',
       riskFlags: op.risks ?? [],
       externalContext: op.externalContext ?? [],
+      scenarios: null,
+      reentryPlan: null,
       reviewDepth: 'market_report',
     };
   });

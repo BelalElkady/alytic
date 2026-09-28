@@ -34,11 +34,46 @@ import { DEFAULT_STYLE } from './config/styles.js';
 const r2 = (x) => (x == null ? null : +x.toFixed(2));
 
 /**
+ * R1's one exception (rules.stop.fundamentalHold): when the stop has fired on
+ * a stock whose fundamentals are strong and whose long-term trend still holds,
+ * sell part and keep a core under the wider long-term stop instead of selling
+ * everything. Returns the exact order either way, or why it isn't available —
+ * the analyst chooses whether to take it; it never works out the numbers.
+ */
+function fundamentalHoldOption({ shares, price, stopFired, classification, longTermStop, liquidityOk }, rules) {
+  const cfg = rules.stop.fundamentalHold;
+  if (!stopFired) return null;
+  const blockers = [];
+  if (!cfg?.allowed) blockers.push('not allowed for this style');
+  const inv = classification?.investmentScore;
+  if (inv == null || !classification?.dataQuality?.hasFundamentals) blockers.push('no fundamentals to judge the business on');
+  else if (inv < cfg.minInvestmentScore) blockers.push(`investment score ${inv} < ${cfg.minInvestmentScore}`);
+  if (classification?.confidence != null && classification.confidence < cfg.minConfidence) {
+    blockers.push(`classification confidence ${classification.confidence}% < ${cfg.minConfidence}%`);
+  }
+  if (!(longTermStop?.stop < price)) blockers.push('long-term trend broken (price under the 200-day average)');
+  if (!liquidityOk) blockers.push('liquidity too thin to hold a core through more weakness');
+  const keepQty = Math.floor(shares * (cfg?.keepFraction ?? 0));
+  if (keepQty < 1 || keepQty >= shares) blockers.push('position too small to split');
+
+  if (blockers.length) return { eligible: false, blockers };
+  return {
+    eligible: true,
+    investmentScore: inv,
+    sellQty: shares - keepQty,
+    keepQty,
+    keepPct: r2((keepQty / shares) * 100),
+    coreStop: longTermStop.stop,
+    coreStopRiskPct: r2(((price - longTermStop.stop) / price) * 100),
+  };
+}
+
+/**
  * The active style's rules (config/styles.js layered on config/rules.js),
  * each evaluated against one open position with the exact quantities and
  * prices its order would use. The analyst quotes these; it never derives them.
  */
-function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, governingTarget, nextTarget = null, partialTaken }, rules) {
+function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, governingTarget, nextTarget = null, partialTaken, classification = null, longTermStop = null, liquidityOk = true }, rules) {
   const { shares } = position;
   const tp = rules.takeProfit;
   const trailFromPrice = price * (1 - rules.trailing.trailPct / 100);
@@ -55,6 +90,7 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       honorOn: rules.stop.honorOn,
       fired: stopFired,
       sellQty: shares,
+      fundamentalHold: fundamentalHoldOption({ shares, price, stopFired, classification, longTermStop, liquidityOk }, rules),
     },
     trailing: {
       // trailPct/activateAtProfitPct are no longer what sets the actual stop
@@ -266,6 +302,20 @@ export async function analyzeTicker(code, opts = {}) {
         )
       : null;
 
+  // Investment-vs-speculation classification (see scoring/classification.js)
+  // — purely arithmetic over the snapshot and fundamentals above, same "the model
+  // never calculates a number" boundary as everything else in this file.
+  // Computed before the position block: a breached stop's fundamental-hold
+  // option (buildRuleBook) depends on it.
+  const classification = classifyStock({
+    usable: true,
+    sector: meta.sector,
+    snapshot,
+    technical,
+    fundamentals: fundamentals ?? null,
+    quality,
+  });
+
   // If a position is already open, the live stop and P&L matter more than the
   // hypothetical entry plan.
   let positionState = null;
@@ -398,7 +448,11 @@ export async function analyzeTicker(code, opts = {}) {
     const nextTarget = reachedTarget && governingTarget !== reachedTarget ? governingTarget : null;
     const partialTaken = Boolean(position.partialTakenAt);
     const ruleBook = buildRuleBook(
-      { snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired, governingTarget: reachedTarget ?? governingTarget, nextTarget, partialTaken },
+      {
+        snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired,
+        governingTarget: reachedTarget ?? governingTarget, nextTarget, partialTaken,
+        classification, longTermStop, liquidityOk: liquidity.ok,
+      },
       rules,
     );
 
@@ -476,18 +530,6 @@ export async function analyzeTicker(code, opts = {}) {
       ruleBook,
     };
   }
-
-  // Investment-vs-speculation classification (see scoring/classification.js)
-  // — purely arithmetic over what was just computed above, same "the model
-  // never calculates a number" boundary as everything else in this file.
-  const classification = classifyStock({
-    usable: true,
-    sector: meta.sector,
-    snapshot,
-    technical,
-    fundamentals: fundamentals ?? null,
-    quality,
-  });
 
   return {
     code: meta.code ?? code,

@@ -72,6 +72,8 @@ const OVERRIDES = {
     takeProfit: { partialAtProfitPct: 6, partialFraction: 0.5, limitAbovePricePct: 1, atTargetFraction: 0.5, raiseStopAfterTargetPct: 4 },
     entry: { minRiskReward: 1.5 },
     sizing: { riskPerTradePct: 1, maxPositionPct: 10 },
+    // A speculator's stop is the trade; a fundamental thesis doesn't rescue it.
+    stop: { fundamentalHold: { allowed: false } },
   },
   medium: {
     trailing: { trailPct: 8, activateAtProfitPct: 12 },
@@ -94,7 +96,7 @@ const OVERRIDES = {
 
 /**
  * `base` with one style's overrides layered on top — only the fields above
- * change; liquidity, stop, averaging-down and everything else
+ * change; liquidity, the stop distances, averaging-down and everything else
  * stay exactly as `base` defined them.
  */
 export function rulesForStyle(base, styleKey) {
@@ -102,6 +104,11 @@ export function rulesForStyle(base, styleKey) {
   if (!overrides) return base;
   return {
     ...base,
+    stop: {
+      ...base.stop,
+      ...overrides.stop,
+      fundamentalHold: { ...base.stop.fundamentalHold, ...overrides.stop?.fundamentalHold },
+    },
     trailing: { ...base.trailing, ...overrides.trailing },
     takeProfit: { ...base.takeProfit, ...overrides.takeProfit },
     entry: { ...base.entry, ...overrides.entry },

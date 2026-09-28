@@ -518,6 +518,8 @@ export function rememberVerdict(p, code, verdict, { style, price = null, now = D
         headline: verdict.headline ?? '',
         orderInstruction: verdict.orderInstruction ?? null,
         invalidation: verdict.invalidation ?? null,
+        reentryPlan: verdict.reentryPlan ?? null,
+        scenarios: verdict.scenarios ?? null,
       },
     };
   }

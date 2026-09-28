@@ -111,6 +111,8 @@ function quietVerdict(analysis, weight = null) {
     timingNote: 'مفيش إجراء مطلوب دلوقتي.',
     riskFlags: [],
     externalContext: [],
+    scenarios: null,
+    reentryPlan: null,
     reviewDepth: 'quiet',
   };
 }
@@ -137,6 +139,16 @@ function ruleBookLines(ps, price) {
     `  R1 Stop on ${rb.stop.honorOn}: level ${rb.stop.level}, price ${price} is ${rb.stop.distancePct}% above it → ${mark(rb.stop.fired)}` +
       (rb.stop.fired ? ` | order: sell all ${rb.stop.sellQty} shares at market next open` : ''),
   );
+  const fh = rb.stop.fundamentalHold;
+  if (fh?.eligible) {
+    out.push(
+      `  R1 fundamental-hold option — AVAILABLE (investment score ${fh.investmentScore}, long-term trend intact): ` +
+        `sell ${fh.sellQty} shares at market next open, keep a core of ${fh.keepQty} (${fh.keepPct}%) under the long-term stop ${fh.coreStop} ` +
+        `(${fh.coreStopRiskPct}% under ${price}, a close below it exits the core). Take it only per "When the stop breaks on a strong business".`,
+    );
+  } else if (fh) {
+    out.push(`  R1 fundamental-hold option — NOT available: ${fh.blockers.join('; ')}. The full exit stands.`);
+  }
   out.push(
     `  R2 Stop-loss (AI-determined per style, ratchets up only — never moves down): current level ${rb.stop.level}` +
       (rb.trailing.moved ? `, raised today from ${rb.trailing.from} to ${rb.stop.level}` : ' (unchanged today)') +
@@ -197,6 +209,7 @@ export function briefFor(a) {
   const signed = (x) => `${x >= 0 ? '+' : ''}${x}`;
 
   lines.push(`### ${a.code} — ${a.name} (${a.sectorAr ?? '?'})`);
+  lines.push(`Price data: daily bars through ${a.asOf ?? s.meta?.asOf ?? 'n/a'}${isLive ? ', plus a live quote' : ''}`);
   if (a.halted) {
     lines.push(
       `TRADING HALTED: no trade since ${a.halted.since} — the stock is suspended or not trading. No order can be filled until it reopens: ` +
@@ -214,14 +227,25 @@ export function briefFor(a) {
   }
   lines.push(
     `Price ${price} EGP${isLive ? ` — LIVE now (last completed close ${s.price.dailyClose})` : ''} (${signed(s.price.changePct)}% today) | ` +
-      `from 52w high ${s.price.high52w ? away(s.price.high52w) : s.price.pctFrom52wHigh}% | return 3m ${n(s.returns.m3, '%')} · 1y ${n(s.returns.y1, '%')}`,
+      `from 52w high ${s.price.high52w ? away(s.price.high52w) : s.price.pctFrom52wHigh}% · 52w low ${n(s.price.low52w)} | ` +
+      `returns 1w ${n(s.returns.w1, '%')} · 1m ${n(s.returns.m1, '%')} · 3m ${n(s.returns.m3, '%')} · 6m ${n(s.returns.m6, '%')} · 1y ${n(s.returns.y1, '%')} | ` +
+      `max drawdown 1y ${n(s.returns.maxDrawdown, '%')}`,
   );
   lines.push(
     `Trend: ${s.trend.label} (${s.trend.score}/100) | ${s.strength.trendQuality} (ADX ${n(s.strength.adx)}) | ` +
-      `MAs: 20=${n(s.movingAverages.sma20)} 50=${n(s.movingAverages.sma50)} 200=${n(s.movingAverages.sma200)}`,
+      `+DI ${n(s.strength.plusDI)} / −DI ${n(s.strength.minusDI)}`,
+  );
+  // Price-vs-average distances are the engine's, so the model never has to
+  // compare a raw average to the price itself.
+  const ma = s.movingAverages;
+  lines.push(
+    `MAs: 20=${n(ma.sma20)} (${n(ma.priceVsSma20Pct, '%')}) · 50=${n(ma.sma50)} (${n(ma.priceVsSma50Pct, '%')}) · ` +
+      `200=${n(ma.sma200)} (${n(ma.priceVsSma200Pct, '%')}) — price vs each, off the last close` +
+      (ma.goldenCross == null ? '' : ` | 50 ${ma.goldenCross ? 'above' : 'below'} 200`),
   );
   lines.push(
-    `Momentum: RSI ${n(s.momentum.rsi14)} (${s.momentum.rsiState}) | MACD ${s.momentum.macdCross ?? 'n/a'} | ` +
+    `Momentum: RSI ${n(s.momentum.rsi14)} (${s.momentum.rsiState}) | MACD ${s.momentum.macdCross ?? 'n/a'}, histogram ${n(s.momentum.macdHistogram)} | ` +
+      `ROC 20 ${n(s.momentum.roc20, '%')} | Stoch ${n(s.momentum.stochK)}/${n(s.momentum.stochD)} | ` +
       `Divergence: ${s.momentum.divergence.type === 'none' ? 'none' : s.momentum.divergence.detail}`,
   );
   lines.push(
@@ -230,7 +254,7 @@ export function briefFor(a) {
       (a.liquidity.ok ? '' : ` ⚠️ ${a.liquidity.note}`),
   );
   lines.push(
-    `Volatility: ATR ${s.volatility.atr14} (${s.volatility.atrPct}% daily)` +
+    `Volatility: ATR ${s.volatility.atr14} (${s.volatility.atrPct}% daily) · annualized ${n(s.volatility.annualizedVolPct, '%')}` +
       (s.volatility.squeeze ? ' | Bollinger squeeze — a strong move is likely coming' : ''),
   );
 
@@ -319,24 +343,72 @@ export function briefFor(a) {
 
   if (a.fundamentals) {
     const f = a.fundamentals;
-    const facts = [
-      f.peRatio != null && `P/E ${f.peRatio}`,
-      f.epsEgp != null && `EPS ${f.epsEgp} EGP`,
-      f.priceToBook != null && `P/B ${f.priceToBook}`,
-      f.dividendYieldPct != null && `dividend yield ${f.dividendYieldPct}%`,
-      f.returnOnEquityPct != null && `ROE ${f.returnOnEquityPct}%`,
-      f.debtToEquity != null && `debt/equity ${f.debtToEquity}`,
-      f.marketCapEgp != null && `market cap ${Math.round(f.marketCapEgp / 1e9)}B EGP`,
-    ].filter(Boolean);
+    const pctl = f.percentiles ?? {};
+    // "rank" = where the raw number sits (0-100, higher = larger number), across
+    // every EGX listing and within the company's peer group, with the peers'
+    // median — so the model compares without computing anything.
+    const rank = (key) => {
+      const bits = [];
+      if (pctl[key] != null) bits.push(`EGX rank ${Math.round(pctl[key])}`);
+      const peer = f.peers?.[key];
+      if (peer) {
+        bits.push(
+          `${peer.group} "${peer.name}" (${peer.count} cos) median ${peer.median}` +
+            (peer.percentile != null ? `, rank ${Math.round(peer.percentile)}` : ''),
+        );
+      }
+      return bits.length ? ` [${bits.join(' · ')}]` : '';
+    };
+    const bn = (x) => `${(x / 1e9).toFixed(1)}B EGP`;
+    const group = (label, items) => {
+      const facts = items.filter(Boolean);
+      if (facts.length) lines.push(`  ${label}: ${facts.join(' | ')}`);
+      return facts.length;
+    };
 
-    if (facts.length) {
-      lines.push(`**Fundamentals** (${f.industry ?? '—'}, ${f.asOf}): ${facts.join(' | ')}`);
-      if (f.valuation) lines.push(`  ${f.valuation}`);
-    }
+    lines.push(
+      `**Fundamentals** (${f.industry ?? '—'}; TradingView screener pulled ${f.asOf} — TTM and latest-quarter figures, not audited-report dates):`,
+    );
+    const shown =
+      group('Valuation', [
+        f.peRatio != null && `P/E ${f.peRatio}${rank('peRatio')}`,
+        f.priceToBook != null && `P/B ${f.priceToBook}${rank('priceToBook')}`,
+        f.priceToSales != null && `P/S ${f.priceToSales}`,
+        f.evToEbitda != null && `EV/EBITDA ${f.evToEbitda}${rank('evToEbitda')}`,
+        f.dividendYieldPct != null && `dividend yield ${f.dividendYieldPct}%${rank('dividendYieldPct')}`,
+        f.freeCashFlowYieldPct != null && `FCF yield ${f.freeCashFlowYieldPct}%`,
+        f.marketCapEgp != null && `market cap ${Math.round(f.marketCapEgp / 1e9)}B EGP`,
+      ]) +
+      group('Growth (YoY, TTM, nominal EGP)', [
+        f.revenueGrowthPct != null && `revenue ${f.revenueGrowthPct}%${rank('revenueGrowthPct')}`,
+        f.netIncomeGrowthPct != null && `net income ${f.netIncomeGrowthPct}%`,
+        f.epsGrowthPct != null && `EPS ${f.epsGrowthPct}%`,
+        f.epsEgp != null && `EPS ${f.epsEgp} EGP`,
+      ]) +
+      group('Profitability', [
+        f.grossMarginPct != null && `gross margin ${f.grossMarginPct}%`,
+        f.operatingMarginPct != null && `operating margin ${f.operatingMarginPct}%`,
+        f.netMarginPct != null && `net margin ${f.netMarginPct}%${rank('netMarginPct')}`,
+        f.returnOnEquityPct != null && `ROE ${f.returnOnEquityPct}%${rank('returnOnEquityPct')}`,
+        f.returnOnAssetsPct != null && `ROA ${f.returnOnAssetsPct}%`,
+      ]) +
+      group('Balance sheet & cash', [
+        f.debtToEquity != null && `debt/equity ${f.debtToEquity}${rank('debtToEquity')}`,
+        f.netDebtEgp != null && (f.netDebtEgp < 0 ? `net cash ${bn(-f.netDebtEgp)}` : `net debt ${bn(f.netDebtEgp)}`),
+        f.currentRatio != null && `current ratio ${f.currentRatio}${rank('currentRatio')}`,
+        f.freeCashFlowEgp != null && `free cash flow ${bn(f.freeCashFlowEgp)} TTM`,
+      ]);
+    if (f.valuation) lines.push(`  Engine read: ${f.valuation}`);
     // Coverage is partial on EGX small caps. Say so, so the model reads a gap
     // as a gap rather than as a weak balance sheet.
-    const missing = ['peRatio', 'epsEgp', 'returnOnEquityPct'].filter((k) => f[k] == null);
-    if (missing.length) lines.push('  Note: some fundamentals are unavailable for this stock — absence is not a negative signal.');
+    const missing = [
+      f.revenueGrowthPct == null && f.netIncomeGrowthPct == null && 'growth',
+      f.netMarginPct == null && f.returnOnEquityPct == null && 'profitability',
+      f.debtToEquity == null && f.netDebtEgp == null && 'leverage',
+      f.freeCashFlowEgp == null && 'cash flow',
+    ].filter(Boolean);
+    if (!shown) lines.push('  (no fundamental figures published for this stock)');
+    if (missing.length) lines.push(`  Missing: ${missing.join(', ')} — absence is a gap in the read, not a negative signal.`);
   } else {
     lines.push('**Fundamentals:** unavailable for this stock — judge on technicals only.');
   }

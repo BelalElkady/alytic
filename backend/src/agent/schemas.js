@@ -33,6 +33,25 @@ export const ACTIONS = [
 // not prompt text, so it isn't part of translating the prompt layer.
 export const CONVICTION = ['عالية', 'متوسطة', 'منخفضة'];
 
+/**
+ * One piece of research behind a call. `headline` is what happened and
+ * `relevance` what it means for the stock, kept apart so a reader can tell
+ * the reported fact from the analyst's reading of it.
+ */
+const ResearchItemSchema = z.object({
+  headline: z.string().describe('FACT — what actually happened, as the source reports it. No interpretation, no adjectives it did not use.'),
+  date: z.string().nullable().describe('Date of the news item if known, otherwise null'),
+  source: z.string().describe('Source name or URL'),
+  relevance: z.string().describe('INTERPRETATION, in Egyptian Arabic — one short sentence: why this could matter for the stock and how it affected the call'),
+});
+
+/** One path the stock could take — see `scenarios` on StockVerdictSchema. */
+const ScenarioSchema = z.object({
+  trigger: z.string().describe('In Egyptian Arabic — what would have to happen for this path: a price event (a level from the brief) or a fundamental/news event'),
+  levels: z.string().describe('In Egyptian Arabic — the levels that define it, quoted only from the brief (target, resistance, support, stop); "مش متاح" if none apply'),
+  assumptions: z.string().describe('In Egyptian Arabic — what must be true for it, and the main risk to it. One sentence.'),
+});
+
 /** One stock's verdict. */
 export const StockVerdictSchema = z.object({
   code: z.string().describe('EGX ticker code'),
@@ -101,21 +120,39 @@ export const StockVerdictSchema = z.object({
 
   riskFlags: z
     .array(z.string())
-    .describe('In Egyptian Arabic — concrete risks: liquidity, volatility, sector concentration, proximity to resistance. Empty array if none.'),
+    .describe(
+      'In Egyptian Arabic — concrete risks, each written as the risk and what would trigger it ' +
+        '(e.g. "سيولة ضعيفة — لو احتجت تخرج في يوم نزول مش هتلاقي مشتري"). Liquidity, volatility, concentration, resistance, currency, rates, earnings. Empty array if none.',
+    ),
+
+  // Three paths instead of one prediction: the verdict is the base case, and
+  // the bull and bear cases say what would change it and where.
+  scenarios: z
+    .object({
+      bull: ScenarioSchema.describe('The positive path and the trigger that would confirm it'),
+      base: ScenarioSchema.describe('The path the evidence supports most — the one the verdict acts on'),
+      bear: ScenarioSchema.describe('The path that invalidates the thesis: the breakdown level and the warning signs before it'),
+    })
+    .nullable()
+    .describe('Bull, base and bear cases. Required on every verdict you write; null only where this schema is filled without a review.'),
+
+  // A breached stop on a still-sound business is "out for now", not "never
+  // again" — this is where the way back in lives, so the exit reads as a
+  // plan rather than a verdict on the company.
+  reentryPlan: z
+    .string()
+    .nullable()
+    .describe(
+      'In Egyptian Arabic — only when the stop fired (exit, or keeping a core) on a stock whose fundamentals still look sound: ' +
+        'the condition to buy back or rebuild — reclaiming a level, or a pullback into a support — quoting only levels in the brief. Null otherwise.',
+    ),
 
   // The research trail behind the verdict. The prompt requires a check before
   // any money-moving recommendation, so an action verdict arriving with this
   // empty means the research step was skipped — which is itself worth seeing.
   // A clean check ("looked, found nothing material") belongs here too.
   externalContext: z
-    .array(
-      z.object({
-        headline: z.string(),
-        date: z.string().nullable().describe('Date of the news item if known, otherwise null'),
-        source: z.string().describe('Source name or URL'),
-        relevance: z.string().describe('In Egyptian Arabic — one short sentence: how this affected the decision'),
-      }),
-    )
+    .array(ResearchItemSchema)
     .describe(
       'The research you actually did before this decision: news, disclosures, company or sector events. ' +
         'Required for any verdict other than a plain hold — even a "checked, nothing material found" result belongs here, written as one.',
@@ -177,14 +214,7 @@ export const MarketOpportunitySchema = z.object({
     .describe('Which investor horizons this specific setup actually fits — not all three by default. A fast breakout suits trader; a slow value re-rating suits long.'),
 
   externalContext: z
-    .array(
-      z.object({
-        headline: z.string(),
-        date: z.string().nullable(),
-        source: z.string().describe('Source name or URL'),
-        relevance: z.string().describe('In Egyptian Arabic — one short sentence: how this affected the call'),
-      }),
-    )
+    .array(ResearchItemSchema)
     .describe('The research behind this pick. Required and non-empty — an unresearched name has no place in a deep report.'),
 });
 

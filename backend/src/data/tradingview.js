@@ -30,6 +30,12 @@ const COLUMNS = [
   'dividends_yield_current', 'debt_to_equity_fq', 'return_on_equity_fq',
   'net_income_ttm', 'total_revenue_ttm', 'current_ratio_fq',
   'sector', 'industry', 'currency', 'type',
+  // Growth, margins and cash flow — the part of a fundamental read the ratios
+  // above can't give. Coverage is thinner than for P/E (null on many small
+  // caps); an unknown column comes back null in place, so the row shape holds.
+  'total_revenue_yoy_growth_ttm', 'net_income_yoy_growth_ttm', 'earnings_per_share_diluted_yoy_growth_ttm',
+  'gross_margin_ttm', 'operating_margin_ttm', 'net_margin_ttm',
+  'free_cash_flow_ttm', 'return_on_assets_fq', 'enterprise_value_ebitda_ttm', 'net_debt_fq', 'price_sales_current',
 ];
 
 /** TradingView's sector vocabulary mapped onto this project's Arabic labels. */
@@ -99,6 +105,17 @@ export async function fetchScreener({ limit = 600, timeoutMs = 20000 } = {}) {
         netIncomeEgp: o.net_income_ttm,
         revenueEgp: o.total_revenue_ttm,
         currentRatio: o.current_ratio_fq,
+        revenueGrowthPct: o.total_revenue_yoy_growth_ttm,
+        netIncomeGrowthPct: o.net_income_yoy_growth_ttm,
+        epsGrowthPct: o.earnings_per_share_diluted_yoy_growth_ttm,
+        grossMarginPct: o.gross_margin_ttm,
+        operatingMarginPct: o.operating_margin_ttm,
+        netMarginPct: o.net_margin_ttm,
+        freeCashFlowEgp: o.free_cash_flow_ttm,
+        returnOnAssetsPct: o.return_on_assets_fq,
+        evToEbitda: o.enterprise_value_ebitda_ttm,
+        netDebtEgp: o.net_debt_fq,
+        priceToSales: o.price_sales_current,
         tvSector: o.sector,
         industry: o.industry,
         sector: TV_SECTOR_MAP[o.sector] ?? null,
@@ -151,6 +168,7 @@ export async function fetchFundamentals(codes = null) {
   // classification.js, which prefers this cross-sectional rank over an
   // absolute threshold wherever one is available (percentileOf above).
   const sortedByField = Object.fromEntries(PERCENTILE_FIELDS.map((f) => [f, sortedFinite(rows, f)]));
+  const peerIndex = buildPeerIndex(rows);
 
   for (const r of rows) {
     if (want && !want.has(r.code)) continue;
@@ -173,6 +191,20 @@ export async function fetchFundamentals(codes = null) {
       netIncomeEgp: r.netIncomeEgp,
       revenueEgp: r.revenueEgp,
       currentRatio: round(r.currentRatio, 2),
+      revenueGrowthPct: round(r.revenueGrowthPct, 1),
+      netIncomeGrowthPct: round(r.netIncomeGrowthPct, 1),
+      epsGrowthPct: round(r.epsGrowthPct, 1),
+      grossMarginPct: round(r.grossMarginPct, 1),
+      operatingMarginPct: round(r.operatingMarginPct, 1),
+      netMarginPct: round(r.netMarginPct, 1),
+      freeCashFlowEgp: r.freeCashFlowEgp ?? null,
+      // FCF ÷ market cap — derived here so the brief never asks the model to.
+      freeCashFlowYieldPct:
+        r.freeCashFlowEgp != null && r.marketCapEgp > 0 ? round((r.freeCashFlowEgp / r.marketCapEgp) * 100, 1) : null,
+      returnOnAssetsPct: round(r.returnOnAssetsPct, 1),
+      evToEbitda: round(r.evToEbitda, 1),
+      netDebtEgp: r.netDebtEgp ?? null,
+      priceToSales: round(r.priceToSales, 2),
       industry: r.industry,
       // 0-100 rank of the *raw* number against the whole EGX universe on
       // this call — null wherever the universe itself had too few values to
@@ -180,6 +212,8 @@ export async function fetchFundamentals(codes = null) {
       percentiles: Object.fromEntries(
         PERCENTILE_FIELDS.map((f) => [f, percentileOf(r[f], sortedByField[f])]),
       ),
+      // The same metrics against the company's own peers — see peerStats.
+      peers: Object.fromEntries(PERCENTILE_FIELDS.map((f) => [f, peerStats(r, f, peerIndex)])),
       // A plain-language read of the numbers, so the brief carries a judgment
       // and not just a row of ratios.
       valuation: describeValuation(r),
@@ -189,6 +223,61 @@ export async function fetchFundamentals(codes = null) {
 }
 
 const round = (x, d) => (x == null || !Number.isFinite(x) ? null : +x.toFixed(d));
+
+/** Fewer peers than this and a median or rank says more about the sample than the company. */
+const MIN_PEERS = 5;
+
+/**
+ * Multiples where a zero or negative value (a loss, negative equity) is not a
+ * point on the same scale — kept out of the peer median and rank, so one
+ * loss-maker doesn't drag a sector's "typical P/E" toward zero.
+ */
+const POSITIVE_ONLY = new Set(['peRatio', 'priceToBook', 'evToEbitda']);
+
+const peerValue = (field, v) =>
+  v != null && Number.isFinite(v) && (!POSITIVE_ONLY.has(field) || v > 0) ? v : null;
+
+/** field → group key → ascending values, for industry and for TradingView sector. */
+function buildPeerIndex(rows) {
+  const index = {};
+  for (const f of PERCENTILE_FIELDS) {
+    const byIndustry = new Map();
+    const bySector = new Map();
+    for (const r of rows) {
+      const v = peerValue(f, r[f]);
+      if (v == null) continue;
+      if (r.industry) byIndustry.set(r.industry, [...(byIndustry.get(r.industry) ?? []), v]);
+      if (r.tvSector) bySector.set(r.tvSector, [...(bySector.get(r.tvSector) ?? []), v]);
+    }
+    for (const m of [byIndustry, bySector]) for (const vals of m.values()) vals.sort((a, b) => a - b);
+    index[f] = { industry: byIndustry, sector: bySector };
+  }
+  return index;
+}
+
+/**
+ * One metric against the company's peers: its industry when that has at
+ * least MIN_PEERS reporting companies, else its broader TradingView sector,
+ * else null. `percentile` is the same raw rank as percentileOf, within the group.
+ */
+function peerStats(r, field, index) {
+  const own = peerValue(field, r[field]);
+  const pick = (kind, name) => {
+    const vals = name ? index[field][kind].get(name) : null;
+    return vals && vals.length >= MIN_PEERS ? { group: kind, name, vals } : null;
+  };
+  const g = pick('industry', r.industry) ?? pick('sector', r.tvSector);
+  if (!g) return null;
+  const mid = g.vals.length >> 1;
+  const median = g.vals.length % 2 ? g.vals[mid] : (g.vals[mid - 1] + g.vals[mid]) / 2;
+  return {
+    group: g.group,
+    name: g.name,
+    count: g.vals.length,
+    median: round(median, 2),
+    percentile: own == null ? null : percentileOf(own, g.vals),
+  };
+}
 
 /** Ascending, finite-only values of `key` across every screener row. */
 function sortedFinite(rows, key) {
@@ -215,7 +304,10 @@ function percentileOf(value, sortedAsc) {
 }
 
 /** Fields ranked across the universe — see percentiles on each fundamentals row below. */
-const PERCENTILE_FIELDS = ['peRatio', 'priceToBook', 'returnOnEquityPct', 'debtToEquity', 'dividendYieldPct', 'currentRatio'];
+const PERCENTILE_FIELDS = [
+  'peRatio', 'priceToBook', 'returnOnEquityPct', 'debtToEquity', 'dividendYieldPct', 'currentRatio',
+  'revenueGrowthPct', 'netMarginPct', 'evToEbitda',
+];
 
 /** Short Arabic characterisation of the valuation, or null when too little is known. */
 function describeValuation(r) {
