@@ -845,6 +845,9 @@ function PositionCard({
   // A suspended stock's badge says so, but its last verdict still stays in
   // the box until a new one is requested.
   const shownVerdict = verdict;
+  // Written about a position, style or price that no longer holds — still
+  // shown, but marked old everywhere it appears so it isn't read as today's call.
+  const verdictIsStale = Boolean(shownVerdict && !halted && staleReason);
   const badgeLabel =
     shownVerdict && !halted
       ? (AI_ACTION_LABEL[shownVerdict.action] ?? shownVerdict.action)
@@ -894,6 +897,7 @@ function PositionCard({
             <span className="truncate text-[15px] font-semibold">{row.code}</span>
             <Badge variant="outline" className={badgeTone}>
               {badgeLabel}
+              {verdictIsStale && " · قديمة"}
             </Badge>
             {shownVerdict?.conviction && !halted && (
               <span className="text-[11px] text-muted-foreground">
@@ -1001,6 +1005,15 @@ function PositionCard({
           // each shown in full: clamped to two lines, a narrow phone screen
           // cut the order off mid-sentence.
           <p dir="rtl" className="text-right">
+            {verdictIsStale && (
+              <>
+                <span className="font-semibold text-warn">
+                  توصية قديمة{verdictAt != null && ` (${arDay(cairoDay(verdictAt))})`} — مش توصية
+                  النهارده
+                </span>
+                <br />
+              </>
+            )}
             <span className="font-medium">{shownVerdict.headline}</span>
             {(shownVerdict.orderInstruction ?? shownVerdict.invalidation) && (
               <>
@@ -1037,7 +1050,8 @@ function PositionCard({
       ) : (
         staleReason && (
           <p dir="rtl" className="mt-2 text-right text-[12px] leading-relaxed text-warn">
-            ⚠️ التوصية دي قديمة: {staleReason}. اطلب توصية جديدة قبل ما تتصرف عليها.
+            ⚠️ التوصية دي قديمة: {staleReason}. عشان كده ممكن تختلف عن توصية «تحليل السوق»، اللي
+            بتتحسب على السعر الحالي. اطلب توصية جديدة قبل ما تتصرف عليها.
           </p>
         )
       )}
