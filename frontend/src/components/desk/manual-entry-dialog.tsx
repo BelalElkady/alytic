@@ -315,7 +315,7 @@ function TradeLog({
               <TableHead className="text-start">النوع</TableHead>
               <TableHead className="text-start">العدد</TableHead>
               <TableHead className="text-start">السعر</TableHead>
-              <TableHead className="text-start">مصاريف</TableHead>
+              <TableHead className="text-start">عمولة</TableHead>
               <TableHead className="text-start">محقق</TableHead>
               <TableHead>
                 <span className="sr-only">تعديل</span>

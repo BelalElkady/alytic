@@ -39,7 +39,7 @@ test('a trade without fees pays none', async () => {
   const p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
   assert.equal(p.cash, 95_000);
   assert.equal(p.trades[0].commission, 0);
-  await assert.rejects(() => recordTrade(base(), { code: CODE, side: 'buy', shares: 1, price: 50, fees: -1 }), /المصاريف/);
+  await assert.rejects(() => recordTrade(base(), { code: CODE, side: 'buy', shares: 1, price: 50, fees: -1 }), /العمولة/);
 });
 
 test('a second buy averages into the existing position', async () => {

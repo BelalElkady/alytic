@@ -128,7 +128,7 @@ export function stampSharesSetAt(before, after, now = new Date()) {
 /** A trade's entered fees as a non-negative amount, 0 when left blank. */
 function feesOf(fees) {
   const n = Number(fees ?? 0);
-  if (!Number.isFinite(n) || n < 0) throw new Error('المصاريف لازم تكون رقم صفر أو أكبر');
+  if (!Number.isFinite(n) || n < 0) throw new Error('العمولة لازم تكون رقم صفر أو أكبر');
   return n;
 }
 

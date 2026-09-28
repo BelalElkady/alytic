@@ -209,7 +209,7 @@ export function TradeForm({
         {!dividend && (
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor={`${id}-fees`}>
-              المصاريف (ج) <span className="text-muted-foreground">— اختياري</span>
+              العمولة (ج) <span className="text-muted-foreground">— اختياري</span>
             </Label>
             <Input
               id={`${id}-fees`}
@@ -224,7 +224,7 @@ export function TradeForm({
               }
             />
             <p className="text-[12px] text-muted-foreground">
-              عمولة السمسرة وأي مصاريف دفعتها على الصفقة. لو سبتها فاضية هتتحسب صفر.
+              عمولة السمسرة اللي دفعتها على الصفقة. لو سبتها فاضية هتتحسب صفر.
             </p>
           </div>
         )}

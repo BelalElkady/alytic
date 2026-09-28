@@ -2102,7 +2102,7 @@ function tradeInputError({ code, side, shares, price, fees, date, note }) {
   if (!Number.isFinite(p) || p <= 0 || p > MAX_PRICE) return 'السعر غير صالح';
   if (fees != null && fees !== '') {
     const f = Number(fees);
-    if (!Number.isFinite(f) || f < 0 || f > s * p) return 'المصاريف غير صالحة';
+    if (!Number.isFinite(f) || f < 0 || f > s * p) return 'العمولة غير صالحة';
   }
   if (date != null && date !== '' && !isDayString(date)) return 'التاريخ لازم يكون بصيغة YYYY-MM-DD';
   if (note != null && (typeof note !== 'string' || note.length > MAX_TRADE_NOTE)) return `الملاحظة لازم تكون نص (حد أقصى ${MAX_TRADE_NOTE} حرف)`;
