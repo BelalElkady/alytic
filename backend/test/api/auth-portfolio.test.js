@@ -164,12 +164,16 @@ test('the whole portfolio lifecycle over HTTP', async () => {
 
   // a real buy
   res = await request(baseUrl, 'POST', '/api/portfolio/trade', {
-    body: { code: 'abuk', side: 'buy', shares: 100, price: 50 }, cookie,
+    body: { code: 'abuk', side: 'buy', shares: 100, price: 50, fees: 10 }, cookie,
   });
   assert.equal(res.status, 200);
   assert.equal(res.body.positions.ABUK.shares, 100);
   assert.equal(res.body.positions.ABUK.avgCost, 50);
-  const commission = 100 * 50 * 0.002;
+  const commission = 10;
+  const badFees = await request(baseUrl, 'POST', '/api/portfolio/trade', {
+    body: { code: 'ABUK', side: 'buy', shares: 1, price: 50, fees: -2 }, cookie,
+  });
+  assert.equal(badFees.status, 400);
   assert.equal(res.body.cash, +(200_000 - 5000 - commission).toFixed(2));
   assert.equal(res.body.capital, +(res.body.cash + 5000).toFixed(2));
 

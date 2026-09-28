@@ -25,15 +25,22 @@ const base = (cash = 100_000) => ({
   updatedAt: null,
 });
 
-test('a buy opens a position at the weighted average cost and pays commission', async () => {
-  const p = await recordTrade(base(), { code: 'abuk', side: 'buy', shares: 100, price: 50 });
-  const commission = 100 * 50 * (RULES.commissionPct / 100);
+test('a buy opens a position at the weighted average cost and pays the fees entered', async () => {
+  const commission = 12.5;
+  const p = await recordTrade(base(), { code: 'abuk', side: 'buy', shares: 100, price: 50, fees: commission });
   assert.equal(p.trades.length, 1);
   assert.equal(p.positions.ABUK.shares, 100);
   assert.equal(p.positions.ABUK.avgCost, 50);
   assert.ok(p.positions.ABUK.openedAt);
   assert.equal(p.cash, +(100_000 - 5000 - commission).toFixed(2));
   assert.equal(p.trades[0].commission, +commission.toFixed(2));
+});
+
+test('a trade without fees pays none', async () => {
+  const p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
+  assert.equal(p.cash, 95_000);
+  assert.equal(p.trades[0].commission, 0);
+  await assert.rejects(() => recordTrade(base(), { code: CODE, side: 'buy', shares: 1, price: 50, fees: -1 }), /المصاريف/);
 });
 
 test('a second buy averages into the existing position', async () => {
@@ -45,16 +52,16 @@ test('a second buy averages into the existing position', async () => {
 });
 
 test('a sell realises P&L against the existing average and never moves it', async () => {
-  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
-  const commission = 40 * 70 * (RULES.commissionPct / 100);
-  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 40, price: 70 });
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50, fees: 10 });
+  const commission = 5.6;
+  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 40, price: 70, fees: commission });
   assert.equal(p.positions.ABUK.shares, 60);
   assert.equal(p.positions.ABUK.avgCost, 50);
   const realized = +(40 * (70 - 50) - commission).toFixed(2);
   assert.equal(p.realizedPnl, realized);
   assert.equal(p.trades[1].realized, realized);
   // cash: 100000 − 5000 − buy commission(10) + 2800 − sell commission(5.6)
-  assert.equal(p.cash, +(100_000 - 5000 - 100 * 50 * (RULES.commissionPct / 100) + 40 * 70 - commission).toFixed(2));
+  assert.equal(p.cash, +(100_000 - 5000 - 10 + 40 * 70 - commission).toFixed(2));
 });
 
 test('selling everything closes the position but keeps the trade row', async () => {
@@ -108,10 +115,11 @@ test('editing or deleting a dividend moves cash and realised P&L by the differen
 });
 
 test('editing a buy re-averages the position, moves cash by the difference and re-prices later sells', async () => {
-  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
-  p = await recordTrade(p, { code: CODE, side: 'buy', shares: 100, price: 60 });
-  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 50, price: 70 });
-  const edited = editTrade(p, 0, { code: CODE, side: 'buy', shares: 100, price: 40 });
+  let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50, fees: 10 });
+  p = await recordTrade(p, { code: CODE, side: 'buy', shares: 100, price: 60, fees: 12 });
+  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 50, price: 70, fees: 7 });
+  const edited = editTrade(p, 0, { code: CODE, side: 'buy', shares: 100, price: 40, fees: 8 });
+  assert.equal(edited.trades[0].commission, 8);
 
   assert.equal(edited.positions.ABUK.shares, 150);
   assert.equal(edited.positions.ABUK.avgCost, 50);
@@ -123,9 +131,11 @@ test('editing a buy re-averages the position, moves cash by the difference and r
 
 test('an edit that changes nothing leaves the book as it was', async () => {
   let p = await recordTrade(base(), { code: CODE, side: 'buy', shares: 100, price: 50 });
-  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 30, price: 55 });
+  p = await recordTrade(p, { code: CODE, side: 'sell', shares: 30, price: 55, fees: 4 });
   const t = p.trades[1];
+  // Fees left out of the edit keep what the trade was logged with.
   const edited = editTrade(p, 1, { code: t.code, side: t.side, shares: t.shares, price: t.price, date: t.date });
+  assert.equal(edited.trades[1].commission, 4);
   assert.deepEqual(edited.positions, p.positions);
   assert.equal(edited.cash, p.cash);
   assert.equal(edited.realizedPnl, p.realizedPnl);
@@ -174,7 +184,7 @@ test('withPortfolio serialises concurrent writes — the lost-update regression'
   );
   const final = await Promise.all(jobs).then((results) => results.at(-1));
   assert.equal(final.trades.length, 15, 'every concurrent write must land — none may overwrite another');
-  const expectedCash = 100_000 - Array.from({ length: 15 }, (_, i) => 10 * (10 + i) * (1 + RULES.commissionPct / 100))
+  const expectedCash = 100_000 - Array.from({ length: 15 }, (_, i) => 10 * (10 + i))
     .reduce((a, b) => a + b, 0);
   assert.ok(Math.abs(final.cash - expectedCash) < 2, `cash ${final.cash} ≈ ${expectedCash}`);
   assert.equal(final.positions.ABUK.shares, 150);
