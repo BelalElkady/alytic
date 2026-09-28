@@ -292,13 +292,17 @@ export function StockAnalysisBody({
             // the entry-plan stop for a fresh buy today, which is
             // shown only when there's no open position to defend.
             position ? (
-              <span className="num text-down">
-                {fmt(position.stop)} ج · مسافة {position.distanceToStopPct}%
-              </span>
+              <LevelValue
+                className="text-down"
+                price={position.stop}
+                note={<>مسافة <span className="num">{position.distanceToStopPct}%</span></>}
+              />
             ) : (
-              <span className="num text-down">
-                {fmt(plan.stop.stop)} ج · مخاطرة {plan.stop.riskPct}%
-              </span>
+              <LevelValue
+                className="text-down"
+                price={plan.stop.stop}
+                note={<>مخاطرة <span className="num">{plan.stop.riskPct}%</span></>}
+              />
             )
           }
         />
@@ -306,9 +310,11 @@ export function StockAnalysisBody({
           <Line
             label="الهدف"
             value={
-              <span className="num text-up">
-                {fmt(oneTarget.price)} ج · {pct(oneTarget.upsidePct)}
-              </span>
+              <LevelValue
+                className="text-up"
+                price={oneTarget.price}
+                note={<span className="num">{pct(oneTarget.upsidePct)}</span>}
+              />
             }
             hint={[
               oneTarget.basis,
@@ -327,9 +333,11 @@ export function StockAnalysisBody({
               <Line
                 label="الهدف المتوسط"
                 value={
-                  <span className="num text-up">
-                    {fmt(plan.targets.mid.price)} ج · {pct(plan.targets.mid.upsidePct)}
-                  </span>
+                  <LevelValue
+                    className="text-up"
+                    price={plan.targets.mid.price}
+                    note={<span className="num">{pct(plan.targets.mid.upsidePct)}</span>}
+                  />
                 }
                 hint={`${plan.targets.mid.basis} · ${plan.targets.mid.horizon.ar} · ع/م ${plan.targets.mid.riskReward}`}
               />
@@ -338,9 +346,11 @@ export function StockAnalysisBody({
               <Line
                 label="الهدف البعيد"
                 value={
-                  <span className="num text-up">
-                    {fmt(plan.targets.long.price)} ج · {pct(plan.targets.long.upsidePct)}
-                  </span>
+                  <LevelValue
+                    className="text-up"
+                    price={plan.targets.long.price}
+                    note={<span className="num">{pct(plan.targets.long.upsidePct)}</span>}
+                  />
                 }
                 hint={[plan.targets.long.basis, plan.targets.long.horizon.ar, plan.targets.long.caveat]
                   .filter(Boolean)
@@ -596,16 +606,30 @@ function MetricPanel({ title, rows }: { title: string; rows: Metric[] }) {
   );
 }
 
+/**
+ * "12.81 ج · مسافة 2.36%" in reading order. Only the numbers are forced
+ * left-to-right (.num); wrapping the whole phrase in .num made the browser
+ * lay the Arabic words out LTR too, scrambling the numbers' order.
+ */
+function LevelValue({ price, note, className }: { price: number; note: ReactNode; className: string }) {
+  return (
+    <span dir="rtl" className={className}>
+      <span className="num">{fmt(price)}</span> ج · {note}
+    </span>
+  );
+}
+
 function Line({ label, value, hint }: { label: string; value: ReactNode; hint?: string | undefined }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+    // The value always shares the label's row; the hint gets its own
+    // full-width row below. Wrapped together, a long hint pushed the value off
+    // the row and it sat mid-card instead of at the edge.
+    <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1 px-4 py-2.5">
       <dt className="text-muted-foreground">
         <TermLabel>{label}</TermLabel>
       </dt>
-      <dd className="text-end font-medium">
-        {value}
-        {hint && <div className="mt-0.5 text-[11.5px] font-normal text-muted-foreground">{hint}</div>}
-      </dd>
+      <dd className="text-end font-medium">{value}</dd>
+      {hint && <dd className="col-span-2 text-end text-[11.5px] text-muted-foreground">{hint}</dd>}
     </div>
   );
 }

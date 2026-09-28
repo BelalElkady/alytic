@@ -752,6 +752,52 @@ function CorporateActionNotice({ code }: { code: string }) {
   );
 }
 
+type Scenario = { trigger: string; levels: string; assumptions: string };
+
+const SCENARIO_ROWS = [
+  { key: "bull", label: "لو طلع", className: "text-up" },
+  { key: "base", label: "الأرجح", className: "text-foreground" },
+  { key: "bear", label: "لو كسر", className: "text-down" },
+] as const;
+
+/**
+ * The verdict's bull / base / bear cases, folded away under the order so the
+ * card still reads as one decision first. Absent on a verdict written without
+ * a review (a quiet hold), and on one saved before scenarios existed.
+ */
+function VerdictScenarios({ scenarios }: { scenarios: Partial<Record<"bull" | "base" | "bear", Scenario>> }) {
+  const rows = SCENARIO_ROWS.filter((row) => scenarios[row.key]);
+  if (!rows.length) return null;
+  return (
+    // The whole card opens the stock page on click and on Enter/Space; stop
+    // both here so unfolding the scenarios doesn't navigate away.
+    <details
+      dir="rtl"
+      className="mt-2 border-t pt-2 text-right"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <summary className="cursor-pointer text-[12.5px] font-semibold text-muted-foreground">
+        السيناريوهات
+      </summary>
+      <ul className="mt-1.5 space-y-2 text-[12.5px]">
+        {rows.map(({ key, label, className }) => {
+          const s = scenarios[key]!;
+          return (
+            <li key={key}>
+              <span className={cn("font-semibold", className)}>{label}: </span>
+              {s.trigger}
+              <div className="text-muted-foreground">
+                {s.levels} — {s.assumptions}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 function PositionCard({
   row,
   onOpen,
@@ -989,24 +1035,36 @@ function PositionCard({
           // The decision, then the order (or the level to watch on a hold),
           // each shown in full: clamped to two lines, a narrow phone screen
           // cut the order off mid-sentence.
-          <p dir="rtl" className="text-right">
-            {verdictIsStale && (
-              <>
-                <span className="font-semibold text-warn">
-                  توصية قديمة{verdictAt != null && ` (${arDay(cairoDay(verdictAt))})`} — مش توصية
-                  النهارده
-                </span>
-                <br />
-              </>
-            )}
-            <span className="font-medium">{shownVerdict.headline}</span>
-            {(shownVerdict.orderInstruction ?? shownVerdict.invalidation) && (
-              <>
-                <br />
-                <span className="text-muted-foreground">{shownVerdict.orderInstruction ?? shownVerdict.invalidation}</span>
-              </>
-            )}
-          </p>
+          <>
+            <p dir="rtl" className="text-right">
+              {verdictIsStale && (
+                <>
+                  <span className="font-semibold text-warn">
+                    توصية قديمة{verdictAt != null && ` (${arDay(cairoDay(verdictAt))})`} — مش توصية
+                    النهارده
+                  </span>
+                  <br />
+                </>
+              )}
+              <span className="font-medium">{shownVerdict.headline}</span>
+              {(shownVerdict.orderInstruction ?? shownVerdict.invalidation) && (
+                <>
+                  <br />
+                  <span className="text-muted-foreground">{shownVerdict.orderInstruction ?? shownVerdict.invalidation}</span>
+                </>
+              )}
+              {shownVerdict.reentryPlan && (
+                <>
+                  <br />
+                  <span className="text-muted-foreground">
+                    <span className="font-medium">الرجوع: </span>
+                    {shownVerdict.reentryPlan}
+                  </span>
+                </>
+              )}
+            </p>
+            {shownVerdict.scenarios && <VerdictScenarios scenarios={shownVerdict.scenarios} />}
+          </>
         ) : (
           <>
             <span className="text-muted-foreground">
