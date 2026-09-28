@@ -2694,19 +2694,9 @@ app.post('/api/log/note', wrap(async (req, res) => {
 
 app.get('/api/settings', wrap(async (req, res) => {
   const p = await loadPortfolio(req.user.id);
-  res.json({ settings: { ...RULES, ...(p.settings ?? {}) }, rules: RULES });
-}));
-
-app.post('/api/settings', wrap(async (req, res) => {
-  const commissionPct = Number(req.body?.commissionPct);
-  if (!Number.isFinite(commissionPct) || commissionPct < 0 || commissionPct > 5) {
-    return res.status(400).json({ error: 'نسبة عمولة غير منطقية' });
-  }
-  const updated = await withPortfolio(req.user.id, (portfolio) => ({
-    ...portfolio,
-    settings: { ...(portfolio.settings ?? {}), commissionPct },
-  }));
-  res.json({ ok: true, settings: updated.settings });
+  // commissionPct was a setting before trades carried their own fees; older books still store it.
+  const { commissionPct: _retired, ...settings } = p.settings ?? {};
+  res.json({ settings: { ...RULES, ...settings }, rules: RULES });
 }));
 
 // The investment style picked in settings. The browser keeps the working copy

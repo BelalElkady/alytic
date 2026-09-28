@@ -24,7 +24,7 @@ const EMPTY = {
   log: {},         // date -> { total, positionsValue, cash, cashFlow, dayChange, pl, prices, stops, note, changes, savedAt }
   cashFlows: [],   // { at, amount, source } — money moved in or out other than by the market; see recordCashFlow
   corporateActions: [], // bonus shares, splits, mergers found on held stocks — see corporateActions.js
-  settings: { commissionPct: 0.20 },
+  settings: {},
   realizedPnl: 0,
   updatedAt: null,
 };

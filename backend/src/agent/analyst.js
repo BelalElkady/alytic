@@ -386,7 +386,6 @@ export function portfolioContext(analyses, ctx, rules) {
 - Positions value: ${Math.round(totalPositionValue).toLocaleString('en-US')} EGP
 - Cash available: ${Math.round(cash).toLocaleString('en-US')} EGP (${((cash / capital) * 100).toFixed(1)}% of capital)
 - Total capital: ${Math.round(capital).toLocaleString('en-US')} EGP
-- Brokerage commission: ${rules.commissionPct}% per trade
 
 ## Portfolio structure (computed — judge it, do not recompute it)
 - Portfolio health score: ${structure.health.score}/100${structure.health.reasons.length ? ` — deductions: ${structure.health.reasons.join('; ')}` : ' — no structural violations'}

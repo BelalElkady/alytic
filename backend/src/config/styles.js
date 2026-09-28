@@ -94,7 +94,7 @@ const OVERRIDES = {
 
 /**
  * `base` with one style's overrides layered on top — only the fields above
- * change; liquidity, stop, commission, averaging-down and everything else
+ * change; liquidity, stop, averaging-down and everything else
  * stay exactly as `base` defined them.
  */
 export function rulesForStyle(base, styleKey) {

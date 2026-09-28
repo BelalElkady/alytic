@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import RULES from '../../src/config/rules.js';
 import {
   recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, withPortfolio,
   loadPortfolio, recordCashFlow, positionsFlow,
@@ -20,7 +19,7 @@ const base = (cash = 100_000) => ({
   watchlist: {},
   trades: [],
   log: {},
-  settings: { commissionPct: RULES.commissionPct },
+  settings: {},
   realizedPnl: 0,
   updatedAt: null,
 });
