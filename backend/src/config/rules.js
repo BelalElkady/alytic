@@ -90,8 +90,6 @@ export const RULES = {
     excludeNonCompliant: true,
   },
 
-  commissionPct: 0.20,
-
   webSearch: {
     // The analyst researches every stock it is about to move money on, so the
     // budget scales with the book instead of being a flat allowance: roughly

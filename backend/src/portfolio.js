@@ -9,7 +9,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import RULES from './config/rules.js';
 import { getPortfolio, putPortfolio } from './db.js';
 import { lookup } from './config/universe.js';
 import { currentTenant } from './tenancy/context.js';
@@ -25,7 +24,7 @@ const EMPTY = {
   log: {},         // date -> { total, positionsValue, cash, cashFlow, dayChange, pl, prices, stops, note, changes, savedAt }
   cashFlows: [],   // { at, amount, source } — money moved in or out other than by the market; see recordCashFlow
   corporateActions: [], // bonus shares, splits, mergers found on held stocks — see corporateActions.js
-  settings: { commissionPct: 0.20 },
+  settings: {},
   realizedPnl: 0,
   updatedAt: null,
 };
@@ -126,6 +125,13 @@ export function stampSharesSetAt(before, after, now = new Date()) {
   return positions ? { ...after, positions } : after;
 }
 
+/** A trade's entered fees as a non-negative amount, 0 when left blank. */
+function feesOf(fees) {
+  const n = Number(fees ?? 0);
+  if (!Number.isFinite(n) || n < 0) throw new Error('العمولة لازم تكون رقم صفر أو أكبر');
+  return n;
+}
+
 /**
  * Record a trade and roll the position forward.
  *
@@ -137,11 +143,14 @@ export function stampSharesSetAt(before, after, now = new Date()) {
  * it adds to cash and realised P&L, pays no commission, and leaves the
  * position alone — the shares may since have been sold, since a dividend is
  * paid to whoever held on the record date.
+ *
+ * `fees` is what the broker actually charged for the trade, as the user
+ * entered it; it's optional and a trade without it pays none.
  */
-export async function recordTrade(portfolio, { code, side, shares, price, date = null, note = null }, rules = RULES) {
+export async function recordTrade(portfolio, { code, side, shares, price, fees = 0, date = null, note = null }) {
   const c = code.toUpperCase();
   const p = { ...portfolio, positions: { ...portfolio.positions }, trades: [...portfolio.trades] };
-  const commission = side === 'dividend' ? 0 : shares * price * (rules.commissionPct / 100);
+  const commission = side === 'dividend' ? 0 : feesOf(fees);
   const when = date ?? new Date().toISOString().slice(0, 10);
 
   if (!(shares > 0) || !(price > 0)) throw new Error('عدد الأسهم والسعر لازم يكونوا أكبر من صفر');
@@ -252,7 +261,7 @@ function replayCode(trades, start) {
  * is linear in the starting average, two replays pin that down exactly. An
  * edit that changes nothing leaves the portfolio as it was.
  */
-export function editTrade(portfolio, index, next, rules = RULES) {
+export function editTrade(portfolio, index, next) {
   const old = portfolio.trades?.[index];
   if (!old) throw new Error('الصفقة دي مش موجودة — حدّث الصفحة وجرب تاني.');
 
@@ -274,7 +283,8 @@ export function editTrade(portfolio, index, next, rules = RULES) {
       side: next.side,
       shares,
       price,
-      commission: next.side === 'dividend' ? 0 : +(shares * price * (rules.commissionPct / 100)).toFixed(2),
+      // Fees left out of the edit keep what the trade was logged with.
+      commission: next.side === 'dividend' ? 0 : +feesOf(next.fees ?? old.commission ?? 0).toFixed(2),
       note: next.note !== undefined ? next.note : old.note ?? null,
       ...(next.side === 'dividend' ? { realized: +(shares * price).toFixed(2) } : {}),
     };

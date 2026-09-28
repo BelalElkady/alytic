@@ -25,7 +25,7 @@ import { post } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useDesk } from "@/lib/store";
 
-const EMPTY = { code: "", side: "buy", shares: "", price: "", date: "" };
+const EMPTY = { code: "", side: "buy", shares: "", price: "", fees: "", date: "" };
 
 /** A row of the trade log, with its position in the log — what the edit endpoints address it by. */
 export type LoggedTrade = {
@@ -35,6 +35,7 @@ export type LoggedTrade = {
   side: string;
   shares: number;
   price: number;
+  commission?: number;
 };
 
 /**
@@ -61,6 +62,7 @@ export function TradeForm({
           side: trade.side,
           shares: String(trade.shares),
           price: String(trade.price),
+          fees: trade.commission ? String(trade.commission) : "",
           date: trade.date,
         }
       : EMPTY,
@@ -113,6 +115,8 @@ export function TradeForm({
         side: form.side,
         shares: +form.shares,
         price: +form.price,
+        // Optional: left blank, the trade pays no fees.
+        fees: dividend || form.fees === "" ? 0 : +form.fees,
         date: form.date || undefined,
       };
       if (trade) await post(`/api/portfolio/trades/${trade.index}`, { ...body, original });
@@ -197,9 +201,33 @@ export function TradeForm({
             type="number"
             step="0.01"
             value={form.price}
-            onChange={(event) => setForm((previous) => ({ ...previous, price: event.target.value }))}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, price: event.target.value }))
+            }
           />
         </div>
+        {!dividend && (
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor={`${id}-fees`}>
+              العمولة (ج) <span className="text-muted-foreground">— اختياري</span>
+            </Label>
+            <Input
+              id={`${id}-fees`}
+              className="num"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0"
+              value={form.fees}
+              onChange={(event) =>
+                setForm((previous) => ({ ...previous, fees: event.target.value }))
+              }
+            />
+            <p className="text-[12px] text-muted-foreground">
+              عمولة السمسرة اللي دفعتها على الصفقة. لو سبتها فاضية هتتحسب صفر.
+            </p>
+          </div>
+        )}
       </div>
 
       {dividend && (

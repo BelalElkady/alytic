@@ -2093,27 +2093,31 @@ const MAX_DAY_NOTE = 2000;
 const MAX_WATCH_NOTE = 300;
 const isDayString = (value) => typeof value === 'string' && value.length <= 40 && isIsoDate(value.slice(0, 10));
 
-function tradeInputError({ code, side, shares, price, date, note }) {
+function tradeInputError({ code, side, shares, price, fees, date, note }) {
   if (typeof code !== 'string') return 'الكود لازم يكون نص';
   if (!['buy', 'sell', 'dividend'].includes(side)) return 'نوع الصفقة لازم يكون buy أو sell أو dividend';
   const s = Number(shares);
   const p = Number(price);
   if (!Number.isFinite(s) || s <= 0 || s > MAX_SHARES) return 'عدد الأسهم غير صالح';
   if (!Number.isFinite(p) || p <= 0 || p > MAX_PRICE) return 'السعر غير صالح';
+  if (fees != null && fees !== '') {
+    const f = Number(fees);
+    if (!Number.isFinite(f) || f < 0 || f > s * p) return 'العمولة غير صالحة';
+  }
   if (date != null && date !== '' && !isDayString(date)) return 'التاريخ لازم يكون بصيغة YYYY-MM-DD';
   if (note != null && (typeof note !== 'string' || note.length > MAX_TRADE_NOTE)) return `الملاحظة لازم تكون نص (حد أقصى ${MAX_TRADE_NOTE} حرف)`;
   return null;
 }
 
 app.post('/api/portfolio/trade', wrap(async (req, res) => {
-  const { code, side, shares, price, date, note } = req.body ?? {};
+  const { code, side, shares, price, fees, date, note } = req.body ?? {};
   if (!code || !side || !shares || !price) {
     return res.status(400).json({ error: 'محتاج code و side و shares و price' });
   }
-  const invalid = tradeInputError({ code, side, shares, price, date, note });
+  const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
   const updated = await withPortfolio(req.user.id, (portfolio) =>
-    recordTrade(portfolio, { code, side, shares: Number(shares), price: Number(price), date, note }),
+    recordTrade(portfolio, { code, side, shares: Number(shares), price: Number(price), fees: fees === '' ? 0 : fees, date, note }),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
 }));
@@ -2133,14 +2137,14 @@ function tradeAt(portfolio, req) {
 }
 
 app.post('/api/portfolio/trades/:index', wrap(async (req, res) => {
-  const { code, side, shares, price, date, note } = req.body ?? {};
+  const { code, side, shares, price, fees, date, note } = req.body ?? {};
   if (!code || !side || !shares || !price) {
     return res.status(400).json({ error: 'محتاج code و side و shares و price' });
   }
-  const invalid = tradeInputError({ code, side, shares, price, date, note });
+  const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
   const updated = await withPortfolio(req.user.id, (portfolio) =>
-    editTrade(portfolio, tradeAt(portfolio, req), { code, side, shares, price, date, note }),
+    editTrade(portfolio, tradeAt(portfolio, req), { code, side, shares, price, fees: fees === '' ? 0 : fees, date, note }),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
 }));
@@ -2690,19 +2694,9 @@ app.post('/api/log/note', wrap(async (req, res) => {
 
 app.get('/api/settings', wrap(async (req, res) => {
   const p = await loadPortfolio(req.user.id);
-  res.json({ settings: { ...RULES, ...(p.settings ?? {}) }, rules: RULES });
-}));
-
-app.post('/api/settings', wrap(async (req, res) => {
-  const commissionPct = Number(req.body?.commissionPct);
-  if (!Number.isFinite(commissionPct) || commissionPct < 0 || commissionPct > 5) {
-    return res.status(400).json({ error: 'نسبة عمولة غير منطقية' });
-  }
-  const updated = await withPortfolio(req.user.id, (portfolio) => ({
-    ...portfolio,
-    settings: { ...(portfolio.settings ?? {}), commissionPct },
-  }));
-  res.json({ ok: true, settings: updated.settings });
+  // commissionPct was a setting before trades carried their own fees; older books still store it.
+  const { commissionPct: _retired, ...settings } = p.settings ?? {};
+  res.json({ settings: { ...RULES, ...settings }, rules: RULES });
 }));
 
 // The investment style picked in settings. The browser keeps the working copy

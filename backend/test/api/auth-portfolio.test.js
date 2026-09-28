@@ -164,12 +164,16 @@ test('the whole portfolio lifecycle over HTTP', async () => {
 
   // a real buy
   res = await request(baseUrl, 'POST', '/api/portfolio/trade', {
-    body: { code: 'abuk', side: 'buy', shares: 100, price: 50 }, cookie,
+    body: { code: 'abuk', side: 'buy', shares: 100, price: 50, fees: 10 }, cookie,
   });
   assert.equal(res.status, 200);
   assert.equal(res.body.positions.ABUK.shares, 100);
   assert.equal(res.body.positions.ABUK.avgCost, 50);
-  const commission = 100 * 50 * 0.002;
+  const commission = 10;
+  const badFees = await request(baseUrl, 'POST', '/api/portfolio/trade', {
+    body: { code: 'ABUK', side: 'buy', shares: 1, price: 50, fees: -2 }, cookie,
+  });
+  assert.equal(badFees.status, 400);
   assert.equal(res.body.cash, +(200_000 - 5000 - commission).toFixed(2));
   assert.equal(res.body.capital, +(res.body.cash + 5000).toFixed(2));
 
@@ -222,21 +226,11 @@ test('the whole portfolio lifecycle over HTTP', async () => {
   assert.deepEqual(res.body.tracked.sort(), ['ABUK']);
 });
 
-test('settings validation and persistence', async () => {
+test('settings carry no commission rate — fees are entered per trade', async () => {
   const { cookie } = await registerUser(baseUrl);
-  let res = await request(baseUrl, 'GET', '/api/settings', { cookie });
+  const res = await request(baseUrl, 'GET', '/api/settings', { cookie });
   assert.equal(res.status, 200);
-  assert.equal(res.body.settings.commissionPct, 0.2);
-
-  res = await request(baseUrl, 'POST', '/api/settings', { body: { commissionPct: 0.35 }, cookie });
-  assert.equal(res.status, 200);
-  res = await request(baseUrl, 'GET', '/api/settings', { cookie });
-  assert.equal(res.body.settings.commissionPct, 0.35);
-
-  for (const bad of [-1, 9, 'x']) {
-    const invalid = await request(baseUrl, 'POST', '/api/settings', { body: { commissionPct: bad }, cookie });
-    assert.equal(invalid.status, 400);
-  }
+  assert.equal(res.body.settings.commissionPct, undefined);
 });
 
 test('reset wipes the log by default and everything with scope=all', async () => {
