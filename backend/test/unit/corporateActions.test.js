@@ -210,3 +210,26 @@ test('a holding with no saved closes follows the stock-level record', async () =
   assert.equal(proposals[0].status, 'applied');
   assert.equal(applyCorporateActions(p, proposals).positions.POUL.shares, 1035);
 });
+
+test('a feed bar still on the old basis after the next event is not an event the other way round', async () => {
+  // POUL's second event (2026-09-27): the saved close is 9.71 on the new
+  // basis, but the feed's bar for that session still shows the old 38.2.
+  const bars = [...adjustedBars, { date: '2026-09-27', c: 38.2 }];
+  const log = { ...logFrom(DATES.length), '2026-09-27': { prices: { POUL: 9.71 } } };
+  const anchors = savedPrices({ log }, 'POUL');
+  assert.equal(findAdjustment(anchors, bars), null);
+
+  // Nothing is proposed for a holding already on the new basis either — not
+  // even moving its stop and target up by 4×.
+  const p = { ...book({ shares: 4482, avgCost: 10.21, stop: 8.49, target: 11.34, sharesSetAt: '2026-09-27' }), log };
+  const proposals = await detectCorporateActions(p, { barsFor: async () => bars, today: '2026-09-28', livePrices: new Map([['POUL', 9.71]]) });
+  assert.deepEqual(proposals, []);
+});
+
+test('stop and target are only moved on their own by a confirmed ratio', async () => {
+  // Only a same-day gap, and no search to back it: nothing moves unasked.
+  const p = { ...book({ shares: 1035, avgCost: 38.08, stop: 95, target: 120, sharesSetAt: '2026-09-22' }), log: logFrom(EVENT_AT) };
+  const raw = DATES.slice(0, EVENT_AT).map((date, i) => ({ date, c: RAW[i] }));
+  const proposals = await detectCorporateActions(p, { barsFor: async () => raw, today: '2026-09-22', livePrices: new Map([['POUL', 38.3]]) });
+  assert.deepEqual(proposals, []);
+});

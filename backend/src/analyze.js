@@ -540,6 +540,8 @@ export function haltedRecommendation(halted) {
 
 /** Sessions after an event during which the analysis still says it happened. */
 const CORPORATE_ACTION_NOTICE_SESSIONS = 5;
+/** How far a recorded factor may sit from today's gap before the gap wins (a limit day's own move is ±20%). */
+const GAP_TOLERANCE = 0.25;
 
 /**
  * The stock's bars on its current share basis, and the event that moved it
@@ -552,6 +554,11 @@ async function rebaseBars(code, bars, live) {
   const gap = gapEvent(code.toUpperCase(), bars, live?.price, cairoToday());
   if (gap && gap.lastBefore !== event?.lastBefore) {
     event = await recordEvent(gap).catch(() => gap);
+  } else if (gap && event && Math.abs(Math.log(gap.factor / event.factor)) > Math.log(1 + GAP_TOLERANCE)) {
+    // The record for that session says something the bars and the live quote
+    // flatly contradict (a factor read off a stale bar, the wrong way round):
+    // go by what the prices show now.
+    event = gap;
   }
   if (!event) return { bars, corporateAction: null };
   const { bars: rebased, rescaled } = onNewBasis(bars, event);

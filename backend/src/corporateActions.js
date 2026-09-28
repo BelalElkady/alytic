@@ -111,10 +111,17 @@ export function findAdjustment(anchors, bars) {
   const firstAfter = i < pairs.length - 1 ? pairs[i + 1].date : null;
 
   const before = [pairs[i]];
-  for (let j = i - 1; j >= 0 && before.length < MAX_PRE_ANCHORS; j--) {
+  let j = i - 1;
+  for (; j >= 0 && before.length < MAX_PRE_ANCHORS; j--) {
     if (logDistance(pairs[j].ratio, pairs[i].ratio) > SAME_SIDE_TOLERANCE) break;
     before.push(pairs[j]);
   }
+  // An adjustment rewrites the whole history, so the closes older than the
+  // run disagree with the feed too. Older ones that still agree mean the
+  // feed never caught up with the newer closes — a stale bar still on the
+  // old basis after the event (POUL on 2026-09-27: a 9.71 close against a
+  // bar still at 38.9 read as a 0.249 "event") — not an event of its own.
+  if (j >= 0 && before.length < MAX_PRE_ANCHORS && logDistance(pairs[j].ratio, 1) <= MIN_FACTOR_MOVE) return null;
   const factor = median(before.map((p) => p.ratio));
   const spread = Math.max(...before.map((p) => logDistance(p.ratio, factor)));
   return {
@@ -384,7 +391,11 @@ export async function detectCorporateActions(portfolio, { barsFor, freshBarsFor 
         // so it doesn't read as a breach.
         if (!levelsOnOldScale(pos, candidate.factor, price)) continue;
         const found = research ? await research(code, candidate) : null;
-        const factor = confirmedFactor(found, candidate) ?? candidate.factor;
+        const announced = confirmedFactor(found, candidate);
+        // Nothing asks the User first here, so the ratio has to be one the
+        // holding path would apply on its own too.
+        if (!announced && !(candidate.source === 'prices' && candidate.strong)) continue;
+        const factor = announced ?? candidate.factor;
         proposals.push({
           code,
           lastBefore: candidate.lastBefore,
@@ -395,7 +406,7 @@ export async function detectCorporateActions(portfolio, { barsFor, freshBarsFor 
           factor: +factor.toFixed(9),
           status: 'applied',
           levelsOnly: true,
-          confirmedBy: factor === candidate.factor ? 'prices' : 'research',
+          confirmedBy: announced ? 'research' : 'prices',
           kind: found?.found ? found.kind : null,
           summary: found?.found ? found.summaryAr : null,
           sourceUrl: found?.found ? found.sourceUrl : null,

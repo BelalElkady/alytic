@@ -2213,7 +2213,9 @@ async function reconcileCorporateActions(userId) {
   // What was confirmed is the stock's, not just this User's: the analysis
   // rebases everyone's bars with the exact ratio from here on.
   for (const p of proposals) {
-    if (!(p.confirmedBy === 'research' || p.source === 'prices') || !(p.rawBefore > 0)) continue;
+    // Only a ratio that was applied: a pending one is still a guess, and
+    // recorded as confirmed it would rebase every User's bars with it.
+    if (p.status !== 'applied' || !p.confirmedBy || !(p.rawBefore > 0)) continue;
     await recordEvent({ code: p.code, lastBefore: p.lastBefore, rawBefore: p.rawBefore, factor: p.factor, status: 'confirmed', kind: p.kind, summary: p.summary })
       .catch((err) => console.warn('[corporate-actions] event save failed:', err.message));
   }
