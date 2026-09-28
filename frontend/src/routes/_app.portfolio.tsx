@@ -679,11 +679,6 @@ function CorporateActionNotice({ code }: { code: string }) {
   const ratio = Number(record.factor).toLocaleString("en-US", { maximumFractionDigits: 6 });
   const suggestedShares = Math.max(1, Math.round(record.before.shares * record.factor));
   const stop = (e: SyntheticEvent) => e.stopPropagation();
-  // An applied change is already done; the notice just says what happened.
-  const showSource =
-    record.status !== "applied" &&
-    record.sourceUrl != null &&
-    /^https?:\/\//.test(record.sourceUrl);
 
   return (
     <div
@@ -739,16 +734,6 @@ function CorporateActionNotice({ code }: { code: string }) {
         </p>
       )}
       <div className="mt-2 flex flex-wrap justify-end gap-2">
-        {showSource && record.sourceUrl && (
-          <a
-            href={record.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="self-center text-[12px] text-muted-foreground underline"
-          >
-            المصدر
-          </a>
-        )}
         {record.status !== "applied" && record.kind !== "rights" && (
           <Button
             size="sm"
