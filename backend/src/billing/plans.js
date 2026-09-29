@@ -68,12 +68,12 @@ export const ADDONS = {
  * Where users send the transfer. Handed out by the support bot to a
  * signed-in user and nowhere else — never from the public /api/billing/plans
  * — so the account isn't published to anyone who can curl the site, and every
- * disclosure belongs to an account we can match a transfer against. Kept in
- * the environment rather than the repo so it never lands in git; without
- * INSTAPAY_ADDRESS the bot says an admin will send the details instead.
+ * disclosure belongs to an account we can match a transfer against.
+ * INSTAPAY_ADDRESS overrides the default handle (the same one the /subscribe
+ * page's QR code encodes).
  */
 export const INSTAPAY = {
-  address: process.env.INSTAPAY_ADDRESS ?? null,
+  address: process.env.INSTAPAY_ADDRESS ?? 'hassansmm@instapay',
   accountName: process.env.INSTAPAY_ACCOUNT_NAME ?? null,
 };
 
