@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { ArrowDownUp, PencilLine, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDownUp, Info, PencilLine, Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
 import {
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -215,6 +216,55 @@ function serverVerdict(entry: ServerVerdict | null | undefined): StoredVerdict |
     positionKey:
       entry.shares != null && entry.avgCost != null ? `${entry.shares}@${entry.avgCost}` : null,
   };
+}
+
+/**
+ * What "محتاجة تحديث" / "قديمة" on a saved verdict means, one tap away. A
+ * popover rather than a tooltip so it opens on a phone too; it swallows its
+ * own clicks, which React would otherwise bubble (through the portal) to the
+ * card and open the stock.
+ */
+function StaleVerdictHint({ reason, fromToday }: { reason: string; fromToday: boolean }) {
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="يعني إيه التوصية محتاجة تحديث؟"
+          onClick={stop}
+          onKeyDown={stop}
+          className="ms-1 inline-flex size-4 items-center justify-center rounded-full align-[-2px] text-warn transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Info className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        dir="rtl"
+        side="top"
+        className="w-72 space-y-1.5 text-right text-[12.5px] leading-relaxed"
+        onClick={stop}
+        onKeyDown={stop}
+      >
+        <p className="font-semibold">
+          {fromToday ? "يعني إيه «محتاجة تحديث»؟" : "يعني إيه «توصية قديمة»؟"}
+        </p>
+        <p>
+          {fromToday
+            ? "التوصية دي اتكتبت النهارده، بس حاجة اتغيرت من ساعتها فممكن متبقاش مناسبة دلوقتي:"
+            : "التوصية دي اتكتبت في يوم قبل النهارده، وحاجة اتغيرت من ساعتها فممكن متبقاش مناسبة دلوقتي:"}{" "}
+          <span className="font-medium">{reason}</span>.
+        </p>
+        <p className="text-muted-foreground">
+          التوصية بتتعلّم كده لو السعر اتحرك {VERDICT_STALE_MOVE_PCT}% أو أكتر من وقت ما اتكتبت، أو عدّى
+          الوقف أو الهدف، أو سجّلت شراء أو بيع على السهم، أو غيّرت أسلوب الاستثمار.
+        </p>
+        <p className="text-muted-foreground">
+          اطلب «توصية جديدة» عشان تتحسب على السعر والمركز الحاليين قبل ما تتصرف.
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 /** Why the verdict was written about something else than what the card shows now, or null. */
@@ -1023,6 +1073,7 @@ function PositionCard({
                       ? "توصية النهارده — بس محتاجة تحديث"
                       : `توصية قديمة${verdictAt != null ? ` (${arDay(cairoDay(verdictAt))})` : ""} — مش توصية النهارده`}
                   </span>
+                  {staleReason && <StaleVerdictHint reason={staleReason} fromToday={isFromToday(verdictAt)} />}
                   <br />
                 </>
               )}
