@@ -491,6 +491,11 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       if (!document.hidden) {
         void refreshPrices({ force: true });
         void refreshLevels();
+        // The same account can change on another device while this tab sits in
+        // the background — a trade, or a recommendation asked for there (kept
+        // in pf.lastVerdicts). A phone keeps a tab open for days, so without
+        // this it went on showing the portfolio it first loaded.
+        void reloadPortfolio().catch(() => {});
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -499,7 +504,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       clearInterval(levelsTimer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [user, hasAccess, refreshPrices, refreshLevels]);
+  }, [user, hasAccess, refreshPrices, refreshLevels, reloadPortfolio]);
 
   // Activation is a manual admin action from a separate session, so a tab
   // that's been open since before the grant never learns about it on its
