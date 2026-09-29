@@ -94,13 +94,14 @@ const AI_ACTION_TONE: Record<string, string> = {
 // A per-stock AI review is a real, paid model call and a pure spend-until-
 // empty credit — the server never serves a cached answer for free, so
 // re-asking for the same stock the same day spends a new use (see
-// getOrGenerateStockReview in backend/src/agent/analyst.js). This local
-// cache is purely a client-side "what did I last see" convenience so a page
-// reload still shows the last verdict without paying for another request —
-// it plays no part in what's billed. How many uses an account has left this
+// getOrGenerateStockReview in backend/src/agent/analyst.js). The last verdict
+// is kept on the portfolio (pf.lastVerdicts, see rememberVerdict in
+// backend/src/portfolio.js), so a reload or another device still shows it
+// without paying for another request. How many uses an account has left this
 // month is TIERS-based (backend/src/billing/plans.js), reflected in
 // pf.recommendationsLeft.
-const reviewStorageKey = (code: string) => `alytic-stock-review:${code}`;
+/** Where browsers used to keep their own copy of each stock's verdict (see clearLocalVerdicts). */
+const LEGACY_REVIEW_STORAGE_PREFIX = "alytic-stock-review:";
 /** The calendar day (Cairo) of a timestamp, as YYYY-MM-DD — what arDay() takes. */
 const cairoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(ms);
 const isFromToday = (at: number | null | undefined) => at != null && cairoDay(at) === cairoDay(Date.now());
@@ -180,25 +181,17 @@ function verdictStaleReason(
 // nothing replaces or hides it by itself. When what it was written about has
 // changed since (a trade on the position, a different investor style, a big
 // price move) it is flagged as outdated instead (see verdictStaleReason).
-// The server keeps each stock's last verdict on the portfolio
-// (pf.lastVerdicts), so it shows on every device; this browser's copy covers
-// a verdict saved before that existed. Purely a "what to display" record, not
-// a billing cache (see the block comment above).
-function readLocalVerdict(code: string): StoredVerdict | null {
+// Only the server's copy (pf.lastVerdicts) is shown, so every device shows the
+// same one. Browsers used to keep their own copy too; one saved there before
+// the server kept verdicts showed on that device alone, so it is cleared.
+function clearLocalVerdicts() {
   try {
-    const stored = JSON.parse(window.localStorage.getItem(reviewStorageKey(code)) ?? "null");
-    if (!stored?.verdict) return null;
-    // Entries saved before `at` existed only carry `day` (a Date.toDateString()).
-    const at = Number.isFinite(stored.at) ? stored.at : Date.parse(stored.day);
-    return {
-      verdict: stored.verdict,
-      at: Number.isFinite(at) ? at : null,
-      price: typeof stored.price === "number" ? stored.price : null,
-      style: stored.style ?? null,
-      positionKey: stored.positionKey ?? null,
-    };
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith(LEGACY_REVIEW_STORAGE_PREFIX)) window.localStorage.removeItem(key);
+    }
   } catch {
-    return null;
+    /* storage unavailable — nothing to clear */
   }
 }
 
@@ -222,17 +215,6 @@ function serverVerdict(entry: ServerVerdict | null | undefined): StoredVerdict |
     positionKey:
       entry.shares != null && entry.avgCost != null ? `${entry.shares}@${entry.avgCost}` : null,
   };
-}
-
-/** The newest of this stock's last verdict on the server and in this browser. */
-function lastVerdict(
-  code: string,
-  serverEntry: ServerVerdict | null | undefined,
-): StoredVerdict | null {
-  const remote = serverVerdict(serverEntry);
-  const local = readLocalVerdict(code);
-  if (!remote || !local) return remote ?? local;
-  return (local.at ?? 0) > (remote.at ?? 0) ? local : remote;
 }
 
 /** Why the verdict was written about something else than what the card shows now, or null. */
@@ -259,7 +241,7 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
   livePriceRef.current = livePrice;
 
   useEffect(() => {
-    setSaved(lastVerdict(code, serverEntry));
+    setSaved(serverVerdict(serverEntry));
   }, [code, serverEntry]);
 
   const request = useCallback(
@@ -282,14 +264,6 @@ function useStockReview(code: string, style: StyleKey, positionKey: string, live
         });
         const at = Date.now();
         setSaved({ verdict: result.verdict, at, price: priceAtRequest, style, positionKey });
-        try {
-          window.localStorage.setItem(
-            reviewStorageKey(code),
-            JSON.stringify({ at, style, positionKey, price: priceAtRequest, verdict: result.verdict }),
-          );
-        } catch {
-          /* storage unavailable — the verdict still shows for this session */
-        }
         // Picks up the credit it spent and the verdict the server now keeps.
         void reloadPortfolio().catch(() => {});
       } catch (caught) {
@@ -394,6 +368,8 @@ function PositionsPage() {
   const recommendationsLeft =
     typeof pf?.recommendationsLeft === "number" ? pf.recommendationsLeft : null;
 
+  useEffect(clearLocalVerdicts, []);
+
   // "All stocks" button: a batch is just every card without a verdict from
   // today running its own per-stock review (queued through withReviewSlot).
   // Only fills in what's missing or left over from an earlier day — never
@@ -413,7 +389,7 @@ function PositionsPage() {
 
   const openBatchConfirm = () => {
     const needVerdict = rows.filter((row) => {
-      const saved = lastVerdict(row.code, pf?.lastVerdicts?.[row.code]);
+      const saved = serverVerdict(pf?.lastVerdicts?.[row.code]);
       const positionKey = `${row.position.shares}@${row.position.avgCost}`;
       return (
         !saved || !isFromToday(saved.at) || verdictChangedReason(saved, style, positionKey) != null
