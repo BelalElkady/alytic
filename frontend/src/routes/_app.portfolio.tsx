@@ -206,6 +206,15 @@ type ServerVerdict = {
   avgCost?: number;
 };
 
+/**
+ * The holding a verdict was written about, as `shares@avgCost`. The average is
+ * rounded to 2 decimals, as the card's row gets it (r2 in backend/src/analyze.js):
+ * the server stores the unrounded one (e.g. 62.8537 from a screenshot import or
+ * several buys), and comparing that to the card's 62.85 flagged every such
+ * holding as traded on ("اتسجلت حركة على السهم بعد التوصية") when it wasn't.
+ */
+const positionKeyOf = (shares: number, avgCost: number) => `${shares}@${+avgCost.toFixed(2)}`;
+
 function serverVerdict(entry: ServerVerdict | null | undefined): StoredVerdict | null {
   if (!entry?.verdict) return null;
   return {
@@ -214,7 +223,7 @@ function serverVerdict(entry: ServerVerdict | null | undefined): StoredVerdict |
     price: typeof entry.price === "number" ? entry.price : null,
     style: entry.style ?? null,
     positionKey:
-      entry.shares != null && entry.avgCost != null ? `${entry.shares}@${entry.avgCost}` : null,
+      entry.shares != null && entry.avgCost != null ? positionKeyOf(entry.shares, entry.avgCost) : null,
   };
 }
 
@@ -440,7 +449,7 @@ function PositionsPage() {
   const openBatchConfirm = () => {
     const needVerdict = rows.filter((row) => {
       const saved = serverVerdict(pf?.lastVerdicts?.[row.code]);
-      const positionKey = `${row.position.shares}@${row.position.avgCost}`;
+      const positionKey = positionKeyOf(row.position.shares, row.position.avgCost);
       return (
         !saved || !isFromToday(saved.at) || verdictChangedReason(saved, style, positionKey) != null
       );
@@ -866,7 +875,7 @@ function PositionCard({
     loading: reviewLoading,
     error: reviewError,
     request: requestReview,
-  } = useStockReview(row.code, style, `${p.shares}@${p.avgCost}`, row.price);
+  } = useStockReview(row.code, style, positionKeyOf(p.shares, p.avgCost), row.price);
   const staleReason = verdict
     ? (verdictChanged ??
       verdictStaleReason(verdictPrice, row.price, p.stop, [primaryTarget, p.reachedTarget?.price]))
