@@ -98,30 +98,6 @@ const FEATURE_ROWS = [
   { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة" },
 ] as const;
 
-/** رصيد إضافي فوق حد الباقة الشهري لأي ميزة — يتباع مرة واحدة، مش اشتراك. مطابقة لـ ADDONS في backend/src/billing/plans.js. */
-const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string; count: number; priceEgp: number }[]> = {
-  screenshots: [
-    { label: "سريع", count: 3, priceEgp: 20 },
-    { label: "الأفضل قيمة", count: 6, priceEgp: 39 },
-    { label: "بالجملة", count: 12, priceEgp: 75 },
-  ],
-  recommendations: [
-    { label: "سريع", count: 50, priceEgp: 50 },
-    { label: "الأفضل قيمة", count: 100, priceEgp: 75 },
-    { label: "بالجملة", count: 150, priceEgp: 100 },
-  ],
-  cashScans: [
-    { label: "سريع", count: 20, priceEgp: 25 },
-    { label: "الأفضل قيمة", count: 60, priceEgp: 50 },
-    { label: "بالجملة", count: 150, priceEgp: 80 },
-  ],
-  marketAnalysis: [
-    { label: "سريع", count: 20, priceEgp: 25 },
-    { label: "الأفضل قيمة", count: 60, priceEgp: 50 },
-    { label: "بالجملة", count: 150, priceEgp: 80 },
-  ],
-};
-
 function PricingPage() {
   const { name: brandName } = useTenant();
   // Yearly by default: it's the better deal, and it's the price quoted per month below.
@@ -259,39 +235,6 @@ function PricingPage() {
             </article>
             );
           })}
-        </div>
-
-        <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[16px] font-semibold">رصيد إضافي</h2>
-            <Badge variant="outline">دفعة واحدة — مش اشتراك</Badge>
-          </div>
-          <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">
-            خلصت رصيد أي ميزة الشهر ده قبل ما يجي الشهر الجاي؟ زوّد رصيدك فوق حد باقتك بأي ميزة على
-            حدة.
-          </p>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {FEATURE_ROWS.map((row) => (
-              <div key={row.key} className="rounded-xl border bg-surface p-4">
-                <p className="text-[13px] font-semibold">{row.label}</p>
-                <div className="mt-3 space-y-2">
-                  {ADDON_PACKS[row.key].map((pack) => (
-                    <div key={pack.label} className="flex items-center justify-between text-[12.5px]">
-                      <span className="text-muted-foreground">
-                        {pack.label} · {pack.count} {row.unit}
-                      </span>
-                      <span className="font-semibold">
-                        <span className="num">{pack.priceEgp}</span> ج
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          <Button asChild variant="outline" className="mt-4">
-            <Link to="/subscribe">اطلب رصيد إضافي</Link>
-          </Button>
         </div>
 
         <div className="mt-8 rounded-2xl border bg-surface p-6">
