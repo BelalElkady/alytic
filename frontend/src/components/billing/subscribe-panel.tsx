@@ -13,37 +13,14 @@ type Tier = "long" | "trader";
 type PlanKey = "long_monthly" | "long_yearly" | "trader_monthly" | "trader_yearly";
 type Plan = { key: PlanKey; tier: Tier; label: string; priceEgp: number; months: number };
 type TierLimits = { screenshots: number; recommendations: number; cashScans: number; marketAnalysis: number };
-type AddonKind = keyof TierLimits;
-type Addon = { key: string; label: string; count: number; priceEgp: number };
-type RawAddon = { key: string; label: string; priceEgp: number } & Partial<Record<AddonKind, number>>;
-
-const ADDON_KINDS: AddonKind[] = ["screenshots", "recommendations", "cashScans", "marketAnalysis"];
 
 const TIER_LABEL: Record<Tier, string> = { long: "النفس الطويل", trader: "الحريفة" };
-const FEATURE_ROWS: { key: AddonKind; label: string; unit: string }[] = [
+const FEATURE_ROWS: { key: keyof TierLimits; label: string; unit: string }[] = [
   { key: "screenshots", label: "رفع سكرين شوت للمحفظة", unit: "صورة/شهر" },
   { key: "recommendations", label: "توصيات الأسهم", unit: "توصية/شهر" },
   { key: "cashScans", label: "تحليل استخدام الكاش", unit: "مرة/شهر" },
   { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة/شهر" },
 ];
-// Same labels as FEATURE_ROWS but without the "/شهر" — an add-on pack is a
-// flat one-time count, not a monthly rate.
-const ADDON_UNIT: Record<AddonKind, string> = {
-  screenshots: "صورة",
-  recommendations: "توصية",
-  cashScans: "مرة",
-  marketAnalysis: "مرة",
-};
-
-/** Flattens the API's { screenshots: [{screenshots: n, ...}], ... } shape into a plain count per pack. */
-function normalizeAddons(raw: Partial<Record<AddonKind, RawAddon[]>> | undefined): Record<AddonKind, Addon[]> {
-  const result = {} as Record<AddonKind, Addon[]>;
-  for (const kind of ADDON_KINDS) {
-    result[kind] = (raw?.[kind] ?? []).map((a) => ({ key: a.key, label: a.label, priceEgp: a.priceEgp, count: a[kind] ?? 0 }));
-  }
-  return result;
-}
-
 const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 /**
@@ -67,10 +44,6 @@ export function SubscribePanel({
   const { user, refreshUser } = useDesk();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tiers, setTiers] = useState<Record<Tier, TierLimits> | null>(null);
-  const [addons, setAddons] = useState<Record<AddonKind, Addon[]>>(() => normalizeAddons(undefined));
-  // At most one pack selected per feature — a user can top up several
-  // different features at once, but only one size of each.
-  const [selectedAddons, setSelectedAddons] = useState<Partial<Record<AddonKind, Addon>>>({});
   const [pickedTier, setPickedTier] = useState<Tier>("long");
   // Derived rather than copied into state, so it follows the URL if it changes while mounted.
   const tier = lockedTier ?? pickedTier;
@@ -82,23 +55,12 @@ export function SubscribePanel({
       .then((result) => {
         setPlans(result.plans ?? []);
         setTiers(result.tiers ?? null);
-        setAddons(normalizeAddons(result.addons));
       })
       .catch(() => {
         setPlans([]);
         setTiers(null);
-        setAddons(normalizeAddons(undefined));
       });
   }, []);
-
-  const toggleAddon = (kind: AddonKind, addon: Addon) => {
-    setSelectedAddons((prev) => {
-      const next = { ...prev };
-      if (next[kind]?.key === addon.key) delete next[kind];
-      else next[kind] = addon;
-      return next;
-    });
-  };
 
   const selected = plans.find((p) => p.tier === tier && p.months === months) ?? null;
   const limits = tiers?.[tier] ?? null;
@@ -224,45 +186,6 @@ export function SubscribePanel({
         </p>
       )}
 
-      <div className="rounded-xl border bg-card p-4">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[14px] font-semibold">رصيد إضافي (اختياري)</span>
-          <Badge variant="outline">دفعة واحدة — مش اشتراك</Badge>
-        </div>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-          خلصت رصيد أي ميزة الشهر ده؟ زوّد رصيدك فوق حد باقتك — تقدر تختار أكتر من ميزة.
-        </p>
-        <div className="mt-3 space-y-3">
-          {FEATURE_ROWS.map((row) => (
-            <div key={row.key}>
-              <p className="text-[12.5px] font-medium text-muted-foreground">{row.label}</p>
-              <div className="mt-1.5 grid grid-cols-3 gap-2">
-                {addons[row.key].map((addon) => {
-                  const active = selectedAddons[row.key]?.key === addon.key;
-                  return (
-                    <button
-                      key={addon.key}
-                      type="button"
-                      onClick={() => toggleAddon(row.key, addon)}
-                      className={cn(
-                        "rounded-lg border p-2.5 text-center transition-colors",
-                        active ? "border-primary/60 bg-accent ring-1 ring-primary/20" : "hover:bg-accent",
-                      )}
-                    >
-                      <p className="num text-base font-bold">{addon.count}</p>
-                      <p className="text-[10.5px] text-muted-foreground">{ADDON_UNIT[row.key]}</p>
-                      <p className="num mt-1 text-[12px] font-semibold">
-                        {EG_NUMBER.format(addon.priceEgp)} ج
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       <div className="flex flex-col items-center gap-3 rounded-xl border bg-card p-4">
         <span className="text-[14px] font-semibold">ادفع بإنستاباي</span>
         <img
@@ -285,18 +208,10 @@ export function SubscribePanel({
         </h3>
         <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
           {user
-            ? `افتح الشات من زرار المحادثة تحت في الركن، قولّنا إنك عايز ${[
-                `باقة ${TIER_LABEL[tier]}${selected ? ` (${selected.months === 12 ? "سنوي" : "شهري"})` : ""}`,
-                ...ADDON_KINDS.filter((kind) => selectedAddons[kind]).map(
-                  (kind) =>
-                    `رصيد ${selectedAddons[kind]!.count} ${ADDON_UNIT[kind]} إضافية (${
-                      FEATURE_ROWS.find((row) => row.key === kind)!.label
-                    })`,
-                ),
-              ]
-                .filter(Boolean)
-                .join(" و")}، وهنبعتلك بيانات الدفع وكل التفاصيل هناك. أول ما نراجع التحويل بنفعّل حسابك على طول.`
-            : "سجّل دخولك الأول، وبعدين افتح الشات من زرار المحادثة تحت في الركن وقولّنا الباقة أو الرصيد اللي عايزه — هنبعتلك بيانات الدفع وكل التفاصيل هناك."}
+            ? `افتح الشات من زرار المحادثة تحت في الركن، قولّنا إنك عايز باقة ${TIER_LABEL[tier]}${
+                selected ? ` (${selected.months === 12 ? "سنوي" : "شهري"})` : ""
+              }، وهنبعتلك بيانات الدفع وكل التفاصيل هناك. أول ما نراجع التحويل بنفعّل حسابك على طول.`
+            : "سجّل دخولك الأول، وبعدين افتح الشات من زرار المحادثة تحت في الركن وقولّنا الباقة اللي عايزها — هنبعتلك بيانات الدفع وكل التفاصيل هناك."}
         </p>
       </div>
 
