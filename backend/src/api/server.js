@@ -25,6 +25,7 @@ import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } fro
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
+import { sharedIpAccounts } from '../sharedIp.js';
 import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
@@ -1121,6 +1122,8 @@ app.get('/api/admin/users', wrap(async (req, res) => {
   const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
   const followUpByUser = new Map(followUps.map((row) => [row.user_id, row]));
+  // 'local' is the CLI/dev account (SYSTEM_USER_ID in the admin screen), not a customer.
+  const sameNetwork = sharedIpAccounts(users, { excludeIds: ['local'] });
 
   const rows = users.map((u) => {
     const pf = portfolioByUser.get(u.id);
@@ -1148,6 +1151,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       lastSeenAt: u.last_seen_at,
       signupIp: u.signup_ip,
       lastLoginIp: u.last_login_ip,
+      sameNetworkAccounts: sameNetwork.get(u.id) ?? [],
       trialActive: trial.trialActive,
       trialEndsAt: trial.trialEndsAt.toISOString(),
       tier,

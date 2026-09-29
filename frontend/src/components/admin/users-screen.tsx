@@ -118,6 +118,15 @@ function Identity({ row, systemUserId, phoneClassName }: { row: AdminUserRow; sy
         {row.isMarketer && <Badge variant="secondary">مسوّق</Badge>}
         {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
         {row.id === systemUserId && <Badge variant="outline">حساب النظام</Badge>}
+        {row.sameNetworkAccounts.length > 0 && (
+          <Badge
+            variant="outline"
+            className="border-warn/50 text-warn"
+            title={`نفس IP زي: ${row.sameNetworkAccounts.map((other) => other.email).join("، ")}`}
+          >
+            ⚠️ نفس الشبكة مع {row.sameNetworkAccounts.length} {row.sameNetworkAccounts.length === 1 ? "حساب" : "حسابات"}
+          </Badge>
+        )}
       </div>
     </div>
   );
@@ -262,11 +271,45 @@ const fullTime = (iso: string | null) =>
     ? new Date(iso).toLocaleString("ar-EG", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", numberingSystem: "latn" })
     : "—";
 
-function Detail({ row, p }: { row: AdminUserRow; p: Props }) {
+/**
+ * The other accounts this one shares a signup or last-login IP with — the
+ * sign of one person running two accounts (a second free trial, say). Each
+ * opens that account's drawer so the two can be compared.
+ */
+function SameNetworkWarning({ row, onOpen }: { row: AdminUserRow; onOpen: (id: string) => void }) {
+  if (row.sameNetworkAccounts.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-warn/50 bg-warn-soft p-3 text-[13px] leading-relaxed">
+      <div className="font-semibold text-warn">⚠️ ممكن يكون نفس الشخص بأكتر من حساب</div>
+      <p className="mt-1 text-muted-foreground">
+        الحساب ده سجّل أو دخل من نفس عنوان IP زي:
+      </p>
+      <ul className="mt-1.5 space-y-1">
+        {row.sameNetworkAccounts.map((other) => (
+          <li key={other.id} className="flex flex-wrap items-baseline gap-x-2">
+            <button type="button" className="font-medium text-primary hover:underline" onClick={() => onOpen(other.id)}>
+              {other.name || other.email}
+            </button>
+            {other.name && <span className="text-[12px] text-muted-foreground">{other.email}</span>}
+            <span dir="ltr" className="num text-[12px] text-muted-foreground">
+              {other.ips.join(", ")}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-[12px] text-muted-foreground">
+        ده مؤشر مش دليل: ناس في نفس البيت أو الشغل أو على نفس شبكة الموبايل ممكن يطلعوا بنفس الـ IP.
+      </p>
+    </div>
+  );
+}
+
+function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: string) => void }) {
   const { editors: E, readOnly, onChanged, systemUserId } = p;
   const pf = row.portfolio;
   return (
     <div className="space-y-4 text-sm">
+      <SameNetworkWarning row={row} onOpen={onOpen} />
       <Section title="الاشتراك والرصيد">
         <Renewal row={row} />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -527,7 +570,7 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
               <SheetHeader className="mb-4 text-start">
                 <SheetTitle>{selected.name || selected.email}</SheetTitle>
               </SheetHeader>
-              <Detail row={selected} p={p} />
+              <Detail row={selected} p={p} onOpen={setSelectedId} />
             </>
           )}
         </SheetContent>
@@ -539,20 +582,37 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
 export function UsersScreen(props: Props) {
   const [chip, setChip] = useState<"all" | RenewalStatus>("all");
   const [followUp, setFollowUp] = useState<FollowUpFilter>("all");
+  const [sameNetworkOnly, setSameNetworkOnly] = useState(false);
   const counts = { all: props.rows.length, active: 0, expired: 0, trial: 0, never: 0 };
   for (const row of props.rows) counts[renewalStatus(row)] += 1;
   // The follow-up chips count within the selected Renewal status, so "ناقص واتساب" under
   // "تجربة" reads as "trial users still to message".
   const byRenewal = chip === "all" ? props.rows : props.rows.filter((row) => renewalStatus(row) === chip);
   const followUpMatch = FOLLOW_UP_CHIPS.find((c) => c.key === followUp)!.match;
-  const p = { ...props, rows: byRenewal.filter(followUpMatch) };
+  const sameNetworkCount = props.rows.filter((row) => row.sameNetworkAccounts.length > 0).length;
+  const p = {
+    ...props,
+    rows: byRenewal.filter((row) => followUpMatch(row) && (!sameNetworkOnly || row.sameNetworkAccounts.length > 0)),
+  };
   return (
     <div className="space-y-4">
       <StatsStrip p={p} counts={counts} chip={chip} onChip={setChip} />
       <FollowUpChips rows={byRenewal} filter={followUp} onFilter={setFollowUp} />
       {p.controls}
-      <div className="text-[12px] text-muted-foreground">
-        {p.rows.length} من {p.totalCount} مستخدم
+      <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+        <span>
+          {p.rows.length} من {p.totalCount} مستخدم
+        </span>
+        {sameNetworkCount > 0 && (
+          <Button
+            size="sm"
+            variant={sameNetworkOnly ? "default" : "outline"}
+            className={cn("tabular-nums rounded-full", !sameNetworkOnly && "border-warn/50 text-warn")}
+            onClick={() => setSameNetworkOnly((on) => !on)}
+          >
+            ⚠️ حسابات على نفس الشبكة <span className="font-semibold">{sameNetworkCount}</span>
+          </Button>
+        )}
       </div>
       {p.rows.length === 0 ? (
         <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
