@@ -46,13 +46,12 @@ function normalizeAddons(raw: Partial<Record<AddonKind, RawAddon[]>> | undefined
 
 const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
-// Copied to the clipboard only — never rendered, so the handle doesn't sit on the page as text.
-const INSTAPAY_ADDRESS = "hassansmm@instapay";
-
 /**
  * How someone subscribes: pay via the InstaPay QR (or the copy-address button),
  * then tell us on the support chat so an admin can match the transfer and
- * activate the account. The InstaPay address itself is never shown as text.
+ * activate the account. The InstaPay address itself is never shown as text:
+ * the copy button fetches the same address the chat bot sends, from the
+ * signed-in-only subscribe-info endpoint, so it never ships in the bundle.
  */
 export function SubscribePanel({
   compact = false,
@@ -105,8 +104,20 @@ export function SubscribePanel({
   const limits = tiers?.[tier] ?? null;
 
   const copyInstapay = async () => {
+    if (!user) {
+      toast.info("سجّل دخولك الأول عشان تنسخ عنوان إنستاباي");
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(INSTAPAY_ADDRESS);
+      const info: { instapay?: { address: string | null } } = await api(
+        "/api/support/subscribe-info",
+      );
+      const address = info.instapay?.address;
+      if (!address) {
+        toast.info("ابعتلنا في الشات وهنبعتلك بيانات الدفع");
+        return;
+      }
+      await navigator.clipboard.writeText(address);
       toast.success("تم نسخ عنوان إنستاباي");
     } catch {
       toast.error("تعذر النسخ — امسح الكود بدلًا من كده");
