@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { Check, Copy, Loader2, MessageCircle, RefreshCw } from "lucide-react";
+import { Check, Copy, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -85,6 +86,15 @@ export function SubscribePanel({
       toast.error("تعذر النسخ — امسح الكود بدلًا من كده");
     }
   };
+
+  // Typed into the WhatsApp chat for them: which plan the transfer was for and
+  // which account to activate, so the screenshot can be matched straight away.
+  const paymentMessage = [
+    `أهلًا، حوّلت اشتراك باقة ${TIER_LABEL[tier]}${selected ? ` (${selected.months === 12 ? "سنوي" : "شهري"})` : ""}، ودي صورة الدفع.`,
+    user?.email ? `إيميل الحساب: ${user.email}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const recheck = async () => {
     setChecking(true);
@@ -203,16 +213,18 @@ export function SubscribePanel({
 
       <div className="rounded-xl border bg-surface p-4">
         <h3 className="flex items-center gap-2 text-[14px] font-semibold">
-          <MessageCircle className="size-4" />
-          كلّمنا في الشات وهنكمّل معاك
+          <WhatsAppIcon className="size-4 text-[#25D366]" />
+          ابعتلنا سكرين من الدفع على الواتساب
         </h3>
         <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-          {user
-            ? `افتح الشات من زرار المحادثة تحت في الركن، قولّنا إنك عايز باقة ${TIER_LABEL[tier]}${
-                selected ? ` (${selected.months === 12 ? "سنوي" : "شهري"})` : ""
-              }، وهنبعتلك بيانات الدفع وكل التفاصيل هناك. أول ما نراجع التحويل بنفعّل حسابك على طول.`
-            : "سجّل دخولك الأول، وبعدين افتح الشات من زرار المحادثة تحت في الركن وقولّنا الباقة اللي عايزها — هنبعتلك بيانات الدفع وكل التفاصيل هناك."}
+          أول ما نراجع التحويل بنفعّل حسابك على طول.
         </p>
+        <Button asChild className="mt-3 bg-[#25D366] text-white hover:bg-[#1ebe5b]">
+          <a href={whatsappLink(paymentMessage)} target="_blank" rel="noopener noreferrer">
+            <WhatsAppIcon className="size-4" />
+            ابعت سكرين الدفع على واتساب
+          </a>
+        </Button>
       </div>
 
       {user && (

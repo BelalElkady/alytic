@@ -3,6 +3,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 
 import { SiteShell } from "@/components/marketing/site-shell";
+import { WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -265,7 +266,8 @@ function PricingPage() {
             },
             {
               q: "بدفع إزاي؟",
-              a: "كلّمنا في الشات جوّه التطبيق وقولّنا الباقة اللي عايزها، وهنبعتلك بيانات الدفع وكل التفاصيل هناك — وبنفعّل حسابك أول ما نراجع التحويل.",
+              a: "ابعتلنا سكرين من الدفع على الواتساب — وبنفعّل حسابك أول ما نراجع التحويل.",
+              whatsapp: true,
             },
             {
               q: "أقدر ألغي في أي وقت؟",
@@ -279,6 +281,18 @@ function PricingPage() {
             <article key={faq.q} className="rounded-xl border bg-card p-5 shadow-sm">
               <h3 className="text-[14px] font-semibold">{faq.q}</h3>
               <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">{faq.a}</p>
+              {"whatsapp" in faq && faq.whatsapp && (
+                <Button asChild size="sm" className="mt-3 bg-[#25D366] text-white hover:bg-[#1ebe5b]">
+                  <a
+                    href={whatsappLink("أهلًا، حوّلت اشتراك ودي صورة الدفع.")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <WhatsAppIcon className="size-4" />
+                    ابعت على واتساب
+                  </a>
+                </Button>
+              )}
             </article>
           ))}
         </div>
