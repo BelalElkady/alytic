@@ -479,6 +479,12 @@ export type AdminUserRow = {
   /** Null for accounts that predate IP tracking. */
   signupIp: string | null;
   lastLoginIp: string | null;
+  /**
+   * Other customer accounts whose signup or last-login IP matches one of this
+   * account's (sharedIpAccounts in backend/src/sharedIp.js). A hint, not proof:
+   * a household, office Wi-Fi or mobile carrier can put different people on one IP.
+   */
+  sameNetworkAccounts: { id: string; email: string; name: string | null; ips: string[] }[];
   trialActive: boolean;
   trialEndsAt: string;
   tier: Tier | null;
@@ -546,6 +552,7 @@ const CSV_HEADERS = [
   "الهاتف",
   "IP التسجيل",
   "IP آخر دخول",
+  "حسابات على نفس الشبكة",
   "تاريخ التسجيل",
   "آخر دخول",
   "رأس المال",
@@ -575,6 +582,7 @@ function downloadUsersCsv(rows: AdminUserRow[]) {
       row.phone ?? "",
       row.signupIp ?? "",
       row.lastLoginIp ?? "",
+      row.sameNetworkAccounts.map((other) => other.email).join(" | "),
       row.createdAt?.slice(0, 10) ?? "",
       row.lastLoginAt ?? "",
       pf ? pf.cash + pf.positionsValue : "",
