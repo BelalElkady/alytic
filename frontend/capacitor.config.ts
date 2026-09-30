@@ -27,6 +27,8 @@ const config: CapacitorConfig = {
     iosScheme: "capacitor",
     ...(devServer && !isProd ? { url: devServer, cleartext: devServer.startsWith("http://") } : {}),
   },
+  // Avoids a SwiftPM package-identity collision with the Firebase plugin (see its README).
+  experimental: { ios: { spm: { packageOptions: { "@capacitor-firebase/messaging": { symlink: true } } } } },
   ios: { contentInset: "never", scrollEnabled: true },
   android: { allowMixedContent: !isProd, webContentsDebuggingEnabled: !isProd },
   plugins: {

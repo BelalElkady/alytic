@@ -1,0 +1,100 @@
+name: Mobile — iOS
+
+on:
+  push:
+    branches: [main-ios]
+    paths: ["frontend/**", "backend/src/**", ".github/workflows/mobile-ios.yml"]
+  pull_request:
+    paths: ["frontend/**", ".github/workflows/mobile-ios.yml"]
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: "Archive, sign and upload to TestFlight (needs the App Store Connect secrets)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    # Apple requires uploads built with Xcode 26+ (since 28 Apr 2026). setup-xcode below selects the newest stable Xcode on the image.
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      MOBILE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Web tests
+        run: bun run test
+
+      - name: Web production build (unchanged SSR site)
+        run: bun run build
+
+      - name: Mobile web build (+ secret scan of the bundle)
+        run: bun run build:mobile
+
+      - name: Capacitor sync
+        run: npx cap sync ios
+
+      - name: Firebase config
+        env:
+          GOOGLESERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLESERVICE_INFO_PLIST_BASE64 }}
+        run: |
+          if [ -n "$GOOGLESERVICE_INFO_PLIST_BASE64" ]; then
+            echo "$GOOGLESERVICE_INFO_PLIST_BASE64" | base64 -d > ios/App/App/GoogleService-Info.plist
+          else
+            echo "::notice::GOOGLESERVICE_INFO_PLIST_BASE64 not set — building without push configuration"
+          fi
+
+      - name: Build for the simulator (unsigned)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Archive, sign and upload to TestFlight
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.testflight }}
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          for v in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8_BASE64; do
+            test -n "${!v}" || { echo "::error::secret $v is missing"; exit 1; }
+          done
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          echo "$ASC_KEY_P8_BASE64" | base64 -d > "$KEY"
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -archivePath "$RUNNER_TEMP/EGXpert.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            "${AUTH[@]}" archive
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/EGXpert.xcarchive" \
+            -exportOptionsPlist ios/ExportOptions.plist "${AUTH[@]}"
+          rm -f "$KEY"
