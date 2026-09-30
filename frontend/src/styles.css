@@ -258,3 +258,82 @@
     border-radius: 8px;
   }
 }
+
+/* Rich blog article body: written in the admin editor, shown on /blog/$slug and in the admin previews. */
+.blog-html {
+  font-size: 14px;
+  line-height: 1.75;
+}
+.blog-html > * + * {
+  margin-top: 1rem;
+}
+.blog-html h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.blog-html h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+.blog-html h4 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.blog-html ul,
+.blog-html ol {
+  padding-inline-start: 1.25rem;
+}
+.blog-html ul {
+  list-style: disc;
+}
+.blog-html ol {
+  list-style: decimal;
+}
+.blog-html li > p {
+  margin: 0;
+}
+.blog-html a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.blog-html blockquote {
+  border-inline-start: 3px solid var(--border);
+  padding-inline-start: 1rem;
+  color: var(--muted-foreground);
+}
+.blog-html hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.blog-html img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+}
+.blog-html table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.blog-html th,
+.blog-html td {
+  min-width: 5rem;
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  vertical-align: top;
+  text-align: start;
+}
+.blog-html th {
+  background: var(--muted);
+  font-weight: 600;
+}
+.blog-html td > p,
+.blog-html th > p {
+  margin: 0;
+}
+.blog-html .selectedCell {
+  background: color-mix(in oklab, var(--primary) 15%, transparent);
+}
