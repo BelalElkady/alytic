@@ -11,9 +11,10 @@ const PATTERNS = [
   [/sk-or-v1-[A-Za-z0-9]{20,}/, "OpenRouter API key"],
   [/sk-ant-[A-Za-z0-9_-]{20,}/, "Anthropic API key"],
   [/\b(?:SESSION_SECRET|TENANT_SECRETS_KEY|RESEND_API_KEY|FCM_SERVICE_ACCOUNT_JSON|CRON_SECRET)\b\s*[:=]\s*["'][^"']{8,}/, "server secret assignment"],
-  // The app shell must not load ad / analytics scripts (docs/mobile-privacy.md).
-  [/<script[^>]+src="https:\/\/(?:www\.googletagmanager\.com|pagead2\.googlesyndication\.com|connect\.facebook\.net)/, "third-party tracking script tag"],
-  [/fbq\('init'/, "Meta Pixel initialisation"],
+  // The app shell must not load ad / analytics scripts (docs/mobile-privacy.md). HTML only: the
+  // site's head() code also lives, unreachable in the native build, inside a JS chunk.
+  [/<script[^>]+src="https:\/\/(?:www\.googletagmanager\.com|pagead2\.googlesyndication\.com|connect\.facebook\.net)/, "third-party tracking script tag", "html"],
+  [/fbq\('init'/, "Meta Pixel initialisation", "html"],
   [/"private_key_id"\s*:/, "service-account JSON"],
   [/\beyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/, "JWT"],
 ];
@@ -29,7 +30,10 @@ function* walk(dir) {
 const problems = [];
 for (const file of walk(root)) {
   const text = readFileSync(file, "utf8");
-  for (const [pattern, label] of PATTERNS) if (pattern.test(text)) problems.push(`${file}: ${label}`);
+  for (const [pattern, label, only] of PATTERNS) {
+    if (only === "html" && !file.endsWith(".html")) continue;
+    if (pattern.test(text)) problems.push(`${file}: ${label}`);
+  }
 }
 
 if (problems.length) {
