@@ -1,0 +1,18 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["REPLACE_TEAM_ID.com.egxpert.app"],
+        "components": [
+          { "/": "/stocks/*" },
+          { "/": "/stock/*" },
+          { "/": "/portfolio" },
+          { "/": "/alerts" },
+          { "/": "/targets" },
+          { "/": "/market" },
+          { "/": "/settings" }
+        ]
+      }
+    ]
+  }
+}

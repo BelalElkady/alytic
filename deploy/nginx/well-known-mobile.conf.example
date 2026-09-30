@@ -1,0 +1,10 @@
+# Serve the two domain-verification files for the native apps (see docs/deep-links.md).
+# Both must be 200, no redirects, and application/json — include inside the egxpert.com server block.
+location = /.well-known/assetlinks.json {
+    alias /opt/alytic/well-known/assetlinks.json;
+    default_type application/json;
+}
+location = /.well-known/apple-app-site-association {
+    alias /opt/alytic/well-known/apple-app-site-association;
+    default_type application/json;
+}
