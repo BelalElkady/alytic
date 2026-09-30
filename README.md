@@ -203,3 +203,19 @@ frontend/                  واجهة EGXpert (React + TanStack Start)
 
 حقل `shariah` في `universe.js` **استرشادي بس** — بيعكس نشاط الشركة الظاهر (بنوك تقليدية،
 تأمين تقليدي)، مش النسب المالية اللي محتاجة ميزانية كل ربع سنة. `review` معناها راجعها بنفسك.
+
+
+## Mobile apps (Android / iOS)
+
+EGXpert also ships as Capacitor apps that reuse this web app, the same backend and the same accounts.
+Start with [`docs/mobile-architecture.md`](docs/mobile-architecture.md); then
+[environment](docs/mobile-environment.md) · [push notifications](docs/push-notifications.md) ·
+[deep links](docs/deep-links.md) · [privacy](docs/mobile-privacy.md) · [store compliance](docs/mobile-store-compliance.md).
+Platform guides live on the platform branches: `docs/android-release.md` (`main-android`) and `docs/ios-release.md` (`main-ios`).
+
+```bash
+npm run build          # the website (unchanged)
+npm run cap:sync       # mobile web bundle + `cap sync`
+npm run cap:android    # open Android Studio   (main-android)
+npm run cap:ios        # open Xcode, macOS only (main-ios)
+```
