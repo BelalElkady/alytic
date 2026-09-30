@@ -914,6 +914,8 @@ function PositionCard({
   // Written about a position, style or price that no longer holds — still
   // shown, but marked old everywhere it appears so it isn't read as today's call.
   const verdictIsStale = Boolean(shownVerdict && !halted && staleReason);
+  // No recommendation yet, or only one from an earlier day: the button offers today's.
+  const offerToday = !halted && !isFromToday(verdictAt);
   // Outdated can mean a big move or a trade since this morning's verdict, not
   // just an earlier day's — only the latter is "not today's".
   const staleLabel = isFromToday(verdictAt) ? "محتاجة تحديث" : "قديمة";
@@ -1156,11 +1158,12 @@ function PositionCard({
             </span>
           )}
           <Button
-            // Filled while a recommendation is still on offer, so it stands out
-            // on the card; once used it drops back to the quiet outline style.
-            variant={verdict || halted ? "outline" : "default"}
+            // Filled while today's recommendation is still on offer — none yet,
+            // or only an earlier day's — so it stands out on the card each new
+            // day; once today's is asked for it drops to the quiet outline style.
+            variant={offerToday ? "default" : "outline"}
             size="sm"
-            className={cn(!verdict && !halted && "font-semibold shadow-sm")}
+            className={cn(offerToday && "font-semibold shadow-sm")}
             disabled={halted || reviewLoading || (!isAdmin && recommendationsExhausted)}
             title={
               halted ? "السهم موقوف عن التداول — التوصية هتتاح أول ما التداول يرجع" : undefined
@@ -1170,8 +1173,8 @@ function PositionCard({
               setConfirmReviewOpen(true);
             }}
           >
-            {reviewLoading ? <Spinner /> : !verdict && !halted && <Sparkles className="size-4" />}
-            {halted ? "موقوف عن التداول" : verdict ? "توصية جديدة" : "قولي توصية اليوم"}
+            {reviewLoading ? <Spinner /> : offerToday && <Sparkles className="size-4" />}
+            {halted ? "موقوف عن التداول" : offerToday ? "قولي توصية اليوم" : "توصية جديدة"}
           </Button>
         </div>
       )}
