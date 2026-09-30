@@ -44,15 +44,20 @@ import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
 import { fetchFundamentals } from '../data/tradingview.js';
 import { fetchLiveQuotes, liveQuoteStatus } from '../data/live-quotes.js';
-import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
+import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, refreshedSessionToken, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
 import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
 import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
-import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
+import { securityHeaders, originGuard, isNativeOrigin, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
 import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
 import { mountPlatformRoutes } from './platform.js';
+import { registerMobileRoutes } from '../mobile/routes.js';
+import { mobileStore } from '../mobile/store.js';
+import { fcmSenderFromEnv } from '../notifications/fcm.js';
+import { createNotificationService } from '../notifications/service.js';
+import { runPriceAlerts } from '../notifications/priceAlerts.js';
 import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFromScanRow, recordRecommendationPrices, trackRecord, HORIZON_BUCKETS, COMPARISONS } from '../recommendations.js';
 
 // Where the public contact form's messages and support-chat alerts land is
@@ -276,13 +281,22 @@ app.post('/api/auth/login', loginLimiter, wrap(async (req, res) => {
   // the checkbox was explicitly unchecked.
   const remember = req.body?.remember !== false;
   res.setHeader('Set-Cookie', sessionCookie(result.token, remember));
-  res.json({ user: result.user });
+  // The native apps keep the token in the OS keystore instead of a cookie. It is only
+  // ever put in a response body for a request that carries the app's own Origin.
+  res.json({ user: result.user, ...(isNativeOrigin(req.get('origin')) ? { token: result.token } : {}) });
 }));
 
 app.post('/api/auth/google', loginLimiter, wrap(async (req, res) => {
   const result = await googleSignIn({ ...req.body, ip: clientIp(req) });
   res.setHeader('Set-Cookie', sessionCookie(result.token));
-  res.json({ user: result.user });
+  res.json({ user: result.user, ...(isNativeOrigin(req.get('origin')) ? { token: result.token } : {}) });
+}));
+
+// Sliding session for the native apps: swaps a still-valid token for a fresh 30-day one.
+app.post('/api/auth/refresh', loginLimiter, wrap(async (req, res) => {
+  const token = await refreshedSessionToken(req);
+  if (!token) return res.status(401).json({ error: 'سجّل الدخول الأول' });
+  res.json({ ok: true, ...(isNativeOrigin(req.get('origin')) ? { token } : {}) });
 }));
 
 app.post('/api/auth/verify', loginLimiter, wrap(async (req, res) => {
@@ -538,6 +552,7 @@ app.use('/api', async (req, res, next) => {
     req.path === '/tenant' ||
     req.path === '/cron/blog-generate' ||
     req.path === '/cron/daily-close' ||
+    req.path === '/cron/price-alerts' ||
     req.path === '/cron/stop-plan-generate'
   ) return next();
   const user = await userFromRequest(req);
@@ -545,6 +560,11 @@ app.use('/api', async (req, res, next) => {
   req.user = user;
   next();
 });
+
+// Device registration and the notification inbox (see mobile/routes.js). After the gate above, so req.user is set.
+const sender = fcmSenderFromEnv();
+const notifications = createNotificationService({ store: mobileStore, sender });
+registerMobileRoutes(app, { wrap, store: mobileStore });
 
 // What the trial and the subscription actually buy: the endpoints that carry
 // the product's value or spend money per call. Everything else a signed-in
@@ -2456,6 +2476,47 @@ app.post('/api/snapshot', wrap(async (req, res) => {
  * clicking "سجّل إغلاق اليوم" used to. Skipped on Fridays, Saturdays and
  * EGX bank holidays — there's no session, so no close to record.
  */
+/**
+ * Target / stop-loss push alerts (see notifications/priceAlerts.js). Runs
+ * in-process every few minutes while the session is open (startPriceAlertScheduler)
+ * and can be triggered by an external pinger with the same kind of shared secret
+ * as the other cron routes. Only users with a registered, enabled device are evaluated.
+ */
+const PRICE_ALERTS_CRON_SECRET = process.env.PRICE_ALERTS_CRON_SECRET;
+app.post('/api/cron/price-alerts', cronLimiter, wrap(async (req, res) => {
+  if (!safeEqual(req.get('X-Cron-Secret'), PRICE_ALERTS_CRON_SECRET)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  res.json(await runPriceAlertsForAllSites());
+}));
+
+async function runPriceAlertsForAllSites() {
+  if (!sender) return { ok: true, skipped: 'push_not_configured' };
+  if (!egxSessionOpen()) return { ok: true, skipped: 'market_closed' };
+  const sites = {};
+  for (const tenant of activeTenants()) {
+    try {
+      sites[tenant.id] = await runWithTenant(tenant, () => runPriceAlerts({
+        getPortfolios: getAllPortfolios,
+        fetchPrices: async (codes) => new Map([...(await fetchLatestQuotes(codes).catch(() => new Map()))].map(([code, q]) => [code, q.price])),
+        hasDevices: (userId) => mobileStore.hasEnabledDevices(userId),
+        alreadySent: (userId, key) => mobileStore.wasSent(userId, key),
+        notify: (userId, n) => notifications.notify(userId, n),
+      }));
+    } catch (err) {
+      console.error(`[price-alerts] ${tenant.id} failed:`, err.message);
+      sites[tenant.id] = { ok: false };
+    }
+  }
+  return { ok: true, sites };
+}
+
+const PRICE_ALERTS_EVERY_MS = 5 * 60 * 1000;
+function startPriceAlertScheduler() {
+  if (!sender) return; // push not configured: nothing could be delivered
+  setInterval(() => void runPriceAlertsForAllSites().catch((err) => console.error('[price-alerts] failed:', err.message)), PRICE_ALERTS_EVERY_MS);
+}
+
 const DAILY_CLOSE_CRON_SECRET = process.env.DAILY_CLOSE_CRON_SECRET;
 const DAILY_CLOSE_AT = '14:30';
 const cairoClock = new Intl.DateTimeFormat('en-GB', {
@@ -3403,7 +3464,7 @@ app.use((err, _req, res, next) => {
 function warnAboutWeakConfig() {
   if (process.env.NODE_ENV !== 'production') return;
   const problems = [];
-  for (const name of ['BLOG_CRON_SECRET', 'STOP_PLAN_CRON_SECRET', 'DAILY_CLOSE_CRON_SECRET']) {
+  for (const name of ['BLOG_CRON_SECRET', 'STOP_PLAN_CRON_SECRET', 'DAILY_CLOSE_CRON_SECRET', 'PRICE_ALERTS_CRON_SECRET']) {
     const value = process.env[name];
     if (value && value.length < 24) problems.push(`${name} قصير — استخدم 32 حرف عشوائي على الأقل`);
   }
@@ -3436,6 +3497,7 @@ if (isDirectRun) {
   warnAboutWeakConfig();
   startDailyCloseScheduler();
   startStopPlanScheduler();
+  startPriceAlertScheduler();
   const PORT = process.env.PORT ?? 3000;
   app.listen(PORT, () => {
     console.log(`Alytic على http://localhost:${PORT}`);

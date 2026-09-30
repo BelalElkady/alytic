@@ -55,6 +55,20 @@ const originOf = (value) => {
   }
 };
 
+/**
+ * Origins the Capacitor apps send: iOS serves the bundled web app from
+ * capacitor://localhost, Android from https://localhost (androidScheme: https).
+ * A browser page on another site cannot send either, and the apps authenticate
+ * with a bearer token rather than a cookie, so there is no ambient credential
+ * for a cross-site request to ride on. Override with MOBILE_ORIGINS.
+ */
+const DEFAULT_NATIVE_ORIGINS = ['capacitor://localhost', 'https://localhost'];
+export const nativeOrigins = (env = process.env) =>
+  new Set((env.MOBILE_ORIGINS ? env.MOBILE_ORIGINS.split(',') : DEFAULT_NATIVE_ORIGINS).map((o) => o.trim()).filter(Boolean));
+
+/** True when the Origin header is exactly one of the native app origins. */
+export const isNativeOrigin = (raw, env = process.env) => typeof raw === 'string' && nativeOrigins(env).has(raw.trim());
+
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
@@ -100,6 +114,7 @@ export function originGuard({ allowedOrigins, allowLocalhost = !IS_PROD, isAllow
       if (req.get('sec-fetch-site') === 'cross-site') return refuse(req, res, 'cross-site');
       return next();
     }
+    if (isNativeOrigin(raw)) return next();
     const origin = originOf(raw);
     if (origin && (allowed.has(origin) || isAllowed?.(req, origin) || (allowLocalhost && LOCAL_HOSTS.has(new URL(origin).hostname)))) return next();
     return refuse(req, res, raw);

@@ -208,7 +208,7 @@ const passwordFingerprint = (passwordHash) =>
 
 function encodeSession(userId, passwordHash) {
   const payload = Buffer.from(
-    JSON.stringify({ sub: userId, tn: tenantId(), exp: Date.now() + SESSION_TTL, pv: passwordFingerprint(passwordHash) }),
+    JSON.stringify({ sub: userId, tn: tenantId(), iat: Date.now(), exp: Date.now() + SESSION_TTL, pv: passwordFingerprint(passwordHash) }),
   ).toString('base64url');
   const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
   return `${payload}.${signature}`;
@@ -486,8 +486,21 @@ export async function resetPassword({ token, password }) {
   await setUserPassword(user.id, { salt, hash });
 }
 
-export async function userFromRequest(req) {
-  const session = decodeSession(parseCookies(req.headers.cookie ?? '')[SESSION_COOKIE]);
+/**
+ * The session token on a request: the cookie the website uses, or — for the
+ * native apps, which keep the token in the OS keystore — an Authorization:
+ * Bearer header. Both carry the same signed token, so everything after this
+ * (tenant check, password fingerprint, expiry) is shared.
+ */
+function sessionTokenFrom(req) {
+  const cookie = parseCookies(req.headers.cookie ?? '')[SESSION_COOKIE];
+  if (cookie) return cookie;
+  const header = req.headers.authorization ?? '';
+  return header.startsWith('Bearer ') ? header.slice(7).trim() : null;
+}
+
+async function resolveSession(req) {
+  const session = decodeSession(sessionTokenFrom(req));
   if (!session) return null;
   // A session belongs to the site that issued it. Cookies are per domain so a
   // browser won't normally carry one across, but this makes a token copied
@@ -502,7 +515,22 @@ export async function userFromRequest(req) {
   // actually sign out every other session instead of leaving old cookies
   // valid for their full 30-day life.
   if (session.pv !== passwordFingerprint(passwordHashOf(user))) return null;
-  return publicUser(user);
+  return { session, user };
+}
+
+export async function userFromRequest(req) {
+  const resolved = await resolveSession(req);
+  return resolved ? publicUser(resolved.user) : null;
+}
+
+/**
+ * A fresh 30-day token for an already-valid session (sliding expiry for the
+ * native apps). Returns null when the presented session is not valid, so an
+ * expired or revoked token can never be refreshed back to life.
+ */
+export async function refreshedSessionToken(req) {
+  const resolved = await resolveSession(req);
+  return resolved ? encodeSession(resolved.user.id, passwordHashOf(resolved.user)) : null;
 }
 
 // Secure is conditional on NODE_ENV rather than always-on because local dev
