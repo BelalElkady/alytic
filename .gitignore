@@ -23,3 +23,33 @@ frontend/.tanstack/
 tests/e2e/.tmp/
 tests/e2e/report/
 test-results/
+
+# mobile (Capacitor) — build output and anything secret
+frontend/dist-mobile/
+frontend/.env.*.local
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/local.properties
+frontend/android/app/src/main/assets/public/
+frontend/android/app/src/main/assets/capacitor.config.json
+frontend/android/app/src/main/assets/capacitor.plugins.json
+frontend/android/capacitor-cordova-android-plugins/
+frontend/ios/App/Pods/
+frontend/ios/App/build/
+frontend/ios/DerivedData/
+frontend/ios/App/App/public/
+frontend/ios/App/App/capacitor.config.json
+frontend/ios/App/App/config.xml
+frontend/ios/App/CapApp-SPM/.build/
+# signing material and Firebase config — NEVER commit (see docs/android-release.md, docs/ios-release.md)
+*.jks
+*.keystore
+keystore.properties
+frontend/android/app/google-services.json
+frontend/ios/App/App/GoogleService-Info.plist
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+*service-account*.json

@@ -4,29 +4,8 @@ import { backendFetch } from "@/lib/backend";
 
 import type { BlogPostSummary } from "@/components/marketing/blog-card";
 
-export type BlogContentBlock =
-  | { type: "heading"; level: 2 | 3; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "list"; items: string[] };
-
-export type BlogImage = {
-  url: string;
-  sourceUrl: string | null;
-  creditName: string | null;
-  creditUrl: string | null;
-};
-
-export type BlogPost = {
-  slug: string;
-  title: string;
-  metaTitle: string | null;
-  metaDescription: string | null;
-  dek: string | null;
-  content: BlogContentBlock[];
-  tags: string[];
-  image: BlogImage | null;
-  publishedAt: string;
-};
+export type { BlogContentBlock, BlogImage, BlogPost } from "@/lib/blog.types";
+import type { BlogPost } from "@/lib/blog.types";
 
 // The blog pages load through these server functions from their route
 // loaders, so the articles are in the server-rendered HTML — fetching them in
