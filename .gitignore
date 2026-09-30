@@ -53,3 +53,4 @@ frontend/ios/App/App/GoogleService-Info.plist
 *.mobileprovision
 *.cer
 *service-account*.json
+frontend/ios/App/CapApp-SPM/symlinks/
