@@ -6,8 +6,21 @@
 // Callers get back whatever shape their endpoint returns and access fields
 // directly, so the generic default here is intentionally `any`, not a gap.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const RAW_BASE = (import.meta.env["VITE_API_BASE_URL"] as string | undefined) ?? "/api/public";
+import { nativeApiBase } from "../native/config";
+import { isNative } from "../native/platform";
+import { clearSessionToken, getSessionToken } from "../native/secure-session";
+import { emitSessionExpired } from "../native/session-events";
+
+// A browser talks to the same-origin /api/public proxy (cookie session). A
+// native app has no origin, so it calls the absolute URL of that same proxy
+// and authenticates with a bearer token from secure storage instead.
+const RAW_BASE = isNative()
+  ? nativeApiBase()
+  : ((import.meta.env["VITE_API_BASE_URL"] as string | undefined) ?? "/api/public");
 export const API_BASE = RAW_BASE.replace(/\/$/, "");
+
+/** Auth endpoints answer 401 for "wrong password", which is not an expired session. */
+const isAuthRoute = (path: string) => path.startsWith("/api/auth/");
 
 export class ApiError extends Error {
   status: number;
@@ -27,17 +40,27 @@ function isLovablePreview() {
 
 async function request<T = any>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const native = isNative();
+  const token = native ? getSessionToken() : null;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      credentials: "include",
+      // Cross-origin native calls never carry cookies; the bearer token is the session.
+      credentials: native ? "omit" : "include",
       ...init,
       headers: {
         ...(isLovablePreview() ? { "x-lovable-preview": "1" } : {}),
+        ...(native ? { "x-egxpert-client": "mobile" } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...init?.headers,
       },
     });
   } catch {
-    throw new ApiError("تعذر الوصول إلى الخادم. تأكد أن الخدمة شغّالة.", 0);
+    throw new ApiError(
+      native && typeof navigator !== "undefined" && navigator.onLine === false
+        ? "أنت غير متصل بالإنترنت. اتأكد من الاتصال وجرّب تاني."
+        : "تعذر الوصول إلى الخادم. تأكد أن الخدمة شغّالة.",
+      0,
+    );
   }
   const text = await response.text();
   let data: any = null;
@@ -47,6 +70,11 @@ async function request<T = any>(path: string, init?: RequestInit): Promise<T> {
     data = null;
   }
   if (!response.ok) {
+    // A stored token the server no longer accepts (expired, or the password was changed elsewhere).
+    if (native && response.status === 401 && token && !isAuthRoute(path)) {
+      await clearSessionToken();
+      emitSessionExpired();
+    }
     throw new ApiError(data?.error ?? `فشل الطلب (${response.status})`, response.status);
   }
   return data as T;

@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { ConnectionBanner, NativeBootstrap } from "@/native/ui";
 import { PresenceBeacon } from "@/components/presence-beacon";
 import { Toaster } from "@/components/ui/sonner";
 import { ogLogoUrl, siteUrl } from "@/lib/seo";
@@ -86,6 +87,10 @@ let browserTenant: Tenant | null = null;
 
 const META_PIXEL_ID = "1612671676275288";
 
+// The native apps ship no advertising or third-party analytics scripts: no
+// AdSense, Google Analytics or Meta Pixel (see docs/mobile-privacy.md).
+const NATIVE_BUILD = import.meta.env["VITE_TARGET"] === "native";
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   // Which white-label site this is (see lib/tenant.ts). Put in the route
   // context rather than loader data because every child route inherits the
@@ -103,14 +108,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     const title = brand.tagline ? `${tenant.name} — ${brand.tagline}` : tenant.name;
     const css = brandCss(brand);
     // Re-checked here as well as on save: gaId is written into an inline script.
-    const gaId = /^G-[A-Z0-9]{4,20}$/.test(brand.analytics?.gaId ?? "") ? brand.analytics?.gaId : undefined;
-    const adsClient = /^ca-pub-\d{10,20}$/.test(brand.analytics?.adsClient ?? "")
+    const gaId = !NATIVE_BUILD && /^G-[A-Z0-9]{4,20}$/.test(brand.analytics?.gaId ?? "") ? brand.analytics?.gaId : undefined;
+    const adsClient = !NATIVE_BUILD && /^ca-pub-\d{10,20}$/.test(brand.analytics?.adsClient ?? "")
       ? brand.analytics?.adsClient
       : undefined;
     return {
       meta: [
         { charSet: "utf-8" },
-        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { title },
         { name: "description", content: description },
         { name: "robots", content: "index, follow" },
@@ -172,7 +177,7 @@ gtag('config', '${gaId}');`,
           : []),
         // Meta Pixel: our own site only, same rule as above — a client's
         // visitors must not land in our Meta reports.
-        ...(tenant.id === DEFAULT_TENANT.id
+        ...(tenant.id === DEFAULT_TENANT.id && !NATIVE_BUILD
           ? [
               {
                 children: `!function(f,b,e,v,n,t,s)
@@ -205,7 +210,7 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {tenant.id === DEFAULT_TENANT.id && (
+        {tenant.id === DEFAULT_TENANT.id && !NATIVE_BUILD && (
           <noscript>
             <img
               height="1"
@@ -231,6 +236,8 @@ function RootComponent() {
       <DeskProvider>
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
+        <NativeBootstrap />
+        <ConnectionBanner />
       </DeskProvider>
       <PresenceBeacon />
       <Toaster position="top-center" richColors />

@@ -60,6 +60,8 @@ import {
   type StyleKey,
 } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
+import { isNative } from "@/native/platform";
+import { PullToRefresh, PushSoftPrompt } from "@/native/ui";
 import { useTenant } from "@/lib/tenant";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -85,6 +87,12 @@ const NAV = [
   { to: "/how-to-use", label: "طريقة الاستخدام", icon: HelpCircle, access: "all" },
   { to: "/admin", label: "الإدارة", icon: ShieldCheck, access: "staff" },
 ] as const;
+
+/** Pull-down-to-refresh is a native-app gesture; the website keeps its ordinary scrolling. */
+function PullToRefreshIfNative({ children }: { children: ReactNode }) {
+  const { reload } = useDesk();
+  return isNative() ? <PullToRefresh onRefresh={reload}>{children}</PullToRefresh> : <>{children}</>;
+}
 
 export function DeskShell({ children }: { children: ReactNode }) {
   const { user, authChecked } = useDesk();
@@ -120,9 +128,12 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <VerifyEmailBanner />
       <ExpiryBanner />
       {!locked && <HeroBar />}
-      <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
-        {locked ? <SubscriptionWall /> : children}
-      </main>
+      <PullToRefreshIfNative>
+        <main className="native-page-pad mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
+          {!locked && <PushSoftPrompt />}
+          {locked ? <SubscriptionWall /> : children}
+        </main>
+      </PullToRefreshIfNative>
       <SiteFooter />
       <MobileNav />
       <ChatWidget />

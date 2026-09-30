@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { nativePreflight, withNativeCors } from "@/lib/native-cors";
+
 // Same-origin proxy to the Alytic Express server. The browser keeps talking to
 // this origin (so the session cookie works unchanged); this route forwards
 // everything under /api/* to the backend untouched.
@@ -14,7 +16,7 @@ const HOP_BY_HOP = new Set([
   "content-length",
 ]);
 
-async function forward(request: Request): Promise<Response> {
+async function forwardUpstream(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const target = process.env["ALYTIC_API_URL"] ?? "http://localhost:3000";
   const upstreamPath = url.pathname.replace(/^\/api\/public/, "");
@@ -105,9 +107,15 @@ async function forward(request: Request): Promise<Response> {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
 }
 
+// Adds CORS headers for the native apps' origins (and nobody else's).
+async function forward(request: Request): Promise<Response> {
+  return withNativeCors(request, await forwardUpstream(request));
+}
+
 export const Route = createFileRoute("/api/public/$")({
   server: {
     handlers: {
+      OPTIONS: ({ request }) => nativePreflight(request) ?? new Response(null, { status: 204 }),
       GET: ({ request }) => forward(request),
       POST: ({ request }) => forward(request),
       PUT: ({ request }) => forward(request),

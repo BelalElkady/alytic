@@ -10,6 +10,13 @@ import {
 } from "react";
 
 import { ApiError, api, post } from "./api";
+import { onSessionExpired } from "../native/session-events";
+import { clearSessionToken, loadSessionToken, persistLoginResult } from "../native/session";
+import { isNative } from "../native/platform";
+import { refreshNativeSession } from "../native/session-refresh";
+import { unregisterPushDevice } from "../native/push";
+import { track } from "../native/analytics";
+import { isOnline } from "../native/network";
 import {
   clearInvestStyle,
   explicitInvestStyle,
@@ -395,7 +402,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       if (
         !codes.length ||
         (typeof document !== "undefined" && document.hidden) ||
-        !egxSessionLikelyOpen()
+        !egxSessionLikelyOpen() ||
+        // No request can succeed offline; the connection banner already says prices are old.
+        !isOnline()
       )
         return;
       if (!force && Date.now() - lastRefreshAt.current < PRICE_REFRESH_MS - 1000) return;
@@ -456,9 +465,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
+        // Native: the session token lives in secure storage and must be in memory before the first request.
+        await loadSessionToken();
         const { user: me } = await api("/api/auth/me");
         if (!cancelled && me) {
           setUser(me);
+          void refreshNativeSession();
         }
       } catch {
         /* offline or unauthenticated — the auth screen handles both */
@@ -469,6 +481,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Native: the stored token was rejected (expired, or the password changed on another device).
+  useEffect(() => {
+    if (!isNative()) return;
+    return onSessionExpired(() => setUser(null));
   }, []);
 
   // hasAccess === false means the trial lapsed with no live plan: the desk
@@ -535,7 +553,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   // the previous person's pick and skip the mandatory choice.
   const signIn = useCallback(async (mode: "login" | "register", body: Record<string, unknown>) => {
     const result = await post(`/api/auth/${mode}`, body);
+    track(mode === "login" ? "login" : "signup", { method: "password" });
     if (mode === "login") {
+      await persistLoginResult(result);
       clearInvestStyle();
       setUser(result.user);
     }
@@ -543,12 +563,19 @@ export function DeskProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async (credential: string) => {
     const result = await post("/api/auth/google", { credential });
+    track("login", { method: "google" });
+    await persistLoginResult(result);
     clearInvestStyle();
     setUser(result.user);
   }, []);
 
   const signOut = useCallback(async () => {
-    await post("/api/auth/logout");
+    // Stop pushing this device's alerts to whoever signs in next, then end the session.
+    await unregisterPushDevice().catch(() => {});
+    // On a phone a failed logout call (offline) must still end the local session.
+    if (isNative()) await post("/api/auth/logout").catch(() => {});
+    else await post("/api/auth/logout");
+    await clearSessionToken();
     if (typeof window !== "undefined") window.location.reload();
   }, []);
 

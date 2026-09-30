@@ -3,6 +3,7 @@ import { Check, Loader2, MailCheck } from "lucide-react";
 import { useState } from "react";
 
 import { Logo } from "@/components/brand/logo";
+import { isNative } from "@/native/platform";
 import { GoogleSignInButton } from "@/components/desk/google-sign-in-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -137,6 +138,9 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
               </div>
 
               <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+                {/* Google's web sign-in cannot run from the app's own origin; email + password works natively. */}
+                {!isNative() && (
+                  <>
                 <div className="relative">
                   {googleBusy && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-card/70">
@@ -154,6 +158,8 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
                   <span className="text-[12px] text-muted-foreground">أو</span>
                   <Separator className="flex-1" />
                 </div>
+                  </>
+                )}
 
                 <form onSubmit={submit} className="space-y-4">
                   {register && (

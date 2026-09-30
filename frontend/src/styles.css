@@ -258,3 +258,37 @@
     border-radius: 8px;
   }
 }
+
+/* Native app shell (Capacitor). `native-app` is set on <html> by NativeBootstrap,
+ * so none of this applies to the website. The status bar overlays the WebView,
+ * so headers and the bottom tab bar keep clear of the notch / home indicator. */
+html.native-app {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+html.native-app body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+html.native-app input,
+html.native-app textarea,
+html.native-app [data-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+html.native-app header.sticky {
+  padding-top: env(safe-area-inset-top);
+}
+html.native-app nav[aria-label="التبويبات"] {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+html.native-app .native-page-pad {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+/* 44px is the smallest comfortable touch target (Apple HIG / Material). */
+html.native-app button,
+html.native-app [role="button"],
+html.native-app a[class*="flex"] {
+  min-height: 44px;
+}

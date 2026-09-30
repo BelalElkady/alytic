@@ -1,5 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Share2 } from "lucide-react";
+import { useEffect } from "react";
+import { toast } from "sonner";
 
 import {
   ShariahBadge,
@@ -10,6 +12,10 @@ import { EmptyState } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
+import { track } from "@/native/analytics";
+import { haptic } from "@/native/haptics";
+import { cacheSet } from "@/native/offline-cache";
+import { shareStock } from "@/native/share";
 
 export const Route = createFileRoute("/_app/stock/$code")({
   head: ({ params, match }) => {
@@ -45,6 +51,23 @@ function StockPage() {
 
   const name = data?.name ?? stock?.ar ?? stock?.en ?? "";
 
+  useEffect(() => {
+    if (!stock) return;
+    track("stock_view", { item_id: code });
+    // Only the code is kept (safe to cache); prices are always fetched live.
+    void cacheSet("last-stock", { code });
+  }, [code, stock]);
+
+  const share = async () => {
+    void haptic("light");
+    try {
+      const result = await shareStock(code, name || undefined);
+      if (result === "copied") toast.success("اتنسخ رابط السهم");
+    } catch {
+      toast.error("تعذرت المشاركة دلوقتي. جرّب تاني.");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" onClick={back} className="-ms-2">
@@ -66,7 +89,12 @@ function StockPage() {
                 .join(" · ")}
             </p>
           </div>
-          <ShariahBadge value={data?.shariah} />
+          <div className="flex items-center gap-2">
+            <ShariahBadge value={data?.shariah} />
+            <Button variant="outline" size="icon" onClick={() => void share()} aria-label="شارك السهم" className="size-11">
+              <Share2 className="size-4" aria-hidden />
+            </Button>
+          </div>
         </div>
 
         <div className="mt-5">

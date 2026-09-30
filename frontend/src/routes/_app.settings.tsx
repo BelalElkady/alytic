@@ -16,6 +16,8 @@ import {
 } from "@/lib/invest-style";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
+import { isNative } from "@/native/platform";
+import { PushAlertsControl } from "@/native/ui";
 
 export const Route = createFileRoute("/_app/settings")({
   head: ({ match }) => ({
@@ -198,6 +200,12 @@ function SettingsPage() {
           />
         </div>
       </Panel>
+
+      {isNative() && (
+        <Panel title="التنبيهات" description="تنبيهات الأهداف والوقف على الموبايل.">
+          <PushAlertsControl />
+        </Panel>
+      )}
 
       <Panel
         title="رصيدك"
