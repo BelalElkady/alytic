@@ -7,8 +7,8 @@ submission.** Nothing here is a guarantee of approval.
 
 | Requirement | Finding | Where applied |
 | --- | --- | --- |
-| Google Play target API | From **31 Aug 2026** new apps and updates must target **Android 16 (API 36)** or higher (extension possible to 1 Nov 2026). Source: developer.android.com/google/play/requirements/target-sdk | Capacitor 8 generates `targetSdkVersion 36`, `compileSdkVersion 36` (`variables.gradle`); verified after `cap add android` — see `docs/android-release.md`. |
-| Apple build toolchain | Since **28 Apr 2026** uploads must be built with **Xcode 26** / iOS 26 SDK or later. Source: developer.apple.com/news/upcoming-requirements | `docs/ios-release.md`; CI uses Xcode 26 runners. |
+| Google Play target API | From **31 Aug 2026** new apps and updates must target **Android 16 (API 36)** or higher (extension possible to 1 Nov 2026). Source: developer.android.com/google/play/requirements/target-sdk | Capacitor 8 generates `targetSdkVersion 36`, `compileSdkVersion 36` (`variables.gradle`); confirmed in the generated `android/variables.gradle` — see `docs/android-release.md` (Android branch). |
+| Apple build toolchain | Since **28 Apr 2026** uploads must be built with **Xcode 26** / iOS 26 SDK or later. Source: developer.apple.com/news/upcoming-requirements | `docs/ios-release.md`; the iOS workflow selects the newest stable Xcode on the runner image (confirm it is 26+). |
 
 ## Not a WebView wrapper
 Apple 4.2 (minimum functionality) and Google's "webview spam" / minimum functionality rules
