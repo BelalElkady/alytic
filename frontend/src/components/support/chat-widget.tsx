@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useVisibleInterval } from "@/hooks/use-visible-interval";
 import { api, post, postRaw } from "@/lib/api";
+import { isNative } from "@/native/platform";
 import { useDesk } from "@/lib/store";
 import { useTenant, withBrand } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
@@ -259,6 +260,12 @@ export function ChatWidget() {
 
   const chooseSubscribe = async () => {
     say("user", "عايز أشترك");
+    // Store policy: the native apps never present prices or payment instructions (see docs/mobile-store-compliance.md).
+    if (isNative()) {
+      say("admin", "إدارة الاشتراك بتتم خارج التطبيق. لو عندك سؤال عن حسابك اكتبلنا هنا.");
+      setMode("human");
+      return;
+    }
     try {
       const info: SubscribeInfo = await api("/api/support/subscribe-info");
       const prices = info.plans

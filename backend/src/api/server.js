@@ -784,6 +784,25 @@ app.post('/api/account/phone', wrap(async (req, res) => {
 
 // Self-service name correction from the profile page — the counterpart to
 // the admin panel's read-only view of the same field.
+// Self-service account deletion — required by Apple (5.1.1(v)) and Google Play for any app
+// that lets people create an account. The caller must type their own email as confirmation.
+// Everything tied to the account (portfolio, log, subscription rows, support thread, devices,
+// notifications) goes with it through `on delete cascade`. Admins are refused so the last
+// admin can't remove themselves by accident; they are removed from the admin panel.
+app.post('/api/account/delete', wrap(async (req, res) => {
+  const confirm = String(req.body?.confirmEmail ?? '').trim().toLowerCase();
+  if (!confirm || confirm !== String(req.user.email).toLowerCase()) {
+    return res.status(400).json({ error: 'اكتب بريدك الإلكتروني بالظبط لتأكيد الحذف' });
+  }
+  if (req.user.id === 'local' || req.user.isAdmin) {
+    return res.status(400).json({ error: 'حسابات المشرفين بتتحذف من لوحة الإدارة' });
+  }
+  await removeSupportImagesFor(req.user.id);
+  await deleteUser(req.user.id);
+  res.setHeader('Set-Cookie', clearSessionCookie());
+  res.json({ ok: true });
+}));
+
 app.post('/api/account/name', wrap(async (req, res) => {
   const result = await updateName({ userId: req.user.id, name: req.body?.name });
   res.json({ user: result.user });

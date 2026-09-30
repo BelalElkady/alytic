@@ -17,6 +17,7 @@ import {
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { isNative } from "@/native/platform";
+import { clearSessionToken } from "@/native/session";
 import { PushAlertsControl } from "@/native/ui";
 
 export const Route = createFileRoute("/_app/settings")({
@@ -121,6 +122,54 @@ function ProfileField({
         </div>
       )}
     </div>
+  );
+}
+
+/** Deletes the account for good. Needed by both app stores for any app that can create an account. */
+function DeleteAccountPanel() {
+  const { user } = useDesk();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const matches = confirm.trim().toLowerCase() === (user?.email ?? "").toLowerCase() && Boolean(user?.email);
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await post("/api/account/delete", { confirmEmail: confirm.trim() });
+      await clearSessionToken();
+      window.location.assign("/");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "تعذر حذف الحساب. جرّب تاني.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel
+      title="حذف الحساب"
+      description="بيمسح حسابك وكل بياناته نهائيًا: المحفظة، الصفقات، السجل، الاشتراك، المحادثات والأجهزة المسجّلة للتنبيهات. لا يمكن التراجع."
+    >
+      {!open ? (
+        <Button variant="destructive" className="min-h-11" onClick={() => setOpen(true)}>
+          حذف حسابي
+        </Button>
+      ) : (
+        <div className="space-y-3">
+          <Label htmlFor="delete-confirm">اكتب بريدك الإلكتروني ({user?.email}) للتأكيد</Label>
+          <Input id="delete-confirm" dir="ltr" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="destructive" className="min-h-11" disabled={!matches || busy} onClick={() => void remove()}>
+              {busy && <Spinner />}
+              حذف نهائي
+            </Button>
+            <Button variant="outline" className="min-h-11" disabled={busy} onClick={() => { setOpen(false); setConfirm(""); }}>
+              إلغاء
+            </Button>
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -278,6 +327,8 @@ function SettingsPage() {
           })}
         </div>
       </Panel>
+
+      <DeleteAccountPanel />
 
       <Panel
         title="إعادة تعيين"

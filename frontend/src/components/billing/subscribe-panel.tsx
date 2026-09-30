@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useDesk } from "@/lib/store";
+import { isNative } from "@/native/platform";
 import { cn } from "@/lib/utils";
 
 type Tier = "long" | "trader";
@@ -31,7 +32,7 @@ const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
  * the copy button fetches the same address the chat bot sends, from the
  * signed-in-only subscribe-info endpoint, so it never ships in the bundle.
  */
-export function SubscribePanel({
+function WebSubscribePanel({
   compact = false,
   lockedTier,
   initialMonths,
@@ -247,4 +248,43 @@ export function SubscribePanel({
       )}
     </div>
   );
+}
+
+
+/**
+ * The app stores (Apple guideline 3.1.1, Google Play's payments policy) require
+ * in-app purchase for paid digital features and restrict pointing users at
+ * another way to pay. EGXpert subscriptions are activated manually after an
+ * InstaPay transfer, so the native apps deliberately show NO prices, payment
+ * instructions or purchase links: only the account's subscription status,
+ * which is managed outside the app. See docs/mobile-store-compliance.md.
+ */
+function NativeSubscriptionNotice() {
+  const { refreshUser } = useDesk();
+  const [checking, setChecking] = useState(false);
+  return (
+    <div className="space-y-3">
+      <p className="text-[13px] leading-relaxed text-muted-foreground">
+        إدارة الاشتراك بتتم خارج التطبيق. لو اشتراكك اتفعّل، دوس على تحديث وهيظهر هنا.
+      </p>
+      <Button
+        variant="outline"
+        className="min-h-11"
+        disabled={checking}
+        onClick={() => {
+          setChecking(true);
+          void refreshUser()
+            .catch(() => toast.error("تعذر تحديث الحالة. اتأكد من الاتصال وجرّب تاني."))
+            .finally(() => setChecking(false));
+        }}
+      >
+        {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" aria-hidden />}
+        تحديث حالة الاشتراك
+      </Button>
+    </div>
+  );
+}
+
+export function SubscribePanel(props: React.ComponentProps<typeof WebSubscribePanel>) {
+  return isNative() ? <NativeSubscriptionNotice /> : <WebSubscribePanel {...props} />;
 }

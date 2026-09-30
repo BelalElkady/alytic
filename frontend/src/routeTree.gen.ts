@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as BlogRouteImport } from './routes/blog'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
@@ -36,6 +37,7 @@ import { Route as AppTrackRecordRouteImport } from './routes/_app.track-record'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as BlogIndexRouteImport } from './routes/blog.index'
 import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
+import { Route as StocksCodeRouteImport } from './routes/stocks.$code'
 import { Route as AppStockCodeRouteImport } from './routes/_app.stock.$code'
 import { Route as ApiPublicSplatRouteImport } from './routes/api/public/$'
 
@@ -51,6 +53,11 @@ const AppRoute = AppRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BlogRoute = BlogRouteImport.update({
@@ -173,6 +180,11 @@ const BlogSlugRoute = BlogSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => BlogRoute,
 } as any)
+const StocksCodeRoute = StocksCodeRouteImport.update({
+  id: '/stocks/$code',
+  path: '/stocks/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppStockCodeRoute = AppStockCodeRouteImport.update({
   id: '/stock/$code',
   path: '/stock/$code',
@@ -187,6 +199,7 @@ const ApiPublicSplatRoute = ApiPublicSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/alerts': typeof AlertsRoute
   '/blog': typeof BlogRouteWithChildren
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -210,6 +223,7 @@ export interface FileRoutesByFullPath {
   '/track-record': typeof AppTrackRecordRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
+  '/stocks/$code': typeof StocksCodeRoute
   '/blog/': typeof BlogIndexRoute
   '/stock/$code': typeof AppStockCodeRoute
   '/api/public/$': typeof ApiPublicSplatRoute
@@ -217,6 +231,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/alerts': typeof AlertsRoute
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/how-to-use': typeof HowToUseRoute
@@ -239,6 +254,7 @@ export interface FileRoutesByTo {
   '/track-record': typeof AppTrackRecordRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
+  '/stocks/$code': typeof StocksCodeRoute
   '/blog': typeof BlogIndexRoute
   '/stock/$code': typeof AppStockCodeRoute
   '/api/public/$': typeof ApiPublicSplatRoute
@@ -248,6 +264,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/about': typeof AboutRoute
+  '/alerts': typeof AlertsRoute
   '/blog': typeof BlogRouteWithChildren
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -271,6 +288,7 @@ export interface FileRoutesById {
   '/_app/track-record': typeof AppTrackRecordRoute
   '/admin/login': typeof AdminLoginRoute
   '/blog/$slug': typeof BlogSlugRoute
+  '/stocks/$code': typeof StocksCodeRoute
   '/blog/': typeof BlogIndexRoute
   '/_app/stock/$code': typeof AppStockCodeRoute
   '/api/public/$': typeof ApiPublicSplatRoute
@@ -280,6 +298,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/alerts'
     | '/blog'
     | '/contact'
     | '/forgot-password'
@@ -303,6 +322,7 @@ export interface FileRouteTypes {
     | '/track-record'
     | '/admin/login'
     | '/blog/$slug'
+    | '/stocks/$code'
     | '/blog/'
     | '/stock/$code'
     | '/api/public/$'
@@ -310,6 +330,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/alerts'
     | '/contact'
     | '/forgot-password'
     | '/how-to-use'
@@ -332,6 +353,7 @@ export interface FileRouteTypes {
     | '/track-record'
     | '/admin/login'
     | '/blog/$slug'
+    | '/stocks/$code'
     | '/blog'
     | '/stock/$code'
     | '/api/public/$'
@@ -340,6 +362,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/about'
+    | '/alerts'
     | '/blog'
     | '/contact'
     | '/forgot-password'
@@ -363,6 +386,7 @@ export interface FileRouteTypes {
     | '/_app/track-record'
     | '/admin/login'
     | '/blog/$slug'
+    | '/stocks/$code'
     | '/blog/'
     | '/_app/stock/$code'
     | '/api/public/$'
@@ -372,6 +396,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   AboutRoute: typeof AboutRoute
+  AlertsRoute: typeof AlertsRoute
   BlogRoute: typeof BlogRouteWithChildren
   ContactRoute: typeof ContactRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
@@ -384,6 +409,7 @@ export interface RootRouteChildren {
   SubscribeRoute: typeof SubscribeRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   AdminLoginRoute: typeof AdminLoginRoute
+  StocksCodeRoute: typeof StocksCodeRoute
   ApiPublicSplatRoute: typeof ApiPublicSplatRoute
 }
 
@@ -408,6 +434,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/blog': {
@@ -578,6 +611,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogSlugRouteImport
       parentRoute: typeof BlogRoute
     }
+    '/stocks/$code': {
+      id: '/stocks/$code'
+      path: '/stocks/$code'
+      fullPath: '/stocks/$code'
+      preLoaderRoute: typeof StocksCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/stock/$code': {
       id: '/_app/stock/$code'
       path: '/stock/$code'
@@ -641,6 +681,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   AboutRoute: AboutRoute,
+  AlertsRoute: AlertsRoute,
   BlogRoute: BlogRouteWithChildren,
   ContactRoute: ContactRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
@@ -653,6 +694,7 @@ const rootRouteChildren: RootRouteChildren = {
   SubscribeRoute: SubscribeRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   AdminLoginRoute: AdminLoginRoute,
+  StocksCodeRoute: StocksCodeRoute,
   ApiPublicSplatRoute: ApiPublicSplatRoute,
 }
 export const routeTree = rootRouteImport
