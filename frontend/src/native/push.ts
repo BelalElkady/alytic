@@ -116,6 +116,13 @@ export async function initPush(options: {
   initialised = true;
   const plugin = await messaging();
 
+  // Android 8+: the backend targets this channel (fcm.js). Created here so its name is localised and shown in system settings.
+  if (nativePlatform() === "android") {
+    await plugin
+      .createChannel({ id: "alerts", name: "تنبيهات الأسعار", description: "وصول الهدف وكسر الوقف", importance: 4 })
+      .catch(() => {});
+  }
+
   await plugin.addListener("tokenReceived", ({ token }) => {
     void getPushPermission().then((permission) => {
       if (permission === "granted") void registerToken(token).catch(() => {});

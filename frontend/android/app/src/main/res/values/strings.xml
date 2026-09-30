@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EGXpert</string>
+    <string name="title_activity_main">EGXpert</string>
+    <string name="package_name">com.egxpert.app</string>
+    <string name="custom_url_scheme">com.egxpert.app</string>
+</resources>
