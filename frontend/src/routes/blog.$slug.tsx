@@ -126,6 +126,10 @@ function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
             </Heading>
           );
         }
+        if (block.type === "html") {
+          // Sanitized by the backend (backend/src/blogHtml.js) before it is stored.
+          return <div key={index} className="blog-html" dangerouslySetInnerHTML={{ __html: block.html }} />;
+        }
         if (block.type === "list") {
           return (
             <ul key={index} className="list-disc space-y-1.5 ps-5 text-[14px] leading-relaxed">

@@ -16,12 +16,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { api, del, patch, post } from "@/lib/api";
 
 type ContentBlock =
   | { type: "heading"; level: 2 | 3; text: string }
   | { type: "paragraph"; text: string }
-  | { type: "list"; items: string[] };
+  | { type: "list"; items: string[] }
+  | { type: "html"; html: string };
 
 type BlogPost = {
   id: string;
@@ -159,7 +161,7 @@ export function PublishedPostsTab() {
     }
   };
 
-  const updateBlock = (index: number, patchBlock: { text?: string; items?: string[] }) => {
+  const updateBlock = (index: number, patchBlock: { text?: string; items?: string[]; html?: string }) => {
     setEdit((prev) => {
       if (!prev) return prev;
       const blocks = prev.blocks.map((b, i) =>
@@ -312,13 +314,20 @@ export function PublishedPostsTab() {
                               ? "عنوان فرعي"
                               : block.type === "list"
                                 ? "قائمة (سطر لكل عنصر)"
-                                : "فقرة"}
+                                : block.type === "html"
+                                  ? "محتوى المقالة"
+                                  : "فقرة"}
                           </label>
                           <Button variant="ghost" size="sm" onClick={() => removeBlock(index)}>
                             حذف الفقرة
                           </Button>
                         </div>
-                        {block.type === "list" ? (
+                        {block.type === "html" ? (
+                          <RichTextEditor
+                            initialHtml={block.html}
+                            onChange={(html) => updateBlock(index, { html })}
+                          />
+                        ) : block.type === "list" ? (
                           <Textarea
                             rows={3}
                             value={block.items.join("\n")}
@@ -361,7 +370,10 @@ export function PublishedPostsTab() {
                   </div>
                   <div className="mt-4 space-y-2 text-[13px] leading-relaxed">
                     {row.content.map((block, index) =>
-                      block.type === "list" ? (
+                      block.type === "html" ? (
+                        // Sanitized by the backend when the article is saved.
+                        <div key={index} className="blog-html" dangerouslySetInnerHTML={{ __html: block.html }} />
+                      ) : block.type === "list" ? (
                         <ul key={index} className="list-disc ps-5">
                           {block.items.map((item, itemIndex) => (
                             <li key={itemIndex}>{item}</li>

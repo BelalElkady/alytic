@@ -7,7 +7,8 @@ import type { BlogPostSummary } from "@/components/marketing/blog-card";
 export type BlogContentBlock =
   | { type: "heading"; level: 2 | 3; text: string }
   | { type: "paragraph"; text: string }
-  | { type: "list"; items: string[] };
+  | { type: "list"; items: string[] }
+  | { type: "html"; html: string };
 
 export type BlogImage = {
   url: string;

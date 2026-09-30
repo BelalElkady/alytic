@@ -11,6 +11,7 @@
  */
 
 import '../loadEnv.js';
+import { normalizeBlogContent } from '../blogHtml.js';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import * as XLSX from 'xlsx';
@@ -1544,6 +1545,8 @@ app.post('/api/admin/blog-drafts', wrap(async (req, res) => {
   }
   if (dek !== undefined && dek !== null && typeof dek !== 'string') return res.status(400).json({ error: 'المقدمة لازم تكون نص' });
   if (!Array.isArray(content) || content.length === 0) return res.status(400).json({ error: 'المقالة لازم تحتوي على محتوى' });
+  const cleanContent = normalizeBlogContent(content);
+  if (!cleanContent || cleanContent.length === 0) return res.status(400).json({ error: 'المقالة لازم تحتوي على محتوى' });
   if (tags !== undefined && !Array.isArray(tags)) return res.status(400).json({ error: 'الوسوم لازم تكون قائمة' });
   if (imageUrl !== undefined && imageUrl !== null && imageUrl !== '' && !safeHttpsUrl(imageUrl)) {
     return res.status(400).json({ error: 'رابط الصورة غير صالح' });
@@ -1556,7 +1559,7 @@ app.post('/api/admin/blog-drafts', wrap(async (req, res) => {
       metaTitle: metaTitle.trim(),
       metaDescription: metaDescription.trim(),
       dek: (dek ?? '').trim() || null,
-      content,
+      content: cleanContent,
       tags: tags ?? [],
       imageUrl: imageUrl || null,
       publish: Boolean(publish),
@@ -1594,7 +1597,9 @@ app.patch('/api/admin/blog-drafts/:id', wrap(async (req, res) => {
   if (metaDescription !== undefined && typeof metaDescription !== 'string') return res.status(400).json({ error: 'الوصف التعريفي لازم يكون نص' });
   if (content !== undefined && !Array.isArray(content)) return res.status(400).json({ error: 'المحتوى لازم يكون قائمة فقرات' });
   if (tags !== undefined && !Array.isArray(tags)) return res.status(400).json({ error: 'الوسوم لازم تكون قائمة' });
-  const post = await updateBlogPost(req.params.id, { title, dek, metaDescription, content, tags });
+  const cleanContent = content === undefined ? undefined : normalizeBlogContent(content);
+  if (cleanContent === null) return res.status(400).json({ error: 'المحتوى لازم يكون قائمة فقرات' });
+  const post = await updateBlogPost(req.params.id, { title, dek, metaDescription, content: cleanContent, tags });
   if (!post) return res.status(404).json({ error: 'المقالة غير موجودة' });
   res.json({ ok: true, post: { id: post.id, slug: post.slug, status: post.status } });
 }));

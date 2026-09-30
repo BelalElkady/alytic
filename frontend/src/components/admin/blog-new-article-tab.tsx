@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/desk/state-blocks";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { post, postRaw } from "@/lib/api";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -39,20 +40,18 @@ function sanitizeSlugInput(value: string): string {
     .replace(/^-+/, "");
 }
 
-/** Splits free-form article text into the paragraph blocks the site's blog renderer expects — blank lines separate paragraphs. */
-function toContentBlocks(text: string) {
-  return text
-    .split(/\n\s*\n/)
-    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-    .map((paragraph) => ({ type: "paragraph" as const, text: paragraph }));
+/** The editor's HTML becomes one html block; the backend sanitizes it before it is stored. */
+function toContentBlocks(html: string) {
+  return html.trim() ? [{ type: "html" as const, html }] : [];
 }
 
-const emptyForm = () => ({ title: "", metaTitle: "", slug: "", content: "", metaDescription: "", imageUrl: "" });
+const emptyForm = () => ({ title: "", metaTitle: "", slug: "", content: "", contentText: "", metaDescription: "", imageUrl: "" });
 
 /** Lets an admin write and publish (or save as a draft for review) an article by hand, alongside the auto-generated pipeline. */
 export function NewArticleTab() {
   const [form, setForm] = useState(emptyForm());
+  // Bumped after a successful save so the editor remounts empty.
+  const [editorKey, setEditorKey] = useState(0);
   // The slug is generated (translated to English) from the title until the
   // admin edits it directly — same "auto until touched" pattern as most CMS
   // slug fields. Refs, not state: the async generation below must see the
@@ -69,7 +68,7 @@ export function NewArticleTab() {
     if (!form.metaTitle.trim()) return "عنوان الميتا مطلوب";
     if (!sanitizeSlug(form.slug)) return "الرابط (Slug) مطلوب بحروف إنجليزية";
     if (!form.metaDescription.trim()) return "الوصف التعريفي مطلوب";
-    if (toContentBlocks(form.content).length === 0) return "المقالة لازم تحتوي على محتوى";
+    if (!form.contentText.trim() && !/<(img|table|hr)\b/.test(form.content)) return "المقالة لازم تحتوي على محتوى";
     return null;
   };
 
@@ -129,6 +128,25 @@ export function NewArticleTab() {
     }
   };
 
+  /** Uploads an image picked inside the editor and returns its URL for insertion. */
+  const uploadInlineImage = async (file: File): Promise<string | null> => {
+    if (!IMAGE_TYPES.includes(file.type)) {
+      toast.error("لازم تكون صورة JPG أو PNG أو WEBP");
+      return null;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error("الصورة كبيرة أوي (الحد ٨ ميجا)");
+      return null;
+    }
+    try {
+      const { url } = await postRaw<{ url: string }>("/api/admin/blog-drafts/image", file, file.type);
+      return url;
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر رفع الصورة");
+      return null;
+    }
+  };
+
   const submit = async (publish: boolean) => {
     const problem = validate();
     if (problem) {
@@ -152,6 +170,7 @@ export function NewArticleTab() {
           : "اتحفظت المسودة — هتلاقيها في تبويب قيد المراجعة",
       );
       setForm(emptyForm());
+      setEditorKey((k) => k + 1);
       slugTouchedRef.current = false;
       slugRequestRef.current++;
       setSlugLoading(false);
@@ -263,11 +282,12 @@ export function NewArticleTab() {
           )}
         </div>
         <div className="space-y-1">
-          <label className="text-[12px] text-muted-foreground">نص المقالة (سطر فاضي بين كل فقرة والتانية)</label>
-          <Textarea
-            rows={16}
-            value={form.content}
-            onChange={(e) => setForm({ ...form, content: e.target.value })}
+          <label className="text-[12px] text-muted-foreground">نص المقالة</label>
+          <RichTextEditor
+            key={editorKey}
+            disabled={busy !== null}
+            onUploadImage={uploadInlineImage}
+            onChange={(html, text) => setForm((f) => ({ ...f, content: html, contentText: text }))}
           />
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t pt-3">

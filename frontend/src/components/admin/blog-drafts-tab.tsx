@@ -15,7 +15,8 @@ import { api, post } from "@/lib/api";
 type ContentBlock =
   | { type: "heading"; level: 2 | 3; text: string }
   | { type: "paragraph"; text: string }
-  | { type: "list"; items: string[] };
+  | { type: "list"; items: string[] }
+  | { type: "html"; html: string };
 
 type ImageSpec = {
   concept: string;
@@ -50,7 +51,13 @@ type BlogDraft = {
 
 function countWords(content: ContentBlock[]): number {
   const text = content
-    .map((b) => (b.type === "list" ? b.items.join(" ") : b.text))
+    .map((b) =>
+      b.type === "list"
+        ? b.items.join(" ")
+        : b.type === "html"
+          ? b.html.replace(/<[^>]*>/g, " ")
+          : b.text,
+    )
     .join(" ")
     .trim();
   return text ? text.split(/\s+/).length : 0;
@@ -192,7 +199,10 @@ export function BlogDraftsTab() {
             )}
             <div className="mt-4 space-y-2 text-[13px] leading-relaxed">
               {row.content.map((block, index) =>
-                block.type === "list" ? (
+                block.type === "html" ? (
+                  // Sanitized by the backend when the article is saved.
+                  <div key={index} className="blog-html" dangerouslySetInnerHTML={{ __html: block.html }} />
+                ) : block.type === "list" ? (
                   <ul key={index} className="list-disc ps-5">
                     {block.items.map((item, itemIndex) => (
                       <li key={itemIndex}>{item}</li>
