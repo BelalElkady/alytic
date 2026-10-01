@@ -18,6 +18,14 @@
  *     session's close.
  * A session that opens beyond the target fills at the open, not at the target.
  *
+ * A split, bonus issue or reverse split moves a stock's price in one session
+ * without any money moving, and the call's prices (reference, target, stop)
+ * are still on the old basis. A session whose close is more than a fifth away
+ * from the one before it (the call's reference price, for the first session)
+ * is beyond what EGX's daily limit allows a real move to be, so the call's
+ * prices are rebased to the new basis from that session on — see basisFactors
+ * — and the corporate action never reads as a stop-out or a crash.
+ *
  * A hold carries no stop or target: it tells an existing holder to keep the
  * position, not to enter one, so it is only ever judged at the horizon
  * against its benchmark (isWin in src/recommendations.js). Holds logged
@@ -43,6 +51,45 @@ const round = (x, digits) => {
 };
 
 const num = (x) => (x == null || x === '' ? null : Number(x));
+
+/** The share-count ratios corporate actions come in (new price ÷ old price). */
+const COMMON_RATIOS = [0.1, 0.2, 0.25, 1 / 3, 0.4, 0.5, 2 / 3, 0.75, 4 / 3, 1.5, 2, 2.5, 3, 4, 5, 10];
+/** A one-session move beyond this, either way, is a corporate action, not a price move. */
+const BASIS_BREAK_LOW = 0.8;
+const BASIS_BREAK_HIGH = 1.25;
+
+/**
+ * How much to scale the call's own prices (reference, target, stop) by when
+ * judging each session, so they stay on the basis that session trades on:
+ * factors[i] applies to bars[i]. 1 until a session breaks from the one before
+ * it (the reference price before the first); from then on it carries the
+ * ratio, snapped to a common corporate-action ratio when one is close, since
+ * the break session's own move is mixed in with the action's.
+ *
+ * @param {number} ref - the call's reference price
+ * @param {Array<{close:number}>} bars - sessions after the call, oldest first
+ * @returns {number[]} one factor per bar
+ */
+export function basisFactors(ref, bars) {
+  const factors = [];
+  let factor = 1;
+  let prev = ref;
+  for (const bar of bars) {
+    const close = num(bar.close);
+    if (prev > 0 && close > 0) {
+      // Consecutive closes share a basis, so their ratio is the session's own
+      // move; only the first session compares against the call's reference price.
+      const ratio = close / prev;
+      if (ratio < BASIS_BREAK_LOW || ratio > BASIS_BREAK_HIGH) {
+        const nearest = COMMON_RATIOS.reduce((a, b) => (Math.abs(Math.log(ratio / a)) <= Math.abs(Math.log(ratio / b)) ? a : b));
+        factor *= Math.abs(Math.log(ratio / nearest)) <= 0.1 ? nearest : ratio;
+      }
+    }
+    factors.push(factor);
+    if (close > 0) prev = close;
+  }
+  return factors;
+}
 
 /** An index's level when the call was issued. Calls logged before indices_at_issue existed only carry EGX30. */
 function issueLevel(rec, index) {
@@ -75,9 +122,10 @@ export function evaluateStockMove(rec, bars) {
   const horizon = Number(rec.horizon_days);
   const sessions = Math.min(horizon, bars.length);
   const close = num(bars[sessions - 1].close);
+  const factor = basisFactors(num(rec.ref_price), bars)[sessions - 1];
   return {
     stock_move_price: round(close, 4),
-    stock_move_pct: round((close / num(rec.ref_price) - 1) * 100, 2),
+    stock_move_pct: round((close / (num(rec.ref_price) * factor) - 1) * 100, 2),
     stock_move_sessions: sessions,
     stock_move_final: bars.length >= horizon,
   };
@@ -99,11 +147,13 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
   const dir = directionOf(rec.action);
   const ref = num(rec.ref_price);
   const levelled = rec.action !== 'hold';
-  const target = levelled ? num(rec.target_price) : null;
-  const stop = levelled ? num(rec.stop_price) : null;
+  const baseTarget = levelled ? num(rec.target_price) : null;
+  const baseStop = levelled ? num(rec.stop_price) : null;
   const horizon = Number(rec.horizon_days);
+  // The call's prices on the basis each session trades on (see basisFactors).
+  const factors = basisFactors(ref, bars);
 
-  const returnAt = (price) => round(dir * (price / ref - 1) * 100, 2);
+  const returnAt = (price, factor) => round(dir * (price / (ref * factor) - 1) * 100, 2);
   const excessOver = (index, ret, date) => {
     const move = indexMovePct(rec, indexCloses, index, date);
     return move == null ? null : round(ret - dir * move, 2);
@@ -128,6 +178,8 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
     const low = num(bar.low);
     const close = num(bar.close);
 
+    const target = baseTarget == null ? null : baseTarget * factors[i];
+    const stop = baseStop == null ? null : baseStop * factors[i];
     const stopBreached = stop != null && (dir > 0 ? close <= stop : close >= stop);
     const targetHit = target != null && (dir > 0 ? high >= target : low <= target);
 
@@ -135,6 +187,7 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
     let status = null;
     let exit = null;
     let at = bar;
+    let atFactor = factors[i];
     let sessions = i + 1;
     if (stopBreached) {
       // Filled at the next session's open; not recorded yet → stay open.
@@ -142,6 +195,7 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
       if (!next) break;
       status = 'hit_stop';
       at = next;
+      atFactor = factors[i + 1];
       sessions = i + 2;
       exit = num(next.open) ?? close;
     } else if (targetHit) {
@@ -153,7 +207,7 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
     }
 
     if (status) {
-      const ret = returnAt(exit);
+      const ret = returnAt(exit, atFactor);
       const excess = excessAt(ret, at.date);
       return {
         status,
@@ -174,7 +228,7 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
   }
 
   const last = bars[bars.length - 1];
-  const markRet = returnAt(num(last.close));
+  const markRet = returnAt(num(last.close), factors[factors.length - 1]);
   const markExcess = excessAt(markRet, last.date);
   return {
     status: 'open',

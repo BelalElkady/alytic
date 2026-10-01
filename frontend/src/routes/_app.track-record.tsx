@@ -78,6 +78,8 @@ type RecRow = {
   stockMoveSessions: number;
   stockMoveFinal: boolean;
   right: boolean | null;
+  /** Scored under the original rules: listed, but outside the figures. */
+  legacy: boolean;
   mine: boolean;
   model: string;
 };
@@ -100,6 +102,8 @@ type TrackRecord = {
   };
   outcomes: Record<"hit_target" | "hit_stop" | "expired_win" | "expired_loss", { count: number; pct: number }>;
   byAction: { action: Action; total: number; closed: number; hitRate: number | null }[];
+  /** Which calls the figures cover — see CURRENT_SCORING in backend/src/recommendations.js. */
+  scoring: { version: number; minClosed: number; tooEarly: boolean; legacyTotal: number; legacyClosed: number };
   series: { date: string; strategy: number; index: number }[];
   rows: RecRow[];
   rowsTruncated: boolean;
@@ -308,87 +312,98 @@ function TrackRecordPage() {
         <ErrorState message={error} />
       ) : !data ? (
         <LoadingBlock rows={3} />
-      ) : data.summary.total === 0 ? (
+      ) : data.rows.length === 0 ? (
         <EmptyState
           title="لسه مفيش توصيات في النطاق ده"
           hint="أول ما التطبيق يدي توصية شراء أو بيع أو تخفيف أو احتفاظ بتتسجل هنا، وبتتقيّم كل يوم بعد إغلاق السوق."
         />
       ) : (
         <>
-          <Kpis data={data} />
+          <ScoringNotice data={data} />
+          {!data.scoring.tooEarly && <Kpis data={data} />}
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Panel
-              className="lg:col-span-2"
-              title={
-                <HintedTitle title={`لو نفّذت كل التوصيات بمبالغ متساوية — مقابل ${vsShort(data.vs)}`}>
-                  <p>
-                    بيوضح الفلوس كانت هتعمل إيه مع الوقت لو حد نفّذ كل توصية اتحسمت، بنفس المبلغ لكل واحدة. يعني ده أداء
-                    التوصيات كلها مع بعض، مش سهم واحد.
-                  </p>
-                  <p>
-                    <b>ده مش أداء محفظتك.</b> الرسم مابيعرفش إنت اشتريت كام ولا بكام، ولا نفّذت التوصية أصلًا ولا لأ، ولا
-                    باقي أسهمك اللي مفيش عليها توصيات. أداء محفظتك الحقيقي في صفحة «الرسوم».
-                  </p>
-                  <p>
-                    التوصيات اللي داخلة فيه بتتحدد من «كل التوصيات» أو «توصياتي فقط» فوق. توصياتك مش أسهم محفظتك بس:
-                    فيها كمان ترشيحات تقرير السوق وخطة الكاش.
-                  </p>
-                  <p>
-                    <b>الخط الأزرق المتصل:</b> التوصيات. <b>الخط البرتقالي المتقطع:</b> نفس الفلوس لو كانت في المؤشر خلال
-                    نفس الفترات بالظبط.
-                  </p>
-                  <p>
-                    كل نقطة هي يوم اتحسمت فيه توصية أو أكتر، والرقم هو المكسب أو الخسارة التراكمية من أول الفترة. لما
-                    الأزرق يبقى فوق البرتقالي، التوصيات سابقة المؤشر.
-                  </p>
-                  {data.vs === "own" && (
-                    <p>
-                      في «مؤشر كل سهم» الخط المتقطع مش مؤشر واحد: كل توصية بتتقارن بمؤشر سهمها (EGX30 أو EGX70 أو
-                      EGX100) في نفس مدتها، والخط هو مجموعهم. لو عايز تقارن بالسوق كله اختار EGX100 من «مقابل».
-                    </p>
-                  )}
-                  <p>قرّب الماوس أو المس الرسم لأي نقطة تشوف أرقامها.</p>
-                </HintedTitle>
-              }
-              description={
-                <>
-                  {data.vs === "own"
-                    ? "محفظة افتراضية بتنفّذ كل التوصيات المحسومة بنفس المبلغ، مقابل نفس الفلوس في مؤشر كل سهم (EGX30 أو EGX70 أو EGX100) على نفس الفترات."
-                    : `محفظة افتراضية بتنفّذ كل التوصيات المحسومة بنفس المبلغ، مقابل نفس الفلوس في ${vsShort(data.vs)} على نفس الفترات.`}{" "}
-                  <span className="font-medium text-foreground">ده مش أداء محفظتك الحقيقية.</span>
-                </>
-              }
-            >
-              <PerformanceChart series={data.series} indexLabel={vsShort(data.vs)} />
-            </Panel>
-            <div className="space-y-4">
+          {!data.scoring.tooEarly && (
+            <div className="grid gap-4 lg:grid-cols-3">
               <Panel
+                className="lg:col-span-2"
                 title={
-                  <HintedTitle title="نتائج الحسم">
-                    <p>إزاي اتقفلت التوصيات المحسومة، كنسبة من إجماليها:</p>
+                  <HintedTitle
+                    title={`لو نفّذت كل التوصيات بمبالغ متساوية — مقابل ${vsShort(data.vs)}`}
+                  >
                     <p>
-                      <b>حققت المستهدف:</b> السعر لمس الهدف. <b>ضربت الوقف:</b> السعر لمس وقف الخسارة.{" "}
-                      <b>انتهت المدة بربح أو بخسارة:</b> الأفق خلص من غير ما يلمس أي مستوى، فاتحسمت بسعر إغلاق آخر جلسة.
+                      بيوضح الفلوس كانت هتعمل إيه مع الوقت لو حد نفّذ كل توصية اتحسمت، بنفس المبلغ
+                      لكل واحدة. يعني ده أداء التوصيات كلها مع بعض، مش سهم واحد.
                     </p>
-                    <p>البيع والتخفيف مالهمش مستهدف ولا وقف، فدايمًا بيتحسموا بانتهاء المدة.</p>
+                    <p>
+                      <b>ده مش أداء محفظتك.</b> الرسم مابيعرفش إنت اشتريت كام ولا بكام، ولا نفّذت
+                      التوصية أصلًا ولا لأ، ولا باقي أسهمك اللي مفيش عليها توصيات. أداء محفظتك
+                      الحقيقي في صفحة «الرسوم».
+                    </p>
+                    <p>
+                      التوصيات اللي داخلة فيه بتتحدد من «كل التوصيات» أو «توصياتي فقط» فوق. توصياتك
+                      مش أسهم محفظتك بس: فيها كمان ترشيحات تقرير السوق وخطة الكاش.
+                    </p>
+                    <p>
+                      <b>الخط الأزرق المتصل:</b> التوصيات. <b>الخط البرتقالي المتقطع:</b> نفس الفلوس
+                      لو كانت في المؤشر خلال نفس الفترات بالظبط.
+                    </p>
+                    <p>
+                      كل نقطة هي يوم اتحسمت فيه توصية أو أكتر، والرقم هو المكسب أو الخسارة التراكمية
+                      من أول الفترة. لما الأزرق يبقى فوق البرتقالي، التوصيات سابقة المؤشر.
+                    </p>
+                    {data.vs === "own" && (
+                      <p>
+                        في «مؤشر كل سهم» الخط المتقطع مش مؤشر واحد: كل توصية بتتقارن بمؤشر سهمها
+                        (EGX30 أو EGX70 أو EGX100) في نفس مدتها، والخط هو مجموعهم. لو عايز تقارن
+                        بالسوق كله اختار EGX100 من «مقابل».
+                      </p>
+                    )}
+                    <p>قرّب الماوس أو المس الرسم لأي نقطة تشوف أرقامها.</p>
                   </HintedTitle>
                 }
-              >
-                <Outcomes outcomes={data.outcomes} closed={data.summary.closed} />
-              </Panel>
-              <Panel
-                title={
-                  <HintedTitle title="النجاح حسب نوع التوصية">
-                    <p>نسبة النجاح لكل نوع قرار لوحده: شراء، بيع، تخفيف، واحتفاظ.</p>
-                    <p>الرقم بين القوسين عدد التوصيات من النوع ده، شامل المفتوحة. النسبة محسوبة على المحسوم بس.</p>
-                  </HintedTitle>
+                description={
+                  <>
+                    {data.vs === "own"
+                      ? "محفظة افتراضية بتنفّذ كل التوصيات المحسومة بنفس المبلغ، مقابل نفس الفلوس في مؤشر كل سهم (EGX30 أو EGX70 أو EGX100) على نفس الفترات."
+                      : `محفظة افتراضية بتنفّذ كل التوصيات المحسومة بنفس المبلغ، مقابل نفس الفلوس في ${vsShort(data.vs)} على نفس الفترات.`}{" "}
+                    <span className="font-medium text-foreground">ده مش أداء محفظتك الحقيقية.</span>
+                  </>
                 }
               >
-                <ByAction byAction={data.byAction} />
+                <PerformanceChart series={data.series} indexLabel={vsShort(data.vs)} />
               </Panel>
+              <div className="space-y-4">
+                <Panel
+                  title={
+                    <HintedTitle title="نتائج الحسم">
+                      <p>إزاي اتقفلت التوصيات المحسومة، كنسبة من إجماليها:</p>
+                      <p>
+                        <b>حققت المستهدف:</b> السعر لمس الهدف. <b>ضربت الوقف:</b> السعر لمس وقف
+                        الخسارة. <b>انتهت المدة بربح أو بخسارة:</b> الأفق خلص من غير ما يلمس أي
+                        مستوى، فاتحسمت بسعر إغلاق آخر جلسة.
+                      </p>
+                      <p>البيع والتخفيف مالهمش مستهدف ولا وقف، فدايمًا بيتحسموا بانتهاء المدة.</p>
+                    </HintedTitle>
+                  }
+                >
+                  <Outcomes outcomes={data.outcomes} closed={data.summary.closed} />
+                </Panel>
+                <Panel
+                  title={
+                    <HintedTitle title="النجاح حسب نوع التوصية">
+                      <p>نسبة النجاح لكل نوع قرار لوحده: شراء، بيع، تخفيف، واحتفاظ.</p>
+                      <p>
+                        الرقم بين القوسين عدد التوصيات من النوع ده، شامل المفتوحة. النسبة محسوبة على
+                        المحسوم بس.
+                      </p>
+                    </HintedTitle>
+                  }
+                >
+                  <ByAction byAction={data.byAction} />
+                </Panel>
+              </div>
             </div>
-          </div>
+          )}
 
           <Panel
             title={
@@ -660,6 +675,42 @@ function KpiCard({
         <span className={cn("text-[11.5px]", highlight ? "text-primary-foreground/75" : "text-muted-foreground")}>
           {sub}
         </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Says what the figures cover: too few resolved calls under the current rules
+ * to show rates at all, and how many older calls are listed but left out.
+ */
+function ScoringNotice({ data }: { data: TrackRecord }) {
+  const { scoring, summary } = data;
+  if (!scoring.tooEarly && !scoring.legacyTotal) return null;
+  return (
+    <div className="space-y-3">
+      {scoring.tooEarly && (
+        <Notice tone="info">
+          <p className="font-semibold">لسه بدري نحكم على الأداء</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+            الأرقام (نسبة النجاح ومتوسط العائد والرسم) مش بتظهر قبل ما يتحسم{" "}
+            <span className="num">{fmt(scoring.minClosed)}</span> توصية على الأقل بقواعد التقييم
+            الحالية، لأن عدد أقل من كده بيدّي أرقام مضللة في الاتجاهين. لحد دلوقتي:{" "}
+            <span className="num font-semibold text-foreground">{fmt(summary.closed)}</span> محسومة
+            و<span className="num font-semibold text-foreground"> {fmt(summary.open)}</span> مفتوحة.
+          </p>
+        </Notice>
+      )}
+      {scoring.legacyTotal > 0 && (
+        <Notice tone="warn">
+          <p className="text-[12.5px] leading-relaxed">
+            <span className="num font-semibold">{fmt(scoring.legacyTotal)}</span> توصية (
+            <span className="num">{fmt(scoring.legacyClosed)}</span> منها محسومة) اتقيّمت بقواعد
+            التقييم القديمة، فبتظهر في السجل بعلامة «قواعد قديمة» ومش داخلة في الأرقام. القواعد
+            الجديدة: وقف الخسارة بيتحسب بإغلاق تحته مش بلمسة خلال الجلسة، والاحتفاظ بيتقيّم في نهاية
+            أفقه مقابل المؤشر، وتقسيمات الأسهم وأسهم المنحة مابتتحسبش خسارة.
+          </p>
+        </Notice>
       )}
     </div>
   );
@@ -991,10 +1042,23 @@ function StockMoveCell({ row }: { row: RecRow }) {
 
 function StatusBadge({ row }: { row: RecRow }) {
   return (
-    <Badge variant="outline" className={cn("whitespace-nowrap font-medium", STATUS_CLASS[row.status])}>
-      {STATUS_LABEL[row.status]}
-      {row.status === "expired" && row.win != null ? (row.win ? " · ربح" : " · خسارة") : ""}
-    </Badge>
+    <span className="inline-flex flex-col items-start gap-1">
+      <Badge
+        variant="outline"
+        className={cn("whitespace-nowrap font-medium", STATUS_CLASS[row.status])}
+      >
+        {STATUS_LABEL[row.status]}
+        {row.status === "expired" && row.win != null ? (row.win ? " · ربح" : " · خسارة") : ""}
+      </Badge>
+      {row.legacy && (
+        <span
+          className="whitespace-nowrap text-[10.5px] text-muted-foreground"
+          title="اتقيّمت بقواعد التقييم القديمة (لمسة الوقف خلال الجلسة، واحتفاظ بوقف) — مش داخلة في الأرقام فوق."
+        >
+          قواعد قديمة
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -1129,9 +1193,9 @@ const csvCell = (value: unknown) => {
 };
 
 function downloadCsv(rows: RecRow[]) {
-  const header = ["ticker", "name", "sector", "action", "issued_on", "ref_price", "target_price", "stop_price", "horizon_sessions", "status", "closed_at", "exit_price", "return_pct", "benchmark", "excess_vs_benchmark_pct", "excess_vs_egx30_pct", "excess_vs_egx70_pct", "excess_vs_egx33_pct", "excess_vs_egx100_pct", "sessions_elapsed", "stock_price_at_horizon_end", "stock_move_pct", "horizon_over", "direction_right", "model_version"];
+  const header = ["ticker", "name", "sector", "action", "issued_on", "ref_price", "target_price", "stop_price", "horizon_sessions", "status", "closed_at", "exit_price", "return_pct", "benchmark", "excess_vs_benchmark_pct", "excess_vs_egx30_pct", "excess_vs_egx70_pct", "excess_vs_egx33_pct", "excess_vs_egx100_pct", "sessions_elapsed", "stock_price_at_horizon_end", "stock_move_pct", "horizon_over", "direction_right", "model_version", "old_scoring_rules"];
   const lines = rows.map((r) =>
-    [r.ticker, r.name, r.sector, r.action, r.issuedOn, r.refPrice, r.targetPrice, r.stopPrice, r.horizon, r.status, r.closedAt?.slice(0, 10), r.exitPrice, r.returnPct, r.benchmark, r.excessBy.own, r.excessBy.egx30, r.excessBy.egx70, r.excessBy.egx33, r.excessBy.egx100, r.sessions, r.stockMovePrice, r.stockMovePct, r.stockMoveFinal, r.stockMoveFinal ? r.right : null, r.model]
+    [r.ticker, r.name, r.sector, r.action, r.issuedOn, r.refPrice, r.targetPrice, r.stopPrice, r.horizon, r.status, r.closedAt?.slice(0, 10), r.exitPrice, r.returnPct, r.benchmark, r.excessBy.own, r.excessBy.egx30, r.excessBy.egx70, r.excessBy.egx33, r.excessBy.egx100, r.sessions, r.stockMovePrice, r.stockMovePct, r.stockMoveFinal, r.stockMoveFinal ? r.right : null, r.model, r.legacy]
       .map(csvCell)
       .join(","),
   );

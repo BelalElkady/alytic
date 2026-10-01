@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import { evaluateRecommendation, evaluateStockMove } from '../../supabase/functions/evaluate-recommendations/evaluate.js';
-import { recommendationRow, isWin, benchmarkFor, wasRight } from '../../src/recommendations.js';
+import { evaluateRecommendation, evaluateStockMove, basisFactors } from '../../supabase/functions/evaluate-recommendations/evaluate.js';
+import {
+  recommendationRow, isWin, benchmarkFor, wasRight, withoutOpenDuplicates, buildTrackRecord, isLegacy, MIN_CLOSED_FOR_HEADLINE,
+} from '../../src/recommendations.js';
 
 const rec = (over = {}) => ({
   action: 'buy', ref_price: 100, target_price: 110, stop_price: 95, horizon_days: 5, egx30_at_issue: 30000, issued_on: '2026-09-01', ...over,
@@ -192,4 +194,109 @@ test('wasRight: sell at 55 and the stock went to 60 was wrong', () => {
   assert.equal(wasRight({ action: 'buy', stock_move_pct: 0 }), false);
   assert.equal(wasRight({ action: 'hold', stock_move_pct: 0 }), true);
   assert.equal(wasRight({ action: 'buy', stock_move_pct: null }), null);
+});
+
+test('basisFactors: 1 until a session breaks from the one before, then the snapped ratio from there on', () => {
+  // POUL: 38.2 reference, then 9.71 (a 4-for-1 split, plus a small move), then ordinary sessions.
+  const bars = [bar('2026-09-28', 9.6, 9.9, 9.5, 9.71), bar('2026-09-29', 9.7, 9.9, 9.6, 9.8), bar('2026-09-30', 9.8, 9.95, 9.7, 9.9)];
+  assert.deepEqual(basisFactors(38.2, bars), [0.25, 0.25, 0.25]);
+  // The break comes mid-way: earlier sessions stay on the old basis.
+  const late = [bar('d1', 38, 39, 37, 38.5), bar('d2', 9.6, 9.9, 9.5, 9.71), bar('d3', 9.7, 9.9, 9.6, 9.8)];
+  assert.deepEqual(basisFactors(38.2, late), [1, 0.25, 0.25]);
+  // Ordinary moves, even the daily limit, never count.
+  assert.deepEqual(basisFactors(100, [bar('d1', 100, 110, 99, 110), bar('d2', 110, 111, 99, 99)]), [1, 1]);
+});
+
+test('basisFactors: a 3-for-2 bonus issue snaps to 2/3, a reverse split to its ratio, an odd break keeps the raw ratio', () => {
+  assert.deepEqual(basisFactors(29.2, [bar('d1', 19.4, 19.8, 19.3, 19.47)]), [2 / 3]);
+  assert.deepEqual(basisFactors(2, [bar('d1', 9.8, 10.2, 9.7, 10)]), [5]);
+  const odd = basisFactors(100, [bar('d1', 60, 61, 58, 59)])[0];
+  assert.ok(Math.abs(odd - 0.59) < 1e-9);
+});
+
+test('evaluate: a split is not a stop-out, and the return is measured on the new basis', () => {
+  // A buy at 38.2 with a stop at 36 and a target at 44; the stock splits 4-for-1 on the next session.
+  const buy = rec({ ref_price: 38.2, stop_price: 36, target_price: 44, horizon_days: 3 });
+  const bars = [bar('2026-09-02', 9.6, 9.9, 9.5, 9.71), bar('2026-09-03', 9.7, 9.9, 9.6, 9.8)];
+  const open = evaluateRecommendation(buy, bars, egx);
+  assert.equal(open.status, 'open');
+  assert.equal(open.mark_return_pct, 2.62); // 9.8 against 38.2 ÷ 4 = 9.55
+  const done = evaluateRecommendation(buy, [...bars, bar('2026-09-06', 9.8, 9.9, 9.7, 9.9)], egx);
+  assert.equal(done.status, 'expired');
+  assert.equal(done.return_pct, 3.66); // 9.9 against 9.55
+});
+
+test('evaluate: the target and stop follow the split, so a real move after it still resolves', () => {
+  const buy = rec({ ref_price: 38.2, stop_price: 36, target_price: 44, horizon_days: 5 });
+  // After the split the levels are 9 and 11; a close at 8.9 is a stop, filled at the next open.
+  const out = evaluateRecommendation(buy, [bar('2026-09-02', 9.6, 9.9, 9.5, 9.71), bar('2026-09-03', 9.5, 9.6, 8.8, 8.9), bar('2026-09-06', 8.85, 9, 8.8, 8.9)], egx);
+  assert.equal(out.status, 'hit_stop');
+  assert.equal(out.exit_price, 8.85);
+  assert.equal(out.return_pct, -7.33); // 8.85 against 9.55
+});
+
+test('evaluateStockMove: the stock\'s move is on the new basis too', () => {
+  const move = evaluateStockMove(rec({ ref_price: 38.2, horizon_days: 2 }), [bar('2026-09-02', 9.6, 9.9, 9.5, 9.71), bar('2026-09-03', 9.7, 9.9, 9.6, 9.8)]);
+  assert.equal(move.stock_move_pct, 2.62);
+  assert.equal(move.stock_move_final, true);
+});
+
+test('withoutOpenDuplicates: a repeat of a call the user still has open is not logged again', () => {
+  const rows = [{ ticker: 'ORWE', action: 'hold' }, { ticker: 'ORWE', action: 'buy' }, { ticker: 'ABUK', action: 'hold' }];
+  assert.deepEqual(withoutOpenDuplicates(rows, ['ORWE:hold', 'EFIH:hold']), [{ ticker: 'ORWE', action: 'buy' }, { ticker: 'ABUK', action: 'hold' }]);
+  assert.deepEqual(withoutOpenDuplicates(rows, []), rows);
+});
+
+const closedRow = (id, over = {}) => ({
+  id, user_id: 'u1', ticker: 'COMI', action: 'buy', ref_price: 100, target_price: 110, stop_price: 95, horizon_days: 10,
+  issued_at: '2026-09-20T09:00:00Z', issued_on: '2026-09-20', status: 'hit_target', closed_at: '2026-09-22T12:30:00Z',
+  exit_price: 110, return_pct: 10, excess_return_pct: 4, benchmark_excess_pct: 4, sessions_elapsed: 2, scoring_version: 2, ...over,
+});
+
+test('isLegacy: only a call stamped with an older scoring version; no stamp at all means current', () => {
+  assert.equal(isLegacy({ scoring_version: 1 }), true);
+  assert.equal(isLegacy({ scoring_version: 2 }), false);
+  assert.equal(isLegacy({}), false);
+  assert.equal(isLegacy({ scoring_version: null }), false);
+});
+
+test('buildTrackRecord: the figures cover current-rules calls only; older ones are listed and tagged', () => {
+  const rows = [
+    closedRow(1),
+    closedRow(2, { status: 'hit_stop', exit_price: 95, return_pct: -5, benchmark_excess_pct: -3, excess_return_pct: -3 }),
+    // Closed under the original rules: a stop-out that would distort the average.
+    closedRow(3, { scoring_version: 1, status: 'hit_stop', exit_price: 25, return_pct: -75, benchmark_excess_pct: -74, excess_return_pct: -74 }),
+    closedRow(4, { scoring_version: 1, status: 'open', closed_at: null, return_pct: null }),
+  ];
+  const out = buildTrackRecord(rows, 'u1');
+  assert.equal(out.summary.closed, 2);
+  assert.equal(out.summary.avgReturn, 2.5); // (10 − 5) / 2, not dragged down by the −75
+  assert.equal(out.summary.hitRate, 50);
+  assert.equal(out.rows.length, 4);
+  assert.deepEqual(out.rows.map((r) => r.legacy), [false, false, true, true]);
+  assert.equal(out.scoring.legacyTotal, 2);
+  assert.equal(out.scoring.legacyClosed, 1);
+  assert.equal(out.outcomes.hit_stop.count, 1);
+  assert.equal(out.byAction.find((a) => a.action === 'buy').total, 2);
+});
+
+test('buildTrackRecord: too early to show rates until enough calls have closed under the current rules', () => {
+  const few = buildTrackRecord([closedRow(1), closedRow(2)], 'u1');
+  assert.equal(few.scoring.tooEarly, true);
+  assert.equal(few.scoring.minClosed, MIN_CLOSED_FOR_HEADLINE);
+
+  const enough = buildTrackRecord(Array.from({ length: MIN_CLOSED_FOR_HEADLINE }, (_, i) => closedRow(i + 1)), 'u1');
+  assert.equal(enough.scoring.tooEarly, false);
+  // Old calls never count toward the minimum.
+  const oldOnly = buildTrackRecord(Array.from({ length: MIN_CLOSED_FOR_HEADLINE }, (_, i) => closedRow(i + 1, { scoring_version: 1 })), 'u1');
+  assert.equal(oldOnly.scoring.tooEarly, true);
+  assert.equal(oldOnly.summary.closed, 0);
+  assert.equal(oldOnly.rows.length, MIN_CLOSED_FOR_HEADLINE);
+});
+
+test('buildTrackRecord: a project without the scoring column counts every call as current', () => {
+  const rows = [closedRow(1), closedRow(2)].map(({ scoring_version, ...rest }) => rest);
+  const out = buildTrackRecord(rows, 'u1');
+  assert.equal(out.summary.closed, 2);
+  assert.equal(out.scoring.legacyTotal, 0);
 });

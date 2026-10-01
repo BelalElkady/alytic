@@ -569,6 +569,19 @@ begin
   end if;
 end $$;
 
+-- The scoring rules a call was resolved under. 1 = the original rules (an
+-- intraday touch of the stop closed a call, a hold carried a stop, a split
+-- could read as a crash); 2 = the current ones (a stop needs a close under it,
+-- a hold is judged at its horizon, prices are rebased across corporate
+-- actions). New calls are stamped 2 by the guard trigger below. The page's
+-- figures cover version 2 only; version 1 calls stay listed, tagged.
+-- Safe to re-run: only rows with no version yet are touched. Calls already
+-- closed when this first runs were resolved by the old rules; calls still open
+-- are scored by the current evaluator from here on.
+alter table recommendations add column if not exists scoring_version smallint;
+update recommendations set scoring_version = 1 where scoring_version is null and status <> 'open';
+update recommendations set scoring_version = 2 where scoring_version is null;
+
 -- What actually happened to the stock, apart from how the call was scored:
 -- its close at the end of the call's horizon (the session numbered
 -- horizon_days after issue), whatever the target or stop did on the way.
@@ -624,6 +637,7 @@ begin
     new.stock_move_sessions := 0;
     new.stock_move_final := false;
     new.evaluated_at := null;
+    new.scoring_version := 2;
     return new;
   end if;
 
