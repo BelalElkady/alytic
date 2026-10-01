@@ -8,6 +8,11 @@
 -- function to that project:
 --
 --   supabase functions deploy evaluate-recommendations --workdir backend --no-verify-jwt --project-ref <ref>
+--
+-- (Later changes to the function are deployed by
+-- .github/workflows/deploy-edge-function.yml on every push to main that
+-- touches it; this first deploy and the secrets below are still done by hand.)
+--
 --   supabase secrets set EVALUATE_CRON_SECRET=<random string> --project-ref <ref>
 --
 -- (--no-verify-jwt: the function checks its own X-Cron-Secret instead, which

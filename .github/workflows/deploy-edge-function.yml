@@ -1,0 +1,70 @@
+name: Deploy evaluate-recommendations Edge Function
+
+# The daily track-record evaluator runs in Supabase, not on the VPS, so the
+# "Build and Deploy Alytic" workflow never ships it. This one does, whenever
+# the function or the rules it shares with the backend change on main.
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN   a personal access token from
+#                           https://supabase.com/dashboard/account/tokens
+#   SUPABASE_PROJECT_REFS   the project reference(s) to deploy to — the part of
+#                           the project URL before .supabase.co. Separate
+#                           several with commas or spaces: the platform
+#                           database and any client database with its own
+#                           users each run their own copy (see
+#                           backend/supabase/recommendations-cron.sql).
+# The function's own secret (EVALUATE_CRON_SECRET) is set once per project with
+# `supabase secrets set`, as the cron file describes; it is not touched here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backend/supabase/functions/evaluate-recommendations/**
+      - .github/workflows/deploy-edge-function.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-edge-function
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Supabase
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REFS: ${{ secrets.SUPABASE_PROJECT_REFS }}
+        run: |
+          missing=0
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REFS; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing repository secret $name"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REFS: ${{ secrets.SUPABASE_PROJECT_REFS }}
+        run: |
+          for ref in $(echo "$SUPABASE_PROJECT_REFS" | tr ',' ' '); do
+            echo "Deploying evaluate-recommendations to $ref"
+            supabase functions deploy evaluate-recommendations \
+              --workdir backend --no-verify-jwt --project-ref "$ref"
+          done
