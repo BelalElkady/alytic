@@ -34,7 +34,7 @@ export const TRACKED_ACTIONS = {
 /**
  * Sessions a call is judged over when the engine gave its target no horizon
  * (a stock in a range) — and always for sell/reduce, whose engine levels are
- * a long holder's, not a short call's.
+ * a long holder's, not a short call's, and for a hold, which has no levels.
  */
 const DEFAULT_HORIZON_SESSIONS = { trader: 10, medium: 20, long: 60 };
 const MAX_HORIZON_SESSIONS = 500;
@@ -102,11 +102,16 @@ export function recommendationRow({ userId, code, action, levels, style, source,
   const ref = positive(levels?.refPrice);
   if (!tracked || !ref || !code) return null;
 
-  const long = directionOf(tracked) > 0;
-  const target = long ? positive(levels.target) : null;
-  const stop = long ? positive(levels.stop) : null;
+  // Only a buy is a call to enter at a price, so only a buy carries a target
+  // and stop. A hold tells someone who already owns the stock to keep it —
+  // its stop is the position's own, often a few percent away, and scoring it
+  // as a fresh entry would stop it out on ordinary noise. It is judged at the
+  // horizon against its benchmark instead (see isWin).
+  const levelled = tracked === 'buy';
+  const target = levelled ? positive(levels.target) : null;
+  const stop = levelled ? positive(levels.stop) : null;
   const fallback = DEFAULT_HORIZON_SESSIONS[style] ?? DEFAULT_HORIZON_SESSIONS.medium;
-  const sessions = long && positive(levels.horizonSessions) ? Math.round(levels.horizonSessions) : fallback;
+  const sessions = levelled && positive(levels.horizonSessions) ? Math.round(levels.horizonSessions) : fallback;
   const indexLevels = Object.fromEntries(
     Object.keys(INDEX_FEEDS).filter((name) => positive(indices[name])).map((name) => [name, positive(indices[name])]),
   );

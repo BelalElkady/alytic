@@ -5,17 +5,23 @@
  *
  * A call is walked session by session, starting with the first session after
  * the day it was issued:
- *   - stop touched (low ≤ stop for buy/hold, high ≥ stop for sell/reduce)
- *     → hit_stop. A session that touches both the stop and the target counts
- *     as the stop: daily bars can't say which came first, and the record
- *     should never flatter itself.
+ *   - stop breached by a CLOSE (close ≤ stop for a buy) → hit_stop, filled at
+ *     the next session's open. That is the rule the product gives its users
+ *     ("a close under the stop is a full exit, sell at the open"), so an
+ *     intraday dip that recovers by the close is not a loss. Until that next
+ *     session is recorded the call stays open. A session that closes under
+ *     the stop and also touched the target counts as the stop: daily bars
+ *     can't say which came first, and the record should never flatter itself.
  *   - target touched (high ≥ target, or low ≤ target for sell/reduce)
  *     → hit_target.
  *   - neither, and the session count reaches horizon_days → expired, at that
  *     session's close.
- * A session that opens beyond a level fills at the open, not at the level —
- * a gap through the stop costs more than the stop, a gap through the target
- * pays more than the target.
+ * A session that opens beyond the target fills at the open, not at the target.
+ *
+ * A hold carries no stop or target: it tells an existing holder to keep the
+ * position, not to enter one, so it is only ever judged at the horizon
+ * against its benchmark (isWin in src/recommendations.js). Holds logged
+ * before that rule may still carry levels; they are ignored here.
  *
  * Sell and reduce are scored as short calls: their return is the fall in
  * price. Excess return is measured over the same span, in the same
@@ -92,8 +98,9 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
 
   const dir = directionOf(rec.action);
   const ref = num(rec.ref_price);
-  const target = num(rec.target_price);
-  const stop = num(rec.stop_price);
+  const levelled = rec.action !== 'hold';
+  const target = levelled ? num(rec.target_price) : null;
+  const stop = levelled ? num(rec.stop_price) : null;
   const horizon = Number(rec.horizon_days);
 
   const returnAt = (price) => round(dir * (price / ref - 1) * 100, 2);
@@ -120,16 +127,23 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
     const high = num(bar.high);
     const low = num(bar.low);
     const close = num(bar.close);
-    const sessions = i + 1;
 
-    const stopHit = stop != null && (dir > 0 ? low <= stop : high >= stop);
+    const stopBreached = stop != null && (dir > 0 ? close <= stop : close >= stop);
     const targetHit = target != null && (dir > 0 ? high >= target : low <= target);
 
+    // The session the call closes on, and the price it closes at.
     let status = null;
     let exit = null;
-    if (stopHit) {
+    let at = bar;
+    let sessions = i + 1;
+    if (stopBreached) {
+      // Filled at the next session's open; not recorded yet → stay open.
+      const next = bars[i + 1];
+      if (!next) break;
       status = 'hit_stop';
-      exit = open == null ? stop : dir > 0 ? Math.min(stop, open) : Math.max(stop, open);
+      at = next;
+      sessions = i + 2;
+      exit = num(next.open) ?? close;
     } else if (targetHit) {
       status = 'hit_target';
       exit = open == null ? target : dir > 0 ? Math.max(target, open) : Math.min(target, open);
@@ -140,10 +154,10 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
 
     if (status) {
       const ret = returnAt(exit);
-      const excess = excessAt(ret, bar.date);
+      const excess = excessAt(ret, at.date);
       return {
         status,
-        closed_at: sessionCloseAt(bar.date),
+        closed_at: sessionCloseAt(at.date),
         exit_price: round(exit, 4),
         return_pct: ret,
         excess_return_pct: excess.egx30,

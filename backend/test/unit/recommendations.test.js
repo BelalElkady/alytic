@@ -22,15 +22,51 @@ test('evaluate: a buy that touches its target closes there, measured against EGX
   assert.equal(out.closed_at.slice(0, 10), '2026-09-03');
 });
 
-test('evaluate: a session touching both levels counts as the stop', () => {
-  const out = evaluateRecommendation(rec(), [bar('2026-09-02', 100, 112, 94, 100)], egx);
+test('evaluate: a stop counts on a close and fills at the next session\'s open', () => {
+  const out = evaluateRecommendation(rec(), [bar('2026-09-02', 99, 100, 93, 94), bar('2026-09-03', 93, 96, 92, 95)], egx);
   assert.equal(out.status, 'hit_stop');
-  assert.equal(out.return_pct, -5);
+  assert.equal(out.exit_price, 93);
+  assert.equal(out.return_pct, -7);
+  assert.equal(out.sessions_elapsed, 2);
+  assert.equal(out.closed_at.slice(0, 10), '2026-09-03');
 });
 
-test('evaluate: a gap through a level fills at the open', () => {
-  assert.equal(evaluateRecommendation(rec(), [bar('2026-09-02', 90, 91, 88, 89)], egx).exit_price, 90);
+test('evaluate: an intraday dip under the stop that closes above it is not a stop-out', () => {
+  const out = evaluateRecommendation(rec(), [bar('2026-09-02', 100, 101, 92, 97), bar('2026-09-03', 97, 99, 96, 98)], egx);
+  assert.equal(out.status, 'open');
+  assert.equal(out.mark_return_pct, -2);
+});
+
+test('evaluate: a close under the stop stays open until the next session is in', () => {
+  const out = evaluateRecommendation(rec(), [bar('2026-09-02', 99, 100, 93, 94)], egx);
+  assert.equal(out.status, 'open');
+  // The breach on the horizon's last session is still a stop-out, not an expiry.
+  const last = evaluateRecommendation(rec({ horizon_days: 1 }), [bar('2026-09-02', 99, 100, 93, 94)], egx);
+  assert.equal(last.status, 'open');
+});
+
+test('evaluate: a session closing under the stop that also touched the target counts as the stop', () => {
+  const out = evaluateRecommendation(rec(), [bar('2026-09-02', 100, 112, 93, 94), bar('2026-09-03', 94, 95, 92, 93)], egx);
+  assert.equal(out.status, 'hit_stop');
+  assert.equal(out.exit_price, 94);
+  assert.equal(out.return_pct, -6);
+});
+
+test('evaluate: a gap through the target fills at the open; a gap down after a stop close fills at the new open', () => {
   assert.equal(evaluateRecommendation(rec(), [bar('2026-09-02', 115, 116, 114, 115)], egx).exit_price, 115);
+  const out = evaluateRecommendation(rec(), [bar('2026-09-02', 99, 100, 93, 94), bar('2026-09-03', 88, 90, 87, 89)], egx);
+  assert.equal(out.exit_price, 88);
+});
+
+test('evaluate: a hold ignores any stop or target it was logged with and expires at the horizon', () => {
+  const bars = [bar('2026-09-02', 99, 100, 93, 94), bar('2026-09-03', 94, 112, 93, 98)];
+  const out = evaluateRecommendation(rec({ action: 'hold', horizon_days: 2 }), bars, egx);
+  assert.equal(out.status, 'expired');
+  assert.equal(out.exit_price, 98);
+  assert.equal(out.return_pct, -2);
+  assert.equal(out.sessions_elapsed, 2);
+  const early = evaluateRecommendation(rec({ action: 'hold', horizon_days: 5 }), bars, egx);
+  assert.equal(early.status, 'open');
 });
 
 test('evaluate: no level touched by the horizon expires at that close', () => {
@@ -73,7 +109,7 @@ test('recommendationRow: maps verdict actions and drops calls with nothing to me
 });
 
 test('recommendationRow: levels on the wrong side are dropped; sell gets no levels and the style horizon', () => {
-  const passed = recommendationRow({ userId: 'u', code: 'X', action: 'hold', levels: { refPrice: 100, target: 95, stop: 101 }, style: 'trader', source: 's' });
+  const passed = recommendationRow({ userId: 'u', code: 'X', action: 'buy', levels: { refPrice: 100, target: 95, stop: 101 }, style: 'trader', source: 's' });
   assert.equal(passed.target_price, null);
   assert.equal(passed.stop_price, null);
   assert.equal(passed.horizon_days, 10);
@@ -81,6 +117,14 @@ test('recommendationRow: levels on the wrong side are dropped; sell gets no leve
   assert.equal(sell.action, 'sell');
   assert.equal(sell.target_price, null);
   assert.equal(sell.horizon_days, 60);
+});
+
+test('recommendationRow: a hold carries no stop or target and the style horizon', () => {
+  const hold = recommendationRow({ userId: 'u', code: 'X', action: 'hold', levels: { refPrice: 100, target: 120, stop: 97, horizonSessions: 18 }, style: 'medium', source: 's' });
+  assert.equal(hold.action, 'hold');
+  assert.equal(hold.target_price, null);
+  assert.equal(hold.stop_price, null);
+  assert.equal(hold.horizon_days, 20);
 });
 
 test('isWin: holds are judged against the index', () => {
