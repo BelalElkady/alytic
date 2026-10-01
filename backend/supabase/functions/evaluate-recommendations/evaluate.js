@@ -24,7 +24,9 @@
  * from the one before it (the call's reference price, for the first session)
  * is beyond what EGX's daily limit allows a real move to be, so the call's
  * prices are rebased to the new basis from that session on — see basisFactors
- * — and the corporate action never reads as a stop-out or a crash.
+ * — and the corporate action never reads as a stop-out or a crash. The call is
+ * then measured from that session's close: the move across the action itself
+ * is left out, not guessed.
  *
  * A hold carries no stop or target: it tells an existing holder to keep the
  * position, not to enter one, so it is only ever judged at the horizon
@@ -53,8 +55,6 @@ const round = (x, digits) => {
 
 const num = (x) => (x == null || x === '' ? null : Number(x));
 
-/** The share-count ratios corporate actions come in (new price ÷ old price). */
-const COMMON_RATIOS = [0.1, 0.2, 0.25, 1 / 3, 0.4, 0.5, 2 / 3, 0.75, 4 / 3, 1.5, 2, 2.5, 3, 4, 5, 10];
 /** A one-session move beyond this, either way, is a corporate action, not a price move. */
 const BASIS_BREAK_LOW = 0.8;
 const BASIS_BREAK_HIGH = 1.25;
@@ -63,9 +63,17 @@ const BASIS_BREAK_HIGH = 1.25;
  * How much to scale the call's own prices (reference, target, stop) by when
  * judging each session, so they stay on the basis that session trades on:
  * factors[i] applies to bars[i]. 1 until a session breaks from the one before
- * it (the reference price before the first); from then on it carries the
- * ratio, snapped to a common corporate-action ratio when one is close, since
- * the break session's own move is mixed in with the action's.
+ * it (the reference price before the first); from then on it carries that
+ * session's raw close ratio.
+ *
+ * The ratio is deliberately NOT snapped to a "nice" split ratio. The break
+ * session's own move, and any session the feed skipped or left on the old
+ * basis, is mixed into it and cannot be separated from the action by the
+ * bars alone: POUL's 3-for-1 split read as 0.254 here, because the feed's
+ * bar for the ex-date was stale and two limit-down sessions were folded into
+ * the next one, and snapping that to 1/4 would have invented a 25% error.
+ * Taking the ratio as it is measures the call from the break session's close
+ * on — the move across the action itself is left out, not guessed.
  *
  * @param {number} ref - the call's reference price
  * @param {Array<{close:number}>} bars - sessions after the call, oldest first
@@ -81,10 +89,7 @@ export function basisFactors(ref, bars) {
       // Consecutive closes share a basis, so their ratio is the session's own
       // move; only the first session compares against the call's reference price.
       const ratio = close / prev;
-      if (ratio < BASIS_BREAK_LOW || ratio > BASIS_BREAK_HIGH) {
-        const nearest = COMMON_RATIOS.reduce((a, b) => (Math.abs(Math.log(ratio / a)) <= Math.abs(Math.log(ratio / b)) ? a : b));
-        factor *= Math.abs(Math.log(ratio / nearest)) <= 0.1 ? nearest : ratio;
-      }
+      if (ratio < BASIS_BREAK_LOW || ratio > BASIS_BREAK_HIGH) factor *= ratio;
     }
     factors.push(factor);
     if (close > 0) prev = close;

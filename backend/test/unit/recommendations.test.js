@@ -198,48 +198,52 @@ test('wasRight: sell at 55 and the stock went to 60 was wrong', () => {
   assert.equal(wasRight({ action: 'buy', stock_move_pct: null }), null);
 });
 
-test('basisFactors: 1 until a session breaks from the one before, then the snapped ratio from there on', () => {
-  // POUL: 38.2 reference, then 9.71 (a 4-for-1 split, plus a small move), then ordinary sessions.
+const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
+
+test('basisFactors: 1 until a session breaks from the one before, then that session\'s raw ratio from there on', () => {
+  // POUL: 38.2 reference, then 9.71 (a 3-for-1 split with the sessions the feed skipped folded in), then ordinary sessions.
   const bars = [bar('2026-09-28', 9.6, 9.9, 9.5, 9.71), bar('2026-09-29', 9.7, 9.9, 9.6, 9.8), bar('2026-09-30', 9.8, 9.95, 9.7, 9.9)];
-  assert.deepEqual(basisFactors(38.2, bars), [0.25, 0.25, 0.25]);
+  basisFactors(38.2, bars).forEach((f) => near(f, 9.71 / 38.2));
   // The break comes mid-way: earlier sessions stay on the old basis.
   const late = [bar('d1', 38, 39, 37, 38.5), bar('d2', 9.6, 9.9, 9.5, 9.71), bar('d3', 9.7, 9.9, 9.6, 9.8)];
-  assert.deepEqual(basisFactors(38.2, late), [1, 0.25, 0.25]);
+  const factors = basisFactors(38.2, late);
+  assert.equal(factors[0], 1);
+  near(factors[1], 9.71 / 38.5);
+  near(factors[2], 9.71 / 38.5);
   // Ordinary moves, even the daily limit, never count.
   assert.deepEqual(basisFactors(100, [bar('d1', 100, 110, 99, 110), bar('d2', 110, 111, 99, 99)]), [1, 1]);
 });
 
-test('basisFactors: a 3-for-2 bonus issue snaps to 2/3, a reverse split to its ratio, an odd break keeps the raw ratio', () => {
-  assert.deepEqual(basisFactors(29.2, [bar('d1', 19.4, 19.8, 19.3, 19.47)]), [2 / 3]);
-  assert.deepEqual(basisFactors(2, [bar('d1', 9.8, 10.2, 9.7, 10)]), [5]);
-  const odd = basisFactors(100, [bar('d1', 60, 61, 58, 59)])[0];
-  assert.ok(Math.abs(odd - 0.59) < 1e-9);
+test('basisFactors: a bonus issue or reverse split is the measured ratio, not a guessed "nice" one', () => {
+  near(basisFactors(29.2, [bar('d1', 19.4, 19.8, 19.3, 19.47)])[0], 19.47 / 29.2); // 3-for-2: close to 2/3, not forced to it
+  near(basisFactors(2, [bar('d1', 9.8, 10.2, 9.7, 10)])[0], 5);
+  near(basisFactors(100, [bar('d1', 60, 61, 58, 59)])[0], 0.59);
 });
 
 test('evaluate: a split is not a stop-out, and the return is measured on the new basis', () => {
-  // A buy at 38.2 with a stop at 36 and a target at 44; the stock splits 4-for-1 on the next session.
+  // A buy at 38.2 with a stop at 36 and a target at 44; the stock splits on the next session.
   const buy = rec({ ref_price: 38.2, stop_price: 36, target_price: 44, horizon_days: 3 });
   const bars = [bar('2026-09-02', 9.6, 9.9, 9.5, 9.71), bar('2026-09-03', 9.7, 9.9, 9.6, 9.8)];
   const open = evaluateRecommendation(buy, bars, egx);
   assert.equal(open.status, 'open');
-  assert.equal(open.mark_return_pct, 2.62); // 9.8 against 38.2 ÷ 4 = 9.55
+  assert.equal(open.mark_return_pct, 0.93); // measured from the split session's close, 9.71: 9.8 / 9.71
   const done = evaluateRecommendation(buy, [...bars, bar('2026-09-06', 9.8, 9.9, 9.7, 9.9)], egx);
   assert.equal(done.status, 'expired');
-  assert.equal(done.return_pct, 3.66); // 9.9 against 9.55
+  assert.equal(done.return_pct, 1.96); // 9.9 / 9.71
 });
 
 test('evaluate: the target and stop follow the split, so a real move after it still resolves', () => {
   const buy = rec({ ref_price: 38.2, stop_price: 36, target_price: 44, horizon_days: 5 });
-  // After the split the levels are 9 and 11; a close at 8.9 is a stop, filled at the next open.
+  // After the split the levels are 9.15 and 11.18; a close at 8.9 is a stop, filled at the next open.
   const out = evaluateRecommendation(buy, [bar('2026-09-02', 9.6, 9.9, 9.5, 9.71), bar('2026-09-03', 9.5, 9.6, 8.8, 8.9), bar('2026-09-06', 8.85, 9, 8.8, 8.9)], egx);
   assert.equal(out.status, 'hit_stop');
   assert.equal(out.exit_price, 8.85);
-  assert.equal(out.return_pct, -7.33); // 8.85 against 9.55
+  assert.equal(out.return_pct, -8.86); // 8.85 against the split session's close, 9.71
 });
 
 test('evaluateStockMove: the stock\'s move is on the new basis too', () => {
   const move = evaluateStockMove(rec({ ref_price: 38.2, horizon_days: 2 }), [bar('2026-09-02', 9.6, 9.9, 9.5, 9.71), bar('2026-09-03', 9.7, 9.9, 9.6, 9.8)]);
-  assert.equal(move.stock_move_pct, 2.62);
+  assert.equal(move.stock_move_pct, 0.93); // 9.8 against the split session's 9.71
   assert.equal(move.stock_move_final, true);
 });
 
