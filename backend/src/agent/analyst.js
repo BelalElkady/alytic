@@ -70,7 +70,7 @@ function needsDecision(analysis) {
   // true on every quiet day a position sits at a small loss inside an uptrend,
   // so treating it as news sends most of the book to the model for nothing.
   if (p.triggers?.exitOnStop || p.triggers?.takePartial || p.triggers?.atTarget) return true;
-  if (p.stopBreached) return true;
+  if (p.stopBreached || p.stopWarning) return true;
   if ((p.distanceToStopPct ?? 99) <= NEAR_STOP_PCT) return true;
   if (p.trailing?.moved) return true;
   if (p.sharesEstimated) return true;
@@ -139,6 +139,13 @@ function ruleBookLines(ps, price) {
     `  R1 Stop on ${rb.stop.honorOn}: level ${rb.stop.level}, price ${price} is ${rb.stop.distancePct}% above it → ${mark(rb.stop.fired)}` +
       (rb.stop.fired ? ` | order: sell all ${rb.stop.sellQty} shares at market next open` : ''),
   );
+  if (rb.stop.warning) {
+    out.push(
+      `  R1 confirmation — this style needs ${rb.stop.warning.needed} closes in a row under the stop before it is an exit; ` +
+        `only ${rb.stop.warning.closesUnder} so far. R1 is NOT fired: the verdict is hold, and the next session's close decides. ` +
+        `Do not recommend selling on this one close; say what the next close must do (back above ${rb.stop.level} keeps the position, another under it exits).`,
+    );
+  }
   const fh = rb.stop.fundamentalHold;
   if (fh?.eligible) {
     out.push(

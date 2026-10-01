@@ -7,7 +7,7 @@ import RULES from '../../src/config/rules.js';
 import { rulesForStyle } from '../../src/config/styles.js';
 import {
   computeStop, computeTrailingStop, computeLongTermStop, positionSize,
-  riskReward, positionRecommendation, liquidityCheck,
+  riskReward, positionRecommendation, liquidityCheck, consecutiveClosesUnder,
 } from '../../src/scoring/risk.js';
 
 /** Minimal snapshot with just the fields the risk math reads. */
@@ -168,6 +168,77 @@ test('positionRecommendation: a breached stop overrides everything', () => {
   );
   assert.equal(r.action, 'exit_stop');
   assert.deepEqual(r.order, { side: 'sell', qty: 100, price: 89 });
+});
+
+test('consecutiveClosesUnder: counts the run of closes under the stop, newest first', () => {
+  assert.equal(consecutiveClosesUnder([120, 118, 105], 114.7), 1);
+  assert.equal(consecutiveClosesUnder([120, 105, 108], 114.7), 2);
+  assert.equal(consecutiveClosesUnder([105, 108, 120], 114.7), 0); // newest is above: the run is over
+  assert.equal(consecutiveClosesUnder([105, 114.7], 114.7), 0); // a close on the stop is not under it
+  assert.equal(consecutiveClosesUnder([], 100), 0);
+});
+
+test('rulesForStyle: only the long style needs two closes under the stop', () => {
+  assert.equal(RULES.stop.confirmCloses, 1);
+  assert.equal(rulesForStyle(RULES, 'trader').stop.confirmCloses, 1);
+  assert.equal(rulesForStyle(RULES, 'medium').stop.confirmCloses, 1);
+  assert.equal(rulesForStyle(RULES, 'long').stop.confirmCloses, 2);
+  // The override leaves the rest of the stop block, the keep-a-core option included, alone.
+  assert.equal(rulesForStyle(RULES, 'long').stop.fundamentalHold.allowed, true);
+  assert.equal(rulesForStyle(RULES, 'long').stop.honorOn, 'close');
+});
+
+test('positionRecommendation: the first close under a two-close stop is a hold, not an exit', () => {
+  // The SWDY shape: 870 shares at 84.45, a stop at 114.7, one close at 105 under it.
+  const r = positionRecommendation({
+    snapshot: snap({ price: 105 }),
+    position: { avgCost: 84.45, shares: 870 },
+    trailing: { stop: 114.7, active: true, moved: false },
+    midTarget: 139.7,
+    partialTaken: true,
+    stopBreached: false,
+    stopWarning: { closesUnder: 1, needed: 2 },
+  });
+  assert.equal(r.action, 'hold');
+  assert.equal(r.order, null);
+  assert.match(r.text, /أول إغلاق تحت الوقف 114\.7/);
+});
+
+test('positionRecommendation: a fired stop still exits whatever the warning says', () => {
+  const r = positionRecommendation({
+    snapshot: snap({ price: 105 }),
+    position: { avgCost: 84.45, shares: 870 },
+    trailing: { stop: 114.7, active: true, moved: false },
+    midTarget: null,
+    stopBreached: true,
+    stopWarning: null,
+  });
+  assert.equal(r.action, 'exit_stop');
+  assert.equal(r.order.qty, 870);
+});
+
+test('positionRecommendation: a profit rule outranks the stop warning', () => {
+  const r = positionRecommendation({
+    snapshot: snap({ price: 140 }),
+    position: { avgCost: 84.45, shares: 870 },
+    trailing: { stop: 150, active: true, moved: false },
+    midTarget: 139.7,
+    stopBreached: false,
+    stopWarning: { closesUnder: 1, needed: 2 },
+  });
+  assert.equal(r.action, 'take_target');
+});
+
+test('positionRecommendation: the first of several closes under the stop names how many are left', () => {
+  const r = positionRecommendation({
+    snapshot: snap({ price: 105 }),
+    position: { avgCost: 100, shares: 100 },
+    trailing: { stop: 114.7, active: true, moved: false },
+    midTarget: null,
+    stopBreached: false,
+    stopWarning: { closesUnder: 1, needed: 3 },
+  });
+  assert.match(r.text, /2 إغلاقات/);
 });
 
 test('positionRecommendation: mid target reached → sell a third', () => {

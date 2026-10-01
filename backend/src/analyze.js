@@ -24,7 +24,7 @@ import { fetchLatestQuotes } from './data/tv-history.js';
 import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
-import { computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation } from './scoring/risk.js';
+import { computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation, consecutiveClosesUnder } from './scoring/risk.js';
 import { getOrGenerateStopPlan, getOrGenerateTrailingStop, getLiveTrailingStop } from './agent/stopPlanner.js';
 import { buildTargets, targetEstimate } from './scoring/targets.js';
 import { classifyStock } from './scoring/classification.js';
@@ -73,7 +73,7 @@ function fundamentalHoldOption({ shares, price, stopFired, classification, longT
  * each evaluated against one open position with the exact quantities and
  * prices its order would use. The analyst quotes these; it never derives them.
  */
-function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, governingTarget, nextTarget = null, partialTaken, classification = null, longTermStop = null, liquidityOk = true }, rules) {
+function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, stopWarning = null, governingTarget, nextTarget = null, partialTaken, classification = null, longTermStop = null, liquidityOk = true }, rules) {
   const { shares } = position;
   const tp = rules.takeProfit;
   const trailFromPrice = price * (1 - rules.trailing.trailPct / 100);
@@ -89,6 +89,11 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       distancePct: r2(((price - effectiveStop) / price) * 100),
       honorOn: rules.stop.honorOn,
       fired: stopFired,
+      // The style's number of closes in a row under the stop that makes it an
+      // exit, and — while the first close under it is still only a warning —
+      // how far along that run is.
+      confirmCloses: rules.stop.confirmCloses ?? 1,
+      warning: stopWarning,
       sellQty: shares,
       fundamentalHold: fundamentalHoldOption({ shares, price, stopFired, classification, longTermStop, liquidityOk }, rules),
     },
@@ -411,7 +416,16 @@ export async function analyzeTicker(code, opts = {}) {
     // it; a live dip under it with the last close still above shows as a
     // negative distance but isn't an exit yet; and a stop raised today never
     // retroactively makes yesterday's close a breach.
-    const stopFired = closePrice < stopAtClose && posPrice < effectiveStop;
+    const brokenOnClose = closePrice < stopAtClose && posPrice < effectiveStop;
+    // Some styles want more than one close under the stop before it is an exit
+    // (rules.stop.confirmCloses — the long style asks for two): a stock that
+    // gaps under it for a single session and is back above it the next day
+    // shouldn't cost a long-term holder the position. Until the run is long
+    // enough the breach is only a warning, and the next close decides.
+    const confirmCloses = Math.max(1, rules.stop.confirmCloses ?? 1);
+    const closesUnder = brokenOnClose ? consecutiveClosesUnder(bars.map((b) => b.c), stopAtClose) : 0;
+    const stopFired = brokenOnClose && closesUnder >= confirmCloses;
+    const stopWarning = brokenOnClose && !stopFired ? { closesUnder, needed: confirmCloses } : null;
     // A second, wider stop for the long-horizon thesis — see computeLongTermStop
     // for why it shares its invalidation level with the long-term target.
     const longTermStop = computeLongTermStop(posSnapshot, effectiveStop, rules);
@@ -449,7 +463,7 @@ export async function analyzeTicker(code, opts = {}) {
     const partialTaken = Boolean(position.partialTakenAt);
     const ruleBook = buildRuleBook(
       {
-        snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired,
+        snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired, stopWarning,
         governingTarget: reachedTarget ?? governingTarget, nextTarget, partialTaken,
         classification, longTermStop, liquidityOk: liquidity.ok,
       },
@@ -484,6 +498,9 @@ export async function analyzeTicker(code, opts = {}) {
       // horizon, never the trigger the AI or the recommendation rules act on.
       longTermStop,
       stopBreached: stopFired && !halted,
+      // The first close(s) under the stop, short of the closes the style needs
+      // to call it an exit — { closesUnder, needed } — or null.
+      stopWarning: halted ? null : stopWarning,
       distanceToStopPct: r2(((posPrice - effectiveStop) / posPrice) * 100),
       // The level distanceToTargetPct is measured to — so the UI draws the
       // same target it quotes a distance to, whatever style it is showing.
@@ -515,6 +532,7 @@ export async function analyzeTicker(code, opts = {}) {
           nextTarget: nextTarget?.price ?? null,
           partialTaken,
           stopBreached: stopFired,
+          stopWarning,
         },
         rules,
       ),

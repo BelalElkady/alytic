@@ -33,6 +33,7 @@ export const RULES = {
     maxStopPct: 12,          // hard cap on risk per position
     minStopPct: 3,           // a stop closer than this is not a stop
     honorOn: 'close',        // stops trigger on a session close, not an intraday wick
+    confirmCloses: 1,        // consecutive closes under the stop that make it an exit; fewer is a warning (the long style asks for 2)
 
     // A breached stop still means exit — except that a fundamentally strong
     // stock whose long-term trend is intact may keep a *core* instead of being
