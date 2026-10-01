@@ -112,7 +112,10 @@ Deno.serve(async (req) => {
       const result = rec.status === 'open' ? evaluateRecommendation(rec, after, indexCloses) : null;
       const query = db
         .from('recommendations')
-        .update({ ...(result ?? {}), ...stockMove, evaluated_at: evaluatedAt })
+        // A closed call is frozen by the table's guard trigger, evaluated_at
+        // included: stamping it there is rejected and the stock's move never
+        // gets written. Only an open call's update carries the timestamp.
+        .update(result ? { ...result, ...stockMove, evaluated_at: evaluatedAt } : stockMove)
         .eq('id', rec.id);
       const { error } = await (result ? query.eq('status', 'open') : query.eq('stock_move_final', false));
       if (error) {
