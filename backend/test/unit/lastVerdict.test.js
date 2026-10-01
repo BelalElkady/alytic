@@ -52,7 +52,7 @@ test('stopContextOf: keeps why the stop verdict was reached, trimmed, and nothin
   const ctx = stopContextOf(analysis, { reasoning: 'x'.repeat(5000), _meta: { model: 'm' } });
   assert.equal(ctx.level, 114.7);
   assert.equal(ctx.fired, true);
-  assert.deepEqual(ctx.fundamentalHold, { eligible: false, blockers: ['investment score 52 < 65'] });
+  assert.deepEqual(ctx.fundamentalHold, { eligible: false, blockers: ['investment score 52 < 65'], holdThrough: null });
   assert.equal(ctx.model, 'm');
   assert.equal(ctx.reasoning.length, 1200);
 

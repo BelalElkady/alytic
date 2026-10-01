@@ -40,7 +40,7 @@ const r2 = (x) => (x == null ? null : +x.toFixed(2));
  * everything. Returns the exact order either way, or why it isn't available —
  * the analyst chooses whether to take it; it never works out the numbers.
  */
-function fundamentalHoldOption({ shares, price, stopFired, classification, longTermStop, liquidityOk }, rules) {
+export function fundamentalHoldOption({ shares, price, stopFired, classification, longTermStop, liquidityOk, sessionsUnder = 0 }, rules) {
   const cfg = rules.stop.fundamentalHold;
   if (!stopFired) return null;
   const blockers = [];
@@ -52,6 +52,9 @@ function fundamentalHoldOption({ shares, price, stopFired, classification, longT
     blockers.push(`classification confidence ${classification.confidence}% < ${cfg.minConfidence}%`);
   }
   if (!(longTermStop?.stop < price)) blockers.push('long-term trend broken (price under the 200-day average)');
+  if (cfg?.holdThrough && cfg.maxSessionsUnder && sessionsUnder > cfg.maxSessionsUnder) {
+    blockers.push(`already ${sessionsUnder} closes under the stop (more than the ${cfg.maxSessionsUnder} this style lets a dip run)`);
+  }
   if (!liquidityOk) blockers.push('liquidity too thin to hold a core through more weakness');
   const keepQty = Math.floor(shares * (cfg?.keepFraction ?? 0));
   if (keepQty < 1 || keepQty >= shares) blockers.push('position too small to split');
@@ -65,6 +68,11 @@ function fundamentalHoldOption({ shares, price, stopFired, classification, longT
     keepPct: r2((keepQty / shares) * 100),
     coreStop: longTermStop.stop,
     coreStopRiskPct: r2(((price - longTermStop.stop) / price) * 100),
+    // Keeping the whole position instead of a core: the long-term stop becomes
+    // the one that binds, for as long as the dip stays inside the session limit.
+    holdThrough: cfg.holdThrough
+      ? { stop: longTermStop.stop, riskPct: r2(((price - longTermStop.stop) / price) * 100), sessionsUnder, sessionsLeft: Math.max(0, (cfg.maxSessionsUnder ?? 0) - sessionsUnder), maxSessionsUnder: cfg.maxSessionsUnder ?? null }
+      : null,
   };
 }
 
@@ -73,7 +81,7 @@ function fundamentalHoldOption({ shares, price, stopFired, classification, longT
  * each evaluated against one open position with the exact quantities and
  * prices its order would use. The analyst quotes these; it never derives them.
  */
-function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, stopWarning = null, governingTarget, nextTarget = null, partialTaken, classification = null, longTermStop = null, liquidityOk = true }, rules) {
+function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, stopWarning = null, governingTarget, nextTarget = null, partialTaken, classification = null, longTermStop = null, liquidityOk = true, sessionsUnder = 0 }, rules) {
   const { shares } = position;
   const tp = rules.takeProfit;
   const trailFromPrice = price * (1 - rules.trailing.trailPct / 100);
@@ -95,7 +103,7 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       confirmCloses: rules.stop.confirmCloses ?? 1,
       warning: stopWarning,
       sellQty: shares,
-      fundamentalHold: fundamentalHoldOption({ shares, price, stopFired, classification, longTermStop, liquidityOk }, rules),
+      fundamentalHold: fundamentalHoldOption({ shares, price, stopFired, classification, longTermStop, liquidityOk, sessionsUnder }, rules),
     },
     trailing: {
       // trailPct/activateAtProfitPct are no longer what sets the actual stop
@@ -465,7 +473,7 @@ export async function analyzeTicker(code, opts = {}) {
       {
         snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired, stopWarning,
         governingTarget: reachedTarget ?? governingTarget, nextTarget, partialTaken,
-        classification, longTermStop, liquidityOk: liquidity.ok,
+        classification, longTermStop, liquidityOk: liquidity.ok, sessionsUnder: closesUnder,
       },
       rules,
     );

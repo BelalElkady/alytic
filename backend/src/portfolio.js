@@ -518,7 +518,7 @@ export function stopContextOf(analysis, verdict) {
     distancePct: r1.distancePct,
     confirmCloses: r1.confirmCloses ?? 1,
     warning: r1.warning ?? null,
-    fundamentalHold: fh ? { eligible: Boolean(fh.eligible), blockers: fh.blockers ?? [] } : null,
+    fundamentalHold: fh ? { eligible: Boolean(fh.eligible), blockers: fh.blockers ?? [], holdThrough: fh.holdThrough ?? null } : null,
     model: verdict?._meta?.model ?? null,
     reasoning: typeof verdict?.reasoning === 'string' ? verdict.reasoning.slice(0, 1200) : null,
   };

@@ -47,6 +47,14 @@ export const RULES = {
       keepFraction: 0.5,        // share of the position the core keeps
       minInvestmentScore: 65,   // scoring/classification.js — same bar as an INVESTMENT label
       minConfidence: 50,        // classification confidence; a data-poor score doesn't earn the exception
+      // The other way to use the exception: keep the WHOLE position and let the
+      // wider long-term stop take over from the tactical one — for a strong
+      // business that dips under its stop for a spell. Only while the run of
+      // closes under the tactical stop is no longer than this many sessions;
+      // after that the full exit stands, so "temporary" can't turn into
+      // holding a loser indefinitely.
+      holdThrough: true,
+      maxSessionsUnder: 10,
     },
   },
 

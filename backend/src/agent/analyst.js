@@ -149,12 +149,20 @@ function ruleBookLines(ps, price) {
   const fh = rb.stop.fundamentalHold;
   if (fh?.eligible) {
     out.push(
-      `  R1 fundamental-hold option — AVAILABLE (investment score ${fh.investmentScore}, long-term trend intact): ` +
-        `sell ${fh.sellQty} shares at market next open, keep a core of ${fh.keepQty} (${fh.keepPct}%) under the long-term stop ${fh.coreStop} ` +
-        `(${fh.coreStopRiskPct}% under ${price}, a close below it exits the core). Take it only per "When the stop breaks on a strong business".`,
+      `  R1 fundamental-hold options — AVAILABLE (investment score ${fh.investmentScore}, long-term trend intact). Two ways to use it, both under "When the stop breaks on a strong business":`,
+    );
+    if (fh.holdThrough) {
+      out.push(
+        `    (a) HOLD THROUGH — keep all shares; the long-term stop ${fh.holdThrough.stop} (${fh.holdThrough.riskPct}% under ${price}) binds instead of ${rb.stop.level}; ` +
+          `${fh.holdThrough.sessionsUnder} close(s) under the tactical stop so far, ${fh.holdThrough.sessionsLeft} more allowed (limit ${fh.holdThrough.maxSessionsUnder}) before the full exit stands.`,
+      );
+    }
+    out.push(
+      `    ${fh.holdThrough ? '(b)' : '(a)'} KEEP A CORE — sell ${fh.sellQty} shares at market next open, keep ${fh.keepQty} (${fh.keepPct}%) under the long-term stop ${fh.coreStop} ` +
+        `(${fh.coreStopRiskPct}% under ${price}, a close below it exits the core).`,
     );
   } else if (fh) {
-    out.push(`  R1 fundamental-hold option — NOT available: ${fh.blockers.join('; ')}. The full exit stands.`);
+    out.push(`  R1 fundamental-hold options — NOT available: ${fh.blockers.join('; ')}. The full exit stands.`);
   }
   out.push(
     `  R2 Stop-loss (AI-determined per style, ratchets up only — never moves down): current level ${rb.stop.level}` +
