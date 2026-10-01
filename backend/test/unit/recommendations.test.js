@@ -6,6 +6,7 @@ import '../helpers/env.js';
 import { evaluateRecommendation, evaluateStockMove, basisFactors } from '../../supabase/functions/evaluate-recommendations/evaluate.js';
 import {
   recommendationRow, isWin, benchmarkFor, wasRight, withoutOpenDuplicates, buildTrackRecord, isLegacy, MIN_CLOSED_FOR_HEADLINE,
+  fallTargetFrom, levelsFromAnalysis, MIN_FALL_TARGET_PCT,
 } from '../../src/recommendations.js';
 
 const rec = (over = {}) => ({
@@ -118,7 +119,8 @@ test('recommendationRow: levels on the wrong side are dropped; sell gets no leve
   const sell = recommendationRow({ userId: 'u', code: 'X', action: 'exit', levels: { refPrice: 100, target: 120, stop: 90, horizonSessions: 40 }, style: 'long', source: 's' });
   assert.equal(sell.action, 'sell');
   assert.equal(sell.target_price, null);
-  assert.equal(sell.horizon_days, 60);
+  assert.equal(sell.stop_price, null);
+  assert.equal(sell.horizon_days, 20); // a sell is judged over a shorter span than a hold
 });
 
 test('recommendationRow: a hold carries no stop or target and the style horizon', () => {
@@ -299,4 +301,57 @@ test('buildTrackRecord: a project without the scoring column counts every call a
   const out = buildTrackRecord(rows, 'u1');
   assert.equal(out.summary.closed, 2);
   assert.equal(out.scoring.legacyTotal, 0);
+});
+
+test('fallTargetFrom: the nearest support at least 3% under the price, else none', () => {
+  const supports = [{ price: 99 }, { price: 96 }, { price: 90 }, { price: 80 }];
+  assert.equal(MIN_FALL_TARGET_PCT, 3);
+  assert.equal(fallTargetFrom(supports, 100), 96); // 99 is too close to be a target
+  assert.equal(fallTargetFrom(supports, 97), 90);
+  assert.equal(fallTargetFrom([{ price: 99 }], 100), null);
+  assert.equal(fallTargetFrom([], 100), null);
+  assert.equal(fallTargetFrom(undefined, 100), null);
+});
+
+test('recommendationRow: a sell or reduce carries its fall target but never a stop, over a short horizon', () => {
+  const levels = { refPrice: 100, target: 130, stop: 92, fallTarget: 94, horizonSessions: 40 };
+  const sell = recommendationRow({ userId: 'u', code: 'X', action: 'exit', levels, style: 'medium', source: 's' });
+  assert.equal(sell.action, 'sell');
+  assert.equal(sell.target_price, 94);
+  assert.equal(sell.stop_price, null);
+  assert.equal(sell.horizon_days, 10);
+  const reduce = recommendationRow({ userId: 'u', code: 'X', action: 'take_profit', levels, style: 'long', source: 's' });
+  assert.equal(reduce.target_price, 94);
+  assert.equal(reduce.horizon_days, 20);
+  assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'reduce', levels, style: 'trader', source: 's' }).horizon_days, 10);
+  // A fall target above the price is on the wrong side and dropped; none given means none logged.
+  assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'exit', levels: { ...levels, fallTarget: 105 }, style: 'medium', source: 's' }).target_price, null);
+  assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'exit', levels: { refPrice: 100 }, style: 'medium', source: 's' }).target_price, null);
+  // A hold still keeps the longer horizon and no levels; a buy is unchanged.
+  const hold = recommendationRow({ userId: 'u', code: 'X', action: 'hold', levels, style: 'long', source: 's' });
+  assert.equal(hold.horizon_days, 60);
+  assert.equal(hold.target_price, null);
+  assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'buy', levels, style: 'long', source: 's' }).target_price, 130);
+});
+
+test('levelsFromAnalysis: reads the fall target from the stock\'s mapped supports', () => {
+  const analysis = { snapshot: { price: { close: 100 }, levels: { supports: [{ price: 99 }, { price: 94 }] } }, plan: {} };
+  assert.equal(levelsFromAnalysis(analysis, 'medium').fallTarget, 94);
+  assert.equal(levelsFromAnalysis({ snapshot: { price: { close: 100 } }, plan: {} }, 'medium').fallTarget, null);
+});
+
+test('evaluate: a sell that reaches its fall target is won there, filled at the open if it gapped past it', () => {
+  const sell = rec({ action: 'sell', ref_price: 100, target_price: 94, stop_price: null, horizon_days: 10 });
+  const hit = evaluateRecommendation(sell, [bar('2026-09-02', 98, 99, 93, 96)], egx);
+  assert.equal(hit.status, 'hit_target');
+  assert.equal(hit.exit_price, 94);
+  assert.equal(hit.return_pct, 6); // the fall, scored as the gain
+  assert.equal(hit.sessions_elapsed, 1);
+  const gap = evaluateRecommendation(sell, [bar('2026-09-02', 91, 93, 90, 92)], egx);
+  assert.equal(gap.exit_price, 91);
+  assert.equal(gap.return_pct, 9);
+  // A rise never stops it out: no stop, so it runs to the horizon.
+  const rise = evaluateRecommendation({ ...sell, horizon_days: 2 }, [bar('2026-09-02', 104, 110, 103, 108), bar('2026-09-03', 108, 112, 107, 110)], egx);
+  assert.equal(rise.status, 'expired');
+  assert.equal(rise.return_pct, -10);
 });

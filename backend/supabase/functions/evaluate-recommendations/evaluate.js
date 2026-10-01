@@ -32,7 +32,8 @@
  * before that rule may still carry levels; they are ignored here.
  *
  * Sell and reduce are scored as short calls: their return is the fall in
- * price. Excess return is measured over the same span, in the same
+ * price. They may carry a fall target (a support below the price) and are
+ * won the moment a session's low reaches it, but never a stop. Excess return is measured over the same span, in the same
  * direction, against each of the four indices (index_excess, keyed by
  * index), against the call's own benchmark chosen at issue — EGX30, EGX70 or
  * EGX100 by the stock's membership (benchmark_excess_pct) — and, as its own
