@@ -91,6 +91,9 @@ const OVERRIDES = {
     // long-horizon target... govern[s] the verdict"), which the mechanical
     // trigger otherwise ignored in favour of the mid target every style got.
     targets: { primary: 'long' },
+    // One close under a trailing stop is too thin a reason to sell a long-term
+    // holding: the first is a warning, a second close under it is the exit.
+    stop: { confirmCloses: 2, fundamentalHold: { maxSessionsUnder: 20 } },
   },
 };
 

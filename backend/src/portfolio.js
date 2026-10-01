@@ -499,8 +499,32 @@ export function setNote(portfolio, date, note) {
  * row every request loads), along with what it was written against: the
  * style, the price, and the holding, so the card can say when it's outdated
  * instead of hiding it. Entries for stocks no longer held are dropped.
+ * `stop`, when the stop was in play, is kept beside it (see stopContextOf).
  */
-export function rememberVerdict(p, code, verdict, { style, price = null, now = Date.now() } = {}) {
+/**
+ * What to keep about the stop behind a verdict: the rule book's R1 block
+ * (level, whether it fired, the closes it needs, and the keep-a-core option's
+ * eligibility with its blockers) plus the model, and the verdict's reasoning
+ * trimmed so the portfolio row stays small. Null unless the stop fired or is
+ * on warning, so quiet holds add nothing to the row.
+ */
+export function stopContextOf(analysis, verdict) {
+  const r1 = analysis?.position?.ruleBook?.stop;
+  if (!r1 || !(r1.fired || r1.warning)) return null;
+  const fh = r1.fundamentalHold;
+  return {
+    level: r1.level,
+    fired: Boolean(r1.fired),
+    distancePct: r1.distancePct,
+    confirmCloses: r1.confirmCloses ?? 1,
+    warning: r1.warning ?? null,
+    fundamentalHold: fh ? { eligible: Boolean(fh.eligible), blockers: fh.blockers ?? [], holdThrough: fh.holdThrough ?? null } : null,
+    model: verdict?._meta?.model ?? null,
+    reasoning: typeof verdict?.reasoning === 'string' ? verdict.reasoning.slice(0, 1200) : null,
+  };
+}
+
+export function rememberVerdict(p, code, verdict, { style, price = null, now = Date.now(), stop = null } = {}) {
   const c = String(code).toUpperCase();
   const pos = p.positions?.[c];
   const kept = {};
@@ -521,6 +545,10 @@ export function rememberVerdict(p, code, verdict, { style, price = null, now = D
         reentryPlan: verdict.reentryPlan ?? null,
         scenarios: verdict.scenarios ?? null,
       },
+      // Why a stop-break verdict said what it said — the rule book's stop
+      // block and the model's reasoning — so it can be looked up afterwards.
+      // Null on a verdict with no stop in play.
+      ...(stop ? { stopContext: stop } : {}),
     };
   }
   return { ...p, lastVerdicts: kept };

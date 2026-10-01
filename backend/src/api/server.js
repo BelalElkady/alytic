@@ -27,7 +27,7 @@ import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { sharedIpAccounts } from '../sharedIp.js';
-import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -3226,6 +3226,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
       const kept = rememberVerdict(p, code, verdict, {
         style: pre.style ?? 'medium',
         price: requestPrice,
+        stop: stopContextOf(analyses.find((a) => a.code === code), verdict),
       });
       if (joiningRunningJob) return kept;
       const next = bumpUsage(kept, 'recommendations');

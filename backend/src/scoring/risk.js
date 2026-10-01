@@ -206,7 +206,7 @@ export function riskReward(entry, stop, target) {
  * because the one discipline that must never be negotiated is the stop. The AI
  * analyst may add colour on top of this, but it cannot contradict it.
  */
-export function positionRecommendation({ snapshot, position, trailing, midTarget, nextTarget = null, partialTaken = false, stopBreached }, rules = RULES) {
+export function positionRecommendation({ snapshot, position, trailing, midTarget, nextTarget = null, partialTaken = false, stopBreached, stopWarning = null }, rules = RULES) {
   const price = snapshot.price.close;
   const { avgCost, shares } = position;
   const stop = trailing.stop;
@@ -250,6 +250,17 @@ export function positionRecommendation({ snapshot, position, trailing, midTarget
   }
 
   // 4. Close to the stop — a warning, not an action.
+  // A close under the stop that the style doesn't yet count as an exit: it
+  // takes `stopWarning.needed` closes in a row, and this is the first.
+  if (stopWarning) {
+    const left = stopWarning.needed - stopWarning.closesUnder;
+    return {
+      action: 'hold',
+      label: 'احتفاظ — الإغلاق الجاي بيحسم',
+      text: `أول إغلاق تحت الوقف ${r2(stop)} — لسه مش خروج في الباقة دي. ${left === 1 ? 'إغلاق' : `${left} إغلاقات`} تاني تحت ${r2(stop)} يبقى خروج كامل، ولو رجع فوقه الوقف بيفضل شغال.`,
+      order: null,
+    };
+  }
   if (toStopPct < 0) {
     // Under the stop right now but not on a close — not an exit yet.
     return {
@@ -304,4 +315,15 @@ export function liquidityCheck(snapshot, rules = RULES) {
       ? null
       : `سيولة ضعيفة — متوسط التداول ${Math.round(turnover / 1000)} ألف ج يوميًا، أقل من الحد ${rules.liquidity.minAvgTurnoverEgp / 1e6} مليون`,
   };
+}
+
+/**
+ * How many of the latest closes, counting back from the most recent, are under
+ * `stop` — the run a style's `stop.confirmCloses` is compared against. A close
+ * back at or above the stop ends the run.
+ */
+export function consecutiveClosesUnder(closes, stop) {
+  let count = 0;
+  for (let i = closes.length - 1; i >= 0 && closes[i] < stop; i--) count++;
+  return count;
 }
