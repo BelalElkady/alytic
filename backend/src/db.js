@@ -1021,6 +1021,24 @@ export async function insertRecommendations(rows) {
   if (error) throw new Error(`insertRecommendations: ${error.message}`);
 }
 
+/** The stock and action of every call a User has still open — what a repeat review must not log a second copy of. */
+export async function listOpenRecommendationKeys(userId) {
+  if (!userId) return [];
+  const keys = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('recommendations')
+      .select('ticker, action')
+      .eq('user_id', userId)
+      .eq('status', 'open')
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw new Error(`listOpenRecommendationKeys: ${error.message}`);
+    keys.push(...data.map((r) => `${r.ticker}:${r.action}`));
+    if (data.length < 1000) return keys;
+  }
+}
+
 /** The ticker and issue date of every call still being followed (open, or its horizon not over) — what the daily price recording needs to cover. */
 export async function listOpenRecommendationTickers() {
   const rows = [];
@@ -1051,23 +1069,30 @@ export async function upsertRecommendationPrices(rows) {
  * to one User's calls; `from`/`to` are inclusive Cairo issue dates.
  */
 export async function listRecommendations({ userId = null, from = null, to = null, limit = 5000 } = {}) {
-  const rows = [];
-  for (let offset = 0; offset < limit; offset += 1000) {
-    let query = supabase
-      .from('recommendations')
-      .select('id, user_id, ticker, action, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, model_version, issued_at, issued_on, source, style, status, closed_at, exit_price, return_pct, excess_return_pct, sessions_elapsed, mark_price, mark_return_pct, mark_excess_return_pct, evaluated_at, benchmark, indices_at_issue, benchmark_excess_pct, index_excess, mark_benchmark_excess_pct, mark_index_excess, stock_move_price, stock_move_pct, stock_move_sessions, stock_move_final');
-    if (userId) query = query.eq('user_id', userId);
-    if (from) query = query.gte('issued_on', from);
-    if (to) query = query.lte('issued_on', to);
-    const { data, error } = await query
-      .order('issued_at', { ascending: false })
-      .order('id', { ascending: false })
-      .range(offset, Math.min(offset + 999, limit - 1));
-    if (error) throw new Error(`listRecommendations: ${error.message}`);
-    rows.push(...data);
-    if (data.length < 1000) break;
+  const columns = 'id, user_id, ticker, action, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, model_version, issued_at, issued_on, source, style, status, closed_at, exit_price, return_pct, excess_return_pct, sessions_elapsed, mark_price, mark_return_pct, mark_excess_return_pct, evaluated_at, benchmark, indices_at_issue, benchmark_excess_pct, index_excess, mark_benchmark_excess_pct, mark_index_excess, stock_move_price, stock_move_pct, stock_move_sessions, stock_move_final';
+  // scoring_version arrived later than the rest; a project that hasn't applied
+  // schema.sql yet doesn't have it, and the page must keep working there.
+  for (const select of [`${columns}, scoring_version`, columns]) {
+    const rows = [];
+    let missingColumn = false;
+    for (let offset = 0; offset < limit; offset += 1000) {
+      let query = supabase.from('recommendations').select(select);
+      if (userId) query = query.eq('user_id', userId);
+      if (from) query = query.gte('issued_on', from);
+      if (to) query = query.lte('issued_on', to);
+      const { data, error } = await query
+        .order('issued_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, Math.min(offset + 999, limit - 1));
+      if (error) {
+        if (select !== columns && /scoring_version/.test(error.message)) { missingColumn = true; break; }
+        throw new Error(`listRecommendations: ${error.message}`);
+      }
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+    if (!missingColumn) return rows;
   }
-  return rows;
 }
 
 export { supabase };

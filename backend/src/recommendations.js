@@ -9,7 +9,7 @@
  * resolves a call itself — the Edge Function does, once a day.
  */
 
-import { insertRecommendations, listOpenRecommendationTickers, upsertRecommendationPrices, listRecommendations } from './db.js';
+import { insertRecommendations, listOpenRecommendationKeys, listOpenRecommendationTickers, upsertRecommendationPrices, listRecommendations } from './db.js';
 import { fetchDailyAuto, fetchEgx30Spot } from './data/yahoo.js';
 import { fetchDailyTV, fetchLatestQuotes } from './data/tv-history.js';
 import { cairoToday, expectedLastSession } from './data/cache.js';
@@ -170,6 +170,17 @@ async function indexMembership() {
 }
 
 /**
+ * Drops the calls a User already has open for the same stock and action: a
+ * repeat review of an unresolved call is the same call, and logging it again
+ * each day would count one outcome several times (the daily key only stops a
+ * second copy on the same day).
+ */
+export function withoutOpenDuplicates(rows, openKeys) {
+  const open = new Set(openKeys);
+  return rows.filter((r) => !open.has(`${r.ticker}:${r.action}`));
+}
+
+/**
  * Logs the calls a User was just handed. `items` is [{ code, action, levels }].
  * Best-effort: a logging failure is reported and swallowed, never allowed to
  * fail the review it describes — callers don't await it.
@@ -186,7 +197,7 @@ export async function logRecommendations(userId, items, { source, style, model }
       .filter(Boolean);
     // Two verdicts on the same stock in one review would collide on the daily key inside one statement.
     const unique = [...new Map(rows.map((r) => [`${r.ticker}:${r.action}`, r])).values()];
-    await insertRecommendations(unique);
+    await insertRecommendations(withoutOpenDuplicates(unique, await listOpenRecommendationKeys(userId)));
   } catch (err) {
     console.warn(`[recommendations] logging ${source} for ${userId} failed:`, err.message);
   }
@@ -381,16 +392,34 @@ function outcomes(rows) {
 const ROWS_SHOWN = 300;
 
 /**
+ * The scoring rules a call was resolved under. 1 is the original rules (an
+ * intraday touch of the stop closed a call, a hold carried a stop, and a split
+ * could read as a crash); 2 is the current ones. The page's figures cover
+ * calls scored under the current rules only — older ones stay listed, tagged,
+ * but never feed the headline. A project without the column is all current.
+ */
+export const CURRENT_SCORING = 2;
+export const isLegacy = (row) => Number(row.scoring_version ?? CURRENT_SCORING) < CURRENT_SCORING;
+
+/** Closed calls under the current rules before the headline figures are shown: fewer say nothing. */
+export const MIN_CLOSED_FOR_HEADLINE = 30;
+
+/**
  * Everything the track-record page draws, for one scope and set of filters.
  * `filters`: { scope: 'all'|'mine', vs (a COMPARISONS key), action, horizon (a HORIZON_BUCKETS key), from, to }.
  */
 export async function trackRecord(userId, filters = {}) {
-  const vs = filters.vs in COMPARISONS ? filters.vs : 'own';
   const all = await listRecommendations({
     userId: filters.scope === 'mine' ? userId : null,
     from: filters.from ?? null,
     to: filters.to ?? null,
   });
+  return buildTrackRecord(all, userId, filters);
+}
+
+/** trackRecord's figures from the rows already read — no I/O, so it can be tested. */
+export function buildTrackRecord(all, userId, filters = {}) {
+  const vs = filters.vs in COMPARISONS ? filters.vs : 'own';
 
   const withMeta = all.map((row) => {
     const meta = lookup(row.ticker);
@@ -401,19 +430,31 @@ export async function trackRecord(userId, filters = {}) {
   const rows = withMeta.filter((r) =>
     (!filters.action || r.action === filters.action) &&
     r.horizon_days >= lo && r.horizon_days <= hi);
+  // The figures use the current rules only; every row is still listed.
+  const scored = rows.filter((r) => !isLegacy(r));
+  const legacy = rows.filter(isLegacy);
+  const summary = summarize(scored, vs);
 
   const byAction = ['buy', 'sell', 'reduce', 'hold'].map((action) => {
-    const own = rows.filter((r) => r.action === action);
+    const own = scored.filter((r) => r.action === action);
     const closed = own.filter((r) => r.status !== 'open');
     return { action, total: own.length, closed: closed.length, hitRate: closed.length ? r2((closed.filter(isWin).length / closed.length) * 100) : null };
   });
 
   return {
     vs,
-    summary: summarize(rows, vs),
-    outcomes: outcomes(rows),
+    summary,
+    // Too few resolved calls to say anything: the page shows the counts, not rates.
+    scoring: {
+      version: CURRENT_SCORING,
+      minClosed: MIN_CLOSED_FOR_HEADLINE,
+      tooEarly: summary.closed < MIN_CLOSED_FOR_HEADLINE,
+      legacyTotal: legacy.length,
+      legacyClosed: legacy.filter((r) => r.status !== 'open').length,
+    },
+    outcomes: outcomes(scored),
     byAction,
-    series: cumulativeSeries(rows.filter((r) => r.status !== 'open'), vs),
+    series: cumulativeSeries(scored.filter((r) => r.status !== 'open'), vs),
     rows: rows.slice(0, ROWS_SHOWN).map((r) => ({
       id: r.id,
       ticker: r.ticker,
@@ -443,6 +484,8 @@ export async function trackRecord(userId, filters = {}) {
       stockMoveSessions: r.stock_move_sessions ?? 0,
       stockMoveFinal: Boolean(r.stock_move_final),
       right: wasRight(r),
+      // Scored under the original rules: listed, but outside the figures above.
+      legacy: isLegacy(r),
       mine: r.user_id === userId,
       model: r.model_version,
     })),
