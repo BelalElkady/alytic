@@ -33,10 +33,30 @@ export const TRACKED_ACTIONS = {
 
 /**
  * Sessions a call is judged over when the engine gave its target no horizon
- * (a stock in a range) — and always for sell/reduce, whose engine levels are
- * a long holder's, not a short call's, and for a hold, which has no levels.
+ * (a stock in a range) — and always for a hold, which has no levels.
  */
 const DEFAULT_HORIZON_SESSIONS = { trader: 10, medium: 20, long: 60 };
+/**
+ * Sell and reduce are judged over a shorter span than a hold: the engine's
+ * levels for them are a long holder's, not a short call's, and a fall that
+ * hasn't come within a couple of weeks isn't the call the user was given. Left
+ * at the hold horizons, a long-style exit took three months to be judged.
+ */
+const EXIT_HORIZON_SESSIONS = { trader: 10, medium: 10, long: 20 };
+/** A support must sit at least this far under the price to be a fall target worth hitting; nearer ones are noise. */
+export const MIN_FALL_TARGET_PCT = 3;
+
+/**
+ * The nearest support at least MIN_FALL_TARGET_PCT under the price — where a
+ * sell or reduce call is right if the stock gets there. Null when no support
+ * is that far down, or the stock has no mapped supports.
+ * @param {Array<{price:number}>|undefined} supports - a snapshot's levels.supports
+ */
+export function fallTargetFrom(supports, ref) {
+  const limit = ref * (1 - MIN_FALL_TARGET_PCT / 100);
+  const below = (supports ?? []).map((l) => positive(l?.price)).filter((p) => p != null && p <= limit);
+  return below.length ? Math.max(...below) : null;
+}
 const MAX_HORIZON_SESSIONS = 500;
 
 // buy/hold are long calls, sell/reduce short ones — the same split the
@@ -77,6 +97,8 @@ export function levelsFromAnalysis(a, style) {
     target: a.position?.targetLevel ?? planTarget?.price ?? null,
     stop: a.position?.stop ?? a.plan?.stop?.stop ?? null,
     horizonSessions: planTarget?.horizon?.sessions ?? null,
+    // For a sell or reduce: the support the fall would have to reach.
+    fallTarget: fallTargetFrom(a.snapshot?.levels?.supports, a.snapshot?.price?.close),
   };
 }
 
@@ -107,10 +129,16 @@ export function recommendationRow({ userId, code, action, levels, style, source,
   // its stop is the position's own, often a few percent away, and scoring it
   // as a fresh entry would stop it out on ordinary noise. It is judged at the
   // horizon against its benchmark instead (see isWin).
+  //
+  // A sell or reduce is right if the stock falls, so it may carry the support
+  // it would have to reach as its target (a win the moment it is touched,
+  // like a buy's) — but no stop: there is no position to protect.
   const levelled = tracked === 'buy';
-  const target = levelled ? positive(levels.target) : null;
+  const exiting = tracked === 'sell' || tracked === 'reduce';
+  const target = levelled ? positive(levels.target) : exiting ? positive(levels.fallTarget) : null;
   const stop = levelled ? positive(levels.stop) : null;
-  const fallback = DEFAULT_HORIZON_SESSIONS[style] ?? DEFAULT_HORIZON_SESSIONS.medium;
+  const horizons = exiting ? EXIT_HORIZON_SESSIONS : DEFAULT_HORIZON_SESSIONS;
+  const fallback = horizons[style] ?? horizons.medium;
   const sessions = levelled && positive(levels.horizonSessions) ? Math.round(levels.horizonSessions) : fallback;
   const indexLevels = Object.fromEntries(
     Object.keys(INDEX_FEEDS).filter((name) => positive(indices[name])).map((name) => [name, positive(indices[name])]),
@@ -121,7 +149,9 @@ export function recommendationRow({ userId, code, action, levels, style, source,
     ticker: String(code).toUpperCase(),
     action: tracked,
     ref_price: round(ref),
-    target_price: target && target > ref ? round(target) : null,
+    // Levels on the wrong side of the price are dropped: above it for a buy's
+    // target, below it for a sell's.
+    target_price: target && (exiting ? target < ref : target > ref) ? round(target) : null,
     stop_price: stop && stop < ref ? round(stop) : null,
     horizon_days: Math.min(MAX_HORIZON_SESSIONS, Math.max(1, sessions)),
     egx30_at_issue: indexLevels.EGX30 ?? null,

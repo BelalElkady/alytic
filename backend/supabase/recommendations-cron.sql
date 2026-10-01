@@ -24,11 +24,19 @@
 --   select vault.create_secret('<the EVALUATE_CRON_SECRET value>', 'recommendations_cron_secret');
 --
 -- Timing: the backend records the session's bars into recommendation_prices
--- at the 14:30 Cairo close (runDailyClose in src/api/server.js). pg_cron runs
--- in UTC and Cairo moves between UTC+2 and UTC+3, so 13:30 UTC lands at 15:30
--- or 16:30 Cairo — after the close either way. Sunday–Thursday is EGX's
--- trading week; a holiday run finds no new bars and changes nothing. A missed
--- run is harmless: every run re-reads all bars since each call was issued.
+-- at the 14:30 Cairo close (runDailyClose in src/api/server.js), but only up to
+-- the last session the data feed is expected to have published (see
+-- expectedLastSession in src/data/cache.js: today's bar is accepted from
+-- 16:00 Cairo). The daily-close backup runs at 14:07 and 17:07 UTC are what
+-- record that day's bar, so this job runs at 15:30 UTC — after the first of
+-- them (17:07 Cairo in summer, 16:07 in winter) — to score each call a session
+-- sooner than a 13:30 UTC run did. pg_cron runs in UTC and Cairo moves between
+-- UTC+2 and UTC+3. Sunday–Thursday is EGX's trading week; a holiday run finds
+-- no new bars and changes nothing. A missed run is harmless: every run
+-- re-reads all bars since each call was issued.
+--
+-- To move an already-scheduled project to this time, re-run this file's
+-- cron.schedule statement below (it unschedules the old job first).
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
@@ -38,7 +46,7 @@ where exists (select 1 from cron.job where jobname = 'evaluate-recommendations')
 
 select cron.schedule(
   'evaluate-recommendations',
-  '30 13 * * 0-4',
+  '30 15 * * 0-4',
   $$
   select net.http_post(
     url := (select decrypted_secret from vault.decrypted_secrets where name = 'recommendations_project_url')
