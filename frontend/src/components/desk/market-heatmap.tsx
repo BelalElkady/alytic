@@ -64,9 +64,19 @@ type TileDatum = HeatmapStock & { size: number; lead: boolean; sectorCount: numb
 type SectorDatum = { name: string; sectorAr: string; count: number; children: TileDatum[] };
 
 /**
+ * The smallest share of the map any one stock's tile gets. Sized strictly by
+ * market cap, a handful of giants take most of the area and dozens of small
+ * caps shrink to slivers too thin to see, read or hover; with a floor every
+ * stock stays a visible tile, as on the usual EGX heatmaps.
+ */
+export const MIN_TILE_SHARE = 0.0025;
+
+/**
  * The treemap's nested data — sectors, then their stocks — for one index (or
  * the whole market) and one size measure. Stocks with no figure for that
- * measure are left out, and so are sectors left empty.
+ * measure are left out, and so are sectors left empty. `size` is the tile's
+ * area, floored at MIN_TILE_SHARE of the whole; the real figure stays in
+ * marketCapEgp / turnoverEgp for the tooltip.
  */
 export function toTreemapData(
   stocks: HeatmapStock[],
@@ -88,8 +98,15 @@ export function toTreemapData(
     sector.count += 1;
     bySector.set(stock.sector, sector);
   }
+  const sectors = [...bySector.values()];
+  const floor =
+    MIN_TILE_SHARE *
+    sectors.reduce((sum, s) => sum + s.children.reduce((a, c) => a + c.size, 0), 0);
+  for (const sector of sectors) {
+    for (const child of sector.children) child.size = Math.max(child.size, floor);
+  }
   const total = (s: SectorDatum) => s.children.reduce((sum, c) => sum + c.size, 0);
-  return [...bySector.values()]
+  return sectors
     .map((s) => ({
       ...s,
       children: s.children
@@ -141,9 +158,11 @@ export function HeatmapTile({
   onOpen,
 }: TileProps) {
   if (depth !== 2 || !code) return null;
-  const showSector = Boolean(lead && sectorAr) && width >= 80 && height >= 60;
-  const showCode = width >= 44 && height >= 26;
-  const showChange = width >= 44 && height >= 42;
+  const showSector = Boolean(lead && sectorAr) && width >= 80 && height >= 72;
+  // The sector caption sits at the top; nudge the code and change down to clear it.
+  const midY = y + height / 2 + (showSector ? 7 : 0);
+  const showCode = width >= 38 && height >= 22;
+  const showChange = width >= 38 && height >= 36;
   const fontSize = Math.max(10, Math.min(18, Math.min(width / 4.5, height / 3)));
   const ink = changeInk(changePct);
   return (
@@ -177,7 +196,7 @@ export function HeatmapTile({
       {showCode && (
         <text
           x={x + width / 2}
-          y={y + height / 2 + (showChange ? -fontSize * 0.35 : fontSize * 0.35)}
+          y={midY + (showChange ? -fontSize * 0.35 : fontSize * 0.35)}
           textAnchor="middle"
           fontSize={fontSize}
           fontWeight={700}
@@ -189,7 +208,7 @@ export function HeatmapTile({
       {showChange && (
         <text
           x={x + width / 2}
-          y={y + height / 2 + fontSize * 0.85}
+          y={midY + fontSize * 0.85}
           textAnchor="middle"
           fontSize={Math.max(9.5, fontSize * 0.7)}
           direction="ltr"
@@ -351,7 +370,7 @@ export function MarketHeatmap() {
               مفيش أسعار للأسهم دي دلوقتي.
             </p>
           ) : (
-            <div className="h-[640px] w-full sm:h-[520px]" dir="ltr">
+            <div className="h-[900px] w-full sm:h-[720px]" dir="ltr">
               <ResponsiveContainer width="100%" height="100%">
                 <Treemap
                   data={tree}
@@ -372,8 +391,8 @@ export function MarketHeatmap() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Legend />
             <span className="text-[11.5px] text-muted-foreground">
-              الأسعار متأخرة نحو <span className="num">{fmt(data.delayedMinutes)}</span> دقيقة · آخر
-              تحديث{" "}
+              الأسهم الصغيرة ليها حد أدنى للمساحة عشان تبان · الأسعار متأخرة نحو{" "}
+              <span className="num">{fmt(data.delayedMinutes)}</span> دقيقة · آخر تحديث{" "}
               {new Date(data.asOf).toLocaleTimeString("ar-EG", {
                 hour: "2-digit",
                 minute: "2-digit",
