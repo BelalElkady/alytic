@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { MarketHeatmap } from "@/components/desk/market-heatmap";
 import { ErrorState, LoadingBlock, Panel } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -14,7 +15,8 @@ export const Route = createFileRoute("/_app/indices")({
       { title: `المؤشرات — ${siteName(match)}` },
       {
         name: "description",
-        content: "الأداء اليومي لمؤشرات البورصة المصرية، وأفضل وأسوأ سهم في كل مؤشر.",
+        content:
+          "الأداء اليومي لمؤشرات البورصة المصرية، وأفضل وأسوأ سهم في كل مؤشر، وخريطة السوق لكل الأسهم.",
       },
       { name: "robots", content: "noindex, nofollow" },
       { property: "og:title", content: `المؤشرات — ${siteName(match)}` },
@@ -99,6 +101,8 @@ function IndicesPage() {
           <IndexCard key={row.name} row={row} />
         ))}
       </div>
+
+      <MarketHeatmap />
     </div>
   );
 }
