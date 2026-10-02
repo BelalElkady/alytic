@@ -185,6 +185,20 @@ function LandingPage() {
         </div>
       </section>
 
+      {/* Teaser video: the vertical Short on phones, the wide cut from md up. */}
+      <section className="mx-auto w-full max-w-6xl px-4 py-14">
+        <h2 className="text-2xl font-bold tracking-tight">شوف الأداة وهي شغالة</h2>
+        <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+          في دقايق هتعرف إزاي تضيف أسهمك وتاخد توصية واضحة لكل سهم.
+        </p>
+        <div className="mt-6 md:hidden">
+          <TeaserVideo id={TEASER_MOBILE} className="mx-auto aspect-[9/16] w-full max-w-[360px]" />
+        </div>
+        <div className="mt-6 hidden md:block">
+          <TeaserVideo id={TEASER_DESKTOP} className="aspect-video w-full" />
+        </div>
+      </section>
+
       <AveragingCalculator />
 
       {/* CTA */}
@@ -269,6 +283,25 @@ function PreviewCard() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+const TEASER_MOBILE = "8zIYAVQBb3c";
+const TEASER_DESKTOP = "ZIRWF6b3MHI";
+
+function TeaserVideo({ id, className }: { id: string; className: string }) {
+  return (
+    <div className={`overflow-hidden rounded-2xl border bg-card shadow-sm ${className}`}>
+      <iframe
+        src={`https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1`}
+        title="شوف الأداة وهي شغالة"
+        loading="lazy"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerPolicy="strict-origin-when-cross-origin"
+        allowFullScreen
+        className="size-full"
+      />
     </div>
   );
 }
