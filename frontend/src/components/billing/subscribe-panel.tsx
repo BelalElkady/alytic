@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Check, Copy, Loader2, RefreshCw } from "lucide-react";
+import { Check, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -25,10 +25,10 @@ const FEATURE_ROWS: { key: keyof TierLimits; label: string; unit: string }[] = [
 const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 /**
- * How someone subscribes: pay via the InstaPay QR (or the copy-address button),
+ * How someone subscribes: pay via the InstaPay QR (or the pay-link button),
  * then tell us on the support chat so an admin can match the transfer and
- * activate the account. The InstaPay address itself is never shown as text:
- * the copy button fetches the same address the chat bot sends, from the
+ * activate the account. The InstaPay link itself is never shown as text:
+ * the pay button uses the same address the chat bot sends, from the
  * signed-in-only subscribe-info endpoint, so it never ships in the bundle.
  */
 export function SubscribePanel({
@@ -66,26 +66,24 @@ export function SubscribePanel({
   const selected = plans.find((p) => p.tier === tier && p.months === months) ?? null;
   const limits = tiers?.[tier] ?? null;
 
-  const copyInstapay = async () => {
+  // Fetched up front (signed-in only) so the pay button can be a real link:
+  // opening a window after an await gets blocked by popup blockers.
+  const [payLink, setPayLink] = useState<string | null>(null);
+  useEffect(() => {
     if (!user) {
-      toast.info("سجّل دخولك الأول عشان تنسخ لينك الدفع");
+      setPayLink(null);
       return;
     }
-    try {
-      const info: { instapay?: { address: string | null } } = await api(
-        "/api/support/subscribe-info",
-      );
-      const address = info.instapay?.address;
-      if (!address) {
-        toast.info("ابعتلنا في الشات وهنبعتلك بيانات الدفع");
-        return;
-      }
-      await navigator.clipboard.writeText(address);
-      toast.success("تم نسخ لينك الدفع");
-    } catch {
-      toast.error("تعذر النسخ — امسح الكود بدلًا من كده");
-    }
-  };
+    api("/api/support/subscribe-info")
+      .then((info: { instapay?: { address: string | null } }) => {
+        const address = info.instapay?.address ?? null;
+        setPayLink(address && /^https?:\/\//i.test(address) ? address : null);
+      })
+      .catch(() => setPayLink(null));
+  }, [user]);
+
+  const payUnavailable = () =>
+    toast.info(user ? "ابعتلنا في الشات وهنبعتلك بيانات الدفع" : "سجّل دخولك الأول عشان تدفع");
 
   // Typed into the WhatsApp chat for them: which plan the transfer was for and
   // which account to activate, so the screenshot can be matched straight away.
@@ -205,10 +203,19 @@ export function SubscribePanel({
           height={220}
           className="size-[220px] rounded-lg bg-white p-2"
         />
-        <Button variant="outline" onClick={() => void copyInstapay()}>
-          <Copy className="size-4" />
-          انسخ لينك الدفع
-        </Button>
+        {payLink ? (
+          <Button asChild>
+            <a href={payLink} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="size-4" />
+              عشان تدفع دوس هنا
+            </a>
+          </Button>
+        ) : (
+          <Button onClick={payUnavailable}>
+            <ExternalLink className="size-4" />
+            عشان تدفع دوس هنا
+          </Button>
+        )}
       </div>
 
       <div className="rounded-xl border bg-surface p-4">
