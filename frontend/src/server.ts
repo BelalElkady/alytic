@@ -88,7 +88,7 @@ const REPORT_ONLY_CSP = [
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "connect-src 'self' https://www.facebook.com https://connect.facebook.net https://accounts.google.com https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://*.googlesyndication.com https://*.doubleclick.net",
-  "frame-src https://accounts.google.com https://*.googlesyndication.com https://*.doubleclick.net",
+  "frame-src https://accounts.google.com https://*.googlesyndication.com https://*.doubleclick.net https://www.youtube-nocookie.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
