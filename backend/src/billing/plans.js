@@ -69,11 +69,11 @@ export const ADDONS = {
  * signed-in user and nowhere else — never from the public /api/billing/plans
  * — so the account isn't published to anyone who can curl the site, and every
  * disclosure belongs to an account we can match a transfer against.
- * INSTAPAY_ADDRESS overrides the default handle (the same one the /subscribe
- * page's QR code encodes).
+ * INSTAPAY_ADDRESS overrides the default payment link (the same one the
+ * /subscribe page's QR code encodes).
  */
 export const INSTAPAY = {
-  address: process.env.INSTAPAY_ADDRESS ?? 'hassansmm@instapay',
+  address: process.env.INSTAPAY_ADDRESS ?? 'https://ipn.eg/S/hassansmm/instapay/3iUOPP',
   accountName: process.env.INSTAPAY_ACCOUNT_NAME ?? null,
 };
 
