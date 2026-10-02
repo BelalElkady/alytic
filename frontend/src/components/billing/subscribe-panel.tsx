@@ -22,14 +22,13 @@ const FEATURE_ROWS: { key: keyof TierLimits; label: string; unit: string }[] = [
   { key: "cashScans", label: "تحليل استخدام الكاش", unit: "مرة/شهر" },
   { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة/شهر" },
 ];
-// Same link the QR code below encodes, so it is public anyway.
-const INSTAPAY_LINK = "https://ipn.eg/S/hassansmm/instapay/3iUOPP";
 const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 /**
  * How someone subscribes: pay via the InstaPay QR (or the pay-link button),
  * then tell us on the support chat so an admin can match the transfer and
- * activate the account. The pay button links straight to the InstaPay payment page.
+ * activate the account. The pay button links to the site's InstaPay payment link, which the backend
+ * configures (INSTAPAY_ADDRESS or the tenant's config.instapay.address).
  */
 export function SubscribePanel({
   compact = false,
@@ -50,16 +49,19 @@ export function SubscribePanel({
   const tier = lockedTier ?? pickedTier;
   const [months, setMonths] = useState<1 | 12>(initialMonths ?? 12);
   const [checking, setChecking] = useState(false);
+  const [payLink, setPayLink] = useState<string | null>(null);
 
   useEffect(() => {
     api("/api/billing/plans")
       .then((result) => {
         setPlans(result.plans ?? []);
         setTiers(result.tiers ?? null);
+        setPayLink(result.payLink ?? null);
       })
       .catch(() => {
         setPlans([]);
         setTiers(null);
+        setPayLink(null);
       });
   }, []);
 
@@ -184,12 +186,14 @@ export function SubscribePanel({
           height={220}
           className="size-[220px] rounded-lg bg-white p-2"
         />
-        <Button asChild>
-          <a href={INSTAPAY_LINK} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="size-4" />
-            عشان تدفع دوس هنا
-          </a>
-        </Button>
+        {payLink && (
+          <Button asChild>
+            <a href={payLink} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="size-4" />
+              عشان تدفع دوس هنا
+            </a>
+          </Button>
+        )}
       </div>
 
       <div className="rounded-xl border bg-surface p-4">
