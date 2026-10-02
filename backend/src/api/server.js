@@ -43,7 +43,8 @@ import { detectCorporateActions, applyCorporateActions, resolveCorporateAction, 
 import { latestEventFor, recordEvent } from '../data/corporateEvents.js';
 import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
-import { fetchFundamentals } from '../data/tradingview.js';
+import { fetchFundamentals, cachedScreener } from '../data/tradingview.js';
+import { buildHeatmap } from '../marketHeatmap.js';
 import { fetchLiveQuotes, liveQuoteStatus } from '../data/live-quotes.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
@@ -886,6 +887,39 @@ app.get('/api/indices/performance', wrap(async (_req, res) => {
   });
 
   res.json({ asOf: new Date().toISOString(), indices });
+}));
+
+// The whole-market heatmap on the same page: every analysable stock's change
+// today, sized by market cap or traded value and grouped by sector. Free for
+// any signed-in user, on the same delayed TradingView feed as the cards above
+// (live prices stay a subscriber feature). One fetch serves everyone for a
+// minute — the in-flight promise is what gets cached, so a burst of visitors
+// opens one feed connection, and a failed fetch is never cached.
+const HEATMAP_TTL_MS = 60_000;
+let heatmapCache = null; // { promise, at }
+
+async function loadHeatmap() {
+  const [membership, quotes, screener] = await Promise.all([
+    effectiveIndices(),
+    fetchLatestQuotes(ALL_CODES),
+    // Live market caps and traded value; without them the universe snapshot's figures stand in.
+    cachedScreener().catch((err) => {
+      console.warn('[heatmap] screener failed, using snapshot sizes:', err.message);
+      return [];
+    }),
+  ]);
+  return { asOf: new Date().toISOString(), delayedMinutes: 15, indices: membership, ...buildHeatmap({ stocks: UNIVERSE, quotes, screener, membership }) };
+}
+
+app.get('/api/indices/heatmap', analysisLimiter, wrap(async (_req, res) => {
+  if (!heatmapCache || Date.now() - heatmapCache.at >= HEATMAP_TTL_MS) {
+    const entry = { at: Date.now(), promise: loadHeatmap() };
+    entry.promise.catch(() => {
+      if (heatmapCache === entry) heatmapCache = null;
+    });
+    heatmapCache = entry;
+  }
+  res.json(await heatmapCache.promise);
 }));
 
 // ---- Admin ------------------------------------------------------------------

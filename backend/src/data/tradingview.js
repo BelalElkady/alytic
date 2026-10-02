@@ -138,7 +138,7 @@ export async function fetchScreener({ limit = 600, timeoutMs = 20000 } = {}) {
 const SCREENER_TTL_MS = 60 * 60_000;
 let screenerCache = null; // { promise, at }
 
-function cachedScreener() {
+export function cachedScreener() {
   if (screenerCache && Date.now() - screenerCache.at < SCREENER_TTL_MS) return screenerCache.promise;
   const entry = { at: Date.now(), promise: fetchScreener() };
   entry.promise.catch(() => {
