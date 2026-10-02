@@ -748,24 +748,36 @@ function InstapayCard({
   onCopy: (text: string) => void;
 }) {
   if (!info.address) return null;
+  const isLink = /^https?:\/\//i.test(info.address);
   return (
     <div className="mt-2 rounded-lg border bg-card p-2.5">
-      <p className="text-[11px] text-muted-foreground">حساب InstaPay</p>
-      <code className="mt-0.5 block text-[13px] font-semibold text-foreground" dir="ltr">
-        {info.address}
-      </code>
+      <p className="text-[11px] text-muted-foreground">{isLink ? "لينك دفع InstaPay" : "حساب InstaPay"}</p>
+      {!isLink && (
+        <code className="mt-0.5 block text-[13px] font-semibold text-foreground" dir="ltr">
+          {info.address}
+        </code>
+      )}
       {info.accountName && (
         <p className="mt-0.5 text-[11.5px] text-muted-foreground">{info.accountName}</p>
       )}
-      <Button
-        size="sm"
-        variant="outline"
-        className="mt-2 h-7 px-2 text-[12px]"
-        onClick={() => onCopy(info.address as string)}
-      >
-        <Copy className="size-3.5" />
-        نسخ
-      </Button>
+      <div className="mt-2 flex gap-2">
+        {isLink && (
+          <Button asChild size="sm" className="h-7 px-2 text-[12px]">
+            <a href={info.address} target="_blank" rel="noopener noreferrer">
+              ادفع دلوقتي
+            </a>
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-[12px]"
+          onClick={() => onCopy(info.address as string)}
+        >
+          <Copy className="size-3.5" />
+          {isLink ? "نسخ اللينك" : "نسخ"}
+        </Button>
+      </div>
     </div>
   );
 }
