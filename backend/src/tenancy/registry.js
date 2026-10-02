@@ -1,4 +1,5 @@
 import { createServiceClient, platformDb } from '../supabaseClient.js';
+import { INSTAPAY } from '../billing/plans.js';
 import { decryptSecret } from './secrets.js';
 
 /**
@@ -73,7 +74,7 @@ function defaultConfigFromEnv() {
     supportNotifyEmail: process.env.SUPPORT_NOTIFY_EMAIL ?? 'belal.elkady4@gmail.com',
     adminEmails: listEnv(process.env.ADMIN_EMAILS ?? 'belal.elkady4@gmail.com'),
     marketerEmails: listEnv(process.env.MARKETER_EMAILS ?? ''),
-    instapay: { address: process.env.INSTAPAY_ADDRESS ?? null, accountName: process.env.INSTAPAY_ACCOUNT_NAME ?? null },
+    instapay: { address: INSTAPAY.address, accountName: INSTAPAY.accountName },
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
     prices: {},
     features: { blog: true },

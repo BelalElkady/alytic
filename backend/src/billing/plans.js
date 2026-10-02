@@ -65,12 +65,11 @@ export const ADDONS = {
 };
 
 /**
- * Where users send the transfer. Handed out by the support bot to a
- * signed-in user and nowhere else — never from the public /api/billing/plans
- * — so the account isn't published to anyone who can curl the site, and every
- * disclosure belongs to an account we can match a transfer against.
- * INSTAPAY_ADDRESS overrides the default payment link (the same one the
- * /subscribe page's QR code encodes).
+ * Where users send the transfer: an InstaPay payment link (or a plain
+ * handle). A link is also exposed by /api/billing/plans as payLink for the
+ * subscribe page's pay button; a plain handle is only handed out by the
+ * support bot to a signed-in user. INSTAPAY_ADDRESS overrides the default
+ * link, and a tenant sets its own in config.instapay.address.
  */
 export const INSTAPAY = {
   address: process.env.INSTAPAY_ADDRESS ?? 'https://ipn.eg/S/hassansmm/instapay/3iUOPP',
