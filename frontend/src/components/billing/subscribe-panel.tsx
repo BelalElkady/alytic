@@ -68,7 +68,7 @@ export function SubscribePanel({
 
   const copyInstapay = async () => {
     if (!user) {
-      toast.info("سجّل دخولك الأول عشان تنسخ عنوان إنستاباي");
+      toast.info("سجّل دخولك الأول عشان تنسخ لينك الدفع");
       return;
     }
     try {
@@ -81,7 +81,7 @@ export function SubscribePanel({
         return;
       }
       await navigator.clipboard.writeText(address);
-      toast.success("تم نسخ عنوان إنستاباي");
+      toast.success("تم نسخ لينك الدفع");
     } catch {
       toast.error("تعذر النسخ — امسح الكود بدلًا من كده");
     }
@@ -207,7 +207,7 @@ export function SubscribePanel({
         />
         <Button variant="outline" onClick={() => void copyInstapay()}>
           <Copy className="size-4" />
-          انسخ عنوان إنستاباي
+          انسخ لينك الدفع
         </Button>
       </div>
 
