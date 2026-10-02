@@ -472,8 +472,12 @@ app.get('/api/billing/plans', (req, res) => {
   // tiers is included so the subscribe screen can show each plan's feature
   // caps without hardcoding a second copy of TIERS. addons are the one-time
   // top-ups (see ADDONS) shown alongside the plans, one list per credit kind.
-  // Prices are this site's own (see plansFor).
-  res.json({ plans: Object.values(plansFor(req.tenant)), tiers: TIERS, addons: addonsFor(req.tenant) });
+  // Prices are this site's own (see plansFor). payLink is the site's InstaPay
+  // payment link (config.instapay.address / INSTAPAY_ADDRESS) when it is a URL —
+  // the same one the subscribe page's QR encodes, so it is public by design.
+  const address = instapayFor(req.tenant)?.address;
+  const payLink = typeof address === 'string' && /^https?:\/\//i.test(address) ? address : null;
+  res.json({ plans: Object.values(plansFor(req.tenant)), tiers: TIERS, addons: addonsFor(req.tenant), payLink });
 });
 
 // What the frontend needs to render this site as itself: name, logo, colors,

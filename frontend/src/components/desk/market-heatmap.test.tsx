@@ -4,6 +4,7 @@ import { fireEvent, render } from "@testing-library/react";
 import {
   CLAMP_PCT,
   HeatmapTile,
+  MIN_TILE_SHARE,
   changeColor,
   changeInk,
   toTreemapData,
@@ -85,6 +86,27 @@ describe("toTreemapData", () => {
     const codes = tree.flatMap((s) => s.children.map((c) => c.code));
     expect(codes).not.toContain("SMLL");
     expect(tree[0]!.children[0]).toMatchObject({ code: "HDBK", size: 900e6 });
+  });
+});
+
+describe("toTreemapData minimum tile size", () => {
+  const giants = [
+    stock({ code: "BIG1", marketCapEgp: 900e9 }),
+    stock({ code: "BIG2", marketCapEgp: 600e9 }),
+    stock({ code: "TINY", marketCapEgp: 0.1e9 }),
+  ];
+
+  it("lifts a tiny stock to the floor share of the map", () => {
+    const tree = toTreemapData(giants, "all", "cap");
+    const tiles = tree.flatMap((s) => s.children);
+    const floor = MIN_TILE_SHARE * 1500.1e9;
+    expect(tiles.find((t) => t.code === "TINY")!.size).toBeCloseTo(floor);
+  });
+
+  it("keeps the real figure for the tooltip and leaves big stocks alone", () => {
+    const tiles = toTreemapData(giants, "all", "cap").flatMap((s) => s.children);
+    expect(tiles.find((t) => t.code === "TINY")!.marketCapEgp).toBe(0.1e9);
+    expect(tiles.find((t) => t.code === "BIG1")!.size).toBe(900e9);
   });
 });
 
