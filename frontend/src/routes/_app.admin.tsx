@@ -521,23 +521,32 @@ const matchesUser = (row: AdminUserRow, query: string) =>
   [row.email, row.name, row.signupIp, row.lastLoginIp].some((field) => field?.toLowerCase().includes(query)) ||
   (!!row.phone && stripPhoneFormatting(row.phone.toLowerCase()).includes(stripPhoneFormatting(query)));
 
-type UserSort = "createdAt" | "lastLoginAt" | "lastSeenAt" | "capital";
+/** Inclusive YYYY-MM-DD bounds; compared against the same signup day the table shows. */
+const registeredWithin = (row: AdminUserRow, from: string, to: string) => {
+  const day = row.createdAt?.slice(0, 10) ?? "";
+  return (!from || day >= from) && (!to || day <= to);
+};
+
+type UserSort = "createdAt" | "lastLoginAt" | "lastSeenAt" | "capital" | "profit";
 
 const USER_SORTS: { key: UserSort; label: string }[] = [
   { key: "createdAt", label: "آخر تسجيل" },
   { key: "lastLoginAt", label: "آخر دخول" },
   { key: "lastSeenAt", label: "آخر ظهور" },
   { key: "capital", label: "رأس المال" },
+  { key: "profit", label: "الأرباح" },
 ];
 
 const capitalOf = (row: AdminUserRow) => (row.portfolio ? row.portfolio.cash + row.portfolio.positionsValue : -Infinity);
+const profitOf = (row: AdminUserRow) => row.portfolio?.realizedPnl ?? -Infinity;
 
 /**
- * Newest first, or largest capital first; accounts with no such timestamp
- * (never logged in / seen) or no portfolio sink to the bottom.
+ * Newest first, or largest capital / realized profit first; accounts with no such
+ * timestamp (never logged in / seen) or no portfolio sink to the bottom.
  */
 const byUserSort = (key: UserSort) => (a: AdminUserRow, b: AdminUserRow) => {
   if (key === "capital") return capitalOf(b) - capitalOf(a) || 0;
+  if (key === "profit") return profitOf(b) - profitOf(a) || 0;
   return (b[key] ? Date.parse(b[key]) : -Infinity) - (a[key] ? Date.parse(a[key]) : -Infinity) || 0;
 };
 
@@ -637,6 +646,8 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<UserSort>("createdAt");
+  const [registeredFrom, setRegisteredFrom] = useState("");
+  const [registeredTo, setRegisteredTo] = useState("");
 
   const load = () => {
     api("/api/admin/users")
@@ -696,11 +707,14 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
     };
   }, [rows]);
 
-  // Search and sort only: the screen filters by Renewal status itself, so its chips can count every status.
+  // Search, registration date and sort only: the screen filters by Renewal status itself, so its chips can count every status.
   const query = search.trim().toLowerCase();
   const searched = useMemo(
-    () => (rows ?? []).filter((row) => !query || matchesUser(row, query)).sort(byUserSort(sortBy)),
-    [rows, query, sortBy],
+    () =>
+      (rows ?? [])
+        .filter((row) => (!query || matchesUser(row, query)) && registeredWithin(row, registeredFrom, registeredTo))
+        .sort(byUserSort(sortBy)),
+    [rows, query, registeredFrom, registeredTo, sortBy],
   );
 
   if (error)
@@ -723,24 +737,59 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
       stats={stats}
       online={online}
       controls={
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="ابحث بالهاتف أو الاسم أو البريد…"
-            className="sm:max-w-sm sm:flex-1"
-          />
-          <div className="flex flex-wrap items-center gap-1.5 sm:ms-auto">
-            <span className="text-[12px] text-muted-foreground">الترتيب:</span>
-            {USER_SORTS.map(({ key, label }) => (
-              <Button key={key} size="sm" variant={sortBy === key ? "default" : "outline"} onClick={() => setSortBy(key)}>
-                {label}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="ابحث بالهاتف أو الاسم أو البريد…"
+              className="sm:max-w-sm sm:flex-1"
+            />
+            <div className="flex flex-wrap items-center gap-1.5 sm:ms-auto">
+              <span className="text-[12px] text-muted-foreground">الترتيب:</span>
+              {USER_SORTS.map(({ key, label }) => (
+                <Button key={key} size="sm" variant={sortBy === key ? "default" : "outline"} onClick={() => setSortBy(key)}>
+                  {label}
+                </Button>
+              ))}
+              <Button size="sm" variant="outline" disabled={searched.length === 0} onClick={() => downloadUsersCsv(searched)}>
+                <Download className="size-4" />
+                تصدير CSV ({searched.length})
               </Button>
-            ))}
-            <Button size="sm" variant="outline" disabled={searched.length === 0} onClick={() => downloadUsersCsv(searched)}>
-              <Download className="size-4" />
-              تصدير CSV ({searched.length})
-            </Button>
+            </div>
+          </div>
+          {/* Its own line, laid out right-to-left so "من" comes first on the right and "إلى" after it. */}
+          <div dir="rtl" className="flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
+            <span>سجّل من</span>
+            <Input
+              type="date"
+              value={registeredFrom}
+              max={registeredTo || undefined}
+              onChange={(event) => setRegisteredFrom(event.target.value)}
+              className="h-8 w-[140px] text-[12.5px]"
+              aria-label="سجّل من تاريخ"
+            />
+            <span>إلى</span>
+            <Input
+              type="date"
+              value={registeredTo}
+              min={registeredFrom || undefined}
+              onChange={(event) => setRegisteredTo(event.target.value)}
+              className="h-8 w-[140px] text-[12.5px]"
+              aria-label="سجّل إلى تاريخ"
+            />
+            {(registeredFrom || registeredTo) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setRegisteredFrom("");
+                  setRegisteredTo("");
+                }}
+              >
+                مسح
+              </Button>
+            )}
           </div>
         </div>
       }
