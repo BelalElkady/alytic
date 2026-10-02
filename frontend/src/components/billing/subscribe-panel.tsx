@@ -22,6 +22,10 @@ const FEATURE_ROWS: { key: keyof TierLimits; label: string; unit: string }[] = [
   { key: "cashScans", label: "تحليل استخدام الكاش", unit: "مرة/شهر" },
   { key: "marketAnalysis", label: "تحليل السوق", unit: "مرة/شهر" },
 ];
+// Used until/unless the backend sends its own payLink (INSTAPAY_ADDRESS or the
+// tenant's config.instapay.address), so the pay button is never missing.
+// Same link the QR code below encodes.
+const DEFAULT_PAY_LINK = "https://ipn.eg/S/hassansmm/instapay/3iUOPP";
 const EG_NUMBER = new Intl.NumberFormat("ar-EG", { numberingSystem: "latn" });
 
 /**
@@ -49,19 +53,19 @@ export function SubscribePanel({
   const tier = lockedTier ?? pickedTier;
   const [months, setMonths] = useState<1 | 12>(initialMonths ?? 12);
   const [checking, setChecking] = useState(false);
-  const [payLink, setPayLink] = useState<string | null>(null);
+  const [payLink, setPayLink] = useState<string>(DEFAULT_PAY_LINK);
 
   useEffect(() => {
     api("/api/billing/plans")
       .then((result) => {
         setPlans(result.plans ?? []);
         setTiers(result.tiers ?? null);
-        setPayLink(result.payLink ?? null);
+        setPayLink(result.payLink || DEFAULT_PAY_LINK);
       })
       .catch(() => {
         setPlans([]);
         setTiers(null);
-        setPayLink(null);
+        setPayLink(DEFAULT_PAY_LINK);
       });
   }, []);
 
@@ -186,14 +190,12 @@ export function SubscribePanel({
           height={220}
           className="size-[220px] rounded-lg bg-white p-2"
         />
-        {payLink && (
-          <Button asChild>
-            <a href={payLink} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4" />
-              عشان تدفع دوس هنا
-            </a>
-          </Button>
-        )}
+        <Button asChild>
+          <a href={payLink} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="size-4" />
+            عشان تدفع دوس هنا
+          </a>
+        </Button>
       </div>
 
       <div className="rounded-xl border bg-surface p-4">
