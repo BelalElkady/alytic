@@ -287,7 +287,7 @@ function PreviewCard() {
   );
 }
 
-const TEASER_MOBILE = "8zIYAVQBb3c";
+const TEASER_MOBILE = "ofnZQs3byUs";
 const TEASER_DESKTOP = "ZIRWF6b3MHI";
 
 function TeaserVideo({ id, className }: { id: string; className: string }) {
