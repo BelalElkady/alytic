@@ -1010,6 +1010,104 @@ export async function deleteBlogPost(id) {
   return data;
 }
 
+// ---- Feature announcements (see supabase/schema.sql) ----
+// Per-tenant-database, like blog_posts — not centrally shared like
+// index_overrides — so these use `supabase`, not `platformDb`.
+
+export async function listAnnouncements() {
+  const { data, error } = await supabase.from('feature_announcements').select('*').order('starts_at', { ascending: false });
+  if (error) throw new Error(`listAnnouncements: ${error.message}`);
+  return data;
+}
+
+export async function createAnnouncement({ title, body, imageUrls, videoUrl, startsAt, endsAt, createdBy }) {
+  const { data, error } = await supabase
+    .from('feature_announcements')
+    .insert({
+      title,
+      body,
+      image_urls: imageUrls ?? [],
+      video_url: videoUrl ?? null,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      created_by: createdBy ?? null,
+    })
+    .select('*')
+    .single();
+  if (error) throw new Error(`createAnnouncement: ${error.message}`);
+  return data;
+}
+
+export async function updateAnnouncement(id, { title, body, imageUrls, videoUrl, startsAt, endsAt }) {
+  const { data, error } = await supabase
+    .from('feature_announcements')
+    .update({
+      title,
+      body,
+      image_urls: imageUrls ?? [],
+      video_url: videoUrl ?? null,
+      starts_at: startsAt,
+      ends_at: endsAt,
+    })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(`updateAnnouncement: ${error.message}`);
+  return data;
+}
+
+export async function deleteAnnouncement(id) {
+  const { error } = await supabase.from('feature_announcements').delete().eq('id', id);
+  if (error) throw new Error(`deleteAnnouncement: ${error.message}`);
+}
+
+/**
+ * The one announcement this user should currently see, or null: among the
+ * announcements whose window covers now, the one with the latest startsAt
+ * that this user hasn't dismissed. Two separate queries (candidates,
+ * dismissed ids) rather than a join, since this table is small and a plain
+ * `.not('id', 'in', ...)` filter would need the dismissed set client-side
+ * anyway to also exclude it from an "active" window that already passed.
+ */
+let warnedMissingAnnouncementsTable = false;
+
+export async function getActiveAnnouncementForUser(userId) {
+  const now = new Date().toISOString();
+  const [{ data: candidates, error: candidatesError }, { data: dismissed, error: dismissedError }] = await Promise.all([
+    supabase.from('feature_announcements').select('*').lte('starts_at', now).gte('ends_at', now).order('starts_at', { ascending: false }),
+    supabase.from('user_announcement_dismissals').select('announcement_id').eq('user_id', userId),
+  ]);
+  if (isMissingTable(candidatesError) || isMissingTable(dismissedError)) {
+    if (!warnedMissingAnnouncementsTable) {
+      warnedMissingAnnouncementsTable = true;
+      console.error('getActiveAnnouncementForUser: the feature_announcements/user_announcement_dismissals tables are missing — apply backend/supabase/schema.sql.');
+    }
+    return null;
+  }
+  if (candidatesError) throw new Error(`getActiveAnnouncementForUser: ${candidatesError.message}`);
+  if (dismissedError) throw new Error(`getActiveAnnouncementForUser: ${dismissedError.message}`);
+  const dismissedIds = new Set(dismissed.map((row) => row.announcement_id));
+  return candidates.find((row) => !dismissedIds.has(row.id)) ?? null;
+}
+
+/** Hides one announcement for one account, forever — idempotent by the upsert's onConflict. */
+export async function dismissAnnouncement(userId, announcementId) {
+  const { error } = await supabase
+    .from('user_announcement_dismissals')
+    .upsert(
+      { user_id: userId, announcement_id: announcementId, dismissed_at: new Date().toISOString() },
+      { onConflict: 'user_id,announcement_id' },
+    );
+  if (isMissingTable(error)) {
+    if (!warnedMissingAnnouncementsTable) {
+      warnedMissingAnnouncementsTable = true;
+      console.error('dismissAnnouncement: the user_announcement_dismissals table is missing — apply backend/supabase/schema.sql.');
+    }
+    return;
+  }
+  if (error) throw new Error(`dismissAnnouncement: ${error.message}`);
+}
+
 // ---- Recommendation track record (see the recommendations section of supabase/schema.sql) ----
 
 /** Logs issued calls. A call already logged for that User, stock and action today is skipped, not an error. */
