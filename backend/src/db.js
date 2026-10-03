@@ -783,16 +783,25 @@ export async function deleteUser(id) {
  * Every registered user, newest first — for the admin users list. Excludes
  * auth secrets (password hash/salt, tokens). Each row also carries `usage`,
  * the same shape getUserUsage returns, read in this one query so the list
- * needs no second per-account (or second whole-table) read.
+ * needs no second per-account (or second whole-table) read. Paged like
+ * getAllPortfolios — an unpaged select stops at PostgREST's 1000-row cap,
+ * which the users table is already past. `id` breaks created_at ties so
+ * pages can't overlap or skip.
  */
 export async function getAllUsers() {
-  const { data, error } = await supabase
-    .from('users')
-    .select(`id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(`getAllUsers: ${error.message}`);
   const month = cairoToday().slice(0, 7);
-  return data.map((row) => ({ ...row, usage: usageRecordFrom(row, month) }));
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('users')
+      .select(`id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw new Error(`getAllUsers: ${error.message}`);
+    rows.push(...data.map((row) => ({ ...row, usage: usageRecordFrom(row, month) })));
+    if (data.length < 1000) return rows;
+  }
 }
 
 let warnedMissingFollowUps = false;
