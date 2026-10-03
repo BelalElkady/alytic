@@ -27,6 +27,7 @@ do $$
 declare
   seed_email constant text := 'belal.elkady9@gmail.com';  -- ← your sign-up email on the test site
   seed_user text;
+  seed_portfolio bigint;
   tickers constant text[] := array['COMI','ABUK','SWDY','HDBK','MFPC','EGAL','HELI','ETEL','TMGH','PHDC','ORAS','FWRY','JUFO','AMOC','CIEB'];
   benchmarks constant text[] := array['EGX30','EGX30','EGX30','EGX70','EGX30','EGX70','EGX70','EGX30','EGX30','EGX30','EGX30','EGX30','EGX70','EGX30','EGX30'];
   n_calls constant int := 60;
@@ -60,6 +61,11 @@ begin
   select id into seed_user from users where email = seed_email;
   if seed_user is not null then
     update users set email_verified = true where id = seed_user;
+    -- A real call always carries the Portfolio it was made for (null only
+    -- once that Portfolio is deleted), so the user's calls get their primary one.
+    select id into seed_portfolio from portfolios
+    where user_id = seed_user and deleted_at is null
+    order by ordinal, id limit 1;
   else
     raise notice 'No user with email % — every seeded call will belong to no one («توصياتي فقط» stays empty).', seed_email;
   end if;
@@ -141,7 +147,7 @@ begin
     end loop;
 
     insert into recommendations (
-      user_id, ticker, action, ref_price, target_price, stop_price, horizon_days,
+      user_id, portfolio_id, ticker, action, ref_price, target_price, stop_price, horizon_days,
       egx30_at_issue, model_version, issued_at, issued_on, source, style,
       benchmark, indices_at_issue,
       status, closed_at, exit_price, return_pct, excess_return_pct, benchmark_excess_pct, index_excess,
@@ -150,6 +156,7 @@ begin
       evaluated_at
     ) values (
       case when i % 2 = 0 then seed_user else null end,
+      case when i % 2 = 0 then seed_portfolio else null end,
       v_ticker, v_action, v_ref, v_target, v_stop, v_horizon,
       30000 + i * 25, 'seed', v_issued + time '11:00', v_issued, 'seed', 'medium',
       v_bench, jsonb_build_object('EGX30', 30000 + i * 25, 'EGX70', 9500 + i * 10, 'EGX33', 4100 + i * 3, 'EGX100', 13000 + i * 12),
