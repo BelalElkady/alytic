@@ -311,8 +311,8 @@ git commit -m "feat(db): Portfolio CRUD by id"
 
 **Interfaces:**
 - Produces:
-  - `getUserUsage(userId): Promise<{month: string|null, cashScans: number, recommendations: number, screenshots: number, marketAnalysis: number, credits: {cashScans, recommendations, screenshots, marketAnalysis}, lastCashScanAt: string|null, lastMarketScanAt: string|null}>` — reads the new `users` columns, always returns a full shape (defaults, never null sub-fields).
-  - `putUserUsage(userId, usage): Promise<void>` — `usage` is the same shape; writes every column.
+  - `getUserUsage(userId): Promise<{month: string, cashScans: number, recommendations: number, screenshots: number, marketAnalysis: number, credits: {cashScans, recommendations, screenshots, marketAnalysis}, lastCashScanAt: string|null, lastMarketScanAt: string|null}>` — reads the new `users` columns. **Performs the month-rollover check that the old `usageFor(portfolio)` did** (`backend/src/api/server.js:803-806`, being retired — see Task 7): if the stored `usage_month` is not `cairoToday().slice(0,7)`, the four `usage*` counters come back zeroed (unpersisted — nothing is written until something actually bumps a counter), with `month` set to the *current* month in the returned object either way. `credits`/`lastCashScanAt`/`lastMarketScanAt` are never month-scoped and always pass through unchanged. `cashScans`/`recommendations`/`screenshots`/`marketAnalysis` are never null (default 0); `credits.*` likewise.
+  - `putUserUsage(userId, usage): Promise<void>` — `usage` is the same shape; writes every column, including whatever `month` the caller passed (callers always pass `getUserUsage`'s own current-month output back, per `bumpUsage`'s contract in Task 7).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -327,16 +327,26 @@ test('getUserUsage defaults a fresh user to zero, and putUserUsage round-trips',
   assert.equal(after.screenshots, 2);
   assert.equal(after.credits.recommendations, 5);
 });
+
+test('getUserUsage rolls the four usage counters over on a stale stored month, but never credits', async () => {
+  const { user } = await register({ email: uniqueEmail(), phone: uniquePhone(), password: 'x'.repeat(8) });
+  const current = await getUserUsage(user.id);
+  await putUserUsage(user.id, { ...current, month: '2000-01', screenshots: 9, credits: { ...current.credits, recommendations: 3 } });
+  const rolled = await getUserUsage(user.id);
+  assert.equal(rolled.month, current.month); // the CURRENT month, not the stale '2000-01'
+  assert.equal(rolled.screenshots, 0); // zeroed — stale month
+  assert.equal(rolled.credits.recommendations, 3); // credits are never month-scoped
+});
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run both tests to verify they fail**
 
 Run: `node --test backend/test/modules/portfolio-storage.test.js`
 Expected: FAIL — `getUserUsage is not a function`
 
-- [ ] **Step 3: Implement `getUserUsage`/`putUserUsage` in `backend/src/db.js`**, reading/writing the eleven `users` columns from Task 1 Step 2, mapping `usage_cash_scans` ↔ `cashScans` etc.
+- [ ] **Step 3: Implement `getUserUsage`/`putUserUsage` in `backend/src/db.js`**, reading/writing the eleven `users` columns from Task 1 Step 2, mapping `usage_cash_scans` ↔ `cashScans` etc. `getUserUsage` performs the month-rollover check per its Interfaces-block description above.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run both tests to verify they pass**
 
 Run: `node --test backend/test/modules/portfolio-storage.test.js`
 Expected: PASS
@@ -510,13 +520,13 @@ git commit -m "refactor(portfolio): resolve primary Portfolio id internally; add
 ### Task 7: `server.js` — quota/Credit helpers and their call sites
 
 **Files:**
-- Modify: `backend/src/api/server.js` — `creditsOf`/`addCredits` (:780-792), `usageFor`/`bumpUsage`/`baseLeftFor`/`leftFor` (:797-826), `withinScanSession`/`chargeScanSession` (:1773-1798), the screenshot-import charge (:3032-3046), the stock-review charge (:~3226-3270), the admin Credits grant (:1246-1281), `GET /api/portfolio` (:2107-2128), `GET /api/admin/users` (:1154-1172, the `chosenStyle`/usage read — **leave the style read alone**, only touch usage), `/api/reset` (:2766-2776), the five `userId`-passing call sites into `analyzeTicker`/`analyzeMany` (:1674, :1875, :2408, :3097, :3245), and the two agent-wrapper call sites `getOrGenerateReview` (:3107) and `getOrGenerateCashReview` (:3317).
+- Modify: `backend/src/api/server.js` — `creditsOf`/`addCredits` (:780-792), `usageFor`/`bumpUsage`/`baseLeftFor`/`leftFor` (:797-826), `withinScanSession`/`chargeScanSession` (:1773-1798), the screenshot-import charge (:3032-3046), the stock-review charge (:~3226-3270), the admin Credits grant (:1246-1281), `GET /api/portfolio` (:2107-2128), `GET /api/admin/users` (:1154-1172, the `chosenStyle`/usage read — **leave the style read alone**, only touch usage), `/api/reset` (:2766-2776), the five `userId`-passing call sites into `analyzeTicker`/`analyzeMany` (:1674, :1875, :2408, :3097, :3245), the two agent-wrapper call sites `getOrGenerateReview` (:3107) and `getOrGenerateCashReview` (:3317), and all five `logRecommendations` call sites (:3086, :3116, :3276, :3336, :3387 — Task 5 Step 5 inserts `portfolioId` as `logRecommendations`'s new second positional argument, so every one of these breaks silently, by argument-shift not by error, if left unchanged).
 - Modify: `backend/src/analyze.js` — `analyzeTicker`'s `opts.userId` (its doc comment already says its only use is "to key that position's own AI trailing-stop cache" — exactly the parameter `getOrGenerateTrailingStop`/`getLiveTrailingStop` renamed to `portfolioId` in Task 5 Step 5), and the one internal call site (:385, :403) passing it through.
 - Modify: `backend/src/cli.js:90` — its one `analyzeTicker(code, { ..., userId: 'local' })` call site.
 
 **Interfaces:**
 - Consumes: `withUserUsage`, `withPortfolioAndUsage` (Task 6); `getUserUsage`/`putUserUsage`, `primaryPortfolioIdFor` (Task 3, Task 2); `getOrGenerateReview`/`getOrGenerateCashReview`/`getOrGenerateTrailingStop`/`getLiveTrailingStop` now taking `portfolioId` (Task 5 Step 5).
-- Produces: `usageFor(usage)`, `bumpUsage(usage, kind)`, `creditsOf(usage)`, `addCredits(usage, deltas)`, `baseLeftFor(kind, usage, tier)`, `leftFor(kind, usage, tier)` — same names, same return shapes, now taking a **User-usage record** (Task 3's shape) instead of a portfolio object. `withinScanSession(usage, kind)`, `chargeScanSession(userId, usage, kind, tier)` likewise. `analyzeTicker(code, { ...capital, rules, style, portfolioId })` — `userId` renamed.
+- Produces: `bumpUsage(usage, kind)`, `creditsOf(usage)`, `addCredits(usage, deltas)`, `baseLeftFor(kind, usage, tier)`, `leftFor(kind, usage, tier)` — same names, same return shapes, now taking a **User-usage record** (Task 3's `getUserUsage` shape) instead of a portfolio object. `withinScanSession(usage, kind)`, `chargeScanSession(userId, usage, kind, tier)` likewise. `analyzeTicker(code, { ...capital, rules, style, portfolioId })` — `userId` renamed. **`usageFor` is retired**: it only ever did the month-rollover check (`server.js:803-806`), which Task 3's `getUserUsage` now does itself — every former `usageFor(portfolio)` call becomes a direct `usage` parameter (already current-month-correct) passed in by the caller. `bumpUsage(usage, kind)` reads `usage[kind]` directly (no inner `usageFor` call); `baseLeftFor(kind, usage, tier)` likewise.
 
 - [ ] **Step 1: Write the failing test** (API-level, exercising the existing screenshot quota behavior end-to-end)
 
@@ -538,7 +548,7 @@ test('GET /api/portfolio reports the same screenshotImportsLeft after a charge a
 Run: `node --test backend/test/api/analysis.test.js`
 Expected: FAIL once Step 3 below changes the helpers' parameter shape without yet updating call sites — or PASS-then-regress if done in the wrong order. Do Step 3 as one atomic change across every call site listed above, then re-run.
 
-- [ ] **Step 3: Rewire every helper and call site** per the Interfaces block. In particular:
+- [ ] **Step 3: Rewire every helper and call site** per the Interfaces block. Delete `usageFor` (`server.js:803-806`) entirely — its two callers (`bumpUsage`, `baseLeftFor`) stop calling it, per the Interfaces block, so keeping it around would be dead code. In particular:
   - Screenshot-import charge (both branches, :3032 and :3032-3046-equivalent merge path): replace `withPortfolio(req.user.id, (portfolio) => {...bumpUsage...})` with `withPortfolioAndUsage(req.user.id, ({usage, portfolio}) => ({ usage: ...bumpUsage(usage,'screenshots')..., portfolio: ...unchanged book mutation... }))`.
   - Stock-review charge: same pattern — the quota bump and the `lastVerdicts` write become one `withPortfolioAndUsage` call.
   - `chargeScanSession`: no book write at all (confirmed — it only ever touches `usage`/`lastCashScanAt`/`lastMarketScanAt`) — becomes `withUserUsage(userId, (usage) => {...})`, dropping its `portfolio` parameter entirely; its two call sites (`/api/scan`'s cash-scan cap, `/api/review/cash`'s session check) stop passing a loaded portfolio for this purpose.
@@ -549,17 +559,19 @@ Expected: FAIL once Step 3 below changes the helpers' parameter shape without ye
 
 - [ ] **Step 4: Rename `analyzeTicker`'s `opts.userId` to `opts.portfolioId`** in `backend/src/analyze.js` (its one internal use, at the `getOrGenerateTrailingStop`/`getLiveTrailingStop` call around :385-403, already expects `portfolioId` after Task 5 Step 5). Then, at each of its five callers in `server.js` (:1674, :1875, :2408, :3097, :3245) and its one caller in `cli.js:90`, resolve `const portfolioId = await primaryPortfolioIdFor(userId);` once alongside the existing `loadPortfolio(userId)`/`req.user.id` in that handler, and pass `portfolioId` instead of `userId` into the options object. Do the same at the two agent-wrapper call sites, `getOrGenerateReview(...,  { portfolioId, rules, style, force })` (:3107) and `getOrGenerateCashReview(portfolio, { portfolioId, ... })` (:3317) — both handlers already have `req.user.id` in scope, so this is the same one-line resolve, reused.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 5: Insert `portfolioId` into all five `logRecommendations` call sites** (`logRecommendations(userId, portfolioId, items, {...})`, per Task 5 Step 5's new signature). Three of these sit in handlers Step 4 already resolved a `portfolioId` in — reuse that same variable, don't re-resolve: the market-report-fallback and portfolio-review calls (:3086, :3116, in the handler that calls `getOrGenerateReview` at :3107), and the cash-review call (:3336, in the handler that calls `getOrGenerateCashReview` at :3317). The stock-review call (:3276) is in the handler whose `analyzeMany` call (:3245) Step 4 already resolved a `portfolioId` for — reuse it. The market-analysis call (:3387, inside `GET /api/market-analysis`) has no existing `portfolioId` in scope — add `const portfolioId = await primaryPortfolioIdFor(req.user.id);` right before it.
+
+- [ ] **Step 6: Run test to verify it passes**
 
 Run: `node --test backend/test/api/analysis.test.js`
 Expected: PASS
 
-- [ ] **Step 6: Run the full existing backend suite to confirm no regression**
+- [ ] **Step 7: Run the full existing backend suite to confirm no regression**
 
 Run: `npm test` (in `backend/`; runs `node --test "test/**/*.test.js"` then cleans up test data)
 Expected: every pre-existing test passes, plus every new test Tasks 2–7 added, with exactly the one known pre-existing exception from the Test Baseline (`analysis.test.js`'s cash-plan sizing) still failing and no other. A *different* failing test is this task's regression; a higher pass count than the baseline's 383 is expected (Tasks 2–7's new tests), not a red flag.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add backend/src/api/server.js backend/src/analyze.js backend/src/cli.js backend/test/api/analysis.test.js
