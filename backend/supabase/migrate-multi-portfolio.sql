@@ -5,6 +5,19 @@
 
 begin;
 
+-- User-level quota and Credits columns — must exist before backfill update below.
+alter table users add column if not exists usage_month text;
+alter table users add column if not exists usage_cash_scans integer not null default 0;
+alter table users add column if not exists usage_recommendations integer not null default 0;
+alter table users add column if not exists usage_screenshots integer not null default 0;
+alter table users add column if not exists usage_market_analysis integer not null default 0;
+alter table users add column if not exists credits_cash_scans integer not null default 0;
+alter table users add column if not exists credits_recommendations integer not null default 0;
+alter table users add column if not exists credits_screenshots integer not null default 0;
+alter table users add column if not exists credits_market_analysis integer not null default 0;
+alter table users add column if not exists last_cash_scan_at timestamptz;
+alter table users add column if not exists last_market_scan_at timestamptz;
+
 alter table portfolios rename to portfolios_legacy;
 
 create table portfolios (
