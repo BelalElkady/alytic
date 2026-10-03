@@ -164,6 +164,9 @@ export function ManualEntryDialog() {
               أو تعدّل وقف وهدف بنفسك. ولو نفّذت بيع أو شراء جديد، سجّله من تبويب «صفقة جديدة»،
               ولتصحيح صفقة اتسجلت غلط افتح تبويب «سجل الصفقات».
             </p>
+            <p className="rounded-lg border-2 border-destructive bg-destructive/10 px-4 py-3 text-center text-[15px] font-bold leading-relaxed text-destructive">
+              لو عايز تدخّل أسهمك يدوي، روح لتبويب «صفقة جديدة».
+            </p>
 
             {anyEstimated && (
               <Notice tone="warn">
