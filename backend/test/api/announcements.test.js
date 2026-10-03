@@ -11,7 +11,7 @@ const platformAdminEmail = `platform-admin-${crypto.randomUUID()}@test.local`;
 process.env.ADMIN_EMAILS = platformAdminEmail;
 
 import { startServer, request, registerUser, sessionFrom } from '../helpers/server.js';
-import { setUserRole } from '../../src/db.js';
+import { setUserRole, createAnnouncement, deleteAnnouncement } from '../../src/db.js';
 
 const ctx = await startServer();
 const { baseUrl } = ctx;
@@ -135,4 +135,74 @@ test('the image upload endpoint stores a valid PNG and rejects non-image bytes',
     body: Buffer.from('not a real png'),
   });
   assert.equal(bad.status, 415);
+});
+
+function windowAround(nowOffsetHours, spanHours) {
+  const startsAt = new Date(Date.now() + (nowOffsetHours - spanHours / 2) * 3600_000).toISOString();
+  const endsAt = new Date(Date.now() + (nowOffsetHours + spanHours / 2) * 3600_000).toISOString();
+  return { startsAt, endsAt };
+}
+
+test('an announcement that has not started yet is not active', async () => {
+  const row = await createAnnouncement({ title: 't', body: 'b', imageUrls: [], videoUrl: null, ...windowAround(5, 1) });
+  const user = await registerUser(baseUrl);
+  const res = await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.announcement, null);
+  await deleteAnnouncement(row.id);
+});
+
+test('an announcement that already ended is not active', async () => {
+  const row = await createAnnouncement({ title: 't', body: 'b', imageUrls: [], videoUrl: null, ...windowAround(-5, 1) });
+  const user = await registerUser(baseUrl);
+  const res = await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie });
+  assert.equal(res.body.announcement, null);
+  await deleteAnnouncement(row.id);
+});
+
+test('an announcement whose window covers now is active, until dismissed', async () => {
+  const row = await createAnnouncement({ title: 'ميزة', body: 'شرح', imageUrls: ['https://example.com/a.png'], videoUrl: null, ...windowAround(0, 2) });
+  const user = await registerUser(baseUrl);
+
+  const before = await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie });
+  assert.equal(before.body.announcement.id, row.id);
+  assert.deepEqual(before.body.announcement.imageUrls, ['https://example.com/a.png']);
+
+  const dismiss = await request(baseUrl, 'POST', `/api/announcements/${row.id}/dismiss`, { cookie: user.cookie });
+  assert.equal(dismiss.status, 200);
+
+  const after = await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie });
+  assert.equal(after.body.announcement, null);
+
+  await deleteAnnouncement(row.id);
+});
+
+test('dismissing is idempotent and only hides the announcement for that one account', async () => {
+  const row = await createAnnouncement({ title: 't', body: 'b', imageUrls: [], videoUrl: null, ...windowAround(0, 2) });
+  const u1 = await registerUser(baseUrl);
+  const u2 = await registerUser(baseUrl);
+
+  await request(baseUrl, 'POST', `/api/announcements/${row.id}/dismiss`, { cookie: u1.cookie });
+  await request(baseUrl, 'POST', `/api/announcements/${row.id}/dismiss`, { cookie: u1.cookie }); // second call must not error
+
+  assert.equal((await request(baseUrl, 'GET', '/api/announcements/active', { cookie: u1.cookie })).body.announcement, null);
+  assert.equal((await request(baseUrl, 'GET', '/api/announcements/active', { cookie: u2.cookie })).body.announcement.id, row.id);
+
+  await deleteAnnouncement(row.id);
+});
+
+test('of two overlapping active announcements, the one with the later startsAt wins', async () => {
+  const older = await createAnnouncement({ title: 'older', body: 'b', imageUrls: [], videoUrl: null, ...windowAround(0, 4) });
+  const newer = await createAnnouncement({ title: 'newer', body: 'b', imageUrls: [], videoUrl: null, ...windowAround(0, 2) });
+  const user = await registerUser(baseUrl);
+
+  const res = await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie });
+  assert.equal(res.body.announcement.id, newer.id);
+
+  await deleteAnnouncement(older.id);
+  await deleteAnnouncement(newer.id);
+});
+
+test('an anonymous request to the public announcement endpoints is rejected', async () => {
+  assert.equal((await request(baseUrl, 'GET', '/api/announcements/active')).status, 401);
 });

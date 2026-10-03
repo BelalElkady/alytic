@@ -21,7 +21,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -630,6 +630,21 @@ const aiLimiter = perUserLimiter(15, 1);
 app.use(['/api/scan', '/api/analyze', '/api/history', '/api/quotes'], analysisLimiter);
 app.post(['/api/review', '/api/review/stock', '/api/review/cash', '/api/portfolio/import-screenshot'], aiLimiter);
 app.get(['/api/fundamentals/:code', '/api/market-analysis'], aiLimiter);
+
+// ---- Feature announcements (public, signed-in-user side) -------------------
+// No extra gating: both sit under the general /api/* middleware above, which
+// already requires req.user and answers 401 otherwise, same as every other
+// non-admin endpoint.
+
+app.get('/api/announcements/active', wrap(async (req, res) => {
+  const row = await getActiveAnnouncementForUser(req.user.id);
+  res.json({ announcement: row ? { id: row.id, title: row.title, body: row.body, imageUrls: row.image_urls, videoUrl: row.video_url } : null });
+}));
+
+app.post('/api/announcements/:id/dismiss', wrap(async (req, res) => {
+  await dismissAnnouncement(req.user.id, req.params.id);
+  res.json({ ok: true });
+}));
 
 // ---- Support chat ----------------------------------------------------------
 // Deliberately outside PAID_PATHS: this is how a user asks to subscribe and
