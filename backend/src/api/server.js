@@ -1757,8 +1757,8 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
   // named after it, and an AI stop-loss call — all attacker-chosen. Only
   // tickers in the universe are analyzable.
   if (!lookup(code)) return res.status(404).json({ error: 'السهم مش موجود' });
-  const portfolio = await loadPortfolio(req.user.id);
-  const portfolioId = await primaryPortfolioIdFor(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
   // Without this, the detail dialog silently analyzed every stock with the
@@ -1823,7 +1823,8 @@ function knownCodesFrom(raw) {
 }
 
 app.get('/api/quotes', wrap(async (req, res) => {
-  const portfolio = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   const requested = req.query.codes
     ? knownCodesFrom(req.query.codes)
     : Object.keys(portfolio.positions);
@@ -1902,8 +1903,8 @@ async function chargeScanSession(userId, kind, tier) {
 }
 
 app.get('/api/scan', wrap(async (req, res) => {
-  const portfolio = await loadPortfolio(req.user.id);
-  const portfolioId = await primaryPortfolioIdFor(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
 
   let cashScansLeftNow = null;
   let marketAnalysisLeftNow = null;
@@ -2314,7 +2315,8 @@ app.post('/api/portfolio/trade', wrap(async (req, res) => {
   }
   const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     recordTrade(portfolio, { code, side, shares: Number(shares), price: Number(price), fees: fees === '' ? 0 : fees, date, note }),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
@@ -2341,14 +2343,16 @@ app.post('/api/portfolio/trades/:index', wrap(async (req, res) => {
   }
   const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     editTrade(portfolio, tradeAt(portfolio, req), { code, side, shares, price, fees: fees === '' ? 0 : fees, date, note }),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
 }));
 
 app.post('/api/portfolio/trades/:index/delete', wrap(async (req, res) => {
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     editTrade(portfolio, tradeAt(portfolio, req), null),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
@@ -2357,7 +2361,8 @@ app.post('/api/portfolio/trades/:index/delete', wrap(async (req, res) => {
 app.post('/api/portfolio/cash', wrap(async (req, res) => {
   const amount = Number(req.body?.cash);
   if (!Number.isFinite(amount) || amount < 0 || amount > MAX_MONEY) return res.status(400).json({ error: 'مبلغ غير صالح' });
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     recordCashFlow({ ...portfolio, cash: amount }, amount - (portfolio.cash ?? 0), 'cash'),
   );
   res.json(updated);
@@ -2386,7 +2391,8 @@ async function currentPrices(codes) {
  */
 const corporateActionResearch = new Map(); // one search per event, shared across users
 async function reconcileCorporateActions(userId) {
-  const portfolio = await loadPortfolio(userId);
+  const portfolioId = await primaryPortfolioIdFor(userId);
+  const portfolio = await loadPortfolio(portfolioId);
   const codes = Object.keys(portfolio.positions);
   if (!codes.length) return [];
   const quotes = await fetchLatestQuotes(codes).catch(() => new Map());
@@ -2422,7 +2428,7 @@ async function reconcileCorporateActions(userId) {
       .catch((err) => console.warn('[corporate-actions] event save failed:', err.message));
   }
   if (!proposals.length) return [];
-  await withPortfolio(userId, (p) => applyCorporateActions(p, proposals));
+  await withPortfolio(userId, portfolioId, (p) => applyCorporateActions(p, proposals));
   console.log(`[corporate-actions] ${userId}:`, JSON.stringify(proposals.map(({ code, factor, status, confirmedBy }) => ({ code, factor, status, confirmedBy }))));
   return proposals;
 }
@@ -2453,7 +2459,8 @@ app.post('/api/portfolio/corporate-action', wrap(async (req, res) => {
   if (typeof code !== 'string' || !isDayString(lastBefore) || !['undo', 'apply', 'dismiss'].includes(action)) {
     return res.status(400).json({ error: 'محتاج code و lastBefore و action (undo/apply/dismiss)' });
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     resolveCorporateAction(portfolio, { code: code.toUpperCase(), lastBefore, action }),
   );
   res.json(updated);
@@ -2467,7 +2474,8 @@ app.post('/api/portfolio/levels', wrap(async (req, res) => {
       return res.status(400).json({ error: 'مستوى الوقف أو الهدف غير صالح' });
     }
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     setLevels(portfolio, code, { stop: stop == null ? null : Number(stop), target: target == null ? null : Number(target) }),
   );
   res.json(updated);
@@ -2498,7 +2506,8 @@ app.post('/api/portfolio/holding', wrap(async (req, res) => {
 
   // Fetched outside the lock; only a share-count change moves the book's value.
   const prices = nextShares != null ? await currentPrices([c]) : new Map();
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const existing = portfolio.positions[c];
     if (!existing) throw new Error(`مفيش مركز مفتوح في ${c}`);
     const positions = { ...portfolio.positions };
@@ -2533,7 +2542,8 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
       return res.status(400).json({ error: `الملاحظة لازم تكون نص (حد أقصى ${MAX_WATCH_NOTE} حرف)` });
     }
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const watchlist = { ...portfolio.watchlist };
     if (remove) delete watchlist[c];
     else watchlist[c] = { addedAt: watchlist[c]?.addedAt ?? new Date().toISOString(), note: note ?? null };
@@ -2548,7 +2558,7 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
  */
 async function snapshotForUser(userId, date = null) {
   const portfolioId = await primaryPortfolioIdFor(userId);
-  return withPortfolio(userId, async (portfolio) => {
+  return withPortfolio(userId, portfolioId, async (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     // Whatever style this account has active — same resolution the admin
     // panel's "chosen style" column uses — so the ratchet the AI applies here
@@ -2620,7 +2630,8 @@ async function snapshotForUser(userId, date = null) {
 app.post('/api/snapshot', wrap(async (req, res) => {
   // Fast, unlocked check for the common "nothing to snapshot" case, so it
   // still returns 400 immediately rather than paying for a lock acquisition.
-  const precheck = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const precheck = await loadPortfolio(portfolioId);
   if (!Object.keys(precheck.positions).length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة تتسجّل' });
 
   const updated = await snapshotForUser(req.user.id, req.body?.date ?? null);
@@ -2802,7 +2813,8 @@ function startStopPlanScheduler() {
  * never overwrite a real saved close.
  */
 app.post('/api/log/backfill', wrap(async (req, res) => {
-  const precheck = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const precheck = await loadPortfolio(portfolioId);
   const precheckCodes = Object.keys(precheck.positions);
   if (!precheckCodes.length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة' });
 
@@ -2822,7 +2834,7 @@ app.post('/api/log/backfill', wrap(async (req, res) => {
   let from = null;
   let to = null;
 
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     const log = { ...(portfolio.log ?? {}) };
     let priorTotal = null;
@@ -2877,7 +2889,8 @@ app.post('/api/log/backfill', wrap(async (req, res) => {
 }));
 
 app.get('/api/log', wrap(async (req, res) => {
-  const p = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const p = await loadPortfolio(portfolioId);
   res.json({ log: p.log ?? {}, days: Object.keys(p.log ?? {}).sort() });
 }));
 
@@ -2887,12 +2900,14 @@ app.post('/api/log/note', wrap(async (req, res) => {
   if (!isDayString(date) || (note != null && (typeof note !== 'string' || note.length > MAX_DAY_NOTE))) {
     return res.status(400).json({ error: 'التاريخ أو الملاحظة غير صالحة' });
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) => setNote(portfolio, date, note ?? ''));
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => setNote(portfolio, date, note ?? ''));
   res.json({ ok: true, entry: updated.log[date] });
 }));
 
 app.get('/api/settings', wrap(async (req, res) => {
-  const p = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const p = await loadPortfolio(portfolioId);
   // commissionPct was a setting before trades carried their own fees; older books still store it.
   const { commissionPct: _retired, ...settings } = p.settings ?? {};
   res.json({ settings: { ...RULES, ...settings }, rules: RULES });
@@ -2907,7 +2922,8 @@ app.post('/api/settings/style', wrap(async (req, res) => {
   if (style !== null && !STYLE_KEYS.includes(style)) {
     return res.status(400).json({ error: 'أسلوب غير معروف' });
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const { investStyle: _previous, ...settings } = portfolio.settings ?? {};
     return { ...portfolio, settings: style ? { ...settings, investStyle: style } : settings };
   });
@@ -2918,7 +2934,8 @@ app.post('/api/settings/style', wrap(async (req, res) => {
 app.post('/api/reset', wrap(async (req, res) => {
   const scope = req.body?.scope ?? 'log';
   if (scope !== 'log' && scope !== 'all') return res.status(400).json({ error: 'نطاق المسح غير معروف' });
-  await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     scope === 'all'
       // imports survives the wipe — behaviorProfile() reads it to know
       // whether the account has ever imported a screenshot, wipe or not.
@@ -3014,6 +3031,7 @@ function screenshotImportsLeft(usage, tier) {
 app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'استيراد الصورة محتاج OPENROUTER_API_KEY في .env' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة لمحفظتك أولاً' });
+  const portfolioId = await portfolioIdFromRequest(req);
   // Checked before the model call so an exhausted allowance costs nothing.
   if (screenshotImportsLeft(await getUserUsage(req.user.id), req.access.tier) <= 0) {
     return res.status(429).json({ error: SCREENSHOT_LIMIT_MESSAGE, reason: 'screenshot_limit', screenshotImportsLeft: 0 });
@@ -3153,7 +3171,7 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
       console.warn(`[screenshot] nothing usable (${SCREENSHOT_VISION_MODEL}):`, JSON.stringify(rows).slice(0, 1500));
       throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
     }
-    const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, ({ usage, portfolio }) => {
+    const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, portfolioId, ({ usage, portfolio }) => {
       if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
       const watchlist = { ...portfolio.watchlist };
       for (const c of watchCodes) watchlist[c] ??= { addedAt: importedAt, note: null };
@@ -3179,13 +3197,13 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   // Prices for every code the import can add or remove, to record the value it
   // moves as a cash flow — fetched here, outside the lock.
   const importPrices = await currentPrices([
-    ...new Set([...Object.keys(positions), ...Object.keys((await loadPortfolio(req.user.id)).positions)]),
+    ...new Set([...Object.keys(positions), ...Object.keys((await loadPortfolio(portfolioId)).positions)]),
   ]);
   // Only the merge-and-save is locked. The AI extraction above can take
   // several seconds; holding the per-user write lock for that whole span
   // would block ordinary trades/cash edits for no reason, since none of it
   // touches portfolio state until this point.
-  const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, ({ usage, portfolio }) => {
+  const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, portfolioId, ({ usage, portfolio }) => {
     // Re-checked under the lock: parallel requests all pass the early check
     // while none of them has been recorded yet.
     if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
@@ -3231,8 +3249,8 @@ async function runReview({ userId, style, force }) {
   const rules = style ? rulesForStyle(RULES, style) : RULES;
   const effectiveStyle = style ?? 'medium';
 
-  const portfolio = await loadPortfolio(userId);
   const portfolioId = await primaryPortfolioIdFor(userId);
+  const portfolio = await loadPortfolio(portfolioId);
   const capital = capitalOf(portfolio);
 
   // An empty book has no personal fit to judge — the honest answer to "what
@@ -3363,11 +3381,11 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   const pre = reviewPreflight(req, res);
   if (!pre) return;
   const code = String(req.body?.code ?? '').toUpperCase();
-  const portfolio = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   if (!portfolio.positions[code]) return res.status(400).json({ error: `مفيش مركز مفتوح في ${code || 'السهم ده'}` });
 
   const userId = req.user.id;
-  const portfolioId = await primaryPortfolioIdFor(userId);
   const tier = req.access.tier;
   const jobKey = reviewJobKey(userId, pre.style, code);
   // The live price on the card when it was asked for — only used to tell the
@@ -3424,7 +3442,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
     // The verdict itself is kept on the portfolio as the stock's last
     // recommendation: the card shows it on every device until the user asks
     // for a new one (see rememberVerdict).
-    await withPortfolioAndUsage(userId, ({ usage, portfolio: p }) => {
+    await withPortfolioAndUsage(userId, portfolioId, ({ usage, portfolio: p }) => {
       const kept = rememberVerdict(p, code, verdict, {
         style: pre.style ?? 'medium',
         price: requestPrice,
@@ -3464,8 +3482,8 @@ app.post('/api/review/cash', wrap(async (req, res) => {
   if (!indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${index}` });
 
   const userId = req.user.id;
-  const portfolioId = await primaryPortfolioIdFor(userId);
-  const portfolio = await loadPortfolio(userId);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   if (!(portfolio.cash > 0)) return res.status(400).json({ error: 'مفيش كاش متاح يتحلل.' });
 
   // This review rides on a cash-scan use that was already spent (or is
