@@ -85,16 +85,39 @@ alter table users add column if not exists last_login_ip text;
 -- the admin panel counts.
 alter table users add column if not exists last_seen_at timestamptz;
 
+-- User-level quota and Credits tracking, per feature.
+alter table users add column if not exists usage_month text;
+alter table users add column if not exists usage_cash_scans integer not null default 0;
+alter table users add column if not exists usage_recommendations integer not null default 0;
+alter table users add column if not exists usage_screenshots integer not null default 0;
+alter table users add column if not exists usage_market_analysis integer not null default 0;
+alter table users add column if not exists credits_cash_scans integer not null default 0;
+alter table users add column if not exists credits_recommendations integer not null default 0;
+alter table users add column if not exists credits_screenshots integer not null default 0;
+alter table users add column if not exists credits_market_analysis integer not null default 0;
+alter table users add column if not exists last_cash_scan_at timestamptz;
+alter table users add column if not exists last_market_scan_at timestamptz;
+
 create unique index if not exists idx_users_google_id on users(google_id) where google_id is not null;
 create index if not exists idx_users_verification_token on users(verification_token) where verification_token is not null;
 create index if not exists idx_users_reset_token on users(reset_token) where reset_token is not null;
 
+-- A new tenant's portfolios table is created directly in the shape below.
+-- An existing tenant that already has a portfolios table (with user_id as
+-- primary key) must run migrate-multi-portfolio.sql once, by hand, before
+-- this block is next applied to that database.
 create table if not exists portfolios (
-  user_id text primary key references users(id) on delete cascade,
-  state_json jsonb not null,
+  id bigint generated always as identity primary key,
+  user_id text not null references users(id) on delete cascade,
+  name text not null,
+  style text,
+  ordinal integer not null default 0,
+  state_json jsonb not null default '{}'::jsonb,
+  deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+create index if not exists idx_portfolios_user on portfolios (user_id) where deleted_at is null;
 
 -- One AI-generated market report per (trading day, investor style), shared by
 -- every user rather than regenerated per request. See
@@ -129,22 +152,23 @@ create table if not exists ai_stop_plans (
   primary key (code, style, report_date)
 );
 
--- One AI-generated personalized review per (user, trading day, investor
+-- One AI-generated personalized review per (portfolio, trading day, investor
 -- style), keyed additionally by a hash of the inputs that actually change its
 -- content (positions, watchlist, cash). Unlike market_reports this can't be
--- shared across users, but repeated requests from the same user on the same
+-- shared across users, but repeated requests from the same portfolio on the same
 -- day with an unchanged portfolio are still served from here instead of
 -- paying for another model call. A changed portfolio_hash — a trade, a
 -- watchlist edit, a cash change — naturally busts the cache on lookup. See
 -- src/api/server.js's /api/review.
 --
--- `style` is free text, not a strict enum, so it also holds other per-user
+-- `style` is free text, not a strict enum, so it also holds other per-portfolio
 -- daily caches that don't deserve their own table — e.g. a cash review keys
 -- on `cash:INDEX`, and an open position's AI-determined trailing stop (see
 -- stopPlanner.js's getOrGenerateTrailingStop) keys on `stop:STYLE:CODE`,
 -- portfolio_hash there covering only that one position (avgCost, shares,
 -- existing stop) rather than the whole book.
 create table if not exists portfolio_reviews (
+  portfolio_id bigint not null references portfolios(id) on delete restrict,
   user_id text not null references users(id) on delete cascade,
   report_date text not null,
   style text not null,
@@ -153,7 +177,7 @@ create table if not exists portfolio_reviews (
   model text,
   usage_json jsonb,
   generated_at timestamptz not null default now(),
-  primary key (user_id, report_date, style)
+  primary key (portfolio_id, report_date, style)
 );
 
 -- The one-per-Cairo-day "تحليل الكاش" limit this table tracked was dropped
@@ -489,6 +513,7 @@ end $$;
 create table if not exists recommendations (
   id bigint generated always as identity primary key,
   user_id text references users(id) on delete set null,
+  portfolio_id bigint not null references portfolios(id) on delete restrict,
   ticker text not null,
   action recommendation_action not null,
   ref_price numeric not null check (ref_price > 0),
@@ -600,9 +625,9 @@ alter table recommendations add column if not exists stock_move_sessions integer
 alter table recommendations add column if not exists stock_move_final boolean not null default false;
 create index if not exists recommendations_tracking_idx on recommendations (ticker, issued_on) where stock_move_final = false;
 
--- One call per (User, stock, action, day): the same review read twice, or a
+-- One call per (User, portfolio, stock, action, day): the same review read twice, or a
 -- cached market report served on every page view, logs once.
-create unique index if not exists recommendations_daily_key on recommendations (user_id, ticker, action, issued_on);
+create unique index if not exists recommendations_daily_key on recommendations (user_id, portfolio_id, ticker, action, issued_on);
 create index if not exists recommendations_open_idx on recommendations (ticker, issued_on) where status = 'open';
 create index if not exists recommendations_user_idx on recommendations (user_id, issued_at desc);
 create index if not exists recommendations_issued_idx on recommendations (issued_at desc);
@@ -644,11 +669,11 @@ begin
   -- UPDATE
   if (new.id, new.ticker, new.action, new.ref_price, new.target_price, new.stop_price, new.horizon_days,
       new.egx30_at_issue, new.model_version, new.issued_at, new.issued_on, new.source, new.style,
-      new.benchmark, new.indices_at_issue)
+      new.benchmark, new.indices_at_issue, new.portfolio_id)
      is distinct from
      (old.id, old.ticker, old.action, old.ref_price, old.target_price, old.stop_price, old.horizon_days,
       old.egx30_at_issue, old.model_version, old.issued_at, old.issued_on, old.source, old.style,
-      old.benchmark, old.indices_at_issue) then
+      old.benchmark, old.indices_at_issue, old.portfolio_id) then
     raise exception 'recommendation %: issue fields are immutable', old.id;
   end if;
   if new.user_id is distinct from old.user_id and new.user_id is not null then
