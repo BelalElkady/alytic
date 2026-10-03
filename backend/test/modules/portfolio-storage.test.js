@@ -119,3 +119,42 @@ test('recommendations_guard refuses to change portfolio_id on an existing row, l
   const { error } = await supabase.from('recommendations').update({ portfolio_id: portfolioId + 1 }).eq('id', id);
   assert.match(error?.message ?? '', /issue fields are immutable/);
 });
+
+test('logRecommendations does not dedupe the same stock/action across two different Portfolios of the same User', async () => {
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
+  const portfolioA = await primaryPortfolioIdFor(user.id);
+
+  // No db.js/API call creates a *second* Portfolio for one User yet — that's
+  // a later plan task. Insert the row directly via the raw `supabase` client
+  // already exported from db.js, the same way the guard-trigger test above
+  // reaches it for its own purposes.
+  const { data: second, error: insertErr } = await supabase
+    .from('portfolios')
+    .insert({ user_id: user.id, name: 'محفظة ثانية', ordinal: 1 })
+    .select('id')
+    .single();
+  assert.equal(insertErr, null);
+  const portfolioB = second.id;
+
+  const item = [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }];
+  await logRecommendations(user.id, portfolioA, item, { source: 'test', style: 'medium', model: 'test' });
+  await logRecommendations(user.id, portfolioB, item, { source: 'test', style: 'medium', model: 'test' });
+
+  const keysA = await listOpenRecommendationKeys(portfolioA);
+  const keysB = await listOpenRecommendationKeys(portfolioB);
+  assert.ok(keysA.includes('COMI:buy'));
+  assert.ok(keysB.includes('COMI:buy')); // not deduped against portfolioA's open call
+
+  // Two independent rows exist — one per Portfolio — not one deduped against the other.
+  const { data: rows, error: selectErr } = await supabase
+    .from('recommendations')
+    .select('portfolio_id')
+    .eq('user_id', user.id)
+    .eq('ticker', 'COMI')
+    .eq('action', 'buy');
+  assert.equal(selectErr, null);
+  assert.deepEqual(new Set(rows.map((r) => r.portfolio_id)), new Set([portfolioA, portfolioB]));
+});
