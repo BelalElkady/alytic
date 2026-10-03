@@ -29,6 +29,7 @@ import { StopPlanSchema, TrailingStopSchema } from './schemas.js';
 import { stopPlanSystemPrompt, trailingStopSystemPrompt } from './prompts/system.js';
 import { getStopPlan, putStopPlan, getPortfolioReview, putPortfolioReview } from '../db.js';
 import { portfolioHash } from '../portfolio.js';
+import { currentTenant } from '../tenancy/context.js';
 import RULES from '../config/rules.js';
 import { DEFAULT_STYLE } from '../config/styles.js';
 
@@ -214,7 +215,9 @@ export async function getLiveTrailingStop(portfolioId, code, name, liveSnapshot,
   const earnedReset = price >= referencePrice * (1 + LIVE_STOP_MIN_RISE_PCT / 100);
   if (!earnedReset || ageMs < LIVE_STOP_MIN_INTERVAL_MS) return reused;
 
-  const key = `${portfolioId}:${cacheStyle}:${asOf}`;
+  // Tenant-prefixed: Portfolio ids are per-database (1, 2, 3...), so the same
+  // id exists in every tenant and must not share another tenant's request.
+  const key = `${currentTenant()?.id ?? ''}:${portfolioId}:${cacheStyle}:${asOf}`;
   if (liveStopInFlight.has(key)) return liveStopInFlight.get(key);
 
   const task = (async () => {
