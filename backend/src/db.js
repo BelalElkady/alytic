@@ -1,6 +1,7 @@
 import { platformDb, supabase } from './supabaseClient.js';
 import { currentTenant } from './tenancy/context.js';
 import { canonicalEmail } from './emailIdentity.js';
+import { cairoToday } from './data/cache.js';
 
 function must(result, context) {
   if (result.error) throw new Error(`${context}: ${result.error.message}`);
@@ -273,6 +274,75 @@ export async function putPortfolioById(portfolioId, state) {
     'putPortfolioById',
   );
   if (!updated.length) throw new Error(`putPortfolioById: no Portfolio with id ${portfolioId}`);
+}
+
+/**
+ * User-level usage/credits — the tier system's usage side, read off the
+ * eleven `users` columns Task 1 added. Mirrors the old per-Portfolio
+ * `usageFor` (backend/src/api/server.js, retired in Task 7): the four
+ * `usage*` counters reset the moment the calendar month (Cairo time) changes
+ * — lazily, on read, like credits used to be — so a stale stored month comes
+ * back all-zero *without writing anything*; `month` in the returned object
+ * is always the current month regardless. `credits` and the two
+ * `lastX...At` timestamps are never month-scoped and always pass through
+ * unchanged. None of the four usage counters or four credit counters are
+ * ever null (default 0).
+ */
+export async function getUserUsage(userId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select(
+      'usage_month, usage_cash_scans, usage_recommendations, usage_screenshots, usage_market_analysis, credits_cash_scans, credits_recommendations, credits_screenshots, credits_market_analysis, last_cash_scan_at, last_market_scan_at',
+    )
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw new Error(`getUserUsage: ${error.message}`);
+  const month = cairoToday().slice(0, 7);
+  const stale = data?.usage_month !== month;
+  return {
+    month,
+    cashScans: stale ? 0 : data?.usage_cash_scans ?? 0,
+    recommendations: stale ? 0 : data?.usage_recommendations ?? 0,
+    screenshots: stale ? 0 : data?.usage_screenshots ?? 0,
+    marketAnalysis: stale ? 0 : data?.usage_market_analysis ?? 0,
+    credits: {
+      cashScans: data?.credits_cash_scans ?? 0,
+      recommendations: data?.credits_recommendations ?? 0,
+      screenshots: data?.credits_screenshots ?? 0,
+      marketAnalysis: data?.credits_market_analysis ?? 0,
+    },
+    lastCashScanAt: data?.last_cash_scan_at ?? null,
+    lastMarketScanAt: data?.last_market_scan_at ?? null,
+  };
+}
+
+/**
+ * Writes every usage/credits column, including whatever `month` the caller
+ * passed — callers always pass `getUserUsage`'s own current-month output
+ * back (see `bumpUsage`'s contract, Task 7), so this never needs to do the
+ * rollover check itself.
+ */
+export async function putUserUsage(userId, usage) {
+  must(
+    await supabase
+      .from('users')
+      .update({
+        usage_month: usage.month,
+        usage_cash_scans: usage.cashScans,
+        usage_recommendations: usage.recommendations,
+        usage_screenshots: usage.screenshots,
+        usage_market_analysis: usage.marketAnalysis,
+        credits_cash_scans: usage.credits.cashScans,
+        credits_recommendations: usage.credits.recommendations,
+        credits_screenshots: usage.credits.screenshots,
+        credits_market_analysis: usage.credits.marketAnalysis,
+        last_cash_scan_at: usage.lastCashScanAt,
+        last_market_scan_at: usage.lastMarketScanAt,
+      })
+      .eq('id', userId),
+    'putUserUsage',
+  );
+  forgetSessionUser(userId);
 }
 
 /** @returns {object|null} the stored report for that day/style, or null if never generated. */

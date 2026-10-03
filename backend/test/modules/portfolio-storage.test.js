@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import { primaryPortfolioIdFor, getPortfolioById, putPortfolioById, getUserByEmail } from '../../src/db.js';
+import { primaryPortfolioIdFor, getPortfolioById, putPortfolioById, getUserByEmail, getUserUsage, putUserUsage } from '../../src/db.js';
 import { register } from '../../src/auth.js';
 import { uniqueEmail, uniquePhone } from '../helpers/server.js';
 
@@ -40,4 +40,31 @@ test('putPortfolioById updates the existing row by id and bumps updated_at', asy
   assert.equal(after.userId, user.id);
   assert.equal(after.state.cash, 12345);
   assert.ok(new Date(after.state.updatedAt).getTime() > 0);
+});
+
+test('getUserUsage defaults a fresh user to zero, and putUserUsage round-trips', async () => {
+  const email = uniqueEmail();
+  await register({ email, password: 'x'.repeat(8), phone: uniquePhone() });
+  const user = await getUserByEmail(email);
+
+  const zero = await getUserUsage(user.id);
+  assert.equal(zero.screenshots, 0);
+  assert.equal(zero.credits.recommendations, 0);
+  await putUserUsage(user.id, { ...zero, screenshots: 2, credits: { ...zero.credits, recommendations: 5 } });
+  const after = await getUserUsage(user.id);
+  assert.equal(after.screenshots, 2);
+  assert.equal(after.credits.recommendations, 5);
+});
+
+test('getUserUsage rolls the four usage counters over on a stale stored month, but never credits', async () => {
+  const email = uniqueEmail();
+  await register({ email, password: 'x'.repeat(8), phone: uniquePhone() });
+  const user = await getUserByEmail(email);
+
+  const current = await getUserUsage(user.id);
+  await putUserUsage(user.id, { ...current, month: '2000-01', screenshots: 9, credits: { ...current.credits, recommendations: 3 } });
+  const rolled = await getUserUsage(user.id);
+  assert.equal(rolled.month, current.month); // the CURRENT month, not the stale '2000-01'
+  assert.equal(rolled.screenshots, 0); // zeroed — stale month
+  assert.equal(rolled.credits.recommendations, 3); // credits are never month-scoped
 });
