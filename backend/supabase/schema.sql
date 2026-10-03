@@ -714,6 +714,33 @@ insert into users (id, email, name, password_salt, password_hash, email_verified
 values ('local', 'local@alytic.local', 'Local CLI', 'local', 'local', true, now())
 on conflict (id) do nothing;
 
+-- A time-boxed "what's new" popup the main site's admin publishes for signed-in
+-- users. Each tenant runs this same schema in its own database (see
+-- tenancy/registry.js), but these two tables are only ever read/written
+-- through isPlatformAdmin-gated routes, so a client tenant's copy stays
+-- empty — see docs/superpowers/specs/2026-10-03-feature-announcement-popup-design.md.
+create table if not exists feature_announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  body text not null,
+  image_urls jsonb not null default '[]'::jsonb,
+  video_url text,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  created_by text references users(id)
+);
+create index if not exists idx_feature_announcements_active_window
+  on feature_announcements (starts_at, ends_at);
+
+-- Per-account, so a dismissal survives across devices/browsers.
+create table if not exists user_announcement_dismissals (
+  user_id text not null references users(id) on delete cascade,
+  announcement_id uuid not null references feature_announcements(id) on delete cascade,
+  dismissed_at timestamptz not null default now(),
+  primary key (user_id, announcement_id)
+);
+
 -- ---------------------------------------------------------------------------
 -- Lock the tables away from Supabase's public API.
 --
@@ -756,30 +783,3 @@ end $$;
 
 -- To check the result (every row should show rowsecurity = true):
 --   select tablename, rowsecurity from pg_tables where schemaname = 'public' order by 1;
-
--- A time-boxed "what's new" popup the main site's admin publishes for signed-in
--- users. Each tenant runs this same schema in its own database (see
--- tenancy/registry.js), but these two tables are only ever read/written
--- through isPlatformAdmin-gated routes, so a client tenant's copy stays
--- empty — see docs/superpowers/specs/2026-10-03-feature-announcement-popup-design.md.
-create table if not exists feature_announcements (
-  id uuid primary key default gen_random_uuid(),
-  title text not null,
-  body text not null,
-  image_urls jsonb not null default '[]'::jsonb,
-  video_url text,
-  starts_at timestamptz not null,
-  ends_at timestamptz not null,
-  created_at timestamptz not null default now(),
-  created_by text references users(id)
-);
-create index if not exists idx_feature_announcements_active_window
-  on feature_announcements (starts_at, ends_at);
-
--- Per-account, so a dismissal survives across devices/browsers.
-create table if not exists user_announcement_dismissals (
-  user_id text not null references users(id) on delete cascade,
-  announcement_id uuid not null references feature_announcements(id) on delete cascade,
-  dismissed_at timestamptz not null default now(),
-  primary key (user_id, announcement_id)
-);
