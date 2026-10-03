@@ -8,7 +8,7 @@ import {
   loadPortfolio, recordCashFlow, positionsFlow,
 } from '../../src/portfolio.js';
 import { register } from '../../src/auth.js';
-import { getUserByEmail } from '../../src/db.js';
+import { getUserByEmail, primaryPortfolioIdFor } from '../../src/db.js';
 import { uniqueEmail, uniquePhone } from '../helpers/server.js';
 
 const CODE = 'ABUK'; // any real universe code; recordTrade refuses unknown ones
@@ -175,9 +175,10 @@ test('withPortfolio serialises concurrent writes — the lost-update regression'
   const email = uniqueEmail();
   await register({ email, password: 'Passw0rd!123', phone: uniquePhone() });
   const userId = (await getUserByEmail(email)).id;
-  await withPortfolio(userId, (p) => ({ ...p, cash: 100_000 })); // seed the book
+  const portfolioId = await primaryPortfolioIdFor(userId);
+  await withPortfolio(userId, portfolioId, (p) => ({ ...p, cash: 100_000 })); // seed the book
   const jobs = Array.from({ length: 15 }, (_, i) =>
-    withPortfolio(userId, (portfolio) =>
+    withPortfolio(userId, portfolioId, (portfolio) =>
       recordTrade(portfolio, { code: CODE, side: 'buy', shares: 10, price: 10 + i }),
     ),
   );
@@ -188,8 +189,8 @@ test('withPortfolio serialises concurrent writes — the lost-update regression'
   assert.ok(Math.abs(final.cash - expectedCash) < 2, `cash ${final.cash} ≈ ${expectedCash}`);
   assert.equal(final.positions.ABUK.shares, 150);
   // The queue must not leak a resolved promise as a permanent jam point.
-  await assert.doesNotReject(() => withPortfolio(userId, (p) => ({ ...p, cash: 42 })));
-  assert.equal((await loadPortfolio(userId)).cash, 42);
+  await assert.doesNotReject(() => withPortfolio(userId, portfolioId, (p) => ({ ...p, cash: 42 })));
+  assert.equal((await loadPortfolio(portfolioId)).cash, 42);
 });
 
 test('setLevels updates an open position and refuses unknown codes', async () => {

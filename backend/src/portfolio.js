@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { primaryPortfolioIdFor, getPortfolioById, putPortfolioById, getUserUsage, putUserUsage } from './db.js';
+import { getPortfolioById, putPortfolioById, getUserUsage, putUserUsage } from './db.js';
 import { lookup } from './config/universe.js';
 import { currentTenant } from './tenancy/context.js';
 
@@ -29,21 +29,16 @@ const EMPTY = {
   updatedAt: null,
 };
 
-// A Portfolio now lives at its own `id`, not at the User's id — a User can
-// have more than one. Every call site here still only knows the User, so
-// each of these resolves the User's *primary* Portfolio (the one every
-// existing endpoint means by "the portfolio") via `primaryPortfolioIdFor`
-// before reading or writing it. That keeps `loadPortfolio`/`savePortfolio`'s
-// signatures exactly as every caller in server.js already expects.
-export async function loadPortfolio(userId = 'local') {
-  const portfolioId = await primaryPortfolioIdFor(userId);
+// A Portfolio lives at its own `id`, not at the User's id — a User can have
+// more than one. Callers resolve which Portfolio they mean (e.g. via
+// `primaryPortfolioIdFor`) and pass that id in directly.
+export async function loadPortfolio(portfolioId) {
   const row = await getPortfolioById(portfolioId);
   return stampAddedOrder({ ...EMPTY, ...(row?.state ?? {}) });
 }
 
-export async function savePortfolio(p, userId = 'local') {
+export async function savePortfolio(p, portfolioId) {
   const stamped = stampAddedOrder(p);
-  const portfolioId = await primaryPortfolioIdFor(userId);
   await putPortfolioById(portfolioId, stamped);
   return stamped;
 }
@@ -131,10 +126,10 @@ async function withUserLock(userId, fn) {
   }
 }
 
-export async function withPortfolio(userId, mutator) {
+export async function withPortfolio(userId, portfolioId, mutator) {
   return withUserLock(userId, async () => {
-    const portfolio = await loadPortfolio(userId);
-    return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), userId);
+    const portfolio = await loadPortfolio(portfolioId);
+    return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), portfolioId);
   });
 }
 
@@ -162,14 +157,14 @@ export async function withUserUsage(userId, mutator) {
  * `withPortfolio` and `withUserUsage` use, so nothing else for this user can
  * observe it half-done.
  */
-export async function withPortfolioAndUsage(userId, mutator) {
+export async function withPortfolioAndUsage(userId, portfolioId, mutator) {
   return withUserLock(userId, async () => {
-    const [usage, portfolio] = await Promise.all([getUserUsage(userId), loadPortfolio(userId)]);
+    const [usage, portfolio] = await Promise.all([getUserUsage(userId), loadPortfolio(portfolioId)]);
     const next = await mutator({ usage, portfolio });
     const stamped = stampSharesSetAt(portfolio, next.portfolio);
     const [, savedPortfolio] = await Promise.all([
       putUserUsage(userId, next.usage),
-      savePortfolio(stamped, userId),
+      savePortfolio(stamped, portfolioId),
     ]);
     return { usage: next.usage, portfolio: savedPortfolio };
   });
