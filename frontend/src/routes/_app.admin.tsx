@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, del, post, postRaw } from "@/lib/api";
+import { AnnouncementsTab } from "@/components/admin/announcements-tab";
 import { BlogDraftsTab } from "@/components/admin/blog-drafts-tab";
 import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
@@ -182,6 +183,7 @@ function AdminPage() {
         </TabsTrigger>
         <TabsTrigger value="blog">المدونة</TabsTrigger>
         {isPlatformAdmin && <TabsTrigger value="platform">العملاء</TabsTrigger>}
+        {isPlatformAdmin && <TabsTrigger value="announcements">تنبيهات الميزات</TabsTrigger>}
         {isPlatformAdmin && (
           <TabsTrigger value="live-prices" className="relative">
             الأسعار اللحظية
@@ -202,6 +204,11 @@ function AdminPage() {
       {isPlatformAdmin && (
         <TabsContent value="platform">
           <PlatformTab />
+        </TabsContent>
+      )}
+      {isPlatformAdmin && (
+        <TabsContent value="announcements">
+          <AnnouncementsTab />
         </TabsContent>
       )}
       {isPlatformAdmin && (

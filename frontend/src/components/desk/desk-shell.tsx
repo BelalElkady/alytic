@@ -27,6 +27,7 @@ import { SubscribePanel } from "@/components/billing/subscribe-panel";
 import { LogoMark } from "@/components/brand/logo";
 import { CashDialog } from "@/components/desk/cash-dialog";
 import { DetailDialog } from "@/components/desk/detail-dialog";
+import { FeatureAnnouncementDialog } from "@/components/desk/feature-announcement-dialog";
 import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
 import { Spinner, Stat } from "@/components/desk/state-blocks";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
@@ -117,6 +118,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <BlogTicker />
       <RequirePhoneDialog />
       <RequireInvestStyleDialog />
+      <FeatureAnnouncementDialog />
       <VerifyEmailBanner />
       <ExpiryBanner />
       {!locked && <HeroBar />}
