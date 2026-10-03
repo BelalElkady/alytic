@@ -21,7 +21,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -2210,8 +2210,52 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
 
 // ---- Portfolio -------------------------------------------------------------
 
+/**
+ * Resolves which Portfolio this request means: the id named by the
+ * X-Portfolio-Id header, if present and owned by this User — otherwise
+ * (header absent, malformed, foreign, or pointing at a soft-deleted row)
+ * the User's primary Portfolio. Never throws, never 403s/404s: a
+ * forged/foreign id must be indistinguishable from no header at all, so an
+ * attacker can't use this to probe which Portfolio ids exist.
+ */
+async function portfolioIdFromRequest(req) {
+  const header = req.headers['x-portfolio-id'];
+  if (header !== undefined) {
+    const id = Number(header);
+    if (Number.isInteger(id)) {
+      const row = await getPortfolioById(id);
+      if (row && row.userId === req.user.id && !row.deletedAt) return id;
+    }
+  }
+  return primaryPortfolioIdFor(req.user.id);
+}
+
+app.get('/api/portfolios', wrap(async (req, res) => {
+  const [rows, activePortfolioId] = await Promise.all([
+    listPortfoliosForUser(req.user.id),
+    portfolioIdFromRequest(req),
+  ]);
+  const portfolios = rows.map((row) => {
+    const log = row.state?.log ?? {};
+    const dates = Object.keys(log).sort();
+    const last = dates.length ? log[dates[dates.length - 1]] : null;
+    return {
+      id: row.id,
+      name: row.name,
+      style: row.style,
+      value: last ? last.total : (row.state?.cash ?? 0),
+      pl: last ? last.pl : 0,
+      cash: last ? last.cash : (row.state?.cash ?? 0),
+      positionCount: Object.keys(row.state?.positions ?? {}).length,
+      active: row.id === activePortfolioId,
+    };
+  });
+  res.json({ portfolios, activePortfolioId });
+}));
+
 app.get('/api/portfolio', wrap(async (req, res) => {
-  const p = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const p = await loadPortfolio(portfolioId);
   const usage = await getUserUsage(req.user.id);
   checkCorporateActionsSoon(req.user.id, p);
   // /api/portfolio isn't a PAID_PATHS entry (a lapsed account can still read
