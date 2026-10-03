@@ -250,6 +250,18 @@ export async function getPortfolioById(portfolioId) {
   return { id: data.id, userId: data.user_id, name: data.name, style: data.style, ordinal: data.ordinal, state: data.state_json };
 }
 
+/** @returns {Promise<{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object}[]>} every non-soft-deleted Portfolio for this User, ordered by ordinal ascending. */
+export async function listPortfoliosForUser(userId) {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .select('id, user_id, name, style, ordinal, state_json')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('ordinal', { ascending: true });
+  if (error) throw new Error(`listPortfoliosForUser: ${error.message}`);
+  return data.map((row) => ({ id: row.id, userId: row.user_id, name: row.name, style: row.style, ordinal: row.ordinal, state: row.state_json }));
+}
+
 /**
  * Update-only, unlike the old user_id-keyed putPortfolio: `id` is a
  * `generated always as identity` column, so there is no row to "insert" at a
