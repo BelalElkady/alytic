@@ -739,6 +739,13 @@ insert into users (id, email, name, password_salt, password_hash, email_verified
 values ('local', 'local@alytic.local', 'Local CLI', 'local', 'local', true, now())
 on conflict (id) do nothing;
 
+-- Matching Portfolio for the local dev account. A brand-new tenant running
+-- schema.sql fresh (no migration needed) must have this row so
+-- primaryPortfolioIdFor('local') doesn't throw.
+insert into portfolios (user_id, name, ordinal)
+select 'local', 'المحفظة الرئيسية', 0
+where not exists (select 1 from portfolios where user_id = 'local');
+
 -- ---------------------------------------------------------------------------
 -- Lock the tables away from Supabase's public API.
 --
