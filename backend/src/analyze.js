@@ -172,11 +172,11 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
  * @param {string} [opts.style] - the raw style key (see config/styles.js), needed
  *   alongside `rules` to key the AI stop cache — `rules` alone has already
  *   merged the style's numbers in and can't be turned back into its key.
- * @param {string} [opts.userId] - required whenever `position` is set, to key
+ * @param {string} [opts.portfolioId] - required whenever `position` is set, to key
  *   that position's own AI trailing-stop cache.
  */
 export async function analyzeTicker(code, opts = {}) {
-  const { range = '2y', force = false, capital = null, rules = RULES, style = DEFAULT_STYLE, userId = null } = opts;
+  const { range = '2y', force = false, capital = null, rules = RULES, style = DEFAULT_STYLE, portfolioId = null } = opts;
   let position = opts.position ?? null;
 
   const meta = lookup(code) ?? { code, ar: code, sector: null, shariah: 'review' };
@@ -383,7 +383,7 @@ export async function analyzeTicker(code, opts = {}) {
     const runningHigh = Math.max(...bars.slice(-120).map((b) => b.h));
     const existingStop = position.stop ?? stopPlan.stop;
     const trailingAi = await getOrGenerateTrailingStop(
-      userId,
+      portfolioId,
       code,
       meta.ar ?? code,
       snapshot,
@@ -400,7 +400,7 @@ export async function analyzeTicker(code, opts = {}) {
     // it (ratchet-only — see getLiveTrailingStop). A failure there just leaves
     // the close-based stop in force.
     const liveStop = livePrice
-      ? await getLiveTrailingStop(userId, code, meta.ar ?? code, posSnapshot, { avgCost: position.avgCost, shares: position.shares }, stopAtClose, style, rules).catch((err) => {
+      ? await getLiveTrailingStop(portfolioId, code, meta.ar ?? code, posSnapshot, { avgCost: position.avgCost, shares: position.shares }, stopAtClose, style, rules).catch((err) => {
           console.error(`[stop] live re-set failed for ${code}:`, err.message);
           return null;
         })

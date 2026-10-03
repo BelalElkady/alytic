@@ -1,6 +1,7 @@
 import { platformDb, supabase } from './supabaseClient.js';
 import { currentTenant } from './tenancy/context.js';
 import { canonicalEmail } from './emailIdentity.js';
+import { cairoToday } from './data/cache.js';
 
 function must(result, context) {
   if (result.error) throw new Error(`${context}: ${result.error.message}`);
@@ -122,6 +123,11 @@ export async function createUser(user) {
   // Only sent when true, so signups keep working on a database that hasn't had
   // the is_marketer column applied yet.
   if (user.isMarketer) row.is_marketer = true;
+  // The User's Portfolio is created by the database, not here: the
+  // users_create_primary_portfolio trigger (supabase/schema.sql) inserts it
+  // in this same statement, so an account can never exist without one —
+  // primaryPortfolioIdFor throws for such a User and nothing lazily creates
+  // one anymore.
   mustUnlessDuplicate(await supabase.from('users').insert(row), 'createUser');
 }
 
@@ -211,26 +217,132 @@ export async function setUserName(id, name) {
   forgetSessionUser(id);
 }
 
-export async function getPortfolio(userId) {
-  const { data, error } = await supabase.from('portfolios').select('state_json').eq('user_id', userId).maybeSingle();
-  if (error) throw new Error(`getPortfolio: ${error.message}`);
-  return data?.state_json ?? null;
+/**
+ * The Portfolio a User lands on when nothing more specific is asked for —
+ * the lowest-`ordinal`, non-deleted row. Every User has at least one after
+ * Task 1's migration (see migrate-multi-portfolio.sql); a User with none is
+ * a bug elsewhere (Task 8 verifies this against the real database), so this
+ * throws rather than returning null like getPortfolioById does.
+ */
+export async function primaryPortfolioIdFor(userId) {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .select('id')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('ordinal', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`primaryPortfolioIdFor: ${error.message}`);
+  if (!data) throw new Error(`primaryPortfolioIdFor: no Portfolio for user ${userId}`);
+  return data.id;
 }
 
-export async function putPortfolio(userId, state) {
+/** @returns {{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object}|null} the Portfolio row for this id, or null if it doesn't exist. */
+export async function getPortfolioById(portfolioId) {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .select('id, user_id, name, style, ordinal, state_json')
+    .eq('id', portfolioId)
+    .maybeSingle();
+  if (error) throw new Error(`getPortfolioById: ${error.message}`);
+  if (!data) return null;
+  return { id: data.id, userId: data.user_id, name: data.name, style: data.style, ordinal: data.ordinal, state: data.state_json };
+}
+
+/**
+ * Update-only, unlike the old user_id-keyed putPortfolio: `id` is a
+ * `generated always as identity` column, so there is no row to "insert" at a
+ * caller-chosen id, and every caller resolves `portfolioId` from
+ * `primaryPortfolioIdFor`/`getPortfolioById` first — the row always already
+ * exists. Throws rather than silently no-opping if it somehow doesn't, so a
+ * bad id surfaces immediately instead of losing a write.
+ */
+export async function putPortfolioById(portfolioId, state) {
   const now = new Date().toISOString();
   const stateJson = { ...state, updatedAt: now };
-
   const updated = must(
-    await supabase.from('portfolios').update({ state_json: stateJson, updated_at: now }).eq('user_id', userId).select('user_id'),
-    'putPortfolio(update)',
+    await supabase.from('portfolios').update({ state_json: stateJson, updated_at: now }).eq('id', portfolioId).select('id'),
+    'putPortfolioById',
   );
-  if (updated.length) return;
+  if (!updated.length) throw new Error(`putPortfolioById: no Portfolio with id ${portfolioId}`);
+}
 
-  must(
-    await supabase.from('portfolios').insert({ user_id: userId, state_json: stateJson, created_at: now, updated_at: now }),
-    'putPortfolio(insert)',
+/**
+ * User-level usage/credits — the tier system's usage side, read off the
+ * eleven `users` columns Task 1 added. Mirrors the old per-Portfolio
+ * `usageFor` (backend/src/api/server.js, retired in Task 7): the four
+ * `usage*` counters reset the moment the calendar month (Cairo time) changes
+ * — lazily, on read, like credits used to be — so a stale stored month comes
+ * back all-zero *without writing anything*; `month` in the returned object
+ * is always the current month regardless. `credits` and the two
+ * `lastX...At` timestamps are never month-scoped and always pass through
+ * unchanged. None of the four usage counters or four credit counters are
+ * ever null (default 0).
+ */
+const USER_USAGE_COLUMNS =
+  'usage_month, usage_cash_scans, usage_recommendations, usage_screenshots, usage_market_analysis, credits_cash_scans, credits_recommendations, credits_screenshots, credits_market_analysis, last_cash_scan_at, last_market_scan_at';
+
+/** Shared by getUserUsage and getAllUsers: the same row shape, from a single fetched row (or none). */
+function usageRecordFrom(row, month) {
+  const stale = row?.usage_month !== month;
+  return {
+    month,
+    cashScans: stale ? 0 : row?.usage_cash_scans ?? 0,
+    recommendations: stale ? 0 : row?.usage_recommendations ?? 0,
+    screenshots: stale ? 0 : row?.usage_screenshots ?? 0,
+    marketAnalysis: stale ? 0 : row?.usage_market_analysis ?? 0,
+    credits: {
+      cashScans: row?.credits_cash_scans ?? 0,
+      recommendations: row?.credits_recommendations ?? 0,
+      screenshots: row?.credits_screenshots ?? 0,
+      marketAnalysis: row?.credits_market_analysis ?? 0,
+    },
+    lastCashScanAt: row?.last_cash_scan_at ?? null,
+    lastMarketScanAt: row?.last_market_scan_at ?? null,
+  };
+}
+
+export async function getUserUsage(userId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select(USER_USAGE_COLUMNS)
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw new Error(`getUserUsage: ${error.message}`);
+  return usageRecordFrom(data, cairoToday().slice(0, 7));
+}
+
+/**
+ * Writes every usage/credits column, including whatever `month` the caller
+ * passed — callers always pass `getUserUsage`'s own current-month output
+ * back (see `bumpUsage`'s contract, Task 7), so this never needs to do the
+ * rollover check itself. Throws if no such User exists, rather than
+ * silently writing nothing — like putPortfolioById.
+ */
+export async function putUserUsage(userId, usage) {
+  const updated = must(
+    await supabase
+      .from('users')
+      .update({
+        usage_month: usage.month,
+        usage_cash_scans: usage.cashScans,
+        usage_recommendations: usage.recommendations,
+        usage_screenshots: usage.screenshots,
+        usage_market_analysis: usage.marketAnalysis,
+        credits_cash_scans: usage.credits.cashScans,
+        credits_recommendations: usage.credits.recommendations,
+        credits_screenshots: usage.credits.screenshots,
+        credits_market_analysis: usage.credits.marketAnalysis,
+        last_cash_scan_at: usage.lastCashScanAt,
+        last_market_scan_at: usage.lastMarketScanAt,
+      })
+      .eq('id', userId)
+      .select('id'),
+    'putUserUsage',
   );
+  forgetSessionUser(userId);
+  if (!updated.length) throw new Error(`putUserUsage: no User with id ${userId}`);
 }
 
 /** @returns {object|null} the stored report for that day/style, or null if never generated. */
@@ -391,16 +503,16 @@ export async function putFundamentalsCache(code, data) {
 }
 
 /**
- * @returns {object|null} the stored review for that user/day/style, or null
- *   if none is stored, or if one is stored but for a different portfolio
- *   (the caller must compare portfolioHash itself — this just returns
- *   whatever row exists so the caller can decide).
+ * @returns {object|null} the stored review for that Portfolio/day/style, or
+ *   null if none is stored, or if one is stored but for a different
+ *   portfolio (the caller must compare portfolioHash itself — this just
+ *   returns whatever row exists so the caller can decide).
  */
-export async function getPortfolioReview(userId, reportDate, style) {
+export async function getPortfolioReview(portfolioId, reportDate, style) {
   const { data, error } = await supabase
     .from('portfolio_reviews')
     .select('*')
-    .eq('user_id', userId)
+    .eq('portfolio_id', portfolioId)
     .eq('report_date', reportDate)
     .eq('style', style)
     .maybeSingle();
@@ -414,15 +526,26 @@ export async function getPortfolioReview(userId, reportDate, style) {
 }
 
 /**
- * Stores today's review for this user/style, replacing whatever was there —
- * unlike putMarketReport this is a per-user row, so there is no cross-request
- * race to protect against with insert-if-absent; the latest generation for a
- * changed portfolio should simply win.
+ * Stores today's review for this Portfolio/style, replacing whatever was
+ * there — unlike putMarketReport this is a per-Portfolio row, so there is no
+ * cross-request race to protect against with insert-if-absent; the latest
+ * generation for a changed portfolio should simply win. `user_id` is kept
+ * denormalized on the row (see ADR 0002 §4), so it's looked up here from the
+ * Portfolio itself rather than trusted from the caller.
  */
-export async function putPortfolioReview(userId, reportDate, style, portfolioHash, review, model, usage) {
+export async function putPortfolioReview(portfolioId, reportDate, style, portfolioHash, review, model, usage) {
+  // Only the owner is needed — not the whole state_json getPortfolioById reads.
+  const { data: owner, error: ownerError } = await supabase
+    .from('portfolios')
+    .select('user_id')
+    .eq('id', portfolioId)
+    .maybeSingle();
+  if (ownerError) throw new Error(`putPortfolioReview: ${ownerError.message}`);
+  if (!owner) throw new Error(`putPortfolioReview: no Portfolio with id ${portfolioId}`);
   const { error } = await supabase.from('portfolio_reviews').upsert(
     {
-      user_id: userId,
+      portfolio_id: portfolioId,
+      user_id: owner.user_id,
       report_date: reportDate,
       style,
       portfolio_hash: portfolioHash,
@@ -431,7 +554,7 @@ export async function putPortfolioReview(userId, reportDate, style, portfolioHas
       usage_json: usage ?? null,
       generated_at: new Date().toISOString(),
     },
-    { onConflict: 'user_id,report_date,style' },
+    { onConflict: 'portfolio_id,report_date,style' },
   );
   if (error) throw new Error(`putPortfolioReview: ${error.message}`);
 }
@@ -656,14 +779,29 @@ export async function deleteUser(id) {
   return data.length > 0;
 }
 
-/** Every registered user, newest first — for the admin users list. Excludes auth secrets (password hash/salt, tokens). */
+/**
+ * Every registered user, newest first — for the admin users list. Excludes
+ * auth secrets (password hash/salt, tokens). Each row also carries `usage`,
+ * the same shape getUserUsage returns, read in this one query so the list
+ * needs no second per-account (or second whole-table) read. Paged like
+ * getAllPortfolios — an unpaged select stops at PostgREST's 1000-row cap,
+ * which the users table is already past. `id` breaks created_at ties so
+ * pages can't overlap or skip.
+ */
 export async function getAllUsers() {
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip')
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(`getAllUsers: ${error.message}`);
-  return data;
+  const month = cairoToday().slice(0, 7);
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('users')
+      .select(`id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw new Error(`getAllUsers: ${error.message}`);
+    rows.push(...data.map((row) => ({ ...row, usage: usageRecordFrom(row, month) })));
+    if (data.length < 1000) return rows;
+  }
 }
 
 let warnedMissingFollowUps = false;
@@ -705,11 +843,27 @@ export async function setUserFollowUp(userId, channel, done, updatedBy) {
   return data;
 }
 
-/** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. */
+/**
+ * Every stored portfolio's state, keyed by user_id — for the admin users
+ * list's investment-behavior summary and the daily close. `id` is along for
+ * callers that need to resolve a specific Portfolio row (still one per User —
+ * see Global Constraints). Paged, like listOpenRecommendationKeys: every User
+ * has a row now, and an unpaged select stops at PostgREST's 1000-row cap —
+ * the daily close (runDailyClose in server.js) would silently skip whoever
+ * fell past it.
+ */
 export async function getAllPortfolios() {
-  const { data, error } = await supabase.from('portfolios').select('user_id, state_json');
-  if (error) throw new Error(`getAllPortfolios: ${error.message}`);
-  return data;
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('portfolios')
+      .select('id, user_id, state_json')
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw new Error(`getAllPortfolios: ${error.message}`);
+    rows.push(...data);
+    if (data.length < 1000) return rows;
+  }
 }
 
 /** @returns {{tickers:string[],updatedAt:string,updatedBy:string|null}|null} an admin-uploaded ticker list for this index, or null if none was ever uploaded. */
@@ -1115,19 +1269,19 @@ export async function insertRecommendations(rows) {
   if (!rows.length) return;
   const { error } = await supabase
     .from('recommendations')
-    .upsert(rows, { onConflict: 'user_id,ticker,action,issued_on', ignoreDuplicates: true });
+    .upsert(rows, { onConflict: 'user_id,portfolio_id,ticker,action,issued_on', ignoreDuplicates: true });
   if (error) throw new Error(`insertRecommendations: ${error.message}`);
 }
 
-/** The stock and action of every call a User has still open — what a repeat review must not log a second copy of. */
-export async function listOpenRecommendationKeys(userId) {
-  if (!userId) return [];
+/** The stock and action of every call still open in a Portfolio — what a repeat review must not log a second copy of. */
+export async function listOpenRecommendationKeys(portfolioId) {
+  if (!portfolioId) return [];
   const keys = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('recommendations')
       .select('ticker, action')
-      .eq('user_id', userId)
+      .eq('portfolio_id', portfolioId)
       .eq('status', 'open')
       .order('id')
       .range(from, from + 999);

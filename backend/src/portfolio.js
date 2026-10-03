@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { getPortfolio, putPortfolio } from './db.js';
+import { primaryPortfolioIdFor, getPortfolioById, putPortfolioById, getUserUsage, putUserUsage } from './db.js';
 import { lookup } from './config/universe.js';
 import { currentTenant } from './tenancy/context.js';
 
@@ -29,13 +29,22 @@ const EMPTY = {
   updatedAt: null,
 };
 
+// A Portfolio now lives at its own `id`, not at the User's id — a User can
+// have more than one. Every call site here still only knows the User, so
+// each of these resolves the User's *primary* Portfolio (the one every
+// existing endpoint means by "the portfolio") via `primaryPortfolioIdFor`
+// before reading or writing it. That keeps `loadPortfolio`/`savePortfolio`'s
+// signatures exactly as every caller in server.js already expects.
 export async function loadPortfolio(userId = 'local') {
-  return stampAddedOrder({ ...EMPTY, ...((await getPortfolio(userId)) ?? {}) });
+  const portfolioId = await primaryPortfolioIdFor(userId);
+  const row = await getPortfolioById(portfolioId);
+  return stampAddedOrder({ ...EMPTY, ...(row?.state ?? {}) });
 }
 
 export async function savePortfolio(p, userId = 'local') {
   const stamped = stampAddedOrder(p);
-  await putPortfolio(userId, stamped);
+  const portfolioId = await primaryPortfolioIdFor(userId);
+  await putPortfolioById(portfolioId, stamped);
   return stamped;
 }
 
@@ -83,19 +92,35 @@ export function stampAddedOrder(p) {
  * previous caller's `savePortfolio` has fully landed. One in-process queue per
  * userId, chained on a promise — no external lock needed since this is a
  * single Node process in front of one SQLite file.
+ *
+ * The same queue also guards `withUserUsage` and `withPortfolioAndUsage`
+ * below — a User's quota (the `users` table's usage/credit columns) and a
+ * User's Portfolio book are different rows, but a screenshot import or a
+ * paid stock review that spends quota *and* writes the book (Task 7) needs
+ * both changes to land as one atomic step from every other caller's point of
+ * view. If usage had its own queue, a `withPortfolio` write and a
+ * `withUserUsage` write for the same user could run concurrently and
+ * interleave — the exact lost-update shape this queue exists to prevent, just
+ * moved from "two book writes" to "a book write racing a usage write". So
+ * there is deliberately one lock per User, not one per (User, resource): all
+ * three functions below queue on the same `queueKey`.
  */
 const writeQueues = new Map();
 
-export async function withPortfolio(userId, mutator) {
+/**
+ * Runs `fn` as the next step in this user's queue, chained after whatever is
+ * already running (or resolved immediately if the queue is empty), and clears
+ * the slot afterwards so the map doesn't grow forever. Shared by
+ * `withPortfolio`, `withUserUsage` and `withPortfolioAndUsage` so they all
+ * mutually exclude each other for the same user — see the comment above.
+ */
+async function withUserLock(userId, fn) {
   // Per site as well as per user: the 'local' CLI id exists in every tenant's database.
   const queueKey = `${currentTenant()?.id ?? ''}:${userId}`;
   const previous = writeQueues.get(queueKey) ?? Promise.resolve();
   const run = previous
     .catch(() => {}) // a prior failure must not jam the queue for later callers
-    .then(async () => {
-      const portfolio = await loadPortfolio(userId);
-      return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), userId);
-    });
+    .then(fn);
   writeQueues.set(queueKey, run);
   try {
     return await run;
@@ -104,6 +129,50 @@ export async function withPortfolio(userId, mutator) {
     // drop the reference to the run a later caller is chained onto.
     if (writeQueues.get(queueKey) === run) writeQueues.delete(queueKey);
   }
+}
+
+export async function withPortfolio(userId, mutator) {
+  return withUserLock(userId, async () => {
+    const portfolio = await loadPortfolio(userId);
+    return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), userId);
+  });
+}
+
+/**
+ * Same read-modify-write serialisation as `withPortfolio`, for a User's
+ * usage/Credits row instead of their Portfolio book — e.g. charging a cash or
+ * market-scan session (Task 7). Queues behind the same per-user lock
+ * `withPortfolio` uses, so a usage write can never race a book write for the
+ * same user.
+ */
+export async function withUserUsage(userId, mutator) {
+  return withUserLock(userId, async () => {
+    const usage = await getUserUsage(userId);
+    const next = await mutator(usage);
+    await putUserUsage(userId, next);
+    return next;
+  });
+}
+
+/**
+ * For the two call sites (Task 7: screenshot import, a paid stock review)
+ * that must spend a User's quota *and* write that User's Portfolio book as
+ * one atomic step — both reads happen before `mutator` runs, both writes
+ * happen after, and the whole thing is one turn of the same per-user queue
+ * `withPortfolio` and `withUserUsage` use, so nothing else for this user can
+ * observe it half-done.
+ */
+export async function withPortfolioAndUsage(userId, mutator) {
+  return withUserLock(userId, async () => {
+    const [usage, portfolio] = await Promise.all([getUserUsage(userId), loadPortfolio(userId)]);
+    const next = await mutator({ usage, portfolio });
+    const stamped = stampSharesSetAt(portfolio, next.portfolio);
+    const [, savedPortfolio] = await Promise.all([
+      putUserUsage(userId, next.usage),
+      savePortfolio(stamped, userId),
+    ]);
+    return { usage: next.usage, portfolio: savedPortfolio };
+  });
 }
 
 /**

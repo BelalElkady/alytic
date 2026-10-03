@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import '../helpers/env.js';
+
 import { rememberVerdict, stopContextOf } from '../../src/portfolio.js';
 
 test('rememberVerdict: keeps the card fields and what the verdict was written against', () => {

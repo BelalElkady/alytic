@@ -49,6 +49,7 @@ process.env.ALYTIC_BARS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'alytic-eval
 
 const { writeBars, isTradingDay, expectedLastSession } = await import('../src/data/cache.js');
 const { analyzeTicker } = await import('../src/analyze.js');
+const { primaryPortfolioIdFor } = await import('../src/db.js');
 
 /** Tiny deterministic PRNG — reproducible fixtures, no external dependency. */
 function prng(seed) {
@@ -124,7 +125,9 @@ for (const code of EVAL_CODES) {
   const existingStop = 30;
   const held = await analyzeTicker(code, {
     withFundamentals: false,
-    userId: 'local',
+    // A held position's trailing stop is cached per Portfolio (bigint id), so
+    // analyzeTicker needs the Portfolio's id — the same resolution cli.js uses.
+    portfolioId: await primaryPortfolioIdFor('local'),
     capital: 1_000_000,
     position: { shares: 100, avgCost: existingStop * 1.2, stop: existingStop },
   });
