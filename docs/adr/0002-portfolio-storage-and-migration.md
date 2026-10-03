@@ -15,9 +15,11 @@ Today every User has at most one `portfolios` row (`user_id` primary key, one `s
 
 `portfolios` becomes one row **per Portfolio**: a generated Portfolio id as the primary key, `user_id` as an indexed foreign key, plus `name`, `style` and an ordinal for display order. Not a per-User blob holding an array. This gives the 3-cap a plain `count(*)`, gives `recommendations` and the AI-cache tables a real foreign key to point at, and lets one Portfolio be deleted without rewriting a sibling's JSON.
 
-### 2. Quota and Credits move to `users`
+### 2. Quota and Credits move to `users` — `imports` does not
 
-`usage`, `credits`, `imports`, `lastCashScanAt` and `lastMarketScanAt` are User-level facts mistakenly nested in the Portfolio blob (splitting or copying them per Portfolio would multiply the allowance). They move to new columns on `users`, following this codebase's existing convention for per-user facts (`alter table users add column if not exists ...`, as already done for `last_login_ip` and `last_seen_at`) rather than a new joined table — five small fields don't earn a table, and quota is read on nearly every paid-feature request.
+`usage`, `credits`, `lastCashScanAt` and `lastMarketScanAt` are User-level facts mistakenly nested in the Portfolio blob (splitting or copying them per Portfolio would multiply the allowance). They move to new columns on `users`, following this codebase's existing convention for per-user facts (`alter table users add column if not exists ...`, as already done for `last_login_ip` and `last_seen_at`) rather than a new joined table — these are small fields, and quota is read on nearly every paid-feature request.
+
+`imports` is **not** one of them, despite the earlier research inventory grouping it with the quota fields. It is `portfolio.imports`, an array of `{importedAt, positions, source}` records — which stocks a screenshot landed in this book and when — read by `behaviorProfile(portfolio)` (`scoring/behavior.js:147`, `importedPositions: portfolio.imports.length > 0`), a function ADR 0002 itself already scopes per Portfolio. It stays on the Portfolio's `state_json`, alongside `trades`, `log` and `corporateActions`. Only the *quota counter* it sits next to in code (`usage.screenshots`, how many imports this User has left this month) is the User-level fact.
 
 ### 3. The server becomes authoritative for Investing style
 
