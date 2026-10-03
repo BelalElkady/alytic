@@ -19,6 +19,7 @@ import './loadEnv.js';
 import { analyzeTicker, analyzeMany } from './analyze.js';
 import { ALL_CODES, lookup } from './config/universe.js';
 import { loadPortfolio, savePortfolio, recordTrade, trackedCodes, recordCashFlow } from './portfolio.js';
+import { primaryPortfolioIdFor } from './db.js';
 import { aiAvailable } from './agent/clientOpenRouter.js';
 import RULES from './config/rules.js';
 import { DEFAULT_STYLE, STYLE_KEYS, rulesForStyle, styleProfile } from './config/styles.js';
@@ -84,10 +85,11 @@ async function cmdScan() {
 async function cmdAnalyze(code) {
   if (!code) throw new Error('اكتب كود السهم: node src/cli.js analyze COMI');
   const portfolio = await loadPortfolio();
+  const portfolioId = await primaryPortfolioIdFor('local');
   const position = portfolio.positions[code.toUpperCase()] ?? null;
   const capital = Object.values(portfolio.positions).reduce((a, p) => a + p.shares * p.avgCost, 0) + portfolio.cash;
 
-  const a = await analyzeTicker(code, { position, capital: capital || 1_000_000, userId: 'local' });
+  const a = await analyzeTicker(code, { position, capital: capital || 1_000_000, portfolioId });
 
   if (!a.usable) {
     console.log(c.red(`\n${a.code}: ${a.error}`));
@@ -160,6 +162,7 @@ async function cmdReview(styleArg) {
   const { getOrGenerateReview } = await import('./agent/analyst.js');
 
   const portfolio = await loadPortfolio();
+  const portfolioId = await primaryPortfolioIdFor('local');
   const codes = trackedCodes(portfolio);
   if (!codes.length) {
     console.log(c.yellow('\nالمحفظة وقائمة المراقبة فاضيين. سجّل صفقة الأول:'));
@@ -176,7 +179,7 @@ async function cmdReview(styleArg) {
     concurrency: 5,
     rules,
     style,
-    userId: 'local',
+    portfolioId,
   });
 
   process.stderr.write(c.dim(`بيراجع مع المحلل (أسلوب: ${styleProfile(style).label})...\n`));

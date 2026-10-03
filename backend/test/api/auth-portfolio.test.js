@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import '../helpers/env.js';
 
 import { startServer, request, sessionFrom, registerUser, uniqueEmail, uniquePhone } from '../helpers/server.js';
-import { getUserByEmail } from '../../src/db.js';
+import { getUserByEmail, getUserUsage, putUserUsage } from '../../src/db.js';
+import { TIERS } from '../../src/billing/plans.js';
 import { writeBars, synthBars } from '../helpers/bars.js';
 
 // Fixture bars so POST /api/snapshot never needs to fetch real market data.
@@ -273,6 +274,32 @@ test('the daily log round-trips through the API', async () => {
   });
   assert.equal(note.status, 200);
   assert.equal(note.body.entry.note, 'اختبار');
+});
+
+// Regression test for Task 7: creditsOf/bumpUsage/leftFor etc. moved from
+// reading a field on the loaded Portfolio blob to reading the User-usage row
+// (getUserUsage/putUserUsage in db.js). GET /api/portfolio must still report
+// the same screenshotImportsLeft it always did once a charge lands — whether
+// that charge comes from this helper directly (as here) or from
+// withPortfolioAndUsage inside /api/portfolio/import-screenshot, which this
+// suite can't drive end-to-end: there is no OPENROUTER_API_KEY in tests (see
+// helpers/env.js), so the vision call that /api/portfolio/import-screenshot
+// needs is unreachable here.
+test('GET /api/portfolio reports the same screenshotImportsLeft after a charge as before this refactor', async () => {
+  const { user, cookie } = await registerUser(baseUrl);
+
+  const before = await request(baseUrl, 'GET', '/api/portfolio', { cookie });
+  assert.equal(before.status, 200);
+  assert.equal(before.body.screenshotImportsLeft, TIERS.free.screenshots);
+
+  // Spends one screenshot use directly on the User's usage row — the same
+  // write bumpUsage(usage, 'screenshots') + putUserUsage would produce.
+  const usage = await getUserUsage(user.id);
+  await putUserUsage(user.id, { ...usage, screenshots: usage.screenshots + 1 });
+
+  const after = await request(baseUrl, 'GET', '/api/portfolio', { cookie });
+  assert.equal(after.status, 200);
+  assert.equal(after.body.screenshotImportsLeft, TIERS.free.screenshots - 1);
 });
 
 test('AI-only endpoints degrade to a plain 503 when no key is configured', async () => {

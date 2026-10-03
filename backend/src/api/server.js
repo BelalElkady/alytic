@@ -21,13 +21,13 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, getUserUsageBatch, primaryPortfolioIdFor } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { sharedIpAccounts } from '../sharedIp.js';
-import { loadPortfolio, withPortfolio, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -779,50 +779,44 @@ const capitalOf = (p) =>
   Object.values(p.positions).reduce((a, pos) => a + pos.shares * pos.avgCost, 0) + p.cash;
 
 // Extra uses an admin grants from the users table, one balance per capped
-// feature, on top of that account's tier allowance (see TIERS). Kept in
-// portfolio.credits so spending one rides the same withPortfolio lock as the
-// usage it pays for. A credit is only spent once the base allowance is gone.
+// feature, on top of that account's tier allowance (see TIERS). Kept on the
+// User-usage record (see getUserUsage/putUserUsage in db.js) so spending one
+// rides the same withUserUsage/withPortfolioAndUsage lock as the usage it
+// pays for. A credit is only spent once the base allowance is gone.
 const CREDIT_KINDS = ['cashScans', 'recommendations', 'screenshots', 'marketAnalysis'];
-function creditsOf(portfolio) {
-  const stored = portfolio?.credits ?? {};
+function creditsOf(usage) {
+  const stored = usage?.credits ?? {};
   return Object.fromEntries(CREDIT_KINDS.map((kind) => [kind, Math.max(0, Math.floor(Number(stored[kind])) || 0)]));
 }
-function addCredits(portfolio, deltas) {
-  const credits = creditsOf(portfolio);
+function addCredits(usage, deltas) {
+  const credits = creditsOf(usage);
   for (const kind of CREDIT_KINDS) credits[kind] = Math.max(0, credits[kind] + (deltas[kind] ?? 0));
-  return { ...portfolio, credits };
+  return { ...usage, credits };
 }
 
-// One counter per capped feature, reset the moment the calendar month (Cairo
-// time) changes — lazily, on read, like the credits above: there is no cron
-// resetting these, a stale stored month is simply treated as all-zero. This
-// is the tier system's usage side; TIERS in src/billing/plans.js is the
-// limit side, and req.access.tier (see accessInfo()) says which tier's
-// limits apply to a given account right now.
-const USAGE_KINDS = ['cashScans', 'recommendations', 'screenshots', 'marketAnalysis'];
-function usageFor(portfolio) {
-  const month = cairoToday().slice(0, 7);
-  if (portfolio?.usage?.month === month) return portfolio.usage;
-  return Object.fromEntries([['month', month], ...USAGE_KINDS.map((kind) => [kind, 0])]);
-}
-function bumpUsage(portfolio, kind) {
-  const usage = usageFor(portfolio);
-  return { ...portfolio, usage: { ...usage, [kind]: usage[kind] + 1 } };
+// One counter per capped feature. This is the tier system's usage side;
+// TIERS in src/billing/plans.js is the limit side, and req.access.tier (see
+// accessInfo()) says which tier's limits apply to a given account right now.
+// The month-rollover reset itself now happens inside getUserUsage (db.js) —
+// `usage` here is always already current-month-correct by the time it
+// reaches these helpers.
+function bumpUsage(usage, kind) {
+  return { ...usage, [kind]: usage[kind] + 1 };
 }
 // This month's remaining tier allowance alone, with no credits mixed in —
 // callers use this to decide whether a charged use should still count
 // against the base allowance or has to draw from credits instead.
-function baseLeftFor(kind, portfolio, tier) {
+function baseLeftFor(kind, usage, tier) {
   const limit = (TIERS[tier] ?? TIERS.free)[kind];
-  const used = usageFor(portfolio)[kind];
+  const used = usage[kind];
   return Math.max(0, limit - used);
 }
 // What's left of a capped feature right now: this month's remaining tier
 // allowance, plus any admin-granted credits on top. tier is req.access.tier
 // — a signed-in, paid/trial account always has one by the time this runs,
 // since every metered endpoint sits behind the PAID_PATHS gate.
-function leftFor(kind, portfolio, tier) {
-  return baseLeftFor(kind, portfolio, tier) + creditsOf(portfolio)[kind];
+function leftFor(kind, usage, tier) {
+  return baseLeftFor(kind, usage, tier) + creditsOf(usage)[kind];
 }
 
 // ---- Reference data --------------------------------------------------------
@@ -1158,6 +1152,11 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     getAllSubscriptions(),
     getAllFollowUps(),
   ]);
+  // The usage/credits figures below now live on the User, not the Portfolio
+  // blob — read separately, in one batched query (see getUserUsageBatch in
+  // db.js) rather than off `portfolios`. One getUserUsage call per account
+  // would mean one query per row on a users table with hundreds of rows.
+  const usageByUser = await getUserUsageBatch();
   const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
   const followUpByUser = new Map(followUps.map((row) => [row.user_id, row]));
@@ -1176,6 +1175,9 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     // Same resolution as accessInfo() for this user's own request — see its
     // comment on why staff/CLI get the top tier rather than a bypass.
     const tier = u.is_admin || u.is_marketer || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive && u.email_verified ? 'free' : null;
+    // Both queries read the same unfiltered `users` table; a missing entry
+    // here would only mean the account was deleted between the two reads.
+    const usage = usageByUser.get(u.id) ?? { cashScans: 0, recommendations: 0, screenshots: 0, marketAnalysis: 0, credits: {} };
     return {
       id: u.id,
       email: u.email,
@@ -1228,11 +1230,11 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       // What's left of each capped allowance right now (base + credits), and
       // the granted credits within it — see TIERS in src/billing/plans.js.
       usage: {
-        cashScansLeft: cashScansLeft(pf ?? {}, tier),
-        screenshotsLeftThisMonth: screenshotImportsLeft(pf ?? {}, tier),
-        recommendationsLeft: leftFor('recommendations', pf ?? {}, tier),
-        marketAnalysisLeft: leftFor('marketAnalysis', pf ?? {}, tier),
-        credits: creditsOf(pf),
+        cashScansLeft: cashScansLeft(usage, tier),
+        screenshotsLeftThisMonth: screenshotImportsLeft(usage, tier),
+        recommendationsLeft: leftFor('recommendations', usage, tier),
+        marketAnalysisLeft: leftFor('marketAnalysis', usage, tier),
+        credits: creditsOf(usage),
       },
     };
   });
@@ -1258,9 +1260,9 @@ app.post('/api/admin/users/:id/credits', wrap(async (req, res) => {
   // clamped change, not the request, or a "-20" against a balance of 5 would
   // log a grant that never occurred.
   let actualDeltas = null;
-  const updated = await withPortfolio(req.params.id, (portfolio) => {
-    const before = creditsOf(portfolio);
-    const next = addCredits(portfolio, deltas);
+  const updated = await withUserUsage(req.params.id, (usage) => {
+    const before = creditsOf(usage);
+    const next = addCredits(usage, deltas);
     const after = creditsOf(next);
     actualDeltas = Object.fromEntries(CREDIT_KINDS.map((kind) => [kind, after[kind] - before[kind]]));
     return next;
@@ -1657,6 +1659,7 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
   // tickers in the universe are analyzable.
   if (!lookup(code)) return res.status(404).json({ error: 'السهم مش موجود' });
   const portfolio = await loadPortfolio(req.user.id);
+  const portfolioId = await primaryPortfolioIdFor(req.user.id);
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
   // Without this, the detail dialog silently analyzed every stock with the
@@ -1677,7 +1680,7 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
     force: req.query.force === '1',
     rules,
     style,
-    userId: req.user.id,
+    portfolioId,
     live,
   });
   if (live && analysis.snapshot?.price) {
@@ -1754,12 +1757,12 @@ app.get('/api/quotes', wrap(async (req, res) => {
 // opened it. A request within SCAN_SESSION_WINDOW_MS of the account's last
 // recorded use of that same kind is treated as such a continuation and never
 // charged — only a request arriving after that gap spends a new use.
-// portfolio.lastCashScanAt/lastMarketScanAt track that moment separately
-// from the monthly usage count (see usageFor()) so a use late in one month
-// can still be recognised as a continuation just after the month rolls over.
-// The check-then-write race on the count itself is closed by withPortfolio's
-// existing per-user write lock — the same pattern the screenshot-import cap
-// (below) uses.
+// usage.lastCashScanAt/lastMarketScanAt (see getUserUsage in db.js) track
+// that moment separately from the monthly usage count so a use late in one
+// month can still be recognised as a continuation just after the month
+// rolls over. The check-then-write race on the count itself is closed by
+// withUserUsage's existing per-user write lock — the same pattern the
+// screenshot-import cap (below) uses.
 const SCAN_SESSION_WINDOW_MS = 10 * 60 * 1000;
 const SCAN_FOCUS_KIND = { cash: 'cashScans', market: 'marketAnalysis' };
 const SCAN_LAST_AT_FIELD = { cashScans: 'lastCashScanAt', marketAnalysis: 'lastMarketScanAt' };
@@ -1768,37 +1771,40 @@ const SCAN_LIMIT_MESSAGE = {
   marketAnalysis: 'خلصت محاولات تحليل السوق المتاحة الشهر ده — تقدر تكمّل الشهر الجاي، أو كلّمنا في الشات لو محتاج رصيد إضافي.',
 };
 const CASH_SCAN_LIMIT_MESSAGE = SCAN_LIMIT_MESSAGE.cashScans;
-function cashScansLeft(portfolio, tier) {
-  return leftFor('cashScans', portfolio, tier);
+function cashScansLeft(usage, tier) {
+  return leftFor('cashScans', usage, tier);
 }
-function withinScanSession(portfolio, kind) {
-  const last = portfolio[SCAN_LAST_AT_FIELD[kind]];
+function withinScanSession(usage, kind) {
+  const last = usage[SCAN_LAST_AT_FIELD[kind]];
   return Boolean(last) && Date.now() - Date.parse(last) < SCAN_SESSION_WINDOW_MS;
 }
-function withinCashScanSession(portfolio) {
-  return withinScanSession(portfolio, 'cashScans');
+function withinCashScanSession(usage) {
+  return withinScanSession(usage, 'cashScans');
 }
 // Spends one use of `kind` for this scan session, or joins an already-open
-// one for free — see the block comment above. Returns the portfolio to read
-// the resulting *Left value from, or throws (429-worthy) if the allowance is
-// gone. Only called for focus values in SCAN_FOCUS_KIND.
-async function chargeScanSession(userId, portfolio, kind, tier) {
-  if (withinScanSession(portfolio, kind)) return portfolio;
-  if (leftFor(kind, portfolio, tier) <= 0) throw Object.assign(new Error(SCAN_LIMIT_MESSAGE[kind]), { scanLimitKind: kind });
+// one for free — see the block comment above. Returns the usage record to
+// read the resulting *Left value from, or throws (429-worthy) if the
+// allowance is gone. Only called for focus values in SCAN_FOCUS_KIND. Touches
+// only the User's usage row, never the Portfolio book.
+async function chargeScanSession(userId, kind, tier) {
+  const usage = await getUserUsage(userId);
+  if (withinScanSession(usage, kind)) return usage;
+  if (leftFor(kind, usage, tier) <= 0) throw Object.assign(new Error(SCAN_LIMIT_MESSAGE[kind]), { scanLimitKind: kind });
   // Re-checked under the lock: parallel requests can all pass the read above
   // before any of them has recorded a use, and a request that lands a moment
   // after another one just opened a new session must join it rather than
   // spend a second one.
-  return withPortfolio(userId, (p) => {
-    if (withinScanSession(p, kind)) return p;
-    if (leftFor(kind, p, tier) <= 0) throw Object.assign(new Error(SCAN_LIMIT_MESSAGE[kind]), { scanLimitKind: kind });
-    const next = { ...bumpUsage(p, kind), [SCAN_LAST_AT_FIELD[kind]]: new Date().toISOString() };
-    return baseLeftFor(kind, p, tier) > 0 ? next : addCredits(next, { [kind]: -1 });
+  return withUserUsage(userId, (u) => {
+    if (withinScanSession(u, kind)) return u;
+    if (leftFor(kind, u, tier) <= 0) throw Object.assign(new Error(SCAN_LIMIT_MESSAGE[kind]), { scanLimitKind: kind });
+    const next = { ...bumpUsage(u, kind), [SCAN_LAST_AT_FIELD[kind]]: new Date().toISOString() };
+    return baseLeftFor(kind, u, tier) > 0 ? next : addCredits(next, { [kind]: -1 });
   });
 }
 
 app.get('/api/scan', wrap(async (req, res) => {
   const portfolio = await loadPortfolio(req.user.id);
+  const portfolioId = await primaryPortfolioIdFor(req.user.id);
 
   let cashScansLeftNow = null;
   let marketAnalysisLeftNow = null;
@@ -1809,7 +1815,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     try {
       // Checked/charged before the (still non-trivial, whole-universe)
       // analysis runs, so an exhausted allowance costs nothing.
-      updated = await chargeScanSession(req.user.id, portfolio, focusKind, tier);
+      updated = await chargeScanSession(req.user.id, focusKind, tier);
     } catch (err) {
       if (err.scanLimitKind) {
         return res.status(429).json({
@@ -1836,6 +1842,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     codes,
     style,
     userId: req.user.id,
+    portfolioId,
     subscribed: req.access?.subscriptionActive,
     force: req.query.force === '1',
     focus: req.query.focus,
@@ -1852,7 +1859,7 @@ app.get('/api/scan', wrap(async (req, res) => {
  * exactly the plan the dialog shows. Returns the response payload plus the
  * full analyses its compact rows were cut from.
  */
-async function runScan(portfolio, { codes, style, userId, subscribed = false, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
+async function runScan(portfolio, { codes, style, userId, portfolioId = null, subscribed = false, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
   // A cash plan has to see the whole book, even holdings outside the index
   // being browsed: the sector limits it sizes against and the AI cash review
   // both depend on every position, not just the ones in that index.
@@ -1885,7 +1892,7 @@ async function runScan(portfolio, { codes, style, userId, subscribed = false, fo
     force,
     rules,
     style,
-    userId,
+    portfolioId,
   });
   // A held stock that just jumped by a share ratio: settle the holding now
   // rather than on the next half-hourly check.
@@ -2106,6 +2113,7 @@ async function runScan(portfolio, { codes, style, userId, subscribed = false, fo
 
 app.get('/api/portfolio', wrap(async (req, res) => {
   const p = await loadPortfolio(req.user.id);
+  const usage = await getUserUsage(req.user.id);
   checkCorporateActionsSoon(req.user.id, p);
   // /api/portfolio isn't a PAID_PATHS entry (a lapsed account can still read
   // its own data), so req.access isn't guaranteed to be set the way it is on
@@ -2117,15 +2125,15 @@ app.get('/api/portfolio', wrap(async (req, res) => {
     capital: capitalOf(p),
     tracked: trackedCodes(p),
     tier,
-    screenshotImportsLeft: screenshotImportsLeft(p, tier),
+    screenshotImportsLeft: screenshotImportsLeft(usage, tier),
     screenshotsPerMonth: limits.screenshots,
-    cashScansLeft: cashScansLeft(p, tier),
+    cashScansLeft: cashScansLeft(usage, tier),
     cashScansPerMonth: limits.cashScans,
-    recommendationsLeft: leftFor('recommendations', p, tier),
+    recommendationsLeft: leftFor('recommendations', usage, tier),
     recommendationsPerMonth: limits.recommendations,
-    marketAnalysisLeft: leftFor('marketAnalysis', p, tier),
+    marketAnalysisLeft: leftFor('marketAnalysis', usage, tier),
     marketAnalysisPerMonth: limits.marketAnalysis,
-    credits: creditsOf(p),
+    credits: creditsOf(usage),
   });
 }));
 
@@ -2396,6 +2404,7 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
  * Shared by the manual /api/snapshot endpoint and the daily-close cron below.
  */
 async function snapshotForUser(userId, date = null) {
+  const portfolioId = await primaryPortfolioIdFor(userId);
   return withPortfolio(userId, async (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     // Whatever style this account has active — same resolution the admin
@@ -2411,7 +2420,7 @@ async function snapshotForUser(userId, date = null) {
       concurrency: 3,
       rules,
       style,
-      userId,
+      portfolioId,
     });
     // analyzeMany's price comes from the last data *sync*, not from now — a
     // run mid-session (before that day's sync has run) would otherwise save
@@ -2770,10 +2779,11 @@ app.post('/api/reset', wrap(async (req, res) => {
     scope === 'all'
       // imports survives the wipe — behaviorProfile() reads it to know
       // whether the account has ever imported a screenshot, wipe or not.
-      // usage/credits/lastCashScanAt/lastMarketScanAt survive too: they're
-      // what the monthly feature caps count, so dropping any of them would
-      // hand out a fresh allowance on every reset.
-      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports, credits: portfolio.credits, usage: portfolio.usage, lastCashScanAt: portfolio.lastCashScanAt, lastMarketScanAt: portfolio.lastMarketScanAt }
+      // The monthly feature caps (usage/credits/lastCashScanAt/lastMarketScanAt)
+      // now live on the User's usage row (see getUserUsage/putUserUsage in
+      // db.js), not the Portfolio, so a Portfolio reset — any scope — can
+      // never touch them; there is nothing here left to preserve.
+      ? { cash: 0, positions: {}, watchlist: {}, trades: [], log: {}, settings: portfolio.settings, realizedPnl: 0, imports: portfolio.imports }
       : { ...portfolio, log: {}, trades: [], realizedPnl: 0 },
   );
   res.json({ ok: true, scope });
@@ -2848,21 +2858,21 @@ function isEtfHolding(item) {
 
 // Every image is a vision-model call, so each account gets that tier's
 // monthly allowance of successful imports (see TIERS in
-// src/billing/plans.js and usageFor() above). portfolio.imports is a
-// separate, capped-at-20-entries log of the imports themselves (read by
-// behaviorProfile() to know whether the account has ever imported a
-// screenshot) — it is no longer what this cap counts against.
+// src/billing/plans.js). portfolio.imports is a separate, capped-at-20-entries
+// log of the imports themselves (read by behaviorProfile() to know whether
+// the account has ever imported a screenshot) — it is no longer what this
+// cap counts against.
 const SCREENSHOT_LIMIT_MESSAGE = 'خلصت عدد صور المحفظة المسموح بيه الشهر ده — تقدر تكمّل الشهر الجاي، أو كلّمنا في الشات لو محتاج رصيد إضافي.';
 
-function screenshotImportsLeft(portfolio, tier) {
-  return leftFor('screenshots', portfolio, tier);
+function screenshotImportsLeft(usage, tier) {
+  return leftFor('screenshots', usage, tier);
 }
 
 app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'استيراد الصورة محتاج OPENROUTER_API_KEY في .env' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة لمحفظتك أولاً' });
   // Checked before the model call so an exhausted allowance costs nothing.
-  if (screenshotImportsLeft(await loadPortfolio(req.user.id), req.access.tier) <= 0) {
+  if (screenshotImportsLeft(await getUserUsage(req.user.id), req.access.tier) <= 0) {
     return res.status(429).json({ error: SCREENSHOT_LIMIT_MESSAGE, reason: 'screenshot_limit', screenshotImportsLeft: 0 });
   }
 
@@ -3000,12 +3010,15 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
       console.warn(`[screenshot] nothing usable (${SCREENSHOT_VISION_MODEL}):`, JSON.stringify(rows).slice(0, 1500));
       throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
     }
-    const updated = await withPortfolio(req.user.id, (portfolio) => {
-      if (screenshotImportsLeft(portfolio, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
+    const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, ({ usage, portfolio }) => {
+      if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
       const watchlist = { ...portfolio.watchlist };
       for (const c of watchCodes) watchlist[c] ??= { addedAt: importedAt, note: null };
-      const next = { ...bumpUsage(portfolio, 'screenshots'), watchlist };
-      return baseLeftFor('screenshots', portfolio, req.access.tier) > 0 ? next : addCredits(next, { screenshots: -1 });
+      const nextUsage = bumpUsage(usage, 'screenshots');
+      return {
+        usage: baseLeftFor('screenshots', usage, req.access.tier) > 0 ? nextUsage : addCredits(nextUsage, { screenshots: -1 }),
+        portfolio: { ...portfolio, watchlist },
+      };
     });
     return res.json({
       ok: true,
@@ -3013,7 +3026,7 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
       positions: 0,
       watchlisted: watchCodes.length,
       derivedPositions: 0,
-      screenshotImportsLeft: screenshotImportsLeft(updated, req.access.tier),
+      screenshotImportsLeft: screenshotImportsLeft(updatedUsage, req.access.tier),
       portfolio: { ...updated, capital: capitalOf(updated) },
     });
   }
@@ -3029,12 +3042,12 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   // several seconds; holding the per-user write lock for that whole span
   // would block ordinary trades/cash edits for no reason, since none of it
   // touches portfolio state until this point.
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, ({ usage, portfolio }) => {
     // Re-checked under the lock: parallel requests all pass the early check
     // while none of them has been recorded yet.
-    if (screenshotImportsLeft(portfolio, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
+    if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
     const next = {
-      ...bumpUsage(portfolio, 'screenshots'),
+      ...portfolio,
       // A merge keeps each already-held position's place in the Order added;
       // stocks new to the portfolio go after them, in screenshot row order.
       positions: merge ? { ...portfolio.positions, ...keepAddedOrder(portfolio.positions, positions) } : positions,
@@ -3043,14 +3056,18 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
     };
     const flow = (next.cash ?? 0) - (portfolio.cash ?? 0) + positionsFlow(portfolio.positions, next.positions, importPrices);
     const withFlow = recordCashFlow(next, flow, 'screenshot');
-    return baseLeftFor('screenshots', portfolio, req.access.tier) > 0 ? withFlow : addCredits(withFlow, { screenshots: -1 });
+    const nextUsage = bumpUsage(usage, 'screenshots');
+    return {
+      usage: baseLeftFor('screenshots', usage, req.access.tier) > 0 ? nextUsage : addCredits(nextUsage, { screenshots: -1 }),
+      portfolio: withFlow,
+    };
   });
   res.json({
     ok: true,
     importedAt,
     positions: Object.keys(positions).length,
     derivedPositions,
-    screenshotImportsLeft: screenshotImportsLeft(updated, req.access.tier),
+    screenshotImportsLeft: screenshotImportsLeft(updatedUsage, req.access.tier),
     portfolio: { ...updated, capital: capitalOf(updated) },
   });
 }));
@@ -3072,6 +3089,7 @@ async function runReview({ userId, style, force }) {
   const effectiveStyle = style ?? 'medium';
 
   const portfolio = await loadPortfolio(userId);
+  const portfolioId = await primaryPortfolioIdFor(userId);
   const capital = capitalOf(portfolio);
 
   // An empty book has no personal fit to judge — the honest answer to "what
@@ -3085,6 +3103,7 @@ async function runReview({ userId, style, force }) {
     const opportunities = new Map((report.topOpportunities ?? []).map((op) => [op.code, op]));
     void logRecommendations(
       userId,
+      portfolioId,
       review.verdicts
         .filter((v) => opportunities.has(v.code))
         .map((v) => ({ code: v.code, action: v.action, levels: levelsFromOpportunity(opportunities.get(v.code), effectiveStyle) })),
@@ -3100,7 +3119,7 @@ async function runReview({ userId, style, force }) {
     concurrency: 3,
     rules,
     style: effectiveStyle,
-    userId,
+    portfolioId,
   });
 
   const { getOrGenerateReview } = await import('../agent/analyst.js');
@@ -3108,13 +3127,14 @@ async function runReview({ userId, style, force }) {
     portfolio,
     results,
     { cash: portfolio.cash, capital },
-    { userId, rules, style: effectiveStyle, force },
+    { portfolioId, rules, style: effectiveStyle, force },
   );
   // Only a freshly written review is new advice; a cached one was logged when it was written.
   if (source === 'ai') {
     const byCode = new Map(results.map((a) => [a.code, a]));
     void logRecommendations(
       userId,
+      portfolioId,
       (review.verdicts ?? [])
         .filter((v) => byCode.has(v.code))
         .map((v) => ({ code: v.code, action: v.action, levels: levelsFromAnalysis(byCode.get(v.code), effectiveStyle) })),
@@ -3204,6 +3224,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   if (!portfolio.positions[code]) return res.status(400).json({ error: `مفيش مركز مفتوح في ${code || 'السهم ده'}` });
 
   const userId = req.user.id;
+  const portfolioId = await primaryPortfolioIdFor(userId);
   const tier = req.access.tier;
   const jobKey = reviewJobKey(userId, pre.style, code);
   // The live price on the card when it was asked for — only used to tell the
@@ -3224,7 +3245,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
   if (!joiningRunningJob && halted) {
     return res.status(409).json({ error: `${code} موقوف عن التداول من ${halted.since} — التوصية هتتاح أول ما التداول يرجع.`, reason: 'halted' });
   }
-  if (!joiningRunningJob && leftFor('recommendations', portfolio, tier) <= 0) {
+  if (!joiningRunningJob && leftFor('recommendations', await getUserUsage(userId), tier) <= 0) {
     return res.status(429).json({ error: 'خلص رصيد التوصيات المتاح.', reason: 'recommendation_credit_limit' });
   }
 
@@ -3248,7 +3269,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
             concurrency: 3,
             rules,
             style: pre.style ?? 'medium',
-            userId,
+            portfolioId,
           });
           console.log(`[review] ${code} analyzeMany ${Object.keys(portfolio.positions).length} holdings in ${Date.now() - t}ms`);
           analyses = results;
@@ -3260,20 +3281,23 @@ app.post('/api/review/stock', wrap(async (req, res) => {
     // The verdict itself is kept on the portfolio as the stock's last
     // recommendation: the card shows it on every device until the user asks
     // for a new one (see rememberVerdict).
-    await withPortfolio(userId, (p) => {
+    await withPortfolioAndUsage(userId, ({ usage, portfolio: p }) => {
       const kept = rememberVerdict(p, code, verdict, {
         style: pre.style ?? 'medium',
         price: requestPrice,
         stop: stopContextOf(analyses.find((a) => a.code === code), verdict),
       });
-      if (joiningRunningJob) return kept;
-      const next = bumpUsage(kept, 'recommendations');
-      return baseLeftFor('recommendations', p, tier) > 0 ? next : addCredits(next, { recommendations: -1 });
+      if (joiningRunningJob) return { usage, portfolio: kept };
+      const next = bumpUsage(usage, 'recommendations');
+      return {
+        usage: baseLeftFor('recommendations', usage, tier) > 0 ? next : addCredits(next, { recommendations: -1 }),
+        portfolio: kept,
+      };
     });
     console.log(`[review] ${code} ${source} in ${Date.now() - startedAt}ms`);
     const analysis = analyses.find((a) => a.code === code);
     if (analysis && verdict?.action) {
-      void logRecommendations(userId, [{ code, action: verdict.action, levels: levelsFromAnalysis(analysis, pre.style ?? 'medium') }], {
+      void logRecommendations(userId, portfolioId, [{ code, action: verdict.action, levels: levelsFromAnalysis(analysis, pre.style ?? 'medium') }], {
         source: 'stock_review', style: pre.style ?? 'medium', model: verdict._meta?.model,
       });
     }
@@ -3297,6 +3321,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
   if (!indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${index}` });
 
   const userId = req.user.id;
+  const portfolioId = await primaryPortfolioIdFor(userId);
   const portfolio = await loadPortfolio(userId);
   if (!(portfolio.cash > 0)) return res.status(400).json({ error: 'مفيش كاش متاح يتحلل.' });
 
@@ -3304,8 +3329,9 @@ app.post('/api/review/cash', wrap(async (req, res) => {
   // still free) at /api/scan: it's only answered while that use's session is
   // open, so asking for it directly can never become a separate way around
   // the tier's cashScans allowance.
-  if (!withinCashScanSession(portfolio)) {
-    return cashScansLeft(portfolio, req.access.tier) <= 0
+  const usage = await getUserUsage(userId);
+  if (!withinCashScanSession(usage)) {
+    return cashScansLeft(usage, req.access.tier) <= 0
       ? res.status(429).json({ error: CASH_SCAN_LIMIT_MESSAGE, reason: 'cash_scan_limit', cashScansLeft: 0 })
       : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب مراجعة الخطة.' });
   }
@@ -3315,7 +3341,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
     let scanRows = [];
     const { getOrGenerateCashReview } = await import('../agent/cashAnalysis.js');
     const { review, source } = await getOrGenerateCashReview(portfolio, {
-      userId,
+      portfolioId,
       style: pre.style ?? 'medium',
       // Whether that style came from the investor's own trade history or a
       // manual pick (useActiveInvestStyle) — the review flags a mismatch
@@ -3325,7 +3351,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       rules: pre.style ? rulesForStyle(RULES, pre.style) : RULES,
       force: pre.force,
       runScan: async () => {
-        const scan = await runScan(portfolio, { codes: indexCodes, style: pre.style, userId, focus: 'cash' });
+        const scan = await runScan(portfolio, { codes: indexCodes, style: pre.style, userId, portfolioId, focus: 'cash' });
         scanRows = scan.payload.results ?? [];
         return scan;
       },
@@ -3335,6 +3361,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       const byCode = new Map(scanRows.map((row) => [row.code, row]));
       void logRecommendations(
         userId,
+        portfolioId,
         (review.picks ?? [])
           .filter((p) => byCode.has(p.code))
           .map((p) => ({ code: p.code, action: p.action, levels: levelsFromScanRow(byCode.get(p.code)) })),
@@ -3384,8 +3411,10 @@ app.get('/api/market-analysis', wrap(async (req, res) => {
   const { getOrGenerateMarketAnalysis } = await import('../agent/marketAnalysis.js');
   const report = await getOrGenerateMarketAnalysis({ rules, style: style ?? 'medium' });
   // The same shared report reaches many Users; each one's copy is logged once a day (the table's daily key).
+  const portfolioId = await primaryPortfolioIdFor(req.user.id);
   void logRecommendations(
     req.user.id,
+    portfolioId,
     (report.topOpportunities ?? []).map((op) => ({ code: op.code, action: op.action, levels: levelsFromOpportunity(op, style ?? 'medium') })),
     { source: 'market_report', style: style ?? 'medium', model: report._meta?.model },
   );

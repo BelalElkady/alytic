@@ -288,32 +288,55 @@ export async function putPortfolioById(portfolioId, state) {
  * unchanged. None of the four usage counters or four credit counters are
  * ever null (default 0).
  */
+const USER_USAGE_COLUMNS =
+  'usage_month, usage_cash_scans, usage_recommendations, usage_screenshots, usage_market_analysis, credits_cash_scans, credits_recommendations, credits_screenshots, credits_market_analysis, last_cash_scan_at, last_market_scan_at';
+
+/** Shared by getUserUsage and getUserUsageBatch: the same row shape, from a single fetched row (or none). */
+function usageRecordFrom(row, month) {
+  const stale = row?.usage_month !== month;
+  return {
+    month,
+    cashScans: stale ? 0 : row?.usage_cash_scans ?? 0,
+    recommendations: stale ? 0 : row?.usage_recommendations ?? 0,
+    screenshots: stale ? 0 : row?.usage_screenshots ?? 0,
+    marketAnalysis: stale ? 0 : row?.usage_market_analysis ?? 0,
+    credits: {
+      cashScans: row?.credits_cash_scans ?? 0,
+      recommendations: row?.credits_recommendations ?? 0,
+      screenshots: row?.credits_screenshots ?? 0,
+      marketAnalysis: row?.credits_market_analysis ?? 0,
+    },
+    lastCashScanAt: row?.last_cash_scan_at ?? null,
+    lastMarketScanAt: row?.last_market_scan_at ?? null,
+  };
+}
+
 export async function getUserUsage(userId) {
   const { data, error } = await supabase
     .from('users')
-    .select(
-      'usage_month, usage_cash_scans, usage_recommendations, usage_screenshots, usage_market_analysis, credits_cash_scans, credits_recommendations, credits_screenshots, credits_market_analysis, last_cash_scan_at, last_market_scan_at',
-    )
+    .select(USER_USAGE_COLUMNS)
     .eq('id', userId)
     .maybeSingle();
   if (error) throw new Error(`getUserUsage: ${error.message}`);
+  return usageRecordFrom(data, cairoToday().slice(0, 7));
+}
+
+/**
+ * Same shape as getUserUsage, for every User in one query — the admin users
+ * list (GET /api/admin/users, server.js) needs every account's usage
+ * figures, and firing one getUserUsage query per account (hundreds, on the
+ * real accumulated test/production table) risked exhausting Supabase's
+ * connection pool and intermittently failing unrelated concurrent requests.
+ * No id filter: an `.in('id', userIds)` with hundreds of ids hit Supabase's
+ * URL-length limit and came back a flat 400, so this reads the same
+ * unfiltered scope getAllUsers() already does.
+ * @returns {Map<string, ReturnType<typeof getUserUsage>>} keyed by userId — an id with no row simply isn't in the Map; look it up with `.get(id) ?? <all-zero default>` if that's possible for a caller.
+ */
+export async function getUserUsageBatch() {
+  const { data, error } = await supabase.from('users').select(`id, ${USER_USAGE_COLUMNS}`);
+  if (error) throw new Error(`getUserUsageBatch: ${error.message}`);
   const month = cairoToday().slice(0, 7);
-  const stale = data?.usage_month !== month;
-  return {
-    month,
-    cashScans: stale ? 0 : data?.usage_cash_scans ?? 0,
-    recommendations: stale ? 0 : data?.usage_recommendations ?? 0,
-    screenshots: stale ? 0 : data?.usage_screenshots ?? 0,
-    marketAnalysis: stale ? 0 : data?.usage_market_analysis ?? 0,
-    credits: {
-      cashScans: data?.credits_cash_scans ?? 0,
-      recommendations: data?.credits_recommendations ?? 0,
-      screenshots: data?.credits_screenshots ?? 0,
-      marketAnalysis: data?.credits_market_analysis ?? 0,
-    },
-    lastCashScanAt: data?.last_cash_scan_at ?? null,
-    lastMarketScanAt: data?.last_market_scan_at ?? null,
-  };
+  return new Map((data ?? []).map((row) => [row.id, usageRecordFrom(row, month)]));
 }
 
 /**
