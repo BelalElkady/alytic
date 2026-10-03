@@ -3,7 +3,16 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import { primaryPortfolioIdFor, getPortfolioById, putPortfolioById, getUserByEmail, getUserUsage, putUserUsage } from '../../src/db.js';
+import {
+  primaryPortfolioIdFor,
+  getPortfolioById,
+  putPortfolioById,
+  getUserByEmail,
+  getUserUsage,
+  putUserUsage,
+  getPortfolioReview,
+  putPortfolioReview,
+} from '../../src/db.js';
 import { register } from '../../src/auth.js';
 import { uniqueEmail, uniquePhone } from '../helpers/server.js';
 
@@ -67,4 +76,16 @@ test('getUserUsage rolls the four usage counters over on a stale stored month, b
   assert.equal(rolled.month, current.month); // the CURRENT month, not the stale '2000-01'
   assert.equal(rolled.screenshots, 0); // zeroed — stale month
   assert.equal(rolled.credits.recommendations, 3); // credits are never month-scoped
+});
+
+test('putPortfolioReview/getPortfolioReview round-trip by portfolio id', async () => {
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
+  const portfolioId = await primaryPortfolioIdFor(user.id);
+  await putPortfolioReview(portfolioId, '2026-10-03', 'medium', 'hash1', { verdict: 'hold' }, 'model-x', null);
+  const got = await getPortfolioReview(portfolioId, '2026-10-03', 'medium');
+  assert.equal(got.portfolioHash, 'hash1');
+  assert.equal(got.verdict, 'hold');
 });

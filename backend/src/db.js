@@ -503,16 +503,16 @@ export async function putFundamentalsCache(code, data) {
 }
 
 /**
- * @returns {object|null} the stored review for that user/day/style, or null
- *   if none is stored, or if one is stored but for a different portfolio
- *   (the caller must compare portfolioHash itself — this just returns
- *   whatever row exists so the caller can decide).
+ * @returns {object|null} the stored review for that Portfolio/day/style, or
+ *   null if none is stored, or if one is stored but for a different
+ *   portfolio (the caller must compare portfolioHash itself — this just
+ *   returns whatever row exists so the caller can decide).
  */
-export async function getPortfolioReview(userId, reportDate, style) {
+export async function getPortfolioReview(portfolioId, reportDate, style) {
   const { data, error } = await supabase
     .from('portfolio_reviews')
     .select('*')
-    .eq('user_id', userId)
+    .eq('portfolio_id', portfolioId)
     .eq('report_date', reportDate)
     .eq('style', style)
     .maybeSingle();
@@ -526,15 +526,20 @@ export async function getPortfolioReview(userId, reportDate, style) {
 }
 
 /**
- * Stores today's review for this user/style, replacing whatever was there —
- * unlike putMarketReport this is a per-user row, so there is no cross-request
- * race to protect against with insert-if-absent; the latest generation for a
- * changed portfolio should simply win.
+ * Stores today's review for this Portfolio/style, replacing whatever was
+ * there — unlike putMarketReport this is a per-Portfolio row, so there is no
+ * cross-request race to protect against with insert-if-absent; the latest
+ * generation for a changed portfolio should simply win. `user_id` is kept
+ * denormalized on the row (see ADR 0002 §4), so it's looked up here from the
+ * Portfolio itself rather than trusted from the caller.
  */
-export async function putPortfolioReview(userId, reportDate, style, portfolioHash, review, model, usage) {
+export async function putPortfolioReview(portfolioId, reportDate, style, portfolioHash, review, model, usage) {
+  const portfolio = await getPortfolioById(portfolioId);
+  if (!portfolio) throw new Error(`putPortfolioReview: no Portfolio with id ${portfolioId}`);
   const { error } = await supabase.from('portfolio_reviews').upsert(
     {
-      user_id: userId,
+      portfolio_id: portfolioId,
+      user_id: portfolio.userId,
       report_date: reportDate,
       style,
       portfolio_hash: portfolioHash,
@@ -543,7 +548,7 @@ export async function putPortfolioReview(userId, reportDate, style, portfolioHas
       usage_json: usage ?? null,
       generated_at: new Date().toISOString(),
     },
-    { onConflict: 'user_id,report_date,style' },
+    { onConflict: 'portfolio_id,report_date,style' },
   );
   if (error) throw new Error(`putPortfolioReview: ${error.message}`);
 }
