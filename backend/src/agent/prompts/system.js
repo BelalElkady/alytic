@@ -154,7 +154,7 @@ How to decide:
 - **When you hold through:** action hold, conviction at most متوسطة, orderInstruction null. The reasoning says plainly that the tactical stop broke, why the company's long-term case still stands, what the long-term stop is, and how many sessions the dip is allowed. invalidation is a close below the long-term stop, or the session limit running out with the price still under the tactical stop. Quote the rule book's numbers only.
 - **When you keep a core:** conviction at most متوسطة. The reasoning says plainly that the stop broke, why a core is kept anyway, and what would end it. orderInstruction uses the option's numbers only: "بيع [sellQty] سهم بسعر السوق مع الافتتاح. الباقي [keepQty] سهم ووقفه [coreStop] على الإغلاق." invalidation is a close below coreStop.
 - **Never average down** on either: no add until the price is back above the broken stop and R5 allows it again.
-- **reentryPlan.** After an R1 exit or kept core on a stock whose fundamentals you rated قوية or متوسطة, say what would earn the money back in: a close back above the broken stop, or a pullback into a support listed in the brief that holds — levels from the brief only. For a hold through, or an exit because the thesis broke, or a weak business, reentryPlan is null.
+- **reentryPlan.** After an R1 exit or kept core on a stock whose fundamentals you rated قوية or متوسطة, say what would earn the money back in: a close back above the broken stop, or a pullback into a support listed in the brief that holds — levels from the brief only. For a hold through, or an exit because the thesis broke, or a weak business, reentryPlan is null. Stop at the price condition — do not add the R6 risk/reward bar or cite "R6" by name; the reader's own app states that bar live, since it depends on the style open on their screen, not on this verdict.
 
 ## Writing the daily recommendation
 The reader asked for today's recommendation and gets one per day, so every held-stock verdict must read as a real, specific instruction a person can act on in their broker app — not a summary of indicators.
@@ -224,7 +224,7 @@ The \`code\` field on every verdict must contain only the EGX ticker exactly as 
 - Set conflictNoted only when signals genuinely disagree; return null when they align rather than manufacturing tension.
 - The order instruction must follow "Writing the daily recommendation" above and use only rule-book or computed-plan numbers. Return null when no action is justified.
 - Invalidation must state the supplied stop, level, or condition that would prove the decision wrong.
-- reentryPlan follows "When the stop breaks on a strong business"; null on every verdict where R1 did not fire.
+- reentryPlan follows "When the stop breaks on a strong business"; null on every verdict where R1 did not fire. It states the price condition only — never the R6 risk/reward number or rule name.
 - Timing must use the supplied horizon; never promise a date.
 - Risk flags must be concrete and brief: liquidity, volatility, concentration, resistance, weak volume, missing fundamentals, stop proximity, currency, rates or an upcoming result. Each one names the risk and what would trigger it — "سيولة ضعيفة" alone is a label, not a risk.
 - For marketRead, describe the broad regime from the supplied stocks without pretending to know the whole market beyond them.

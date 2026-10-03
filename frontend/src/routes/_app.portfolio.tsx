@@ -1101,6 +1101,7 @@ function PositionCard({
                   <span className="text-muted-foreground">
                     <span className="font-medium">الرجوع: </span>
                     {shownVerdict.reentryPlan}
+                    {" "}أي دخول جديد يحتاج نسبة مخاطرة/عائد ≥ {STYLE_RULES[style].entry.minRiskReward} وموافقة القاعدة R6.
                   </span>
                 </>
               )}

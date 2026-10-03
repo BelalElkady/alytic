@@ -144,7 +144,8 @@ export const StockVerdictSchema = z.object({
     .nullable()
     .describe(
       'In Egyptian Arabic — only when the stop fired (exit, or keeping a core) on a stock whose fundamentals still look sound: ' +
-        'the condition to buy back or rebuild — reclaiming a level, or a pullback into a support — quoting only levels in the brief. Null otherwise.',
+        'the condition to buy back or rebuild — reclaiming a level, or a pullback into a support — quoting only levels in the brief. ' +
+        'State the price condition only; never the R6 risk/reward number or rule name — the reader\'s own app appends that live. Null otherwise.',
     ),
 
   // The research trail behind the verdict. The prompt requires a check before
