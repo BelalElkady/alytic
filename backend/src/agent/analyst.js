@@ -632,17 +632,17 @@ Remember: these numbers are final — judge them, do not recompute them.`;
  * @param {object[]} analyses - same as reviewPortfolio's first argument
  * @param {object} ctx - same as reviewPortfolio's second argument
  * @param {object} [opts] - same as reviewPortfolio's third argument, plus:
- * @param {string} [opts.userId='local']
+ * @param {string} [opts.portfolioId='local']
  * @param {boolean} [opts.force] - regenerate even if a matching review is stored
  * @returns {Promise<{review: object, source: 'cached'|'ai'}>}
  */
 export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = {}) {
-  const { userId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = opts;
+  const { portfolioId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = opts;
   const asOf = analyses[0]?.asOf ?? new Date().toISOString().slice(0, 10);
   const hash = portfolioHash(portfolio);
 
   if (!force) {
-    const cached = await getPortfolioReview(userId, asOf, style);
+    const cached = await getPortfolioReview(portfolioId, asOf, style);
     if (cached && cached.portfolioHash === hash) {
       const { portfolioHash: _hash, ...review } = cached;
       return { review, source: 'cached' };
@@ -650,7 +650,7 @@ export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = 
   }
 
   const review = await reviewPortfolio(analyses, ctx, { model, rules, style });
-  await putPortfolioReview(userId, asOf, style, hash, review, review._meta.model, review._meta.usage);
+  await putPortfolioReview(portfolioId, asOf, style, hash, review, review._meta.model, review._meta.usage);
   return { review, source: 'ai' };
 }
 

@@ -119,7 +119,7 @@ export function levelsFromScanRow(row) {
  * the price (a target already passed) are dropped rather than logged: they
  * would resolve on the first session and say nothing about the call.
  */
-export function recommendationRow({ userId, code, action, levels, style, source, model, indices = {}, benchmark = null }) {
+export function recommendationRow({ userId, portfolioId, code, action, levels, style, source, model, indices = {}, benchmark = null }) {
   const tracked = TRACKED_ACTIONS[action];
   const ref = positive(levels?.refPrice);
   if (!tracked || !ref || !code) return null;
@@ -146,6 +146,7 @@ export function recommendationRow({ userId, code, action, levels, style, source,
 
   return {
     user_id: userId ?? null,
+    portfolio_id: portfolioId ?? null,
     ticker: String(code).toUpperCase(),
     action: tracked,
     ref_price: round(ref),
@@ -215,19 +216,19 @@ export function withoutOpenDuplicates(rows, openKeys) {
  * Best-effort: a logging failure is reported and swallowed, never allowed to
  * fail the review it describes — callers don't await it.
  */
-export async function logRecommendations(userId, items, { source, style, model }) {
+export async function logRecommendations(userId, portfolioId, items, { source, style, model }) {
   try {
     if (!items.some((item) => TRACKED_ACTIONS[item.action])) return;
     const [indices, membership] = await Promise.all([indexLevelsNow(), indexMembership()]);
     const rows = items
       .map((item) => recommendationRow({
-        userId, code: item.code, action: item.action, levels: item.levels, style, source, model,
+        userId, portfolioId, code: item.code, action: item.action, levels: item.levels, style, source, model,
         indices, benchmark: benchmarkFor(item.code, membership),
       }))
       .filter(Boolean);
     // Two verdicts on the same stock in one review would collide on the daily key inside one statement.
     const unique = [...new Map(rows.map((r) => [`${r.ticker}:${r.action}`, r])).values()];
-    await insertRecommendations(withoutOpenDuplicates(unique, await listOpenRecommendationKeys(userId)));
+    await insertRecommendations(withoutOpenDuplicates(unique, await listOpenRecommendationKeys(portfolioId)));
   } catch (err) {
     console.warn(`[recommendations] logging ${source} for ${userId} failed:`, err.message);
   }

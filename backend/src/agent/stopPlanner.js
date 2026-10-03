@@ -129,7 +129,7 @@ A fresh buy today would enter at ${entry} EGP. Where should the stop-loss sit?`;
  * @param {{avgCost: number, shares: number, existingStop: number|null}} position
  * @returns {Promise<{stop: number, rationale: string, moved: boolean}>}
  */
-export async function getOrGenerateTrailingStop(userId, code, name, snapshot, position, style = DEFAULT_STYLE, rules = RULES) {
+export async function getOrGenerateTrailingStop(portfolioId, code, name, snapshot, position, style = DEFAULT_STYLE, rules = RULES) {
   const asOf = snapshot.meta.asOf;
   const cacheStyle = `stop:${style}:${code}`;
   // Only this one position's numbers matter for the hash — a trade in a
@@ -140,7 +140,7 @@ export async function getOrGenerateTrailingStop(userId, code, name, snapshot, po
     cash: 0,
   });
 
-  const cached = await getPortfolioReview(userId, asOf, cacheStyle);
+  const cached = await getPortfolioReview(portfolioId, asOf, cacheStyle);
   if (cached && cached.portfolioHash === hash) {
     return { stop: cached.stop, rationale: cached.rationale, moved: cached.moved };
   }
@@ -167,7 +167,7 @@ Where should the stop sit now?`;
   if (position.existingStop != null) stop = Math.max(stop, position.existingStop);
   const moved = position.existingStop != null && stop > position.existingStop + 0.001;
 
-  await putPortfolioReview(userId, asOf, cacheStyle, hash, { stop, rationale: data.rationale, moved }, raw.model, raw.usage);
+  await putPortfolioReview(portfolioId, asOf, cacheStyle, hash, { stop, rationale: data.rationale, moved }, raw.model, raw.usage);
   return { stop, rationale: data.rationale, moved };
 }
 
@@ -195,7 +195,7 @@ const liveStopInFlight = new Map();
  * @param {number} baseStop - the close-based stop from getOrGenerateTrailingStop
  * @returns {Promise<{stop: number, rationale: string}|null>} null while the live price hasn't earned a re-set
  */
-export async function getLiveTrailingStop(userId, code, name, liveSnapshot, position, baseStop, style = DEFAULT_STYLE, rules = RULES) {
+export async function getLiveTrailingStop(portfolioId, code, name, liveSnapshot, position, baseStop, style = DEFAULT_STYLE, rules = RULES) {
   const asOf = liveSnapshot.meta.asOf;
   const cacheStyle = `stoplive:${style}:${code}`;
   const hash = portfolioHash({
@@ -205,7 +205,7 @@ export async function getLiveTrailingStop(userId, code, name, liveSnapshot, posi
   });
   const price = liveSnapshot.price.close;
 
-  const stored = await getPortfolioReview(userId, asOf, cacheStyle);
+  const stored = await getPortfolioReview(portfolioId, asOf, cacheStyle);
   const cached = stored && stored.portfolioHash === hash ? stored : null;
   const reused = cached ? { stop: cached.stop, rationale: cached.rationale } : null;
 
@@ -214,7 +214,7 @@ export async function getLiveTrailingStop(userId, code, name, liveSnapshot, posi
   const earnedReset = price >= referencePrice * (1 + LIVE_STOP_MIN_RISE_PCT / 100);
   if (!earnedReset || ageMs < LIVE_STOP_MIN_INTERVAL_MS) return reused;
 
-  const key = `${userId}:${cacheStyle}:${asOf}`;
+  const key = `${portfolioId}:${cacheStyle}:${asOf}`;
   if (liveStopInFlight.has(key)) return liveStopInFlight.get(key);
 
   const task = (async () => {
@@ -237,7 +237,7 @@ The price above is a live intraday quote, not a close, and the stop only ever mo
     const stop = Math.max(clampPositiveBelow(data.stop, price, `trailing_stop_live ${code}/${style}`), floor);
     // Stored even when the model kept the stop where it was, so `pricedAt`
     // moves up and the same price doesn't re-ask.
-    await putPortfolioReview(userId, asOf, cacheStyle, hash, { stop, rationale: data.rationale, pricedAt: price }, raw.model, raw.usage);
+    await putPortfolioReview(portfolioId, asOf, cacheStyle, hash, { stop, rationale: data.rationale, pricedAt: price }, raw.model, raw.usage);
     return { stop, rationale: data.rationale };
   })();
   liveStopInFlight.set(key, task);

@@ -1134,19 +1134,19 @@ export async function insertRecommendations(rows) {
   if (!rows.length) return;
   const { error } = await supabase
     .from('recommendations')
-    .upsert(rows, { onConflict: 'user_id,ticker,action,issued_on', ignoreDuplicates: true });
+    .upsert(rows, { onConflict: 'user_id,portfolio_id,ticker,action,issued_on', ignoreDuplicates: true });
   if (error) throw new Error(`insertRecommendations: ${error.message}`);
 }
 
-/** The stock and action of every call a User has still open — what a repeat review must not log a second copy of. */
-export async function listOpenRecommendationKeys(userId) {
-  if (!userId) return [];
+/** The stock and action of every call still open in a Portfolio — what a repeat review must not log a second copy of. */
+export async function listOpenRecommendationKeys(portfolioId) {
+  if (!portfolioId) return [];
   const keys = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('recommendations')
       .select('ticker, action')
-      .eq('user_id', userId)
+      .eq('portfolio_id', portfolioId)
       .eq('status', 'open')
       .order('id')
       .range(from, from + 999);

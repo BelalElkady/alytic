@@ -259,7 +259,7 @@ Remember: these numbers are final — judge them, do not recompute them.`;
  *   learn asOf for the lookup.
  */
 export async function getOrGenerateCashReview(portfolio, {
-  userId = 'local', style = DEFAULT_STYLE, styleAuto = false, index = 'ALL', rules = RULES, model = MODEL_CHAIN, force = false, runScan,
+  portfolioId = 'local', style = DEFAULT_STYLE, styleAuto = false, index = 'ALL', rules = RULES, model = MODEL_CHAIN, force = false, runScan,
 }) {
   const { payload, results, capital } = await runScan();
   const asOf = payload.asOf ?? new Date().toISOString().slice(0, 10);
@@ -271,7 +271,7 @@ export async function getOrGenerateCashReview(portfolio, {
   const hash = `v2:${portfolioHash({ positions: portfolio.positions, watchlist: {}, cash: portfolio.cash })}:${(portfolio.trades ?? []).length}:${styleAuto ? 'auto' : 'manual'}`;
 
   if (!force) {
-    const cached = await getPortfolioReview(userId, asOf, cacheStyle);
+    const cached = await getPortfolioReview(portfolioId, asOf, cacheStyle);
     if (cached && cached.portfolioHash === hash) {
       const { portfolioHash: _hash, ...review } = cached;
       return { review, source: 'cached' };
@@ -281,6 +281,6 @@ export async function getOrGenerateCashReview(portfolio, {
   // Read-only: never generate the (researched, shared) report from here.
   const marketReport = await getMarketReport(asOf, style).catch(() => null);
   const review = await reviewCashPlan(payload, results, { model, rules, style, styleAuto, marketReport, portfolio, capital });
-  await putPortfolioReview(userId, asOf, cacheStyle, hash, review, review._meta.model, review._meta.usage);
+  await putPortfolioReview(portfolioId, asOf, cacheStyle, hash, review, review._meta.model, review._meta.usage);
   return { review, source: 'ai' };
 }

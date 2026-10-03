@@ -12,8 +12,12 @@ import {
   putUserUsage,
   getPortfolioReview,
   putPortfolioReview,
+  listRecommendations,
+  listOpenRecommendationKeys,
+  supabase,
 } from '../../src/db.js';
 import { register } from '../../src/auth.js';
+import { logRecommendations } from '../../src/recommendations.js';
 import { uniqueEmail, uniquePhone } from '../helpers/server.js';
 
 test('primaryPortfolioIdFor resolves the migrated Portfolio for a freshly-registered user', async () => {
@@ -88,4 +92,30 @@ test('putPortfolioReview/getPortfolioReview round-trip by portfolio id', async (
   const got = await getPortfolioReview(portfolioId, '2026-10-03', 'medium');
   assert.equal(got.portfolioHash, 'hash1');
   assert.equal(got.verdict, 'hold');
+});
+
+test('logRecommendations tags rows with the given portfolio and dedupes within it', async () => {
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
+  const portfolioId = await primaryPortfolioIdFor(user.id);
+  await logRecommendations(user.id, portfolioId, [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }], { source: 'test', style: 'medium', model: 'test' });
+  const keys = await listOpenRecommendationKeys(portfolioId);
+  assert.ok(keys.includes('COMI:buy'));
+});
+
+// Depends on Task 1's migration having applied the recommendations_guard
+// trigger's portfolio_id addition to the frozen-field tuple — against the
+// pre-migration schema this errors on the missing column, not the guard.
+test('recommendations_guard refuses to change portfolio_id on an existing row, like every other issue field', async () => {
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
+  const portfolioId = await primaryPortfolioIdFor(user.id);
+  await logRecommendations(user.id, portfolioId, [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }], { source: 'test', style: 'medium', model: 'test' });
+  const [{ id }] = await listRecommendations({ userId: user.id }); // existing db.js helper, returns full rows
+  const { error } = await supabase.from('recommendations').update({ portfolio_id: portfolioId + 1 }).eq('id', id);
+  assert.match(error?.message ?? '', /issue fields are immutable/);
 });
