@@ -85,7 +85,7 @@ test('a downtrend gets no long-term target and a lower score', async () => {
   assert.ok(down.technical.score < up.technical.score);
 });
 
-test('an open position gets live P&L, trailing-stop logic and triggers', async () => {
+test('an open position gets live P&L, trailing-stop logic and triggers', { skip: 'needs a real OPENROUTER_API_KEY for getOrGenerateTrailingStop — see this file\'s header comment' }, async () => {
   const position = { shares: 100, avgCost: lastClose(UP) * 0.9, stop: null };
   const a = await analyzeTicker('ABUK', { withFundamentals: false, position, capital: 1_000_000, userId: 'local' });
   assert.ok(a.position != null);
