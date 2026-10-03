@@ -238,16 +238,16 @@ export async function primaryPortfolioIdFor(userId) {
   return data.id;
 }
 
-/** @returns {{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object}|null} the Portfolio row for this id, or null if it doesn't exist. */
+/** @returns {{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object,deletedAt:string|null}|null} the Portfolio row for this id, or null if it doesn't exist. */
 export async function getPortfolioById(portfolioId) {
   const { data, error } = await supabase
     .from('portfolios')
-    .select('id, user_id, name, style, ordinal, state_json')
+    .select('id, user_id, name, style, ordinal, state_json, deleted_at')
     .eq('id', portfolioId)
     .maybeSingle();
   if (error) throw new Error(`getPortfolioById: ${error.message}`);
   if (!data) return null;
-  return { id: data.id, userId: data.user_id, name: data.name, style: data.style, ordinal: data.ordinal, state: data.state_json };
+  return { id: data.id, userId: data.user_id, name: data.name, style: data.style, ordinal: data.ordinal, state: data.state_json, deletedAt: data.deleted_at };
 }
 
 /** @returns {Promise<{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object}[]>} every non-soft-deleted Portfolio for this User, ordered by ordinal ascending. */
