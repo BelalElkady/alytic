@@ -259,8 +259,13 @@ Remember: these numbers are final — judge them, do not recompute them.`;
  *   learn asOf for the lookup.
  */
 export async function getOrGenerateCashReview(portfolio, {
-  portfolioId = 'local', style = DEFAULT_STYLE, styleAuto = false, index = 'ALL', rules = RULES, model = MODEL_CHAIN, force = false, runScan,
+  portfolioId, style = DEFAULT_STYLE, styleAuto = false, index = 'ALL', rules = RULES, model = MODEL_CHAIN, force = false, runScan,
 }) {
+  // portfolio_reviews.portfolio_id is a bigint column — a caller that forgot
+  // to pass this (the old opts.userId default was the string 'local', valid
+  // back when this was keyed by userId) must fail loudly here, not with an
+  // opaque "invalid input syntax for type bigint" from inside getPortfolioReview.
+  if (portfolioId == null) throw new Error('getOrGenerateCashReview: opts.portfolioId is required');
   const { payload, results, capital } = await runScan();
   const asOf = payload.asOf ?? new Date().toISOString().slice(0, 10);
   const cacheStyle = `cash:${style}:${index}`;

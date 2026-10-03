@@ -632,12 +632,17 @@ Remember: these numbers are final — judge them, do not recompute them.`;
  * @param {object[]} analyses - same as reviewPortfolio's first argument
  * @param {object} ctx - same as reviewPortfolio's second argument
  * @param {object} [opts] - same as reviewPortfolio's third argument, plus:
- * @param {string} [opts.portfolioId='local']
+ * @param {string} opts.portfolioId - required; the bigint Portfolio id to cache under
  * @param {boolean} [opts.force] - regenerate even if a matching review is stored
  * @returns {Promise<{review: object, source: 'cached'|'ai'}>}
  */
 export async function getOrGenerateReview(portfolio, analyses, ctx = {}, opts = {}) {
-  const { portfolioId = 'local', force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = opts;
+  const { portfolioId, force = false, model = MODEL_CHAIN, rules = RULES, style = DEFAULT_STYLE } = opts;
+  // portfolio_reviews.portfolio_id is a bigint column — a caller that forgot
+  // to pass this (the old opts.userId default was the string 'local', valid
+  // back when this was keyed by userId) must fail loudly here, not with an
+  // opaque "invalid input syntax for type bigint" from inside getPortfolioReview.
+  if (portfolioId == null) throw new Error('getOrGenerateReview: opts.portfolioId is required');
   const asOf = analyses[0]?.asOf ?? new Date().toISOString().slice(0, 10);
   const hash = portfolioHash(portfolio);
 

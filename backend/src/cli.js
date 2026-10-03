@@ -187,7 +187,7 @@ async function cmdReview(styleArg) {
     portfolio,
     results,
     { cash: portfolio.cash, capital },
-    { rules, style, force: args.includes('--force') },
+    { portfolioId, rules, style, force: args.includes('--force') },
   );
   if (source === 'cached') process.stderr.write(c.dim('(من مراجعة سابقة النهاردة — نفس المحفظة بالظبط. استخدم --force لمراجعة جديدة)\n'));
 
