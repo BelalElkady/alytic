@@ -843,10 +843,15 @@ export async function setUserFollowUp(userId, channel, done, updatedBy) {
   return data;
 }
 
-/** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. `id` is along for callers that need to resolve a specific Portfolio row (still one per User — see Global Constraints). */
-// Paged, like listOpenRecommendationKeys: every User has a row now, and an
-// unpaged select stops at PostgREST's 1000-row cap — the daily close
-// (runDailyClose in server.js) would silently skip whoever fell past it.
+/**
+ * Every stored portfolio's state, keyed by user_id — for the admin users
+ * list's investment-behavior summary and the daily close. `id` is along for
+ * callers that need to resolve a specific Portfolio row (still one per User —
+ * see Global Constraints). Paged, like listOpenRecommendationKeys: every User
+ * has a row now, and an unpaged select stops at PostgREST's 1000-row cap —
+ * the daily close (runDailyClose in server.js) would silently skip whoever
+ * fell past it.
+ */
 export async function getAllPortfolios() {
   const rows = [];
   for (let from = 0; ; from += 1000) {
