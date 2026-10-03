@@ -1069,12 +1069,21 @@ export async function deleteAnnouncement(id) {
  * `.not('id', 'in', ...)` filter would need the dismissed set client-side
  * anyway to also exclude it from an "active" window that already passed.
  */
+let warnedMissingAnnouncementsTable = false;
+
 export async function getActiveAnnouncementForUser(userId) {
   const now = new Date().toISOString();
   const [{ data: candidates, error: candidatesError }, { data: dismissed, error: dismissedError }] = await Promise.all([
     supabase.from('feature_announcements').select('*').lte('starts_at', now).gte('ends_at', now).order('starts_at', { ascending: false }),
     supabase.from('user_announcement_dismissals').select('announcement_id').eq('user_id', userId),
   ]);
+  if (isMissingTable(candidatesError) || isMissingTable(dismissedError)) {
+    if (!warnedMissingAnnouncementsTable) {
+      warnedMissingAnnouncementsTable = true;
+      console.error('getActiveAnnouncementForUser: the feature_announcements/user_announcement_dismissals tables are missing — apply backend/supabase/schema.sql.');
+    }
+    return null;
+  }
   if (candidatesError) throw new Error(`getActiveAnnouncementForUser: ${candidatesError.message}`);
   if (dismissedError) throw new Error(`getActiveAnnouncementForUser: ${dismissedError.message}`);
   const dismissedIds = new Set(dismissed.map((row) => row.announcement_id));
@@ -1089,6 +1098,13 @@ export async function dismissAnnouncement(userId, announcementId) {
       { user_id: userId, announcement_id: announcementId, dismissed_at: new Date().toISOString() },
       { onConflict: 'user_id,announcement_id' },
     );
+  if (isMissingTable(error)) {
+    if (!warnedMissingAnnouncementsTable) {
+      warnedMissingAnnouncementsTable = true;
+      console.error('dismissAnnouncement: the user_announcement_dismissals table is missing — apply backend/supabase/schema.sql.');
+    }
+    return;
+  }
   if (error) throw new Error(`dismissAnnouncement: ${error.message}`);
 }
 

@@ -51,6 +51,14 @@ const STATUS_BADGE_VARIANT: Record<Status, "outline" | "secondary" | "default"> 
   ended: "secondary",
 };
 
+// Egypt is UTC+2 year-round (no DST since 2014), so a date-only picker value
+// like "2026-10-03" is converted to an explicit-offset ISO timestamp at the
+// Cairo-local start/end of that day before it's sent to the API — otherwise
+// Date.parse would read it as UTC midnight, which both collapses a same-day
+// start/end into the same instant and cuts the end date short by two hours.
+const startOfCairoDay = (date: string) => `${date}T00:00:00+02:00`;
+const endOfCairoDay = (date: string) => `${date}T23:59:59.999+02:00`;
+
 const emptyForm = () => ({
   title: "",
   body: "",
@@ -149,8 +157,8 @@ export function AnnouncementsTab() {
       body: form.body.trim(),
       imageUrls: form.imageUrls,
       videoUrl: form.videoUrl.trim() || null,
-      startsAt: form.startsAt,
-      endsAt: form.endsAt,
+      startsAt: startOfCairoDay(form.startsAt),
+      endsAt: endOfCairoDay(form.endsAt),
     };
     try {
       if (editingId) {
@@ -218,6 +226,7 @@ export function AnnouncementsTab() {
               <label className="text-[12px] text-muted-foreground">تاريخ الانتهاء</label>
               <Input
                 type="date"
+                min={form.startsAt}
                 value={form.endsAt}
                 onChange={(e) => setForm({ ...form, endsAt: e.target.value })}
               />

@@ -58,6 +58,7 @@ export function FeatureAnnouncementDialog() {
           {announcement.videoUrl && (
             <iframe
               src={announcement.videoUrl}
+              title="فيديو الميزة الجديدة"
               className="aspect-video w-full rounded-lg border"
               allow="autoplay; encrypted-media; picture-in-picture"
               allowFullScreen
