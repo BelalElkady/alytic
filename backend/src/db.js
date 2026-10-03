@@ -123,20 +123,12 @@ export async function createUser(user) {
   // Only sent when true, so signups keep working on a database that hasn't had
   // the is_marketer column applied yet.
   if (user.isMarketer) row.is_marketer = true;
+  // The User's Portfolio is created by the database, not here: the
+  // users_create_primary_portfolio trigger (supabase/schema.sql) inserts it
+  // in this same statement, so an account can never exist without one —
+  // primaryPortfolioIdFor throws for such a User and nothing lazily creates
+  // one anymore.
   mustUnlessDuplicate(await supabase.from('users').insert(row), 'createUser');
-
-  // Every User gets exactly one Portfolio (Global Constraints in the
-  // Portfolio storage plan: "one Portfolio per User, still"). Under the old
-  // user_id-keyed scheme this row was lazily created by the first
-  // putPortfolio call; now that `id` (not `user_id`) is the Portfolios'
-  // identity, primaryPortfolioIdFor has nowhere to lazily insert into, so the
-  // row is created here instead — right alongside the user it belongs to.
-  // Matches migrate-multi-portfolio.sql's name for a fresh (no legacy state)
-  // Portfolio, so a newly-registered account and a migrated one look the same.
-  must(
-    await supabase.from('portfolios').insert({ user_id: user.id, name: 'المحفظة الرئيسية', ordinal: 0 }),
-    'createUser(portfolio)',
-  );
 }
 
 /** `ip` is the caller's address (see clientIp in server.js); callers without one — scripts, tests — leave the stored value alone. */
