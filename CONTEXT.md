@@ -41,11 +41,15 @@ _Avoid_: Tokens, points
 ## Investing
 
 **Investing style**:
-Whether a User invests as a trader, medium-term, or long-term; either chosen by the User or inferred from their trades.
+Whether a Portfolio is run as a trader, medium-term, or long-term; either chosen by the User or inferred from their trades.
 _Avoid_: Risk profile, persona
 
+**Portfolio**:
+One of a User's separate books of Positions, with its own cash, Investing style, trades and profit/loss. Every User has one; a الحريفة subscriber can hold up to three. Labelled "محفظة".
+_Avoid_: Wallet, account, sub-portfolio
+
 **Position**:
-A stock a User currently holds in their portfolio, with its share count and average cost.
+A stock a User currently holds in one of their Portfolios, with its share count and average cost.
 _Avoid_: Holding, stock (when meaning the User's stake)
 
 **Corporate action**:

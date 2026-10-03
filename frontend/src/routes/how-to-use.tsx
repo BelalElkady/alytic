@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { useCallback, useRef } from "react";
 import {
   Activity,
   BarChart3,
@@ -250,24 +251,127 @@ const FAQ = [
 const GUIDE_MOBILE = "GpM04e9FvAg";
 const GUIDE_DESKTOP = "_sI6zqJol00";
 
-function GuideVideo({ id, className }: { id: string; className: string }) {
+// Chapters from the guide video's VTT track (YouTube embeds don't render <track>,
+// so we seek via the IFrame Player API instead).
+const MILESTONES = [
+  { seconds: 0, title: "مقدمة" },
+  { seconds: 41, title: "١. إنشاء حساب وتسجيل الدخول" },
+  { seconds: 71, title: "٢. اختار سلوكك الاستثماري" },
+  { seconds: 100, title: "٣. رفع صورة المحفظة" },
+  { seconds: 203, title: "٤. تعديل عدد الأسهم" },
+  { seconds: 238, title: "٥. الإدخال اليدوي" },
+  { seconds: 283, title: "٦. قراءة كارت السهم" },
+  { seconds: 311, title: "٧. «قولي توصية اليوم»" },
+  { seconds: 425, title: "٨. تفاصيل السهم" },
+  { seconds: 478, title: "٩. تحليل السوق" },
+  { seconds: 541, title: "١٠. تحليل الكاش" },
+  { seconds: 658, title: "١١. الأسهم المفضلة" },
+  { seconds: 680, title: "١٢. المؤشرات" },
+  { seconds: 700, title: "١٣. الأهداف" },
+  { seconds: 715, title: "١٤. التقويم" },
+  { seconds: 751, title: "١٥. الرسوم" },
+  { seconds: 782, title: "١٦. البروفايل والإعدادات" },
+  { seconds: 814, title: "١٧. أخبار البورصة" },
+];
+
+function formatTimecode(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+interface YouTubePlayer {
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  playVideo: () => void;
+  destroy: () => void;
+}
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (
+        el: string,
+        opts: {
+          videoId: string;
+          host?: string;
+          playerVars?: Record<string, string | number>;
+          events?: { onReady?: (event: { target: YouTubePlayer }) => void };
+        },
+      ) => YouTubePlayer;
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+let youtubeApiPromise: Promise<void> | null = null;
+function loadYouTubeIframeApi(): Promise<void> {
+  if (window.YT?.Player) return Promise.resolve();
+  if (youtubeApiPromise) return youtubeApiPromise;
+  youtubeApiPromise = new Promise((resolve) => {
+    const previous = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previous?.();
+      resolve();
+    };
+    const script = document.createElement("script");
+    script.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(script);
+  });
+  return youtubeApiPromise;
+}
+
+function GuideVideo({
+  id,
+  className,
+  onReady,
+}: {
+  id: string;
+  className: string;
+  onReady: (player: YouTubePlayer) => void;
+}) {
+  const elementId = `guide-video-${id}`;
+
+  const mountRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node) return;
+      let player: YouTubePlayer | undefined;
+      let cancelled = false;
+      loadYouTubeIframeApi().then(() => {
+        if (cancelled || !window.YT) return;
+        player = new window.YT.Player(elementId, {
+          videoId: id,
+          host: "https://www.youtube-nocookie.com",
+          playerVars: { rel: 0, playsinline: 1 },
+          events: { onReady: (event) => onReady(event.target) },
+        });
+      });
+      return () => {
+        cancelled = true;
+        player?.destroy();
+      };
+    },
+    [elementId, id, onReady],
+  );
+
   return (
     <div className={`overflow-hidden rounded-2xl border bg-card shadow-sm ${className}`}>
-      <iframe
-        src={`https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1`}
-        title="شرح طريقة الاستخدام خطوة بخطوة"
-        loading="lazy"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        referrerPolicy="strict-origin-when-cross-origin"
-        allowFullScreen
-        className="size-full"
-      />
+      <div ref={mountRef} id={elementId} className="size-full" />
     </div>
   );
 }
 
 function HowToUsePage() {
   const { name: brandName } = useTenant();
+  const mobilePlayerRef = useRef<YouTubePlayer | null>(null);
+  const desktopPlayerRef = useRef<YouTubePlayer | null>(null);
+
+  const handleMilestoneClick = useCallback((seconds: number) => {
+    const isDesktop = window.matchMedia("(min-width: 768px)").matches;
+    const player = isDesktop ? desktopPlayerRef.current : mobilePlayerRef.current;
+    player?.seekTo(seconds, true);
+    player?.playVideo();
+  }, []);
+
   return (
     <SiteShell>
       <section className="border-b bg-card">
@@ -289,10 +393,39 @@ function HowToUsePage() {
           اتفرّج على الطريقة كلها في فيديو واحد، وبعدها تلاقي نفس الخطوات مكتوبة تحت.
         </p>
         <div className="mt-6 md:hidden">
-          <GuideVideo id={GUIDE_MOBILE} className="mx-auto aspect-[9/16] w-full max-w-[360px]" />
+          <GuideVideo
+            id={GUIDE_MOBILE}
+            className="mx-auto aspect-[9/16] w-full max-w-[360px]"
+            onReady={(player) => {
+              mobilePlayerRef.current = player;
+            }}
+          />
         </div>
         <div className="mt-6 hidden md:block">
-          <GuideVideo id={GUIDE_DESKTOP} className="aspect-video w-full" />
+          <GuideVideo
+            id={GUIDE_DESKTOP}
+            className="aspect-video w-full"
+            onReady={(player) => {
+              desktopPlayerRef.current = player;
+            }}
+          />
+        </div>
+
+        <h3 className="mt-8 text-[14px] font-semibold text-muted-foreground">فهرس الفيديو</h3>
+        <div className="mt-4 grid gap-2 text-right sm:grid-cols-2">
+          {MILESTONES.map((milestone) => (
+            <button
+              key={milestone.seconds}
+              type="button"
+              onClick={() => handleMilestoneClick(milestone.seconds)}
+              className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3.5 py-2.5 text-[13px] transition-colors hover:border-primary/40 hover:bg-secondary"
+            >
+              <span>{milestone.title}</span>
+              <span dir="ltr" className="shrink-0 tabular-nums text-muted-foreground">
+                {formatTimecode(milestone.seconds)}
+              </span>
+            </button>
+          ))}
         </div>
       </section>
 
