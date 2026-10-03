@@ -838,10 +838,21 @@ export async function setUserFollowUp(userId, channel, done, updatedBy) {
 }
 
 /** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. `id` is along for callers that need to resolve a specific Portfolio row (still one per User — see Global Constraints). */
+// Paged, like listOpenRecommendationKeys: every User has a row now, and an
+// unpaged select stops at PostgREST's 1000-row cap — the daily close
+// (runDailyClose in server.js) would silently skip whoever fell past it.
 export async function getAllPortfolios() {
-  const { data, error } = await supabase.from('portfolios').select('id, user_id, state_json');
-  if (error) throw new Error(`getAllPortfolios: ${error.message}`);
-  return data;
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('portfolios')
+      .select('id, user_id, state_json')
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw new Error(`getAllPortfolios: ${error.message}`);
+    rows.push(...data);
+    if (data.length < 1000) return rows;
+  }
 }
 
 /** @returns {{tickers:string[],updatedAt:string,updatedBy:string|null}|null} an admin-uploaded ticker list for this index, or null if none was ever uploaded. */
