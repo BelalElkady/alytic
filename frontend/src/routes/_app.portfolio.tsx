@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "r
 import { ArrowDownUp, Info, PencilLine, Sparkles, Trash2 } from "lucide-react";
 
 import { PriceRail } from "@/components/desk/price-rail";
+import { PortfoliosPrototype, usePrototypeVariant } from "@/components/desk/portfolios-prototype";
 import {
   EmptyState,
   ErrorState,
@@ -57,8 +58,19 @@ export const Route = createFileRoute("/_app/portfolio")({
       { property: "og:url", content: `${siteUrl(match)}/portfolio` },
     ],
   }),
-  component: PositionsPage,
+  component: PositionsRoute,
 });
+
+// PROTOTYPE (#102): ?variant=A|B|C mounts the multi-Portfolio variants around the page.
+function PositionsRoute() {
+  const variant = usePrototypeVariant();
+  if (!variant) return <PositionsPage />;
+  return (
+    <PortfoliosPrototype variant={variant}>
+      <PositionsPage />
+    </PortfoliosPrototype>
+  );
+}
 
 const REC_TONE: Record<string, string> = {
   buy: "border-up/40 bg-up-soft text-up",
