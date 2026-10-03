@@ -123,6 +123,19 @@ export async function createUser(user) {
   // the is_marketer column applied yet.
   if (user.isMarketer) row.is_marketer = true;
   mustUnlessDuplicate(await supabase.from('users').insert(row), 'createUser');
+
+  // Every User gets exactly one Portfolio (Global Constraints in the
+  // Portfolio storage plan: "one Portfolio per User, still"). Under the old
+  // user_id-keyed scheme this row was lazily created by the first
+  // putPortfolio call; now that `id` (not `user_id`) is the Portfolios'
+  // identity, primaryPortfolioIdFor has nowhere to lazily insert into, so the
+  // row is created here instead — right alongside the user it belongs to.
+  // Matches migrate-multi-portfolio.sql's name for a fresh (no legacy state)
+  // Portfolio, so a newly-registered account and a migrated one look the same.
+  must(
+    await supabase.from('portfolios').insert({ user_id: user.id, name: 'المحفظة الرئيسية', ordinal: 0 }),
+    'createUser(portfolio)',
+  );
 }
 
 /** `ip` is the caller's address (see clientIp in server.js); callers without one — scripts, tests — leave the stored value alone. */
@@ -211,26 +224,55 @@ export async function setUserName(id, name) {
   forgetSessionUser(id);
 }
 
-export async function getPortfolio(userId) {
-  const { data, error } = await supabase.from('portfolios').select('state_json').eq('user_id', userId).maybeSingle();
-  if (error) throw new Error(`getPortfolio: ${error.message}`);
-  return data?.state_json ?? null;
+/**
+ * The Portfolio a User lands on when nothing more specific is asked for —
+ * the lowest-`ordinal`, non-deleted row. Every User has at least one after
+ * Task 1's migration (see migrate-multi-portfolio.sql); a User with none is
+ * a bug elsewhere (Task 8 verifies this against the real database), so this
+ * throws rather than returning null like getPortfolioById does.
+ */
+export async function primaryPortfolioIdFor(userId) {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .select('id')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('ordinal', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`primaryPortfolioIdFor: ${error.message}`);
+  if (!data) throw new Error(`primaryPortfolioIdFor: no Portfolio for user ${userId}`);
+  return data.id;
 }
 
-export async function putPortfolio(userId, state) {
+/** @returns {{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object}|null} the Portfolio row for this id, or null if it doesn't exist. */
+export async function getPortfolioById(portfolioId) {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .select('id, user_id, name, style, ordinal, state_json')
+    .eq('id', portfolioId)
+    .maybeSingle();
+  if (error) throw new Error(`getPortfolioById: ${error.message}`);
+  if (!data) return null;
+  return { id: data.id, userId: data.user_id, name: data.name, style: data.style, ordinal: data.ordinal, state: data.state_json };
+}
+
+/**
+ * Update-only, unlike the old user_id-keyed putPortfolio: `id` is a
+ * `generated always as identity` column, so there is no row to "insert" at a
+ * caller-chosen id, and every caller resolves `portfolioId` from
+ * `primaryPortfolioIdFor`/`getPortfolioById` first — the row always already
+ * exists. Throws rather than silently no-opping if it somehow doesn't, so a
+ * bad id surfaces immediately instead of losing a write.
+ */
+export async function putPortfolioById(portfolioId, state) {
   const now = new Date().toISOString();
   const stateJson = { ...state, updatedAt: now };
-
   const updated = must(
-    await supabase.from('portfolios').update({ state_json: stateJson, updated_at: now }).eq('user_id', userId).select('user_id'),
-    'putPortfolio(update)',
+    await supabase.from('portfolios').update({ state_json: stateJson, updated_at: now }).eq('id', portfolioId).select('id'),
+    'putPortfolioById',
   );
-  if (updated.length) return;
-
-  must(
-    await supabase.from('portfolios').insert({ user_id: userId, state_json: stateJson, created_at: now, updated_at: now }),
-    'putPortfolio(insert)',
-  );
+  if (!updated.length) throw new Error(`putPortfolioById: no Portfolio with id ${portfolioId}`);
 }
 
 /** @returns {object|null} the stored report for that day/style, or null if never generated. */
@@ -705,9 +747,9 @@ export async function setUserFollowUp(userId, channel, done, updatedBy) {
   return data;
 }
 
-/** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. */
+/** Every stored portfolio's state, keyed by user_id — for the admin users list's investment-behavior summary. `id` is along for callers that need to resolve a specific Portfolio row (still one per User — see Global Constraints). */
 export async function getAllPortfolios() {
-  const { data, error } = await supabase.from('portfolios').select('user_id, state_json');
+  const { data, error } = await supabase.from('portfolios').select('id, user_id, state_json');
   if (error) throw new Error(`getAllPortfolios: ${error.message}`);
   return data;
 }
