@@ -283,7 +283,7 @@ export async function putPortfolioById(portfolioId, state) {
 const USER_USAGE_COLUMNS =
   'usage_month, usage_cash_scans, usage_recommendations, usage_screenshots, usage_market_analysis, credits_cash_scans, credits_recommendations, credits_screenshots, credits_market_analysis, last_cash_scan_at, last_market_scan_at';
 
-/** Shared by getUserUsage and getUserUsageBatch: the same row shape, from a single fetched row (or none). */
+/** Shared by getUserUsage and getAllUsers: the same row shape, from a single fetched row (or none). */
 function usageRecordFrom(row, month) {
   const stale = row?.usage_month !== month;
   return {
@@ -314,31 +314,14 @@ export async function getUserUsage(userId) {
 }
 
 /**
- * Same shape as getUserUsage, for every User in one query — the admin users
- * list (GET /api/admin/users, server.js) needs every account's usage
- * figures, and firing one getUserUsage query per account (hundreds, on the
- * real accumulated test/production table) risked exhausting Supabase's
- * connection pool and intermittently failing unrelated concurrent requests.
- * No id filter: an `.in('id', userIds)` with hundreds of ids hit Supabase's
- * URL-length limit and came back a flat 400, so this reads the same
- * unfiltered scope getAllUsers() already does.
- * @returns {Map<string, ReturnType<typeof getUserUsage>>} keyed by userId — an id with no row simply isn't in the Map; look it up with `.get(id) ?? <all-zero default>` if that's possible for a caller.
- */
-export async function getUserUsageBatch() {
-  const { data, error } = await supabase.from('users').select(`id, ${USER_USAGE_COLUMNS}`);
-  if (error) throw new Error(`getUserUsageBatch: ${error.message}`);
-  const month = cairoToday().slice(0, 7);
-  return new Map((data ?? []).map((row) => [row.id, usageRecordFrom(row, month)]));
-}
-
-/**
  * Writes every usage/credits column, including whatever `month` the caller
  * passed — callers always pass `getUserUsage`'s own current-month output
  * back (see `bumpUsage`'s contract, Task 7), so this never needs to do the
- * rollover check itself.
+ * rollover check itself. Throws if no such User exists, rather than
+ * silently writing nothing — like putPortfolioById.
  */
 export async function putUserUsage(userId, usage) {
-  must(
+  const updated = must(
     await supabase
       .from('users')
       .update({
@@ -354,10 +337,12 @@ export async function putUserUsage(userId, usage) {
         last_cash_scan_at: usage.lastCashScanAt,
         last_market_scan_at: usage.lastMarketScanAt,
       })
-      .eq('id', userId),
+      .eq('id', userId)
+      .select('id'),
     'putUserUsage',
   );
   forgetSessionUser(userId);
+  if (!updated.length) throw new Error(`putUserUsage: no User with id ${userId}`);
 }
 
 /** @returns {object|null} the stored report for that day/style, or null if never generated. */
@@ -549,12 +534,18 @@ export async function getPortfolioReview(portfolioId, reportDate, style) {
  * Portfolio itself rather than trusted from the caller.
  */
 export async function putPortfolioReview(portfolioId, reportDate, style, portfolioHash, review, model, usage) {
-  const portfolio = await getPortfolioById(portfolioId);
-  if (!portfolio) throw new Error(`putPortfolioReview: no Portfolio with id ${portfolioId}`);
+  // Only the owner is needed — not the whole state_json getPortfolioById reads.
+  const { data: owner, error: ownerError } = await supabase
+    .from('portfolios')
+    .select('user_id')
+    .eq('id', portfolioId)
+    .maybeSingle();
+  if (ownerError) throw new Error(`putPortfolioReview: ${ownerError.message}`);
+  if (!owner) throw new Error(`putPortfolioReview: no Portfolio with id ${portfolioId}`);
   const { error } = await supabase.from('portfolio_reviews').upsert(
     {
       portfolio_id: portfolioId,
-      user_id: portfolio.userId,
+      user_id: owner.user_id,
       report_date: reportDate,
       style,
       portfolio_hash: portfolioHash,
@@ -788,14 +779,20 @@ export async function deleteUser(id) {
   return data.length > 0;
 }
 
-/** Every registered user, newest first — for the admin users list. Excludes auth secrets (password hash/salt, tokens). */
+/**
+ * Every registered user, newest first — for the admin users list. Excludes
+ * auth secrets (password hash/salt, tokens). Each row also carries `usage`,
+ * the same shape getUserUsage returns, read in this one query so the list
+ * needs no second per-account (or second whole-table) read.
+ */
 export async function getAllUsers() {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip')
+    .select(`id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
     .order('created_at', { ascending: false });
   if (error) throw new Error(`getAllUsers: ${error.message}`);
-  return data;
+  const month = cairoToday().slice(0, 7);
+  return data.map((row) => ({ ...row, usage: usageRecordFrom(row, month) }));
 }
 
 let warnedMissingFollowUps = false;

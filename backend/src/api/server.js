@@ -21,7 +21,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, getUserUsageBatch, primaryPortfolioIdFor } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -1152,11 +1152,8 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     getAllSubscriptions(),
     getAllFollowUps(),
   ]);
-  // The usage/credits figures below now live on the User, not the Portfolio
-  // blob — read separately, in one batched query (see getUserUsageBatch in
-  // db.js) rather than off `portfolios`. One getUserUsage call per account
-  // would mean one query per row on a users table with hundreds of rows.
-  const usageByUser = await getUserUsageBatch();
+  // The usage/credits figures below live on the User, not the Portfolio
+  // blob — getAllUsers reads them in its own query, as each row's `usage`.
   const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
   const followUpByUser = new Map(followUps.map((row) => [row.user_id, row]));
@@ -1175,9 +1172,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     // Same resolution as accessInfo() for this user's own request — see its
     // comment on why staff/CLI get the top tier rather than a bypass.
     const tier = u.is_admin || u.is_marketer || u.id === 'local' ? 'trader' : subscriptionActive ? subscription.tier : trial.trialActive && u.email_verified ? 'free' : null;
-    // Both queries read the same unfiltered `users` table; a missing entry
-    // here would only mean the account was deleted between the two reads.
-    const usage = usageByUser.get(u.id) ?? { cashScans: 0, recommendations: 0, screenshots: 0, marketAnalysis: 0, credits: {} };
+    const { usage } = u;
     return {
       id: u.id,
       email: u.email,
