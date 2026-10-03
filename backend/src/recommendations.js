@@ -219,6 +219,11 @@ export function withoutOpenDuplicates(rows, openKeys) {
 export async function logRecommendations(userId, portfolioId, items, { source, style, model }) {
   try {
     if (!items.some((item) => TRACKED_ACTIONS[item.action])) return;
+    // recommendations.portfolio_id is nullable only so a deleted Portfolio's
+    // calls survive it; a new call always belongs to one. Without this, a
+    // caller that forgot portfolioId would log unowned rows that also slip
+    // past the per-Portfolio dedupe.
+    if (!portfolioId) throw new Error('portfolioId is required');
     const [indices, membership] = await Promise.all([indexLevelsNow(), indexMembership()]);
     const rows = items
       .map((item) => recommendationRow({

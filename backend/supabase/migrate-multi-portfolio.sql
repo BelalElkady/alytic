@@ -32,6 +32,25 @@ create table portfolios (
   updated_at timestamptz not null default now()
 );
 create index idx_portfolios_user on portfolios (user_id) where deleted_at is null;
+-- Locked away from the anon/authenticated roles from the moment it exists,
+-- rather than only once schema.sql's lock-down block is next re-applied.
+alter table portfolios enable row level security;
+
+-- Every new User gets their Portfolio in the same statement that inserts them
+-- (the application no longer inserts one itself). Same definition as in
+-- schema.sql; repeated here so a tenant is never without it between this
+-- script and schema.sql's next re-apply.
+create or replace function users_create_primary_portfolio() returns trigger
+language plpgsql as $$
+begin
+  insert into portfolios (user_id, name, ordinal) values (new.id, 'المحفظة الرئيسية', 0);
+  return null;
+end $$;
+
+drop trigger if exists users_create_primary_portfolio on users;
+create trigger users_create_primary_portfolio
+  after insert on users
+  for each row execute function users_create_primary_portfolio();
 
 -- Every User gets exactly one Portfolio: from their legacy row if they had
 -- one, or a fresh empty book if they didn't (lazy creation under the old
@@ -64,17 +83,23 @@ update users u set
 from portfolios_legacy pl
 where pl.user_id = u.id;
 
--- portfolio_reviews: add the column, backfill, then re-key.
-alter table portfolio_reviews add column if not exists portfolio_id bigint references portfolios(id) on delete restrict;
+-- portfolio_reviews: add the column, backfill, then re-key. A pure cache, so
+-- `on delete cascade`. It stays not null (it is part of the primary key):
+-- every row's user_id is a live User (that FK cascades), and every User got a
+-- Portfolio above, so the backfill always finds one.
+alter table portfolio_reviews add column if not exists portfolio_id bigint references portfolios(id) on delete cascade;
 update portfolio_reviews pr set portfolio_id = p.id from portfolios p where p.user_id = pr.user_id;
 alter table portfolio_reviews alter column portfolio_id set not null;
 alter table portfolio_reviews drop constraint portfolio_reviews_pkey;
 alter table portfolio_reviews add primary key (portfolio_id, report_date, style);
 
--- recommendations: add the column, backfill, re-key, then re-key the dedupe index.
-alter table recommendations add column if not exists portfolio_id bigint references portfolios(id) on delete restrict;
+-- recommendations: add the column, backfill, then re-key the dedupe index.
+-- Nullable and `on delete set null`, like user_id (rows are append-only, so a
+-- restrict would make the Portfolio and its User undeletable). A call whose
+-- user_id was already cleared by an earlier account deletion has no
+-- Portfolio to point at and keeps portfolio_id null.
+alter table recommendations add column if not exists portfolio_id bigint references portfolios(id) on delete set null;
 update recommendations r set portfolio_id = p.id from portfolios p where p.user_id = r.user_id;
-alter table recommendations alter column portfolio_id set not null;
 drop index if exists recommendations_daily_key;
 create unique index recommendations_daily_key on recommendations (user_id, portfolio_id, ticker, action, issued_on);
 

@@ -14,6 +14,7 @@ import {
   putPortfolioReview,
   listRecommendations,
   listOpenRecommendationKeys,
+  deleteUser,
   supabase,
 } from '../../src/db.js';
 import { register } from '../../src/auth.js';
@@ -105,10 +106,10 @@ test('logRecommendations tags rows with the given portfolio and dedupes within i
   assert.ok(keys.includes('COMI:buy'));
 });
 
-// Depends on Task 1's migration having applied the recommendations_guard
-// trigger's portfolio_id addition to the frozen-field tuple — against the
-// pre-migration schema this errors on the missing column, not the guard.
-test('recommendations_guard refuses to change portfolio_id on an existing row, like every other issue field', async () => {
+// The next three depend on patch-recommendations-portfolio-id-nullable.sql
+// (or a schema.sql-fresh tenant): the guard's clear-but-never-reassign rule for
+// portfolio_id, and its `on delete set null` foreign key.
+test('recommendations_guard refuses to reassign portfolio_id on an existing row, like user_id', async () => {
   // register() returns nothing by design — read the created row back by email.
   const email = uniqueEmail();
   await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
@@ -117,7 +118,37 @@ test('recommendations_guard refuses to change portfolio_id on an existing row, l
   await logRecommendations(user.id, portfolioId, [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }], { source: 'test', style: 'medium', model: 'test' });
   const [{ id }] = await listRecommendations({ userId: user.id }); // existing db.js helper, returns full rows
   const { error } = await supabase.from('recommendations').update({ portfolio_id: portfolioId + 1 }).eq('id', id);
-  assert.match(error?.message ?? '', /issue fields are immutable/);
+  assert.match(error?.message ?? '', /portfolio_id can only be cleared, not reassigned/);
+});
+
+test('recommendations_guard lets portfolio_id be cleared to null', async () => {
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
+  const portfolioId = await primaryPortfolioIdFor(user.id);
+  await logRecommendations(user.id, portfolioId, [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }], { source: 'test', style: 'medium', model: 'test' });
+  const [{ id }] = await listRecommendations({ userId: user.id });
+  const { error } = await supabase.from('recommendations').update({ portfolio_id: null }).eq('id', id);
+  assert.equal(error, null);
+});
+
+test('deleteUser succeeds for a User with a logged Recommendation, which survives with user_id and portfolio_id cleared', async () => {
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
+  const portfolioId = await primaryPortfolioIdFor(user.id);
+  await putPortfolioReview(portfolioId, '2026-10-03', 'medium', 'hash1', { verdict: 'hold' }, 'model-x', null);
+  await logRecommendations(user.id, portfolioId, [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }], { source: 'test', style: 'medium', model: 'test' });
+  const [{ id }] = await listRecommendations({ userId: user.id });
+
+  assert.equal(await deleteUser(user.id), true);
+
+  const { data: rec, error } = await supabase.from('recommendations').select('user_id, portfolio_id').eq('id', id).single();
+  assert.equal(error, null);
+  assert.equal(rec.user_id, null);
+  assert.equal(rec.portfolio_id, null);
+  assert.equal(await getPortfolioById(portfolioId), null);
+  assert.equal(await getPortfolioReview(portfolioId, '2026-10-03', 'medium'), null);
 });
 
 test('logRecommendations does not dedupe the same stock/action across two different Portfolios of the same User', async () => {

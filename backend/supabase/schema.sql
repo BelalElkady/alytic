@@ -119,6 +119,26 @@ create table if not exists portfolios (
 );
 create index if not exists idx_portfolios_user on portfolios (user_id) where deleted_at is null;
 
+-- Every User has a Portfolio from the moment they exist: this trigger adds it
+-- inside the same statement that inserts the users row, so a signup can never
+-- leave an account with none (primaryPortfolioIdFor throws for such a User,
+-- and nothing lazily creates one anymore). Covers every way a users row gets
+-- inserted — signup, Google sign-in, the 'local' seed below. The name matches
+-- migrate-multi-portfolio.sql's, so a new account and a migrated one look the
+-- same. An `insert ... on conflict do nothing` that hits the conflict inserts
+-- no row and fires nothing — see the 'local' Portfolio seed further down.
+create or replace function users_create_primary_portfolio() returns trigger
+language plpgsql as $$
+begin
+  insert into portfolios (user_id, name, ordinal) values (new.id, 'المحفظة الرئيسية', 0);
+  return null;
+end $$;
+
+drop trigger if exists users_create_primary_portfolio on users;
+create trigger users_create_primary_portfolio
+  after insert on users
+  for each row execute function users_create_primary_portfolio();
+
 -- One AI-generated market report per (trading day, investor style), shared by
 -- every user rather than regenerated per request. See
 -- src/agent/marketAnalysis.js — the deep scan runs once and everyone reads
@@ -167,8 +187,12 @@ create table if not exists ai_stop_plans (
 -- stopPlanner.js's getOrGenerateTrailingStop) keys on `stop:STYLE:CODE`,
 -- portfolio_hash there covering only that one position (avgCost, shares,
 -- existing stop) rather than the whole book.
+--
+-- A pure cache, not a record: a deleted Portfolio's reviews go with it
+-- (`on delete cascade`), so deleting a User — whose Portfolios cascade —
+-- is never blocked here.
 create table if not exists portfolio_reviews (
-  portfolio_id bigint not null references portfolios(id) on delete restrict,
+  portfolio_id bigint not null references portfolios(id) on delete cascade,
   user_id text not null references users(id) on delete cascade,
   report_date text not null,
   style text not null,
@@ -494,7 +518,8 @@ create table if not exists blog_daily_topics (
 --     it is closed they are final; the stock-move fields (below) keep going
 --     to the horizon's end and are final from then;
 --   - rows can't be deleted or truncated. A deleted account's rows stay, with
---     user_id set to null (the one issue-field change allowed).
+--     user_id and portfolio_id set to null (the only issue-field changes
+--     allowed: either may be cleared, neither may be reassigned).
 -- RLS is enabled with no policies by the lock-down block at the end of this
 -- file, like every other table here: anon/authenticated can't reach it at all.
 --
@@ -513,7 +538,12 @@ end $$;
 create table if not exists recommendations (
   id bigint generated always as identity primary key,
   user_id text references users(id) on delete set null,
-  portfolio_id bigint not null references portfolios(id) on delete restrict,
+  -- Nullable and `on delete set null`, exactly like user_id: rows can't be
+  -- deleted (see the guard below), so a restrict here would make the
+  -- Portfolio — and through it the User — undeletable once it had a single
+  -- call. Every call is logged with its Portfolio; null only means that
+  -- Portfolio was deleted since.
+  portfolio_id bigint references portfolios(id) on delete set null,
   ticker text not null,
   action recommendation_action not null,
   ref_price numeric not null check (ref_price > 0),
@@ -669,15 +699,20 @@ begin
   -- UPDATE
   if (new.id, new.ticker, new.action, new.ref_price, new.target_price, new.stop_price, new.horizon_days,
       new.egx30_at_issue, new.model_version, new.issued_at, new.issued_on, new.source, new.style,
-      new.benchmark, new.indices_at_issue, new.portfolio_id)
+      new.benchmark, new.indices_at_issue)
      is distinct from
      (old.id, old.ticker, old.action, old.ref_price, old.target_price, old.stop_price, old.horizon_days,
       old.egx30_at_issue, old.model_version, old.issued_at, old.issued_on, old.source, old.style,
-      old.benchmark, old.indices_at_issue, old.portfolio_id) then
+      old.benchmark, old.indices_at_issue) then
     raise exception 'recommendation %: issue fields are immutable', old.id;
   end if;
+  -- user_id and portfolio_id may only go to null (their `on delete set null`
+  -- when the User or Portfolio is deleted), never to a different owner.
   if new.user_id is distinct from old.user_id and new.user_id is not null then
     raise exception 'recommendation %: user_id can only be cleared, not reassigned', old.id;
+  end if;
+  if new.portfolio_id is distinct from old.portfolio_id and new.portfolio_id is not null then
+    raise exception 'recommendation %: portfolio_id can only be cleared, not reassigned', old.id;
   end if;
   if old.status <> 'open'
      and (new.status, new.closed_at, new.exit_price, new.return_pct, new.excess_return_pct, new.sessions_elapsed,
@@ -739,8 +774,10 @@ insert into users (id, email, name, password_salt, password_hash, email_verified
 values ('local', 'local@alytic.local', 'Local CLI', 'local', 'local', true, now())
 on conflict (id) do nothing;
 
--- Matching Portfolio for the local dev account. A brand-new tenant running
--- schema.sql fresh (no migration needed) must have this row so
+-- Matching Portfolio for the local dev account. On a fresh tenant the insert
+-- above fires users_create_primary_portfolio and this is a no-op; when 'local'
+-- already existed, the insert above hit its conflict, inserted nothing and so
+-- fired no trigger — this is what still guarantees the row then, so
 -- primaryPortfolioIdFor('local') doesn't throw.
 insert into portfolios (user_id, name, ordinal)
 select 'local', 'المحفظة الرئيسية', 0
