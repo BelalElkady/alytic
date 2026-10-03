@@ -247,6 +247,25 @@ const FAQ = [
   },
 ];
 
+const GUIDE_MOBILE = "GpM04e9FvAg";
+const GUIDE_DESKTOP = "_sI6zqJol00";
+
+function GuideVideo({ id, className }: { id: string; className: string }) {
+  return (
+    <div className={`overflow-hidden rounded-2xl border bg-card shadow-sm ${className}`}>
+      <iframe
+        src={`https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1`}
+        title="شرح طريقة الاستخدام خطوة بخطوة"
+        loading="lazy"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerPolicy="strict-origin-when-cross-origin"
+        allowFullScreen
+        className="size-full"
+      />
+    </div>
+  );
+}
+
 function HowToUsePage() {
   const { name: brandName } = useTenant();
   return (
@@ -260,6 +279,20 @@ function HowToUsePage() {
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
             شرح مبسّط بالعربي لكل خطوة، من عمل الحساب لحد ما تبدأ تاخد قرارك اليومي في كل سهم عندك.
           </p>
+        </div>
+      </section>
+
+      {/* Walkthrough video: the vertical cut on phones, the wide one from md up. */}
+      <section className="mx-auto w-full max-w-3xl px-4 pt-14 text-center sm:pt-16">
+        <h2 className="text-2xl font-bold tracking-tight">شرح بالفيديو خطوة بخطوة</h2>
+        <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
+          اتفرّج على الطريقة كلها في فيديو واحد، وبعدها تلاقي نفس الخطوات مكتوبة تحت.
+        </p>
+        <div className="mt-6 md:hidden">
+          <GuideVideo id={GUIDE_MOBILE} className="mx-auto aspect-[9/16] w-full max-w-[360px]" />
+        </div>
+        <div className="mt-6 hidden md:block">
+          <GuideVideo id={GUIDE_DESKTOP} className="aspect-video w-full" />
         </div>
       </section>
 
