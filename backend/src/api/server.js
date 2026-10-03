@@ -21,7 +21,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -51,6 +51,8 @@ import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
 import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAGE_TYPES } from '../supportAttachments.js';
 import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
+import { uploadAnnouncementImage } from '../announcementImages.js';
+import { normalizeAnnouncementVideoUrl } from '../announcementVideo.js';
 import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
 import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
@@ -629,6 +631,21 @@ app.use(['/api/scan', '/api/analyze', '/api/history', '/api/quotes'], analysisLi
 app.post(['/api/review', '/api/review/stock', '/api/review/cash', '/api/portfolio/import-screenshot'], aiLimiter);
 app.get(['/api/fundamentals/:code', '/api/market-analysis'], aiLimiter);
 
+// ---- Feature announcements (public, signed-in-user side) -------------------
+// No extra gating: both sit under the general /api/* middleware above, which
+// already requires req.user and answers 401 otherwise, same as every other
+// non-admin endpoint.
+
+app.get('/api/announcements/active', wrap(async (req, res) => {
+  const row = await getActiveAnnouncementForUser(req.user.id);
+  res.json({ announcement: row ? { id: row.id, title: row.title, body: row.body, imageUrls: row.image_urls, videoUrl: row.video_url } : null });
+}));
+
+app.post('/api/announcements/:id/dismiss', wrap(async (req, res) => {
+  await dismissAnnouncement(req.user.id, req.params.id);
+  res.json({ ok: true });
+}));
+
 // ---- Support chat ----------------------------------------------------------
 // Deliberately outside PAID_PATHS: this is how a user asks to subscribe and
 // how a lapsed account asks to renew, so locking it behind the paywall would
@@ -951,6 +968,93 @@ app.use('/api/admin/indices', (req, res, next) => {
   if (!canEditIndices(req.user, req.tenant)) return res.status(403).json({ error: 'القوائم دي بتتعدل من الموقع الأساسي بس' });
   next();
 });
+
+// ---- Feature announcements ---------------------------------------------------
+// The in-app popup announcing new features. Managed from the main site only —
+// same reasoning as /api/platform, not per-client market data like /indices.
+app.use('/api/admin/announcements', (req, res, next) => {
+  if (!isPlatformAdmin(req.user, req.tenant)) return res.status(403).json({ error: 'الميزة دي من الموقع الأساسي بس' });
+  next();
+});
+
+const toAdminAnnouncement = (row) => ({
+  id: row.id,
+  title: row.title,
+  body: row.body,
+  imageUrls: row.image_urls,
+  videoUrl: row.video_url,
+  startsAt: row.starts_at,
+  endsAt: row.ends_at,
+  createdAt: row.created_at,
+});
+
+const MAX_ANNOUNCEMENT_IMAGES = 6;
+
+/** Shared POST/PUT body validation. Returns { value } on success or { error } (an Arabic message) on failure. */
+function validateAnnouncementBody(body) {
+  const title = typeof body?.title === 'string' ? body.title.trim() : '';
+  if (!title) return { error: 'العنوان مطلوب' };
+  const text = typeof body?.body === 'string' ? body.body.trim() : '';
+  if (!text) return { error: 'النص مطلوب' };
+
+  if (Number.isNaN(Date.parse(body?.startsAt)) || Number.isNaN(Date.parse(body?.endsAt)) || Date.parse(body.startsAt) >= Date.parse(body.endsAt)) {
+    return { error: 'تاريخ البداية لازم يكون قبل النهاية' };
+  }
+
+  let imageUrls = [];
+  if (body?.imageUrls !== undefined) {
+    if (!Array.isArray(body.imageUrls)) return { error: 'رابط صورة غير صالح' };
+    if (body.imageUrls.length > MAX_ANNOUNCEMENT_IMAGES) return { error: 'رابط صورة غير صالح' };
+    for (const raw of body.imageUrls) {
+      const safe = safeHttpsUrl(raw);
+      if (!safe) return { error: 'رابط صورة غير صالح' };
+      imageUrls.push(safe);
+    }
+  }
+
+  let videoUrl = null;
+  if (body?.videoUrl) {
+    videoUrl = normalizeAnnouncementVideoUrl(body.videoUrl);
+    if (!videoUrl) return { error: 'رابط الفيديو لازم يكون من يوتيوب أو فيميو' };
+  }
+
+  return { value: { title, body: text, imageUrls, videoUrl, startsAt: body.startsAt, endsAt: body.endsAt } };
+}
+
+app.get('/api/admin/announcements', wrap(async (_req, res) => {
+  const rows = await listAnnouncements();
+  res.json({ announcements: rows.map(toAdminAnnouncement) });
+}));
+
+app.post('/api/admin/announcements', wrap(async (req, res) => {
+  const { value, error } = validateAnnouncementBody(req.body ?? {});
+  if (error) return res.status(400).json({ error });
+  const created = await createAnnouncement({ ...value, createdBy: req.user.id });
+  res.status(201).json({ announcement: toAdminAnnouncement(created) });
+}));
+
+app.put('/api/admin/announcements/:id', wrap(async (req, res) => {
+  const { value, error } = validateAnnouncementBody(req.body ?? {});
+  if (error) return res.status(400).json({ error });
+  const updated = await updateAnnouncement(req.params.id, value);
+  if (!updated) return res.status(404).json({ error: 'الإعلان غير موجود' });
+  res.json({ announcement: toAdminAnnouncement(updated) });
+}));
+
+app.delete('/api/admin/announcements/:id', wrap(async (req, res) => {
+  await deleteAnnouncement(req.params.id);
+  res.json({ ok: true });
+}));
+
+// Mirrors /api/admin/blog-drafts/image exactly, storing to the
+// announcement-images bucket instead of blog-images.
+app.post('/api/admin/announcements/image', express.raw({ type: BLOG_IMAGE_TYPES, limit: '8mb' }), wrap(async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة الأول' });
+  const imageType = checkedImageType(req);
+  if (!imageType) return res.status(415).json({ error: NOT_AN_IMAGE_MESSAGE });
+  const url = await uploadAnnouncementImage({ mediaType: imageType, buffer: req.body });
+  res.status(201).json({ url });
+}));
 
 // ---- Platform (white-label) --------------------------------------------------
 // Managing the client sites themselves. See api/platform.js.
