@@ -25,6 +25,20 @@ function isLovablePreview() {
   return typeof window !== "undefined" && Boolean(window.__lovableEvents);
 }
 
+// The active Portfolio the desk is pointed at, picked by a future switcher UI
+// (see store.tsx's switchPortfolio) — kept in localStorage under the same key
+// convention as invest-style.ts, and sent on every request so the backend can
+// resolve which Portfolio the request means instead of falling back to the
+// user's primary one.
+export function activePortfolioHeader(): Record<string, string> {
+  try {
+    const id = localStorage.getItem("alytic-active-portfolio");
+    return id ? { "x-portfolio-id": id } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function request<T = any>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -33,6 +47,7 @@ async function request<T = any>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         ...(isLovablePreview() ? { "x-lovable-preview": "1" } : {}),
+        ...activePortfolioHeader(),
         ...init?.headers,
       },
     });

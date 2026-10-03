@@ -200,6 +200,21 @@ type DeskValue = {
   manualTab: "edit" | "new";
   /** Opens the manual-entry dialog on the given tab ("edit" unless asked for "new" — logging a trade). */
   openManual: (tab?: "edit" | "new") => void;
+  /** The signed-in user's Portfolios, from GET /api/portfolios — verbatim, refreshed alongside pf. */
+  portfolios: Array<{
+    id: number;
+    name: string;
+    style: string | null;
+    value: number;
+    pl: number;
+    cash: number;
+    positionCount: number;
+    active: boolean;
+  }>;
+  /** The Portfolio the desk is currently pointed at, or null before it's known. */
+  activePortfolioId: number | null;
+  /** Switches the desk to another Portfolio: persists the choice and reloads. */
+  switchPortfolio: (id: number) => void;
 };
 
 const DeskContext = createContext<DeskValue | null>(null);
@@ -228,6 +243,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [marketFocus, setMarketFocus] = useState<"cash" | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualTab, setManualTab] = useState<"edit" | "new">("edit");
+  const [portfolios, setPortfolios] = useState<DeskValue["portfolios"]>([]);
+  const [activePortfolioId, setActivePortfolioId] = useState<number | null>(null);
   const openManual = useCallback((tab: "edit" | "new" = "edit") => {
     setManualTab(tab);
     setManualOpen(true);
@@ -292,6 +309,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     try {
       const portfolio = await api("/api/portfolio");
       setPf(portfolio);
+      const { portfolios: list, activePortfolioId: activeId } = await api("/api/portfolios");
+      setPortfolios(list ?? []);
+      setActivePortfolioId(activeId ?? null);
       const codes = Object.keys(portfolio?.positions ?? {});
       const scanned = codes.length
         ? (await api(`/api/scan?codes=${codes.join(",")}&style=${style}`)).results.filter(
@@ -575,6 +595,21 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  // Persists the choice under the same key activePortfolioHeader() reads, so
+  // every subsequent request (including this reload) is scoped to it.
+  const switchPortfolio = useCallback(
+    (id: number) => {
+      try {
+        localStorage.setItem("alytic-active-portfolio", String(id));
+      } catch {
+        /* localStorage unavailable — the switch still applies for this session */
+      }
+      setActivePortfolioId(id);
+      void reload();
+    },
+    [reload],
+  );
+
   const totals = useMemo<Totals>(() => {
     const cost = rows.reduce((sum, r) => sum + r.position.shares * r.position.avgCost, 0);
     const value = rows.reduce((sum, r) => sum + (r.position.marketValue ?? 0), 0);
@@ -630,6 +665,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setManualOpen,
     manualTab,
     openManual,
+    portfolios,
+    activePortfolioId,
+    switchPortfolio,
   };
 
   return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;

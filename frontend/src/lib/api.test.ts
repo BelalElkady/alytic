@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, ApiError, API_BASE, post, postForm } from "./api";
+import { activePortfolioHeader, api, ApiError, API_BASE, post, postForm } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -96,5 +96,18 @@ describe("api client", () => {
       "/api/public/api/portfolio/import-screenshot",
       expect.objectContaining({ method: "POST", body: form }),
     );
+  });
+});
+
+describe("activePortfolioHeader", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("returns the stored id as a header when one is set", () => {
+    localStorage.setItem("alytic-active-portfolio", "42");
+    expect(activePortfolioHeader()).toEqual({ "x-portfolio-id": "42" });
+  });
+
+  it("returns no header when nothing is stored", () => {
+    expect(activePortfolioHeader()).toEqual({});
   });
 });
