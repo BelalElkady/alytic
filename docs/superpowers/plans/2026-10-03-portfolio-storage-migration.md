@@ -268,7 +268,10 @@ select indexdef from pg_indexes where indexname = 'recommendations_daily_key';
 
 ```js
 test('primaryPortfolioIdFor resolves the migrated Portfolio for a freshly-registered user', async () => {
-  const { user } = await register({ email: uniqueEmail(), phone: uniquePhone(), password: 'x'.repeat(8) });
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
   // A freshly-registered user has no portfolios row yet under the old scheme —
   // after migration every user has exactly one. This test only passes once
   // Task 1's migration has run against the test database.
@@ -318,7 +321,10 @@ git commit -m "feat(db): Portfolio CRUD by id"
 
 ```js
 test('getUserUsage defaults a fresh user to zero, and putUserUsage round-trips', async () => {
-  const { user } = await register({ email: uniqueEmail(), phone: uniquePhone(), password: 'x'.repeat(8) });
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
   const zero = await getUserUsage(user.id);
   assert.equal(zero.screenshots, 0);
   assert.equal(zero.credits.recommendations, 0);
@@ -329,7 +335,9 @@ test('getUserUsage defaults a fresh user to zero, and putUserUsage round-trips',
 });
 
 test('getUserUsage rolls the four usage counters over on a stale stored month, but never credits', async () => {
-  const { user } = await register({ email: uniqueEmail(), phone: uniquePhone(), password: 'x'.repeat(8) });
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
   const current = await getUserUsage(user.id);
   await putUserUsage(user.id, { ...current, month: '2000-01', screenshots: 9, credits: { ...current.credits, recommendations: 3 } });
   const rolled = await getUserUsage(user.id);
@@ -374,7 +382,10 @@ git commit -m "feat(db): User-level usage/Credits CRUD"
 
 ```js
 test('putPortfolioReview/getPortfolioReview round-trip by portfolio id', async () => {
-  const { user } = await register({ email: uniqueEmail(), phone: uniquePhone(), password: 'x'.repeat(8) });
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
   const portfolioId = await primaryPortfolioIdFor(user.id);
   await putPortfolioReview(portfolioId, '2026-10-03', 'medium', 'hash1', { verdict: 'hold' }, 'model-x', null);
   const got = await getPortfolioReview(portfolioId, '2026-10-03', 'medium');
@@ -423,7 +434,10 @@ git commit -m "feat(db): re-key portfolio_reviews to portfolio_id"
 
 ```js
 test('logRecommendations tags rows with the given portfolio and dedupes within it', async () => {
-  const { user } = await register({ email: uniqueEmail(), phone: uniquePhone(), password: 'x'.repeat(8) });
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
   const portfolioId = await primaryPortfolioIdFor(user.id);
   await logRecommendations(user.id, portfolioId, [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }], { source: 'test', style: 'medium', model: 'test' });
   const keys = await listOpenRecommendationKeys(portfolioId);
@@ -449,7 +463,10 @@ Expected: PASS
 
 ```js
 test('recommendations_guard refuses to change portfolio_id on an existing row, like every other issue field', async () => {
-  const { user } = await register({ email: uniqueEmail(), phone: uniquePhone(), password: 'x'.repeat(8) });
+  // register() returns nothing by design — read the created row back by email.
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
   const portfolioId = await primaryPortfolioIdFor(user.id);
   await logRecommendations(user.id, portfolioId, [{ code: 'COMI', action: 'buy', levels: { refPrice: 10, target: 12, stop: 9 } }], { source: 'test', style: 'medium', model: 'test' });
   const [{ id }] = await listRecommendations({ userId: user.id }); // existing db.js helper, returns full rows
