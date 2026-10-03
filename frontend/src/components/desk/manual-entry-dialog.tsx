@@ -30,6 +30,10 @@ import { cn } from "@/lib/utils";
 
 type Draft = Record<string, { shares: string; avgCost: string; stop: string; target: string }>;
 
+// Inactive tabs read as buttons (outlined, hover), the active one is filled.
+const tabClass =
+  "border border-border bg-background/70 py-2 text-foreground/80 hover:border-primary/50 hover:bg-background hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground";
+
 /**
  * Three tabs: "تعديل" corrects what's already there (share counts, average cost,
  * stop and target), "صفقة جديدة" logs a new executed trade, and "سجل الصفقات"
@@ -152,10 +156,10 @@ export function ManualEntryDialog() {
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(value) => setTab(value as "edit" | "new" | "trades")}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="edit">تعديل</TabsTrigger>
-            <TabsTrigger value="new">صفقة جديدة</TabsTrigger>
-            <TabsTrigger value="trades">سجل الصفقات</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-3 gap-1.5">
+            <TabsTrigger value="edit" className={tabClass}>تعديل</TabsTrigger>
+            <TabsTrigger value="new" className={tabClass}>صفقة جديدة</TabsTrigger>
+            <TabsTrigger value="trades" className={tabClass}>سجل الصفقات</TabsTrigger>
           </TabsList>
 
           <TabsContent value="edit" className="mt-4 space-y-4">
