@@ -124,12 +124,7 @@ function ReadOnlyNotice({ active }: { active: Pf }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warn/40 bg-warn-soft px-3 py-2 text-[13px]">
       <Lock className="size-4" />
-      {/* Deliberately not "للعرض بس" (view-only): only renaming this
-          Portfolio is actually blocked server-side today (#103's full
-          writes-middleware — trades, cash, etc. — is a separate, larger
-          effort, tracked outside this change). Promising an enforcement
-          the UI can't back up yet would mislead a paying customer. */}
-      المحفظة دي فوق حد باقتك الحالية (محفظة واحدة) — جدّد الحريفة عشان تضمن استمرار التعامل عليها.
+      المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة. جدّد الحريفة عشان تتعامل عليها تاني.
       <Button size="sm" variant="outline" className="ms-auto" asChild>
         <Link to="/subscribe">جدّد الحريفة</Link>
       </Button>

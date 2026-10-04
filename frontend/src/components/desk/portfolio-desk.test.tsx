@@ -68,7 +68,7 @@ describe("PortfolioDesk", () => {
   it("shows the read-only banner for a locked active Portfolio", () => {
     setDesk({ portfolios: [basePortfolio({ readOnly: true })] });
     render(<PortfolioDesk>مراكز</PortfolioDesk>);
-    expect(screen.getByText(/فوق حد باقتك الحالية/)).toBeInTheDocument();
+    expect(screen.getByText(/للعرض بس/)).toBeInTheDocument();
   });
 
   it("renders the wrapped children below the cards", () => {
