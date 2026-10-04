@@ -163,7 +163,17 @@ function Activity({ row }: { row: AdminUserRow }) {
 
 function Capital({ row }: { row: AdminUserRow }) {
   const pf = row.portfolio;
-  return <span className="num text-[13px]">{pf ? `${int(pf.cash + pf.positionsValue)} ج` : "—"}</span>;
+  const extra = row.portfolios.length - 1;
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="num text-[13px]">{pf ? `${int(pf.cash + pf.positionsValue)} ج` : "—"}</span>
+      {extra > 0 && (
+        <Badge variant="outline" className="tabular-nums text-[11px]" title={`فيه ${extra} محفظة تانية (الأرقام هنا للمحفظة الرئيسية بس)`}>
+          +{extra} محفظة
+        </Badge>
+      )}
+    </div>
+  );
 }
 
 function Style({ row }: { row: AdminUserRow }) {
@@ -306,7 +316,6 @@ function SameNetworkWarning({ row, onOpen }: { row: AdminUserRow; onOpen: (id: s
 
 function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: string) => void }) {
   const { editors: E, readOnly, onChanged, systemUserId } = p;
-  const pf = row.portfolio;
   return (
     <div className="space-y-4 text-sm">
       <SameNetworkWarning row={row} onOpen={onOpen} />
@@ -349,20 +358,36 @@ function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: 
         </dl>
       </Section>
       <Section title="الاستثمار">
-        {pf ? (
-          <div className="tabular-nums grid grid-cols-3 gap-2 text-[13px]">
-            <div>
-              <div className="text-muted-foreground">رأس المال</div>
-              {int(pf.cash + pf.positionsValue)} ج
-            </div>
-            <div>
-              <div className="text-muted-foreground">ربح محقق</div>
-              <span className={tone(pf.realizedPnl)}>{signed(pf.realizedPnl)}</span>
-            </div>
-            <div>
-              <div className="text-muted-foreground">النشاط</div>
-              {pf.tradesCount} صفقة · {pf.positionsCount} مركز
-            </div>
+        {row.portfolios.length > 0 ? (
+          <div className="space-y-3">
+            {row.portfolios.map((p) => (
+              <div key={p.id}>
+                {row.portfolios.length > 1 && (
+                  <div className="mb-1 flex items-center gap-1.5 text-[12px] font-medium">
+                    {p.name}
+                    {p.style && (
+                      <Badge variant="outline" className="text-[11px]">
+                        {STYLE_LABEL[p.style]}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                <div className="tabular-nums grid grid-cols-3 gap-2 text-[13px]">
+                  <div>
+                    <div className="text-muted-foreground">رأس المال</div>
+                    {int(p.cash + p.positionsValue)} ج
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">ربح محقق</div>
+                    <span className={tone(p.realizedPnl)}>{signed(p.realizedPnl)}</span>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">النشاط</div>
+                    {p.tradesCount} صفقة · {p.positionsCount} مركز
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="text-muted-foreground">لا توجد محفظة</div>

@@ -96,16 +96,25 @@ export function SubscribePanel({
 
   const featureList = (option: Tier) =>
     tiers?.[option] && (
-      <ul className="mt-2 space-y-1">
-        {FEATURE_ROWS.map((row) => (
-          <li key={row.key} className="flex items-center justify-between text-[12px] text-muted-foreground">
-            <span>{row.label}</span>
-            <span className="num">
-              {tiers[option][row.key]} {row.unit}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <>
+        <ul className="mt-2 space-y-1">
+          {FEATURE_ROWS.map((row) => (
+            <li key={row.key} className="flex items-center justify-between text-[12px] text-muted-foreground">
+              <span>{row.label}</span>
+              <span className="num">
+                {tiers[option][row.key]} {row.unit}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {/* Only الحريفة gets more than 1 Portfolio (#103) — same angle as the in-app upsell dialog (portfolio-desk.tsx). */}
+        {option === "trader" && (
+          <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+            لحد ٣ محافظ: افصل المضاربة عن الاستثمار الطويل — كل محفظة ليها أسلوبها وكاشها وربحها، وكمان نظرة
+            إجمالية على كل فلوسك.
+          </p>
+        )}
+      </>
     );
 
   return (

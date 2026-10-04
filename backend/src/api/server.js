@@ -1290,12 +1290,18 @@ app.get('/api/admin/users', wrap(async (req, res) => {
   ]);
   // The usage/credits figures below live on the User, not the Portfolio
   // blob — getAllUsers reads them in its own query, as each row's `usage`.
-  // A User can hold more than one Portfolio (#103) — this table shows only
-  // the primary (lowest `ordinal`), never an arbitrary one.
-  const portfolioByUser = new Map();
+  // A User can hold more than one Portfolio (#103); grouped and ordinal-sorted
+  // here so `portfolio`/`behavior` below can keep meaning the primary one
+  // (lowest `ordinal`) and `portfolios` can list every live one for #111's
+  // count badge and per-Portfolio drawer sections.
+  const portfoliosByUser = new Map();
   for (const row of [...portfolios].sort((a, b) => a.ordinal - b.ordinal)) {
-    if (!portfolioByUser.has(row.user_id)) portfolioByUser.set(row.user_id, row.state_json);
+    const list = portfoliosByUser.get(row.user_id);
+    if (list) list.push(row);
+    else portfoliosByUser.set(row.user_id, [row]);
   }
+  const portfolioByUser = new Map();
+  for (const [userId, list] of portfoliosByUser) portfolioByUser.set(userId, list[0].state_json);
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
   const followUpByUser = new Map(followUps.map((row) => [row.user_id, row]));
   // 'local' is the CLI/dev account (SYSTEM_USER_ID in the admin screen), not a customer.
@@ -1350,6 +1356,23 @@ app.get('/api/admin/users', wrap(async (req, res) => {
         realizedPnl: pf.realizedPnl ?? 0,
         updatedAt: pf.updatedAt ?? null,
       },
+      // Every live Portfolio (#111), primary first — the users list badges
+      // the count beyond one, and the detail drawer stacks one investment
+      // section per entry instead of only ever showing the primary's.
+      portfolios: (portfoliosByUser.get(u.id) ?? []).map((row) => {
+        const state = row.state_json;
+        const rowPositions = Object.values(state.positions ?? {});
+        return {
+          id: row.id,
+          name: row.name,
+          style: STYLE_KEYS.includes(row.style) ? row.style : null,
+          cash: state.cash ?? 0,
+          positionsCount: rowPositions.length,
+          positionsValue: rowPositions.reduce((sum, p) => sum + (p.shares ?? 0) * (p.avgCost ?? 0), 0),
+          tradesCount: (state.trades ?? []).filter((t) => t.side !== 'dividend').length,
+          realizedPnl: state.realizedPnl ?? 0,
+        };
+      }),
       behavior: profile && {
         chosenStyle,
         inferredStyle: profile.inferredStyle,

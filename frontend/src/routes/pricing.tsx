@@ -54,6 +54,7 @@ const PLANS = [
     cta: "ابدأ التجربة المجانية",
     highlight: false,
     limits: { screenshots: 2, recommendations: 15, cashScans: 3, marketAnalysis: 3 },
+    portfolios: 1,
   },
   {
     key: "long",
@@ -64,6 +65,7 @@ const PLANS = [
     cta: "اشترك في النفس الطويل",
     highlight: true,
     limits: { screenshots: 7, recommendations: 230, cashScans: 10, marketAnalysis: 30 },
+    portfolios: 1,
   },
   {
     key: "trader",
@@ -74,6 +76,9 @@ const PLANS = [
     cta: "اشترك في الحريفة",
     highlight: false,
     limits: { screenshots: 12, recommendations: 550, cashScans: 20, marketAnalysis: 70 },
+    // Up to 3 Portfolios (#103) — a standing cap, not a monthly quota, so it
+    // sits outside FEATURE_ROWS/ADDON_PACKS (no "/شهر" suffix, no top-up pack).
+    portfolios: 3,
   },
 ] as const;
 
@@ -228,6 +233,13 @@ function PricingPage() {
               </p>
 
               <ul className="mb-6 mt-5 space-y-2 border-t pt-4">
+                {/* A standing cap, not a monthly quota (#103) — no "/شهر" suffix, listed first. */}
+                <li className="flex items-center justify-between text-[13px]">
+                  <span className="text-muted-foreground">عدد المحافظ</span>
+                  <span className="font-semibold">
+                    <span className="num">{plan.portfolios}</span> محفظة
+                  </span>
+                </li>
                 {FEATURE_ROWS.map((row) => (
                   <li key={row.key} className="flex items-center justify-between text-[13px]">
                     <span className="text-muted-foreground">{row.label}</span>
