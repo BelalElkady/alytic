@@ -467,7 +467,15 @@ function DeskHeader() {
     lastPriceSync,
     priceError,
     pf,
+    portfolios,
+    activePortfolioId,
   } = useDesk();
+  // Only shown once there's more than one Portfolio to be ambiguous about —
+  // a single-Portfolio account (most accounts) sees no change at all. Every
+  // page under this shell already scopes its writes to this Portfolio (the
+  // X-Portfolio-Id header), but only /portfolio itself showed which one.
+  const activePortfolioName =
+    portfolios.length > 1 ? portfolios.find((p) => p.id === activePortfolioId)?.name : undefined;
   const { dark, toggle } = useTheme();
   const marketOpen = useMarketStatus();
   const { style: investStyle, auto: investStyleAuto } = useActiveInvestStyle(pf?.trades);
@@ -639,6 +647,13 @@ function DeskHeader() {
                 <Badge variant="secondary" className="whitespace-nowrap">
                   سلوكك الاستثماري: {investStyleLabel}
                   {investStyleAuto ? " (تلقائي)" : ""}
+                </Badge>
+              </Link>
+            )}
+            {activePortfolioName && (
+              <Link to="/portfolio" aria-label="المحفظة النشطة — افتح للتبديل">
+                <Badge variant="outline" className="whitespace-nowrap">
+                  المحفظة: {activePortfolioName}
                 </Badge>
               </Link>
             )}
