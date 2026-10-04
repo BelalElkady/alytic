@@ -1290,7 +1290,12 @@ app.get('/api/admin/users', wrap(async (req, res) => {
   ]);
   // The usage/credits figures below live on the User, not the Portfolio
   // blob — getAllUsers reads them in its own query, as each row's `usage`.
-  const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
+  // A User can hold more than one Portfolio (#103) — this table shows only
+  // the primary (lowest `ordinal`), never an arbitrary one.
+  const portfolioByUser = new Map();
+  for (const row of [...portfolios].sort((a, b) => a.ordinal - b.ordinal)) {
+    if (!portfolioByUser.has(row.user_id)) portfolioByUser.set(row.user_id, row.state_json);
+  }
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
   const followUpByUser = new Map(followUps.map((row) => [row.user_id, row]));
   // 'local' is the CLI/dev account (SYSTEM_USER_ID in the admin screen), not a customer.

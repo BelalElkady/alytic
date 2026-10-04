@@ -892,20 +892,22 @@ export async function setUserFollowUp(userId, channel, done, updatedBy) {
 }
 
 /**
- * Every stored portfolio's state, keyed by user_id — for the admin users
- * list's investment-behavior summary and the daily close. `id` is along for
- * callers that need to resolve a specific Portfolio row (still one per User —
- * see Global Constraints). Paged, like listOpenRecommendationKeys: every User
- * has a row now, and an unpaged select stops at PostgREST's 1000-row cap —
- * the daily close (runDailyClose in server.js) would silently skip whoever
- * fell past it.
+ * Every live (non-deleted) portfolio's state, one row per Portfolio — for the
+ * admin users list's investment-behavior summary and the daily close. A User
+ * can hold more than one row since #103 (up to 3 for الحريفة); `ordinal` is
+ * along so callers that want a single row per User can pick the primary
+ * (lowest `ordinal`) deterministically instead of an arbitrary one. Paged,
+ * like listOpenRecommendationKeys: every User has a row now, and an unpaged
+ * select stops at PostgREST's 1000-row cap — the daily close (runDailyClose
+ * in server.js) would silently skip whoever fell past it.
  */
 export async function getAllPortfolios() {
   const rows = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('portfolios')
-      .select('id, user_id, state_json')
+      .select('id, user_id, ordinal, state_json')
+      .is('deleted_at', null)
       .order('id')
       .range(from, from + 999);
     if (error) throw new Error(`getAllPortfolios: ${error.message}`);
