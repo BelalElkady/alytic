@@ -2223,9 +2223,19 @@ async function portfolioIdFromRequest(req) {
   const header = req.headers['x-portfolio-id'];
   if (header !== undefined) {
     const id = Number(header);
-    if (Number.isInteger(id)) {
-      const row = await getPortfolioById(id);
-      if (row && row.userId === req.user.id && !row.deletedAt) return id;
+    // Postgres bigint range, not just JS safe-integer: `Number.isSafeInteger`
+    // alone still admits values that are a valid double but too wide for the
+    // `portfolios.id` column, which would otherwise throw inside
+    // getPortfolioById below (see the try/catch there for the backstop).
+    if (Number.isSafeInteger(id) && id > 0 && /^\d{1,15}$/.test(String(header).trim())) {
+      try {
+        const row = await getPortfolioById(id);
+        if (row && row.userId === req.user.id && !row.deletedAt) return id;
+      } catch {
+        // Any lookup failure (malformed id the regex missed, DB hiccup,
+        // shape surprise) falls through to the primary Portfolio below —
+        // this resolver must never throw.
+      }
     }
   }
   return primaryPortfolioIdFor(req.user.id);
@@ -2556,9 +2566,9 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
  * Snapshot one user's open positions into today's (or `date`'s) log entry.
  * Shared by the manual /api/snapshot endpoint and the daily-close cron below.
  */
-async function snapshotForUser(userId, date = null) {
-  const portfolioId = await primaryPortfolioIdFor(userId);
-  return withPortfolio(userId, portfolioId, async (portfolio) => {
+async function snapshotForUser(userId, portfolioId = null, date = null) {
+  const resolvedPortfolioId = portfolioId ?? await primaryPortfolioIdFor(userId);
+  return withPortfolio(userId, resolvedPortfolioId, async (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     // Whatever style this account has active — same resolution the admin
     // panel's "chosen style" column uses — so the ratchet the AI applies here
@@ -2573,7 +2583,7 @@ async function snapshotForUser(userId, date = null) {
       concurrency: 3,
       rules,
       style,
-      portfolioId,
+      portfolioId: resolvedPortfolioId,
     });
     // analyzeMany's price comes from the last data *sync*, not from now — a
     // run mid-session (before that day's sync has run) would otherwise save
@@ -2634,7 +2644,7 @@ app.post('/api/snapshot', wrap(async (req, res) => {
   const precheck = await loadPortfolio(portfolioId);
   if (!Object.keys(precheck.positions).length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة تتسجّل' });
 
-  const updated = await snapshotForUser(req.user.id, req.body?.date ?? null);
+  const updated = await snapshotForUser(req.user.id, portfolioId, req.body?.date ?? null);
   const day = Object.keys(updated.log).sort().pop();
   res.json({ saved: day, entry: updated.log[day], days: Object.keys(updated.log).length });
 }));
@@ -3242,14 +3252,13 @@ function keepAddedOrder(held, incoming) {
 
 // ---- AI endpoints ----------------------------------------------------------
 
-async function runReview({ userId, style, force }) {
+async function runReview({ userId, portfolioId, style, force }) {
   // The style sets both halves: the rule numbers the engine sizes with and
   // the horizon the analyst reasons in. Both must come from the same choice,
   // or the prose will argue against the numbers underneath it.
   const rules = style ? rulesForStyle(RULES, style) : RULES;
   const effectiveStyle = style ?? 'medium';
 
-  const portfolioId = await primaryPortfolioIdFor(userId);
   const portfolio = await loadPortfolio(portfolioId);
   const capital = capitalOf(portfolio);
 
@@ -3315,8 +3324,8 @@ const REVIEW_INLINE_WAIT_MS = 20_000;
 const REVIEW_STATUS_WAIT_MS = 15_000;
 const REVIEW_JOB_TTL_MS = 30 * 60_000;
 
-function reviewJobKey(userId, style, code = null) {
-  return `${currentTenant()?.id ?? ''}:${userId}:${style ?? 'medium'}${code ? `:${code}` : ''}`;
+function reviewJobKey(userId, portfolioId, style, code = null) {
+  return `${currentTenant()?.id ?? ''}:${userId}:${portfolioId}:${style ?? 'medium'}${code ? `:${code}` : ''}`;
 }
 
 function sendReviewJob(res, job) {
@@ -3374,7 +3383,8 @@ function reviewPreflight(req, res) {
 app.post('/api/review', wrap(async (req, res) => {
   const pre = reviewPreflight(req, res);
   if (!pre) return;
-  await startReviewJob(res, reviewJobKey(req.user.id, pre.style), () => runReview({ userId: req.user.id, ...pre }));
+  const portfolioId = await portfolioIdFromRequest(req);
+  await startReviewJob(res, reviewJobKey(req.user.id, portfolioId, pre.style), () => runReview({ userId: req.user.id, portfolioId, ...pre }));
 }));
 
 app.post('/api/review/stock', wrap(async (req, res) => {
@@ -3387,7 +3397,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
 
   const userId = req.user.id;
   const tier = req.access.tier;
-  const jobKey = reviewJobKey(userId, pre.style, code);
+  const jobKey = reviewJobKey(userId, portfolioId, pre.style, code);
   // The live price on the card when it was asked for — only used to tell the
   // user later how far the price has moved since this recommendation.
   const sentPrice = Number(req.body?.price);
@@ -3470,8 +3480,8 @@ app.post('/api/review/stock', wrap(async (req, res) => {
 // asks for it right after its own focus=cash scan loads, for the same index
 // and style. Its job key has its own `cash:` namespace so it never collides
 // with a stock review's.
-function cashReviewJobKey(userId, style, index) {
-  return `${userId}:cash:${style ?? 'medium'}:${index}`;
+function cashReviewJobKey(userId, portfolioId, style, index) {
+  return `${userId}:cash:${portfolioId}:${style ?? 'medium'}:${index}`;
 }
 
 app.post('/api/review/cash', wrap(async (req, res) => {
@@ -3497,7 +3507,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب مراجعة الخطة.' });
   }
 
-  await startReviewJob(res, cashReviewJobKey(userId, pre.style, index), async () => {
+  await startReviewJob(res, cashReviewJobKey(userId, portfolioId, pre.style, index), async () => {
     const startedAt = Date.now();
     let scanRows = [];
     const { getOrGenerateCashReview } = await import('../agent/cashAnalysis.js');
@@ -3535,7 +3545,8 @@ app.post('/api/review/cash', wrap(async (req, res) => {
 
 app.get('/api/review/cash/status', wrap(async (req, res) => {
   const index = String(req.query.index ?? 'ALL').toUpperCase();
-  await sendJobStatus(res, cashReviewJobKey(req.user.id, req.query.style, index));
+  const portfolioId = await portfolioIdFromRequest(req);
+  await sendJobStatus(res, cashReviewJobKey(req.user.id, portfolioId, req.query.style, index));
 }));
 
 /**
@@ -3556,7 +3567,8 @@ async function sendJobStatus(res, key) {
 
 app.get('/api/review/status', wrap(async (req, res) => {
   const code = req.query.code ? String(req.query.code).toUpperCase() : null;
-  await sendJobStatus(res, reviewJobKey(req.user.id, req.query.style, code));
+  const portfolioId = await portfolioIdFromRequest(req);
+  await sendJobStatus(res, reviewJobKey(req.user.id, portfolioId, req.query.style, code));
 }));
 
 app.get('/api/market-analysis', wrap(async (req, res) => {

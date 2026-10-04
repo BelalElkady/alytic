@@ -309,9 +309,17 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     try {
       const portfolio = await api("/api/portfolio");
       setPf(portfolio);
-      const { portfolios: list, activePortfolioId: activeId } = await api("/api/portfolios");
-      setPortfolios(list ?? []);
-      setActivePortfolioId(activeId ?? null);
+      // Nothing in the UI reads this list yet — a transient failure here (or
+      // a version-skew 404 against an old cached bundle) must never block
+      // the rest of reload()'s fetches, which the UI does depend on.
+      try {
+        const { portfolios: list, activePortfolioId: activeId } = await api("/api/portfolios");
+        setPortfolios(list ?? []);
+        setActivePortfolioId(activeId ?? null);
+      } catch {
+        setPortfolios([]);
+        setActivePortfolioId(null);
+      }
       const codes = Object.keys(portfolio?.positions ?? {});
       const scanned = codes.length
         ? (await api(`/api/scan?codes=${codes.join(",")}&style=${style}`)).results.filter(
