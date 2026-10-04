@@ -9,13 +9,14 @@ import {
   type ReactNode,
 } from "react";
 
-import { ApiError, api, post } from "./api";
+import { ApiError, api, post, patch as patchRequest, del } from "./api";
 import {
   clearInvestStyle,
   explicitInvestStyle,
   isStyleKey,
   setInvestStyle,
   useActiveInvestStyle,
+  type StyleKey,
 } from "./invest-style";
 
 /* Types kept intentionally loose: they mirror the existing API responses
@@ -210,11 +211,20 @@ type DeskValue = {
     cash: number;
     positionCount: number;
     active: boolean;
+    readOnly: boolean;
   }>;
+  /** The User's tier cap on Portfolios (#103) — 1 or 3. From GET /api/portfolios. */
+  portfolioCap: number;
   /** The Portfolio the desk is currently pointed at, or null before it's known. */
   activePortfolioId: number | null;
   /** Switches the desk to another Portfolio: persists the choice and reloads. */
   switchPortfolio: (id: number) => void;
+  /** Creates a new Portfolio and switches the desk to it. */
+  createPortfolio: (name: string, style: StyleKey) => Promise<void>;
+  /** Renames and/or restyles a Portfolio, then refreshes the summary list. */
+  renamePortfolio: (id: number, patch: { name?: string; style?: StyleKey }) => Promise<void>;
+  /** Deletes a Portfolio — blocked server-side if it's the User's last one. */
+  deletePortfolio: (id: number) => Promise<void>;
 };
 
 const DeskContext = createContext<DeskValue | null>(null);
@@ -244,6 +254,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualTab, setManualTab] = useState<"edit" | "new">("edit");
   const [portfolios, setPortfolios] = useState<DeskValue["portfolios"]>([]);
+  const [portfolioCap, setPortfolioCap] = useState(1);
   const [activePortfolioId, setActivePortfolioId] = useState<number | null>(null);
   const openManual = useCallback((tab: "edit" | "new" = "edit") => {
     setManualTab(tab);
@@ -309,16 +320,18 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     try {
       const portfolio = await api("/api/portfolio");
       setPf(portfolio);
-      // Nothing in the UI reads this list yet — a transient failure here (or
-      // a version-skew 404 against an old cached bundle) must never block
-      // the rest of reload()'s fetches, which the UI does depend on.
+      // A transient failure here (or a version-skew 404 against an old
+      // cached bundle) must never block the rest of reload()'s fetches,
+      // which the UI does depend on — the desk switcher just goes empty.
       try {
-        const { portfolios: list, activePortfolioId: activeId } = await api("/api/portfolios");
+        const { portfolios: list, activePortfolioId: activeId, cap } = await api("/api/portfolios");
         setPortfolios(list ?? []);
         setActivePortfolioId(activeId ?? null);
+        setPortfolioCap(cap ?? 1);
       } catch {
         setPortfolios([]);
         setActivePortfolioId(null);
+        setPortfolioCap(1);
       }
       const codes = Object.keys(portfolio?.positions ?? {});
       const scanned = codes.length
@@ -618,6 +631,42 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     [reload],
   );
 
+  /** Creates a new Portfolio and switches the desk to it. */
+  const createPortfolio = useCallback(
+    async (name: string, style: StyleKey) => {
+      const { id } = await post("/api/portfolios", { name, style });
+      switchPortfolio(id);
+    },
+    [switchPortfolio],
+  );
+
+  /** Renames and/or restyles a Portfolio, then refreshes the summary list. */
+  const renamePortfolio = useCallback(
+    async (id: number, patch: { name?: string; style?: StyleKey }) => {
+      await patchRequest(`/api/portfolios/${id}`, patch);
+      await reload();
+    },
+    [reload],
+  );
+
+  /**
+   * Deletes a Portfolio. If it was the active one, switches to whichever
+   * Portfolio the server falls back to (the primary) rather than leaving
+   * activePortfolioId/localStorage pointing at a now-deleted id.
+   */
+  const deletePortfolio = useCallback(
+    async (id: number) => {
+      await del(`/api/portfolios/${id}`);
+      if (activePortfolioId === id) {
+        const { activePortfolioId: fallbackId, portfolios: list } = await api("/api/portfolios");
+        switchPortfolio(fallbackId ?? list?.[0]?.id);
+      } else {
+        await reload();
+      }
+    },
+    [activePortfolioId, reload, switchPortfolio],
+  );
+
   const totals = useMemo<Totals>(() => {
     const cost = rows.reduce((sum, r) => sum + r.position.shares * r.position.avgCost, 0);
     const value = rows.reduce((sum, r) => sum + (r.position.marketValue ?? 0), 0);
@@ -674,8 +723,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     manualTab,
     openManual,
     portfolios,
+    portfolioCap,
     activePortfolioId,
     switchPortfolio,
+    createPortfolio,
+    renamePortfolio,
+    deletePortfolio,
   };
 
   return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;
