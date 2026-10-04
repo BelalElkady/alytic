@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, type SyntheticEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { Lock, MoreHorizontal, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -29,6 +29,16 @@ type Pf = ReturnType<typeof useDesk>["portfolios"][number];
 
 const COLORS = ["bg-primary", "bg-amber-500", "bg-sky-500"];
 const round = (n: number) => Math.round(n * 100) / 100;
+/**
+ * Every card is a clickable role="button" div; Radix portals its dropdown
+ * and dialog content out of the card's DOM subtree, but React still bubbles
+ * their events up the component tree (see the same hazard, same fix, in
+ * _app.portfolio.tsx's PositionCard/CorporateActionNotice). Without this, a
+ * click on a style tile or a save button also "clicks" the card underneath
+ * it, and the card's onKeyDown swallows every Space keystroke meant for an
+ * input inside one of these dialogs.
+ */
+const stopCardBubble = (e: SyntheticEvent) => e.stopPropagation();
 const styleLabel = (s: string | null) => INVEST_STYLES.find((x) => x.key === s)?.label ?? s ?? "—";
 /** A card's own P/L % — the summary carries `value`/`pl` directly, not `cost`, so cost is derived back out. */
 const plPctOf = (p: Pf) => {
@@ -114,7 +124,12 @@ function ReadOnlyNotice({ active }: { active: Pf }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warn/40 bg-warn-soft px-3 py-2 text-[13px]">
       <Lock className="size-4" />
-      المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة. جدّد الحريفة عشان تتعامل عليها تاني.
+      {/* Deliberately not "للعرض بس" (view-only): only renaming this
+          Portfolio is actually blocked server-side today (#103's full
+          writes-middleware — trades, cash, etc. — is a separate, larger
+          effort, tracked outside this change). Promising an enforcement
+          the UI can't back up yet would mislead a paying customer. */}
+      المحفظة دي فوق حد باقتك الحالية (محفظة واحدة) — جدّد الحريفة عشان تضمن استمرار التعامل عليها.
       <Button size="sm" variant="outline" className="ms-auto" asChild>
         <Link to="/subscribe">جدّد الحريفة</Link>
       </Button>
@@ -161,7 +176,7 @@ function PortfolioDialog({
   const [saving, setSaving] = useState(false);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl">
+      <DialogContent dir="rtl" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -228,11 +243,11 @@ function ManageMenu({ p }: { p: Pf }) {
     <>
       <DropdownMenu dir="rtl">
         <DropdownMenuTrigger asChild>
-          <Button size="icon" variant="ghost" className="size-7" onClick={(e) => e.stopPropagation()}>
+          <Button size="icon" variant="ghost" className="size-7" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
           <DropdownMenuItem disabled={p.readOnly} onSelect={() => setEdit(true)}>
             تعديل الاسم والأسلوب
           </DropdownMenuItem>
@@ -256,7 +271,7 @@ function ManageMenu({ p }: { p: Pf }) {
         onSave={(name, style) => renamePortfolio(p.id, { name, style })}
       />
       <Dialog open={del} onOpenChange={setDel}>
-        <DialogContent dir="rtl">
+        <DialogContent dir="rtl" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
           <DialogHeader>
             <DialogTitle>حذف «{p.name}»</DialogTitle>
           </DialogHeader>

@@ -217,8 +217,12 @@ type DeskValue = {
   portfolioCap: number;
   /** The Portfolio the desk is currently pointed at, or null before it's known. */
   activePortfolioId: number | null;
-  /** Switches the desk to another Portfolio: persists the choice and reloads. */
-  switchPortfolio: (id: number) => void;
+  /**
+   * Switches the desk to another Portfolio: persists the choice and reloads.
+   * `knownStyle` lets a caller that already knows the target's style (a
+   * just-created Portfolio, not yet in `portfolios`) skip the lookup.
+   */
+  switchPortfolio: (id: number, knownStyle?: StyleKey) => void;
   /** Creates a new Portfolio and switches the desk to it. */
   createPortfolio: (name: string, style: StyleKey) => Promise<void>;
   /** Renames and/or restyles a Portfolio, then refreshes the summary list. */
@@ -618,24 +622,37 @@ export function DeskProvider({ children }: { children: ReactNode }) {
 
   // Persists the choice under the same key activePortfolioHeader() reads, so
   // every subsequent request (including this reload) is scoped to it.
+  //
+  // Also adopts the target Portfolio's own style locally, *before* reload()
+  // lands: the sync effect above (serverStyle) treats this device's local
+  // style as the thing to push to the server whenever it differs from what
+  // just loaded. Switching Portfolios changes serverStyle to a different
+  // Portfolio's style on purpose — without adopting it first, that effect
+  // reads it as a stale local pick and overwrites the Portfolio being
+  // switched to with whatever style this device last had active, silently
+  // discarding the style it was created or renamed with.
   const switchPortfolio = useCallback(
-    (id: number) => {
+    (id: number, knownStyle?: StyleKey) => {
       try {
         localStorage.setItem("alytic-active-portfolio", String(id));
       } catch {
         /* localStorage unavailable — the switch still applies for this session */
       }
+      const style = knownStyle ?? portfolios.find((p) => p.id === id)?.style;
+      if (isStyleKey(style)) setInvestStyle(style);
       setActivePortfolioId(id);
       void reload();
     },
-    [reload],
+    [reload, portfolios],
   );
 
   /** Creates a new Portfolio and switches the desk to it. */
   const createPortfolio = useCallback(
     async (name: string, style: StyleKey) => {
       const { id } = await post("/api/portfolios", { name, style });
-      switchPortfolio(id);
+      // Known immediately — the summary list a plain switch reads from
+      // doesn't include this Portfolio yet (it only refreshes via reload()).
+      switchPortfolio(id, style);
     },
     [switchPortfolio],
   );
@@ -644,9 +661,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const renamePortfolio = useCallback(
     async (id: number, patch: { name?: string; style?: StyleKey }) => {
       await patchRequest(`/api/portfolios/${id}`, patch);
+      // Restyling the Portfolio currently open adopts it locally too — same
+      // clobber risk switchPortfolio guards against, see its comment.
+      if (patch.style && id === activePortfolioId) setInvestStyle(patch.style);
       await reload();
     },
-    [reload],
+    [reload, activePortfolioId],
   );
 
   /**
@@ -659,7 +679,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       await del(`/api/portfolios/${id}`);
       if (activePortfolioId === id) {
         const { activePortfolioId: fallbackId, portfolios: list } = await api("/api/portfolios");
-        switchPortfolio(fallbackId ?? list?.[0]?.id);
+        const fallback = list?.find((p: { id: number }) => p.id === fallbackId) ?? list?.[0];
+        switchPortfolio(fallback?.id, fallback?.style);
       } else {
         await reload();
       }

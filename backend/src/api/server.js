@@ -2262,8 +2262,17 @@ app.get('/api/portfolios', wrap(async (req, res) => {
     return {
       id: row.id,
       name: row.name,
-      style: row.style,
-      value: last ? last.total : (row.state?.cash ?? 0),
+      // The portfolios.style column is the source of truth once a Portfolio
+      // has been created or renamed through this API (both write it — see
+      // createPortfolioForUser/renamePortfolio), but the signup trigger
+      // leaves it null for every account's original primary Portfolio, whose
+      // real style lives only in state_json.settings.investStyle.
+      style: row.style ?? row.state?.settings?.investStyle ?? null,
+      // Positions only — never the snapshot's total (positions + cash):
+      // the frontend's active-Portfolio card already means "positions" by
+      // `value` (store.tsx totals.value) and adds `cash` on top itself, so
+      // a `value` that already included cash was being double-counted.
+      value: last ? (last.positionsValue ?? last.total - last.cash) : 0,
       pl: last ? last.pl : 0,
       cash: last ? last.cash : (row.state?.cash ?? 0),
       positionCount: Object.keys(row.state?.positions ?? {}).length,

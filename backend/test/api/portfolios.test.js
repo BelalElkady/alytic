@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import '../helpers/env.js';
 
 import { startServer, request, registerUser } from '../helpers/server.js';
-import { primaryPortfolioIdFor, supabase, setUserAdmin } from '../../src/db.js';
+import { primaryPortfolioIdFor, supabase, setUserAdmin, getPortfolioById } from '../../src/db.js';
 
 const ctx = await startServer();
 const { baseUrl } = ctx;
@@ -59,7 +59,7 @@ test('GET /api/portfolios values a non-active Portfolio from its last-saved snap
   // without needing live price data or a running daily-close job.
   const { data: second } = await supabase.from('portfolios').insert({
     user_id: user.id, name: 'محفظة ثانية', ordinal: 1,
-    state_json: { cash: 1000, positions: {}, log: { '2026-01-01': { total: 5000, pl: 250, cash: 1000 } } },
+    state_json: { cash: 1000, positions: {}, log: { '2026-01-01': { total: 5000, positionsValue: 4000, pl: 250, cash: 1000 } } },
   }).select('id').single();
 
   const res = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
@@ -71,11 +71,28 @@ test('GET /api/portfolios values a non-active Portfolio from its last-saved snap
   assert.equal(inactive.active, false);
   // The fabricated log entry's numbers, verbatim — proves this came from the
   // stored snapshot, not a live-quote computation (there are no live quotes
-  // for an empty positions map to even price).
-  assert.equal(inactive.value, 5000);
+  // for an empty positions map to even price). `value` is positions only —
+  // matching what the active Portfolio's live `value` means on the frontend
+  // (frontend/src/lib/store.tsx totals.value) — so a card can safely show
+  // `value + cash` without double-counting cash already folded into `total`.
+  assert.equal(inactive.value, 4000);
   assert.equal(inactive.pl, 250);
   assert.equal(inactive.cash, 1000);
   assert.equal(res.body.activePortfolioId, primaryId);
+});
+
+test('GET /api/portfolios falls back to the state_json style when the portfolios.style column is null', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  const primaryId = await primaryPortfolioIdFor(user.id);
+  // The signup trigger leaves portfolios.style null (schema.sql); a pre-migration
+  // account's real style lives only in state_json.settings.investStyle.
+  await supabase.from('portfolios').update({
+    state_json: { cash: 0, positions: {}, log: {}, settings: { investStyle: 'trader' } },
+  }).eq('id', primaryId);
+
+  const res = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
+  const primary = res.body.portfolios.find((p) => p.id === primaryId);
+  assert.equal(primary.style, 'trader');
 });
 
 test('a free-tier User is already at the 1-Portfolio cap, so POST /api/portfolios 403s', async () => {
@@ -132,8 +149,17 @@ test('PATCH /api/portfolios/:id renames and restyles a writable Portfolio', asyn
   const { cookie, user } = await registerUser(baseUrl);
   await setUserAdmin(user.id, true);
   const created = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثانية', style: 'trader' } });
+  // The two-place style write (Global Constraints): the column, checked via
+  // GET below, and state_json.settings.investStyle — what the recommendation
+  // engine actually reads — checked here directly after creation.
+  const afterCreate = await getPortfolioById(created.body.id);
+  assert.equal(afterCreate.state.settings?.investStyle, 'trader');
+
   const res = await request(baseUrl, 'PATCH', `/api/portfolios/${created.body.id}`, { cookie, body: { name: 'اسم جديد', style: 'long' } });
   assert.equal(res.status, 200, res.text);
+  const afterRename = await getPortfolioById(created.body.id);
+  assert.equal(afterRename.state.settings?.investStyle, 'long');
+
   const list = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
   const renamed = list.body.portfolios.find((p) => p.id === created.body.id);
   assert.equal(renamed.name, 'اسم جديد');
@@ -161,6 +187,25 @@ test('PATCH on another User\'s Portfolio 404s — never reveals that the id exis
   // "route not found", which would also be a 404 and make this test pass
   // before the route is even implemented.
   assert.equal(res.body.error, 'المحفظة غير موجودة');
+});
+
+test('DELETE on another User\'s Portfolio 404s — never reveals that the id exists', async () => {
+  const other = await registerUser(baseUrl);
+  const otherPortfolioId = await primaryPortfolioIdFor(other.user.id);
+  const { cookie } = await registerUser(baseUrl);
+  const res = await request(baseUrl, 'DELETE', `/api/portfolios/${otherPortfolioId}`, { cookie });
+  assert.equal(res.status, 404, res.text);
+  assert.equal(res.body.error, 'المحفظة غير موجودة');
+});
+
+test('a malformed :id 404s on PATCH and DELETE, same as a foreign one', async () => {
+  const { cookie } = await registerUser(baseUrl);
+  const patchRes = await request(baseUrl, 'PATCH', '/api/portfolios/not-a-number', { cookie, body: { name: 'محاولة' } });
+  assert.equal(patchRes.status, 404, patchRes.text);
+  assert.equal(patchRes.body.error, 'المحفظة غير موجودة');
+  const deleteRes = await request(baseUrl, 'DELETE', '/api/portfolios/not-a-number', { cookie });
+  assert.equal(deleteRes.status, 404, deleteRes.text);
+  assert.equal(deleteRes.body.error, 'المحفظة غير موجودة');
 });
 
 test('DELETE on a User\'s only Portfolio 400s', async () => {

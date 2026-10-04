@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PortfolioDesk } from "./portfolio-desk";
@@ -67,11 +68,38 @@ describe("PortfolioDesk", () => {
   it("shows the read-only banner for a locked active Portfolio", () => {
     setDesk({ portfolios: [basePortfolio({ readOnly: true })] });
     render(<PortfolioDesk>مراكز</PortfolioDesk>);
-    expect(screen.getByText(/للعرض بس/)).toBeInTheDocument();
+    expect(screen.getByText(/فوق حد باقتك الحالية/)).toBeInTheDocument();
   });
 
   it("renders the wrapped children below the cards", () => {
     render(<PortfolioDesk>علامة-مميزة-للمحتوى</PortfolioDesk>);
     expect(screen.getByText("علامة-مميزة-للمحتوى")).toBeInTheDocument();
+  });
+
+  it("typing a space into the rename dialog's name field doesn't get swallowed by the card", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    const card = screen.getByRole("button", { name: /المحفظة الرئيسية/ });
+    await user.click(card.querySelector("button")!); // the ⋯ trigger
+    await user.click(screen.getByText("تعديل الاسم والأسلوب"));
+    const nameInput = screen.getByDisplayValue("المحفظة الرئيسية");
+    await user.clear(nameInput);
+    await user.type(nameInput, "اسم به مسافة");
+    expect(nameInput).toHaveValue("اسم به مسافة");
+  });
+
+  it("clicking inside the manage menu's dialogs never switches the active Portfolio", async () => {
+    const user = userEvent.setup();
+    setDesk({
+      portfolios: [basePortfolio({ id: 1 }), basePortfolio({ id: 2, name: "الثانية", active: false })],
+      portfolioCap: 3,
+      user: { tier: "trader" },
+    });
+    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    const card = screen.getByRole("button", { name: /الثانية/ });
+    await user.click(card.querySelector("button")!); // the ⋯ trigger, on the non-active card
+    await user.click(screen.getByText("تعديل الاسم والأسلوب"));
+    await user.click(screen.getByText("مضارب", { exact: true })); // a style tile inside the portaled dialog
+    expect(desk.current.switchPortfolio).not.toHaveBeenCalled();
   });
 });
