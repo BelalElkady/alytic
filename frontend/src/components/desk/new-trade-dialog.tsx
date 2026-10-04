@@ -175,7 +175,7 @@ export function TradeForm({
           <Label htmlFor={`${id}-date`}>التاريخ</Label>
           <Input
             id={`${id}-date`}
-            className="num"
+            dir="rtl"
             type="date"
             value={form.date}
             onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))}

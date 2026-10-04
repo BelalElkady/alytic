@@ -2247,6 +2247,16 @@ const MAX_DAY_NOTE = 2000;
 const MAX_WATCH_NOTE = 300;
 const isDayString = (value) => typeof value === 'string' && value.length <= 40 && isIsoDate(value.slice(0, 10));
 
+// Names (in Arabic) whichever required trade fields are blank, so the form can say what's missing.
+function missingTradeFields({ code, side, shares, price }) {
+  const missing = [];
+  if (!code) missing.push('السهم');
+  if (!side) missing.push('النوع');
+  if (!shares) missing.push('العدد');
+  if (!price) missing.push('السعر');
+  return missing.length ? `لازم تدخل: ${missing.join(' و')}` : null;
+}
+
 function tradeInputError({ code, side, shares, price, fees, date, note }) {
   if (typeof code !== 'string') return 'الكود لازم يكون نص';
   if (!['buy', 'sell', 'dividend'].includes(side)) return 'نوع الصفقة لازم يكون buy أو sell أو dividend';
@@ -2265,9 +2275,8 @@ function tradeInputError({ code, side, shares, price, fees, date, note }) {
 
 app.post('/api/portfolio/trade', wrap(async (req, res) => {
   const { code, side, shares, price, fees, date, note } = req.body ?? {};
-  if (!code || !side || !shares || !price) {
-    return res.status(400).json({ error: 'محتاج code و side و shares و price' });
-  }
+  const missing = missingTradeFields({ code, side, shares, price });
+  if (missing) return res.status(400).json({ error: missing });
   const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
   const updated = await withPortfolio(req.user.id, (portfolio) =>
@@ -2292,9 +2301,8 @@ function tradeAt(portfolio, req) {
 
 app.post('/api/portfolio/trades/:index', wrap(async (req, res) => {
   const { code, side, shares, price, fees, date, note } = req.body ?? {};
-  if (!code || !side || !shares || !price) {
-    return res.status(400).json({ error: 'محتاج code و side و shares و price' });
-  }
+  const missing = missingTradeFields({ code, side, shares, price });
+  if (missing) return res.status(400).json({ error: missing });
   const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
   const updated = await withPortfolio(req.user.id, (portfolio) =>
