@@ -84,7 +84,8 @@ export function repricePosition(position: Position, price: number): Position {
     next.distanceToStopPct = ((price - stop) / price) * 100;
     // The close is judged against the stop that was in force then, which a
     // stop raised during the session doesn't change.
-    if (typeof closePrice === "number") next.stopBreached = closePrice < (stopAtClose ?? stop) && price < stop;
+    if (typeof closePrice === "number")
+      next.stopBreached = closePrice < (stopAtClose ?? stop) && price < stop;
   }
   if (typeof targetLevel === "number") {
     next.distanceToTargetPct = ((targetLevel - price) / price) * 100;
@@ -318,12 +319,26 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     [refreshUser],
   );
 
-  /** Same sequence as before: portfolio → scan of held codes → daily log. */
+  /**
+   * Same sequence as before: portfolio → scan of held codes → daily log.
+   * `pf` and `rows` are committed together, only once both are known — never
+   * `pf` alone — because `totals` reads `pf.cash` and `rows` together
+   * (below): committing `pf` first would briefly blend the new Portfolio's
+   * cash with the previous one's still-stale position values, a jump the
+   * desk switcher made visible as numbers "hallucinating" before settling.
+   */
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       const portfolio = await api("/api/portfolio");
+      const codes = Object.keys(portfolio?.positions ?? {});
+      const scanned = codes.length
+        ? (await api(`/api/scan?codes=${codes.join(",")}&style=${style}`)).results.filter(
+            (r: Row) => r.position,
+          )
+        : [];
       setPf(portfolio);
+      setRows(scanned);
       // A transient failure here (or a version-skew 404 against an old
       // cached bundle) must never block the rest of reload()'s fetches,
       // which the UI does depend on — the desk switcher just goes empty.
@@ -337,13 +352,6 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         setActivePortfolioId(null);
         setPortfolioCap(1);
       }
-      const codes = Object.keys(portfolio?.positions ?? {});
-      const scanned = codes.length
-        ? (await api(`/api/scan?codes=${codes.join(",")}&style=${style}`)).results.filter(
-            (r: Row) => r.position,
-          )
-        : [];
-      setRows(scanned);
       setLog((await api("/api/log")).log ?? {});
       setError(null);
     } catch (caught) {
@@ -405,7 +413,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       lastLevelsAt.current = Date.now();
       try {
         const codes = current.map((row) => row.code).join(",");
-        const { results } = await api(`/api/scan?codes=${encodeURIComponent(codes)}&style=${style}`);
+        const { results } = await api(
+          `/api/scan?codes=${encodeURIComponent(codes)}&style=${style}`,
+        );
         const fresh = new Map<string, Row>(
           (results as Row[]).filter((r) => r.position).map((r) => [r.code, r]),
         );
@@ -457,7 +467,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         const crossedTarget = current.some((row) => {
           const q = quotes?.[row.code]?.price;
           const p = row.position;
-          return q && p && typeof p.targetLevel === "number" && q >= p.targetLevel && !p.reachedTarget;
+          return (
+            q && p && typeof p.targetLevel === "number" && q >= p.targetLevel && !p.reachedTarget
+          );
         });
         if (crossedTarget) void refreshLevels({ soon: true });
         setQuotes((previous) => ({ ...previous, ...quotes }));
@@ -641,6 +653,12 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       const style = knownStyle ?? portfolios.find((p) => p.id === id)?.style;
       if (isStyleKey(style)) setInvestStyle(style);
       setActivePortfolioId(id);
+      // Clears the totals along with the tag: otherwise the switcher's active
+      // highlight and HeroBar's name tag jump to the new Portfolio instantly,
+      // while its numbers stay the previous Portfolio's until reload()
+      // resolves — reload()'s loading skeleton (HeroBar) takes over instead.
+      setPf(null);
+      setRows([]);
       void reload();
     },
     [reload, portfolios],

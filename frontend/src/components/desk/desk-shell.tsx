@@ -29,6 +29,7 @@ import { CashDialog } from "@/components/desk/cash-dialog";
 import { DetailDialog } from "@/components/desk/detail-dialog";
 import { FeatureAnnouncementDialog } from "@/components/desk/feature-announcement-dialog";
 import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
+import { PORTFOLIO_COLORS, PortfolioSwitcher } from "@/components/desk/portfolio-desk";
 import { Spinner, Stat } from "@/components/desk/state-blocks";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
 import { SiteFooter } from "@/components/marketing/site-footer";
@@ -72,7 +73,9 @@ type NavUser = { isAdmin?: boolean; isMarketer?: boolean } | null | undefined;
  * panel shows a marketer its read-only users table); "admin" — admins only.
  */
 const canSee = (item: { access: "all" | "staff" | "admin" }, user: NavUser) =>
-  item.access === "all" || Boolean(user?.isAdmin) || (item.access === "staff" && Boolean(user?.isMarketer));
+  item.access === "all" ||
+  Boolean(user?.isAdmin) ||
+  (item.access === "staff" && Boolean(user?.isMarketer));
 
 const NAV = [
   { to: "/portfolio", label: "الأسهم", icon: Wallet, access: "all" },
@@ -121,6 +124,11 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <FeatureAnnouncementDialog />
       <VerifyEmailBanner />
       <ExpiryBanner />
+      {!locked && (
+        <div className="mx-auto w-full max-w-6xl px-3 pt-3 sm:px-5 sm:pt-4">
+          <PortfolioSwitcher />
+        </div>
+      )}
       {!locked && <HeroBar />}
       <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
         {locked ? <SubscriptionWall /> : children}
@@ -310,7 +318,8 @@ function RequirePhoneDialog() {
               autoFocus
             />
             <p className="text-[12px] text-muted-foreground">
-              أي دولة — اكتب الرقم بكود الدولة (مثال: +966 5x xxx xxxx). الأرقام المصرية تتكتب 01xxxxxxxxx.
+              أي دولة — اكتب الرقم بكود الدولة (مثال: +966 5x xxx xxxx). الأرقام المصرية تتكتب
+              01xxxxxxxxx.
             </p>
           </div>
           {error && (
@@ -406,7 +415,8 @@ function RequireInvestStyleDialog() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[14px] font-semibold">
-                    {item.label} <span className="font-normal text-muted-foreground">({item.horizon})</span>
+                    {item.label}{" "}
+                    <span className="font-normal text-muted-foreground">({item.horizon})</span>
                   </span>
                   {inferred === item.key && (
                     <Badge variant="outline" className="whitespace-nowrap text-[11px]">
@@ -562,7 +572,8 @@ function DeskHeader() {
         : "اتضاف/اتحدّث الأسهم دي بس — باقي المحفظة زي ما هو.";
       if (!imported && watchlisted) {
         toast.success(`تمت إضافة ${watchlisted} سهم للأسهم المفضلة`, {
-          description: "الصورة مفيهاش كميات أسهم، فاتضافت للمفضلة بس (في تبويب «تحليل الكاش») — محفظتك زي ما هي.",
+          description:
+            "الصورة مفيهاش كميات أسهم، فاتضافت للمفضلة بس (في تبويب «تحليل الكاش») — محفظتك زي ما هي.",
           duration: 10000,
         });
       } else if (derived) {
@@ -623,8 +634,16 @@ function DeskHeader() {
             {subscriptionActive ? (
               <Link to="/subscribe" aria-label="حالة الاشتراك">
                 <Badge variant="secondary" className="whitespace-nowrap">
-                  {user?.tier === "trader" ? "الحريفة" : user?.tier === "long" ? "النفس الطويل" : "اشتراك"}
-                  {user?.plan?.endsWith("_yearly") ? " · سنوي" : user?.plan?.endsWith("_monthly") ? " · شهري" : ""}
+                  {user?.tier === "trader"
+                    ? "الحريفة"
+                    : user?.tier === "long"
+                      ? "النفس الطويل"
+                      : "اشتراك"}
+                  {user?.plan?.endsWith("_yearly")
+                    ? " · سنوي"
+                    : user?.plan?.endsWith("_monthly")
+                      ? " · شهري"
+                      : ""}
                   {periodEnd ? ` حتى ${arDay(periodEnd.slice(0, 10))}` : ""}
                 </Badge>
               </Link>
@@ -691,7 +710,11 @@ function DeskHeader() {
                     disabled={marketAnalysisExhausted}
                     aria-describedby={marketAnalysisHint ? "market-analysis-left-hint" : undefined}
                   >
-                    {marketAnalysisExhausted ? marketButtonLabel : <Link to="/market">{marketButtonLabel}</Link>}
+                    {marketAnalysisExhausted ? (
+                      marketButtonLabel
+                    ) : (
+                      <Link to="/market">{marketButtonLabel}</Link>
+                    )}
                   </Button>
                   {marketAnalysisLeft !== null && (
                     <span
@@ -732,7 +755,9 @@ function DeskHeader() {
                       aria-hidden
                       className={cn(
                         "num pointer-events-none absolute -top-2 -end-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10.5px] font-semibold leading-none ring-2 ring-background",
-                        screenshotsExhausted ? "bg-down text-white" : "bg-primary text-primary-foreground",
+                        screenshotsExhausted
+                          ? "bg-down text-white"
+                          : "bg-primary text-primary-foreground",
                       )}
                     >
                       {screenshotsLeft}
@@ -932,12 +957,29 @@ function MobileNav() {
 }
 
 function HeroBar() {
-  const { totals, loading } = useDesk();
+  const { totals, loading, portfolios, activePortfolioId } = useDesk();
   // Three columns on phones keeps the five totals to two rows instead of
   // three, with the cash total no longer sitting alone on its own row.
   const size = "text-[15px] sm:text-[17px]";
+  const activeIndex = portfolios.findIndex((p) => p.id === activePortfolioId);
+  const active = activeIndex >= 0 ? portfolios[activeIndex] : null;
+  // Only a User with more than one Portfolio needs to be told which one
+  // these totals belong to — a single-Portfolio desk has nothing to confuse
+  // them with.
+  const showTag = portfolios.length > 1 && active;
   return (
     <section className="border-b bg-card">
+      {showTag && (
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-1.5 px-3 pt-2.5 sm:px-5 sm:pt-3">
+          <span
+            className={cn(
+              "size-2 rounded-full",
+              PORTFOLIO_COLORS[activeIndex % PORTFOLIO_COLORS.length],
+            )}
+          />
+          <span className="text-[12px] font-medium text-muted-foreground">{active.name}</span>
+        </div>
+      )}
       <div className="mx-auto grid w-full max-w-6xl grid-cols-3 gap-x-3 gap-y-2.5 px-3 py-3 sm:gap-x-4 sm:gap-y-3 sm:px-5 sm:py-4 md:grid-cols-5">
         {loading && !totals.value ? (
           Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-12" />)

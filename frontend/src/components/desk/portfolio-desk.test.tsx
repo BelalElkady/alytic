@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PortfolioDesk } from "./portfolio-desk";
+import { PortfolioDesk, PortfolioSwitcher } from "./portfolio-desk";
 
 const desk = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock("@/lib/store", () => ({ useDesk: () => desk.current }));
@@ -14,8 +14,16 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const basePortfolio = (overrides: Record<string, unknown>) => ({
-  id: 1, name: "المحفظة الرئيسية", style: "medium", value: 10000, pl: 500, cash: 2000,
-  positionCount: 3, active: true, readOnly: false, ...overrides,
+  id: 1,
+  name: "المحفظة الرئيسية",
+  style: "medium",
+  value: 10000,
+  pl: 500,
+  cash: 2000,
+  positionCount: 3,
+  active: true,
+  readOnly: false,
+  ...overrides,
 });
 
 function setDesk(overrides: Record<string, unknown>) {
@@ -33,52 +41,47 @@ function setDesk(overrides: Record<string, unknown>) {
   };
 }
 
-describe("PortfolioDesk", () => {
+describe("PortfolioSwitcher", () => {
   beforeEach(() => setDesk({}));
 
   it("shows the upsell card, not an add button, for a non-trader User with 1 Portfolio", () => {
-    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    render(<PortfolioSwitcher />);
     expect(screen.getByText(/لحد ٣ محافظ مع الحريفة/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "محفظة جديدة" })).not.toBeInTheDocument();
   });
 
   it("shows no add affordance for a trader User already at 3 Portfolios", () => {
     setDesk({
-      portfolios: [basePortfolio({ id: 1 }), basePortfolio({ id: 2, active: false }), basePortfolio({ id: 3, active: false })],
+      portfolios: [
+        basePortfolio({ id: 1 }),
+        basePortfolio({ id: 2, active: false }),
+        basePortfolio({ id: 3, active: false }),
+      ],
       portfolioCap: 3,
       user: { tier: "trader" },
     });
-    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    render(<PortfolioSwitcher />);
     expect(screen.queryByRole("button", { name: "محفظة جديدة" })).not.toBeInTheDocument();
     expect(screen.queryByText(/لحد ٣ محافظ/)).not.toBeInTheDocument();
   });
 
   it("clicking a non-active card switches the active Portfolio", () => {
     setDesk({
-      portfolios: [basePortfolio({ id: 1 }), basePortfolio({ id: 2, name: "الثانية", active: false, readOnly: true })],
+      portfolios: [
+        basePortfolio({ id: 1 }),
+        basePortfolio({ id: 2, name: "الثانية", active: false, readOnly: true }),
+      ],
       portfolioCap: 1,
       user: { tier: "free" },
     });
-    render(<PortfolioDesk>مراكز</PortfolioDesk>);
-    // "الثانية" also appears in the allocation bar's legend — scope to the card itself.
+    render(<PortfolioSwitcher />);
     fireEvent.click(screen.getByRole("button", { name: /الثانية/ }));
     expect(desk.current.switchPortfolio).toHaveBeenCalledWith(2);
   });
 
-  it("shows the read-only banner for a locked active Portfolio", () => {
-    setDesk({ portfolios: [basePortfolio({ readOnly: true })] });
-    render(<PortfolioDesk>مراكز</PortfolioDesk>);
-    expect(screen.getByText(/للعرض بس/)).toBeInTheDocument();
-  });
-
-  it("renders the wrapped children below the cards", () => {
-    render(<PortfolioDesk>علامة-مميزة-للمحتوى</PortfolioDesk>);
-    expect(screen.getByText("علامة-مميزة-للمحتوى")).toBeInTheDocument();
-  });
-
   it("typing a space into the rename dialog's name field doesn't get swallowed by the card", async () => {
     const user = userEvent.setup();
-    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    render(<PortfolioSwitcher />);
     const card = screen.getByRole("button", { name: /المحفظة الرئيسية/ });
     await user.click(card.querySelector("button")!); // the ⋯ trigger
     await user.click(screen.getByText("تعديل الاسم والأسلوب"));
@@ -91,15 +94,33 @@ describe("PortfolioDesk", () => {
   it("clicking inside the manage menu's dialogs never switches the active Portfolio", async () => {
     const user = userEvent.setup();
     setDesk({
-      portfolios: [basePortfolio({ id: 1 }), basePortfolio({ id: 2, name: "الثانية", active: false })],
+      portfolios: [
+        basePortfolio({ id: 1 }),
+        basePortfolio({ id: 2, name: "الثانية", active: false }),
+      ],
       portfolioCap: 3,
       user: { tier: "trader" },
     });
-    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    render(<PortfolioSwitcher />);
     const card = screen.getByRole("button", { name: /الثانية/ });
     await user.click(card.querySelector("button")!); // the ⋯ trigger, on the non-active card
     await user.click(screen.getByText("تعديل الاسم والأسلوب"));
     await user.click(screen.getByText("مضارب", { exact: true })); // a style tile inside the portaled dialog
     expect(desk.current.switchPortfolio).not.toHaveBeenCalled();
+  });
+});
+
+describe("PortfolioDesk", () => {
+  beforeEach(() => setDesk({}));
+
+  it("shows the read-only banner for a locked active Portfolio", () => {
+    setDesk({ portfolios: [basePortfolio({ readOnly: true })] });
+    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    expect(screen.getByText(/للعرض بس/)).toBeInTheDocument();
+  });
+
+  it("renders the wrapped children below the overview panel", () => {
+    render(<PortfolioDesk>علامة-مميزة-للمحتوى</PortfolioDesk>);
+    expect(screen.getByText("علامة-مميزة-للمحتوى")).toBeInTheDocument();
   });
 });
