@@ -263,6 +263,21 @@ export async function listPortfoliosForUser(userId) {
 }
 
 /**
+ * Inserts a new Portfolio row for this User at the given ordinal. The
+ * caller (createPortfolioForUser in portfolio.js) computes the ordinal and
+ * holds the per-user write lock, so two concurrent creates can never both
+ * land at the same ordinal or both slip past the cap.
+ */
+export async function insertPortfolio(userId, { name, style, ordinal }) {
+  const row = must(
+    await supabase.from('portfolios').insert({ user_id: userId, name, style, ordinal })
+      .select('id, user_id, name, style, ordinal, state_json, deleted_at').single(),
+    'insertPortfolio',
+  );
+  return { id: row.id, userId: row.user_id, name: row.name, style: row.style, ordinal: row.ordinal, state: row.state_json, deletedAt: row.deleted_at };
+}
+
+/**
  * Update-only, unlike the old user_id-keyed putPortfolio: `id` is a
  * `generated always as identity` column, so there is no row to "insert" at a
  * caller-chosen id, and every caller resolves `portfolioId` from

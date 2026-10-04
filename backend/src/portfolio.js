@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { getPortfolioById, putPortfolioById, getUserUsage, putUserUsage } from './db.js';
+import { getPortfolioById, putPortfolioById, getUserUsage, putUserUsage, listPortfoliosForUser, insertPortfolio } from './db.js';
 import { lookup } from './config/universe.js';
 import { currentTenant } from './tenancy/context.js';
 
@@ -130,6 +130,30 @@ export async function withPortfolio(userId, portfolioId, mutator) {
   return withUserLock(userId, async () => {
     const portfolio = await loadPortfolio(portfolioId);
     return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), portfolioId);
+  });
+}
+
+/**
+ * Creates a new Portfolio for this User — named and styled from the start
+ * (map #98: every Portfolio has its own Investing style from creation) —
+ * unless the User is already at their tier's cap (#103). Seeds the new
+ * Portfolio's own style setting to match (see the plan's Global
+ * Constraints' two-place style write), so its first recommendation, before
+ * it has any trade history of its own, already follows the style it was
+ * given rather than defaulting to "medium". Locked per-user, same as every
+ * other Portfolio write, so two concurrent creates can't both slip past
+ * the cap.
+ *
+ * @returns {Promise<{ok: true, portfolio: object} | {ok: false, reason: 'cap'}>}
+ */
+export async function createPortfolioForUser(userId, { name, style }, cap) {
+  return withUserLock(userId, async () => {
+    const list = await listPortfoliosForUser(userId);
+    if (list.length >= cap) return { ok: false, reason: 'cap' };
+    const ordinal = list.length ? Math.max(...list.map((p) => p.ordinal)) + 1 : 0;
+    const row = await insertPortfolio(userId, { name, style, ordinal });
+    await savePortfolio({ ...EMPTY, settings: { investStyle: style } }, row.id);
+    return { ok: true, portfolio: row };
   });
 }
 

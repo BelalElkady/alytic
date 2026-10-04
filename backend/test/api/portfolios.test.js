@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import '../helpers/env.js';
 
 import { startServer, request, registerUser } from '../helpers/server.js';
-import { primaryPortfolioIdFor, supabase } from '../../src/db.js';
+import { primaryPortfolioIdFor, supabase, setUserAdmin } from '../../src/db.js';
 
 const ctx = await startServer();
 const { baseUrl } = ctx;
@@ -76,4 +76,54 @@ test('GET /api/portfolios values a non-active Portfolio from its last-saved snap
   assert.equal(inactive.pl, 250);
   assert.equal(inactive.cash, 1000);
   assert.equal(res.body.activePortfolioId, primaryId);
+});
+
+test('a free-tier User is already at the 1-Portfolio cap, so POST /api/portfolios 403s', async () => {
+  const { cookie } = await registerUser(baseUrl);
+  const res = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'محفظة ثانية', style: 'trader' } });
+  assert.equal(res.status, 403, res.text);
+});
+
+test('POST /api/portfolios rejects a missing or unknown style', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  await setUserAdmin(user.id, true); // trader — cap 3, so this fails on style, not cap
+  const missing = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'محفظة' } });
+  assert.equal(missing.status, 400, missing.text);
+  const unknown = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'محفظة', style: 'nope' } });
+  assert.equal(unknown.status, 400, unknown.text);
+});
+
+test('a الحريفة User can create up to 3 Portfolios, and a 4th 403s', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  await setUserAdmin(user.id, true);
+  const second = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثانية', style: 'trader' } });
+  assert.equal(second.status, 201, second.text);
+  const third = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثالثة', style: 'long' } });
+  assert.equal(third.status, 201, third.text);
+  const fourth = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الرابعة', style: 'medium' } });
+  assert.equal(fourth.status, 403, fourth.text);
+
+  const list = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
+  assert.equal(list.body.portfolios.length, 3);
+  assert.equal(list.body.cap, 3);
+  assert.deepEqual(list.body.portfolios.map((p) => p.readOnly), [false, false, false]);
+  assert.equal(list.body.portfolios[1].name, 'الثانية');
+  assert.equal(list.body.portfolios[1].style, 'trader');
+});
+
+test('a Portfolio past the User\'s cap is marked read-only; the first stays writable', async () => {
+  const { cookie, user } = await registerUser(baseUrl); // free/trial — cap 1
+  const primaryId = await primaryPortfolioIdFor(user.id);
+  // No "downgrade" needed to see a read-only Portfolio: a free/trial account's
+  // cap is already 1, so a second (directly inserted, same technique the
+  // pre-existing tests above use) Portfolio is read-only from the start.
+  const { data: second } = await supabase.from('portfolios').insert({
+    user_id: user.id, name: 'الثانية', ordinal: 1, state_json: { cash: 0, positions: {}, log: {} },
+  }).select('id').single();
+  const res = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
+  assert.equal(res.body.cap, 1);
+  const first = res.body.portfolios.find((p) => p.id === primaryId);
+  const extra = res.body.portfolios.find((p) => p.id === second.id);
+  assert.equal(first.readOnly, false);
+  assert.equal(extra.readOnly, true);
 });

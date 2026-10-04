@@ -22,12 +22,12 @@ import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
-import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
+import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { sharedIpAccounts } from '../sharedIp.js';
-import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf, createPortfolioForUser } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -2242,11 +2242,13 @@ async function portfolioIdFromRequest(req) {
 }
 
 app.get('/api/portfolios', wrap(async (req, res) => {
-  const [rows, activePortfolioId] = await Promise.all([
+  const [rows, activePortfolioId, tier] = await Promise.all([
     listPortfoliosForUser(req.user.id),
     portfolioIdFromRequest(req),
+    req.access?.tier !== undefined ? Promise.resolve(req.access.tier) : accessInfo(req.user).then((a) => a.tier),
   ]);
-  const portfolios = rows.map((row) => {
+  const cap = portfolioCapFor(tier);
+  const portfolios = rows.map((row, index) => {
     const log = row.state?.log ?? {};
     const dates = Object.keys(log).sort();
     const last = dates.length ? log[dates[dates.length - 1]] : null;
@@ -2259,9 +2261,25 @@ app.get('/api/portfolios', wrap(async (req, res) => {
       cash: last ? last.cash : (row.state?.cash ?? 0),
       positionCount: Object.keys(row.state?.positions ?? {}).length,
       active: row.id === activePortfolioId,
+      readOnly: index >= cap,
     };
   });
-  res.json({ portfolios, activePortfolioId });
+  res.json({ portfolios, activePortfolioId, cap });
+}));
+
+const PORTFOLIO_NAME_MAX_LEN = 60;
+
+app.post('/api/portfolios', wrap(async (req, res) => {
+  const name = String(req.body?.name ?? '').trim();
+  if (!name || name.length > PORTFOLIO_NAME_MAX_LEN) {
+    return res.status(400).json({ error: 'اسم المحفظة لازم يكون من حرف لحد 60' });
+  }
+  const style = req.body?.style;
+  if (!STYLE_KEYS.includes(style)) return res.status(400).json({ error: 'أسلوب غير معروف' });
+  const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
+  const result = await createPortfolioForUser(req.user.id, { name, style }, portfolioCapFor(tier));
+  if (!result.ok) return res.status(403).json({ error: 'وصلت للحد الأقصى من المحافظ' });
+  res.status(201).json({ id: result.portfolio.id, name: result.portfolio.name, style: result.portfolio.style });
 }));
 
 app.get('/api/portfolio', wrap(async (req, res) => {
