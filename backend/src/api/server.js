@@ -2034,7 +2034,7 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
   // A held stock that just jumped by a share ratio: settle the holding now
   // rather than on the next half-hourly check.
   if (userId && results.some((r) => r.position && r.corporateAction?.status === 'suspected')) {
-    checkCorporateActionsSoon(userId, portfolio, { now: true });
+    checkCorporateActionsSoon(userId, portfolioId, portfolio, { now: true });
   }
   // Held codes reuse heldQuotes, so a position's P&L and the price shown
   // beside it never come from two different feeds.
@@ -2371,7 +2371,7 @@ app.get('/api/portfolio', wrap(async (req, res) => {
   const portfolioId = await portfolioIdFromRequest(req);
   const p = await loadPortfolio(portfolioId);
   const usage = await getUserUsage(req.user.id);
-  checkCorporateActionsSoon(req.user.id, p);
+  checkCorporateActionsSoon(req.user.id, portfolioId, p);
   // /api/portfolio isn't a PAID_PATHS entry (a lapsed account can still read
   // its own data), so req.access isn't guaranteed to be set the way it is on
   // /api/scan — compute it directly rather than assume.
@@ -2503,8 +2503,7 @@ async function currentPrices(codes) {
  * when a search finds one that agrees with it.
  */
 const corporateActionResearch = new Map(); // one search per event, shared across users
-async function reconcileCorporateActions(userId) {
-  const portfolioId = await primaryPortfolioIdFor(userId);
+async function reconcileCorporateActions(userId, portfolioId) {
   const portfolio = await loadPortfolio(portfolioId);
   const codes = Object.keys(portfolio.positions);
   if (!codes.length) return [];
@@ -2546,7 +2545,7 @@ async function reconcileCorporateActions(userId) {
   return proposals;
 }
 
-// Opening the desk looks again at most every half hour per user, in the
+// Opening the desk looks again at most every half hour per Portfolio, in the
 // background: the answer lands on the next reload, never holding this one up.
 const CORPORATE_ACTION_RECHECK_MS = 30 * 60 * 1000;
 // A scan that sees a fresh jump asks sooner, but not on every scan while a
@@ -2554,15 +2553,17 @@ const CORPORATE_ACTION_RECHECK_MS = 30 * 60 * 1000;
 const CORPORATE_ACTION_URGENT_RECHECK_MS = 2 * 60 * 1000;
 const corporateActionCheckedAt = new Map();
 const corporateActionRunning = new Set();
-function checkCorporateActionsSoon(userId, portfolio, { now = false } = {}) {
+function checkCorporateActionsSoon(userId, portfolioId, portfolio, { now = false } = {}) {
   if (!Object.keys(portfolio.positions ?? {}).length) return;
-  const key = `${currentTenant()?.id ?? ''}:${userId}`;
+  // Keyed per Portfolio, not per User — a User with more than one Portfolio
+  // (#103) checks and debounces each independently.
+  const key = `${currentTenant()?.id ?? ''}:${portfolioId}`;
   const last = corporateActionCheckedAt.get(key);
   if (corporateActionRunning.has(key)) return;
   if (last && Date.now() - last < (now ? CORPORATE_ACTION_URGENT_RECHECK_MS : CORPORATE_ACTION_RECHECK_MS)) return;
   corporateActionCheckedAt.set(key, Date.now());
   corporateActionRunning.add(key);
-  reconcileCorporateActions(userId)
+  reconcileCorporateActions(userId, portfolioId)
     .catch((err) => console.warn('[corporate-actions] check failed:', err.message))
     .finally(() => corporateActionRunning.delete(key));
 }
@@ -2818,18 +2819,19 @@ async function runDailyClose() {
   }
 
   const portfolios = await getAllPortfolios();
-  const userIds = portfolios
-    .filter((row) => Object.keys(row.state_json?.positions ?? {}).length > 0)
-    .map((row) => row.user_id);
+  // One entry per Portfolio, not deduped by user_id — a User can hold more
+  // than one (#103), and each needs its own snapshot and corporate-action
+  // check, not just the primary's.
+  const withPositions = portfolios.filter((row) => Object.keys(row.state_json?.positions ?? {}).length > 0);
 
   let saved = 0;
   let failed = 0;
-  for (const userId of userIds) {
+  for (const { user_id: userId, id: portfolioId } of withPositions) {
     // Before the close is saved, so a bonus issue or split landing today
     // doesn't go into the log as a day's loss.
-    await reconcileCorporateActions(userId).catch((err) => console.warn(`[daily-close] corporate actions for ${userId}:`, err.message));
+    await reconcileCorporateActions(userId, portfolioId).catch((err) => console.warn(`[daily-close] corporate actions for ${userId}:${portfolioId}:`, err.message));
     try {
-      await snapshotForUser(userId);
+      await snapshotForUser(userId, portfolioId);
       saved += 1;
     } catch {
       failed += 1;
@@ -2845,7 +2847,7 @@ async function runDailyClose() {
     console.error('[daily-close] recommendation prices failed:', err.message);
     recommendationPrices = { ok: false };
   }
-  return { ok: true, cairoNow, total: userIds.length, saved, failed, recommendationPrices };
+  return { ok: true, cairoNow, total: withPositions.length, saved, failed, recommendationPrices };
 }
 
 /**
