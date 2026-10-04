@@ -158,6 +158,16 @@ export async function createPortfolioForUser(userId, { name, style }, cap) {
 }
 
 /**
+ * This Portfolio's writable rank — its 0-based position among the User's
+ * live Portfolios, ordered by ordinal (creation order) — #103's definition.
+ * -1 if portfolioId isn't one of this User's live Portfolios.
+ */
+export async function portfolioRankFor(userId, portfolioId) {
+  const list = await listPortfoliosForUser(userId);
+  return list.findIndex((p) => p.id === portfolioId);
+}
+
+/**
  * Renames and/or restyles a Portfolio — blocked once it's past the User's
  * cap (#103: read-only, same as every other write) or if it isn't one of
  * this User's live Portfolios. Keeps the two-place style write (see the
@@ -167,8 +177,7 @@ export async function createPortfolioForUser(userId, { name, style }, cap) {
  */
 export async function renamePortfolio(userId, portfolioId, { name, style }, cap) {
   return withUserLock(userId, async () => {
-    const list = await listPortfoliosForUser(userId);
-    const rank = list.findIndex((p) => p.id === portfolioId);
+    const rank = await portfolioRankFor(userId, portfolioId);
     if (rank === -1) return { ok: false, reason: 'not_found' };
     if (rank >= cap) return { ok: false, reason: 'readonly' };
     await updatePortfolioMeta(portfolioId, { name, style });

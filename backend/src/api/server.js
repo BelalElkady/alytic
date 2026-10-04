@@ -27,7 +27,7 @@ import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { sharedIpAccounts } from '../sharedIp.js';
-import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf, createPortfolioForUser, renamePortfolio, deletePortfolio } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf, createPortfolioForUser, renamePortfolio, deletePortfolio, portfolioRankFor } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -605,6 +605,38 @@ app.use('/api', async (req, res, next) => {
     reason: expired ? 'subscription_expired' : 'trial_ended',
     requiresSubscription: true,
   });
+});
+
+// ---- Portfolio read-only gate (#103) ---------------------------------
+// Separate from PAID_PATHS (portfolio writes stay deliberately exempt from
+// the paywall — a lapsed account keeps editing its primary Portfolio, same
+// as today). Applied only to the mutating portfolio endpoints #103 named;
+// reads (GET /api/portfolio, GET /api/portfolios, GET /api/log) are never
+// gated — #102's cards show a locked Portfolio's value/P&L while dimmed,
+// which requires the data to keep loading. POST/PATCH/DELETE /api/portfolios
+// (plural — create/rename/delete) are not in this list: they already carry
+// their own cap/read-only checks.
+const PORTFOLIO_READONLY_GATED_PATHS = [
+  '/portfolio/trade', // also matches /portfolio/trades/:index and /portfolio/trades/:index/delete
+  '/portfolio/cash',
+  '/portfolio/corporate-action',
+  '/portfolio/levels',
+  '/portfolio/holding',
+  '/portfolio/watchlist',
+  '/portfolio/import-screenshot',
+  '/snapshot',
+  '/log/note',
+  '/settings/style',
+];
+app.use('/api', async (req, res, next) => {
+  if (!req.user || !PORTFOLIO_READONLY_GATED_PATHS.some((prefix) => req.path.startsWith(prefix))) return next();
+  const portfolioId = await portfolioIdFromRequest(req);
+  const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
+  const rank = await portfolioRankFor(req.user.id, portfolioId);
+  if (rank === -1 || rank >= portfolioCapFor(tier)) {
+    return res.status(403).json({ error: 'المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة' });
+  }
+  next();
 });
 
 // Per-account throttles on the endpoints that cost real money or CPU per call
