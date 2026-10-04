@@ -27,7 +27,7 @@ import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { sharedIpAccounts } from '../sharedIp.js';
-import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf, createPortfolioForUser } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf, createPortfolioForUser, renamePortfolio, deletePortfolio } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -2212,6 +2212,17 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
 // ---- Portfolio -------------------------------------------------------------
 
 /**
+ * A positive integer safe to use as a `bigint` portfolios.id, or null.
+ * Never throws. Postgres bigint range, not just JS safe-integer:
+ * `Number.isSafeInteger` alone still admits values that are a valid double
+ * but too wide for the `portfolios.id` column.
+ */
+function parsePositiveId(raw) {
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 && /^\d{1,15}$/.test(String(raw).trim()) ? id : null;
+}
+
+/**
  * Resolves which Portfolio this request means: the id named by the
  * X-Portfolio-Id header, if present and owned by this User — otherwise
  * (header absent, malformed, foreign, or pointing at a soft-deleted row)
@@ -2222,12 +2233,8 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
 async function portfolioIdFromRequest(req) {
   const header = req.headers['x-portfolio-id'];
   if (header !== undefined) {
-    const id = Number(header);
-    // Postgres bigint range, not just JS safe-integer: `Number.isSafeInteger`
-    // alone still admits values that are a valid double but too wide for the
-    // `portfolios.id` column, which would otherwise throw inside
-    // getPortfolioById below (see the try/catch there for the backstop).
-    if (Number.isSafeInteger(id) && id > 0 && /^\d{1,15}$/.test(String(header).trim())) {
+    const id = parsePositiveId(header);
+    if (id !== null) {
       try {
         const row = await getPortfolioById(id);
         if (row && row.userId === req.user.id && !row.deletedAt) return id;
@@ -2280,6 +2287,38 @@ app.post('/api/portfolios', wrap(async (req, res) => {
   const result = await createPortfolioForUser(req.user.id, { name, style }, portfolioCapFor(tier));
   if (!result.ok) return res.status(403).json({ error: 'وصلت للحد الأقصى من المحافظ' });
   res.status(201).json({ id: result.portfolio.id, name: result.portfolio.name, style: result.portfolio.style });
+}));
+
+app.patch('/api/portfolios/:id', wrap(async (req, res) => {
+  const id = parsePositiveId(req.params.id);
+  if (id === null) return res.status(404).json({ error: 'المحفظة غير موجودة' });
+  const name = req.body?.name === undefined ? undefined : String(req.body.name).trim();
+  if (name !== undefined && (!name || name.length > PORTFOLIO_NAME_MAX_LEN)) {
+    return res.status(400).json({ error: 'اسم المحفظة لازم يكون من حرف لحد 60' });
+  }
+  const style = req.body?.style;
+  if (style !== undefined && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: 'أسلوب غير معروف' });
+  if (name === undefined && style === undefined) return res.status(400).json({ error: 'مفيش حاجة للتعديل' });
+  const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
+  const result = await renamePortfolio(req.user.id, id, { name, style }, portfolioCapFor(tier));
+  if (!result.ok) {
+    return result.reason === 'not_found'
+      ? res.status(404).json({ error: 'المحفظة غير موجودة' })
+      : res.status(403).json({ error: 'المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة' });
+  }
+  res.json({ ok: true });
+}));
+
+app.delete('/api/portfolios/:id', wrap(async (req, res) => {
+  const id = parsePositiveId(req.params.id);
+  if (id === null) return res.status(404).json({ error: 'المحفظة غير موجودة' });
+  const result = await deletePortfolio(req.user.id, id);
+  if (!result.ok) {
+    return result.reason === 'not_found'
+      ? res.status(404).json({ error: 'المحفظة غير موجودة' })
+      : res.status(400).json({ error: 'مينفعش تمسح آخر محفظة' });
+  }
+  res.json({ ok: true });
 }));
 
 app.get('/api/portfolio', wrap(async (req, res) => {

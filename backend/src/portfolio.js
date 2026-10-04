@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { getPortfolioById, putPortfolioById, getUserUsage, putUserUsage, listPortfoliosForUser, insertPortfolio } from './db.js';
+import { getPortfolioById, putPortfolioById, getUserUsage, putUserUsage, listPortfoliosForUser, insertPortfolio, updatePortfolioMeta, softDeletePortfolio } from './db.js';
 import { lookup } from './config/universe.js';
 import { currentTenant } from './tenancy/context.js';
 
@@ -154,6 +154,46 @@ export async function createPortfolioForUser(userId, { name, style }, cap) {
     const row = await insertPortfolio(userId, { name, style, ordinal });
     await savePortfolio({ ...EMPTY, settings: { investStyle: style } }, row.id);
     return { ok: true, portfolio: row };
+  });
+}
+
+/**
+ * Renames and/or restyles a Portfolio — blocked once it's past the User's
+ * cap (#103: read-only, same as every other write) or if it isn't one of
+ * this User's live Portfolios. Keeps the two-place style write (see the
+ * plan's Global Constraints) in step, the same as creation does.
+ *
+ * @returns {Promise<{ok: true} | {ok: false, reason: 'not_found' | 'readonly'}>}
+ */
+export async function renamePortfolio(userId, portfolioId, { name, style }, cap) {
+  return withUserLock(userId, async () => {
+    const list = await listPortfoliosForUser(userId);
+    const rank = list.findIndex((p) => p.id === portfolioId);
+    if (rank === -1) return { ok: false, reason: 'not_found' };
+    if (rank >= cap) return { ok: false, reason: 'readonly' };
+    await updatePortfolioMeta(portfolioId, { name, style });
+    if (style) {
+      const portfolio = await loadPortfolio(portfolioId);
+      await savePortfolio({ ...portfolio, settings: { ...portfolio.settings, investStyle: style } }, portfolioId);
+    }
+    return { ok: true };
+  });
+}
+
+/**
+ * Soft-deletes a Portfolio — allowed even when it's read-only (#102's
+ * resolution: deleting a locked Portfolio is how a User promotes the next
+ * one), refused only when it's the User's last live Portfolio.
+ *
+ * @returns {Promise<{ok: true} | {ok: false, reason: 'not_found' | 'last'}>}
+ */
+export async function deletePortfolio(userId, portfolioId) {
+  return withUserLock(userId, async () => {
+    const list = await listPortfoliosForUser(userId);
+    if (!list.some((p) => p.id === portfolioId)) return { ok: false, reason: 'not_found' };
+    if (list.length <= 1) return { ok: false, reason: 'last' };
+    await softDeletePortfolio(portfolioId);
+    return { ok: true };
   });
 }
 

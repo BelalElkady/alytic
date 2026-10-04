@@ -127,3 +127,76 @@ test('a Portfolio past the User\'s cap is marked read-only; the first stays writ
   assert.equal(first.readOnly, false);
   assert.equal(extra.readOnly, true);
 });
+
+test('PATCH /api/portfolios/:id renames and restyles a writable Portfolio', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  await setUserAdmin(user.id, true);
+  const created = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثانية', style: 'trader' } });
+  const res = await request(baseUrl, 'PATCH', `/api/portfolios/${created.body.id}`, { cookie, body: { name: 'اسم جديد', style: 'long' } });
+  assert.equal(res.status, 200, res.text);
+  const list = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
+  const renamed = list.body.portfolios.find((p) => p.id === created.body.id);
+  assert.equal(renamed.name, 'اسم جديد');
+  assert.equal(renamed.style, 'long');
+});
+
+// Read-only via a direct insert (as above), not a downgrade: see Task 1's
+// ledgered ruling on registerUser + setUserAdmin(false) mid-test and session caching.
+test('PATCH on a Portfolio past the cap 403s — it is read-only', async () => {
+  const { cookie, user } = await registerUser(baseUrl); // free/trial — cap 1
+  const { data: second } = await supabase.from('portfolios').insert({
+    user_id: user.id, name: 'الثانية', ordinal: 1, state_json: { cash: 0, positions: {}, log: {} },
+  }).select('id').single();
+  const res = await request(baseUrl, 'PATCH', `/api/portfolios/${second.id}`, { cookie, body: { name: 'محاولة' } });
+  assert.equal(res.status, 403, res.text);
+});
+
+test('PATCH on another User\'s Portfolio 404s — never reveals that the id exists', async () => {
+  const other = await registerUser(baseUrl);
+  const otherPortfolioId = await primaryPortfolioIdFor(other.user.id);
+  const { cookie } = await registerUser(baseUrl);
+  const res = await request(baseUrl, 'PATCH', `/api/portfolios/${otherPortfolioId}`, { cookie, body: { name: 'محاولة' } });
+  assert.equal(res.status, 404, res.text);
+  // Must be this route's own "Portfolio not found" — not Express's generic
+  // "route not found", which would also be a 404 and make this test pass
+  // before the route is even implemented.
+  assert.equal(res.body.error, 'المحفظة غير موجودة');
+});
+
+test('DELETE on a User\'s only Portfolio 400s', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  const onlyId = await primaryPortfolioIdFor(user.id);
+  const res = await request(baseUrl, 'DELETE', `/api/portfolios/${onlyId}`, { cookie });
+  assert.equal(res.status, 400, res.text);
+});
+
+test('DELETE succeeds on a read-only Portfolio — deleting is how a User promotes the next one', async () => {
+  const { cookie, user } = await registerUser(baseUrl); // free/trial — cap 1
+  const { data: second } = await supabase.from('portfolios').insert({
+    user_id: user.id, name: 'الثانية', ordinal: 1, state_json: { cash: 0, positions: {}, log: {} },
+  }).select('id').single();
+  const res = await request(baseUrl, 'DELETE', `/api/portfolios/${second.id}`, { cookie });
+  assert.equal(res.status, 200, res.text);
+  const list = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
+  assert.equal(list.body.portfolios.length, 1);
+});
+
+test('deleting the active Portfolio: a request still carrying its (now-deleted) id falls back to the primary, not an error', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  await setUserAdmin(user.id, true);
+  const primaryId = await primaryPortfolioIdFor(user.id);
+  const created = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثانية', style: 'trader' } });
+  const headers = { 'x-portfolio-id': String(created.body.id) };
+  // Confirm the header actually addresses the new Portfolio before deleting it.
+  const before = await request(baseUrl, 'GET', '/api/portfolios', { cookie, headers });
+  assert.equal(before.body.activePortfolioId, created.body.id);
+
+  const del = await request(baseUrl, 'DELETE', `/api/portfolios/${created.body.id}`, { cookie });
+  assert.equal(del.status, 200, del.text);
+
+  // Same stale header as before the delete — must silently fall back, like
+  // any other header naming a Portfolio that no longer resolves.
+  const after = await request(baseUrl, 'GET', '/api/portfolios', { cookie, headers });
+  assert.equal(after.status, 200, after.text);
+  assert.equal(after.body.activePortfolioId, primaryId);
+});

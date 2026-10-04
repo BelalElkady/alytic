@@ -277,6 +277,27 @@ export async function insertPortfolio(userId, { name, style, ordinal }) {
   return { id: row.id, userId: row.user_id, name: row.name, style: row.style, ordinal: row.ordinal, state: row.state_json, deletedAt: row.deleted_at };
 }
 
+/** Column-only update — name and/or style, never state_json. */
+export async function updatePortfolioMeta(portfolioId, { name, style }) {
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (style !== undefined) patch.style = style;
+  const updated = must(
+    await supabase.from('portfolios').update(patch).eq('id', portfolioId).select('id'),
+    'updatePortfolioMeta',
+  );
+  if (!updated.length) throw new Error(`updatePortfolioMeta: no Portfolio with id ${portfolioId}`);
+}
+
+/** Soft-deletes a Portfolio (ADR 0002 §5) — sets deleted_at, never removes the row. */
+export async function softDeletePortfolio(portfolioId) {
+  const updated = must(
+    await supabase.from('portfolios').update({ deleted_at: new Date().toISOString() }).eq('id', portfolioId).select('id'),
+    'softDeletePortfolio',
+  );
+  if (!updated.length) throw new Error(`softDeletePortfolio: no Portfolio with id ${portfolioId}`);
+}
+
 /**
  * Update-only, unlike the old user_id-keyed putPortfolio: `id` is a
  * `generated always as identity` column, so there is no row to "insert" at a
