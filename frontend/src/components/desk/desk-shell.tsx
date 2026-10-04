@@ -652,7 +652,7 @@ function DeskHeader() {
             )}
             {activePortfolioName && (
               <Link to="/portfolio" aria-label="المحفظة النشطة — افتح للتبديل">
-                <Badge variant="outline" className="whitespace-nowrap">
+                <Badge variant="default" className="whitespace-nowrap">
                   المحفظة: {activePortfolioName}
                 </Badge>
               </Link>
