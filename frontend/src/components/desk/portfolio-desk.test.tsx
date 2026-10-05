@@ -180,10 +180,17 @@ describe("PortfolioDesk", () => {
     expect(screen.getByText(/للعرض بس/)).toBeInTheDocument();
   });
 
-  it("renders the wrapped children below the overview panel", () => {
+  it("renders the wrapped children below the overview panel when there's more than one wallet", () => {
+    setDesk({ portfolios: [basePortfolio({ id: 1 }), basePortfolio({ id: 2, name: "الثانية", active: false })] });
     render(<PortfolioDesk>علامة-مميزة-للمحتوى</PortfolioDesk>);
     expect(screen.getByText("علامة-مميزة-للمحتوى")).toBeInTheDocument();
     expect(screen.getByText("إجمالي المحافظ")).toBeInTheDocument();
+  });
+
+  it("hides the overview panel for a User with only one wallet — nothing there to total or allocate", () => {
+    render(<PortfolioDesk>علامة-مميزة-للمحتوى</PortfolioDesk>);
+    expect(screen.getByText("علامة-مميزة-للمحتوى")).toBeInTheDocument();
+    expect(screen.queryByText("إجمالي المحافظ")).not.toBeInTheDocument();
   });
 
   it("sums the same live numbers the wallet cards show, not the saved snapshots", () => {

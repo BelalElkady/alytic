@@ -567,12 +567,15 @@ export function PortfolioDesk({ children }: { children: ReactNode }) {
 
   return (
     <div className="space-y-4">
-      <Panel title="إجمالي المحافظ">
-        <div className="space-y-5">
-          <OverallStats portfolios={portfolios} cap={portfolioCap} />
-          <AllocationBar portfolios={portfolios} />
-        </div>
-      </Panel>
+      {/* A single wallet has nothing to total or allocate across — the panel would just repeat its own card. */}
+      {portfolios.length > 1 && (
+        <Panel title="إجمالي المحافظ">
+          <div className="space-y-5">
+            <OverallStats portfolios={portfolios} cap={portfolioCap} />
+            <AllocationBar portfolios={portfolios} />
+          </div>
+        </Panel>
+      )}
 
       {active && <ReadOnlyNotice active={active} />}
       {active && (
