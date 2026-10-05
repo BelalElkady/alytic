@@ -2354,7 +2354,11 @@ app.post('/api/portfolios', wrap(async (req, res) => {
   if (!STYLE_KEYS.includes(style)) return res.status(400).json({ error: 'أسلوب غير معروف' });
   const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
   const result = await createPortfolioForUser(req.user.id, { name, style }, portfolioCapFor(tier));
-  if (!result.ok) return res.status(403).json({ error: 'وصلت للحد الأقصى من المحافظ' });
+  if (!result.ok) {
+    return result.reason === 'duplicate_style'
+      ? res.status(409).json({ error: 'كل محفظة لازم يكون ليها أسلوب تداول مختلف' })
+      : res.status(403).json({ error: 'وصلت للحد الأقصى من المحافظ' });
+  }
   res.status(201).json({ id: result.portfolio.id, name: result.portfolio.name, style: result.portfolio.style });
 }));
 
@@ -2371,9 +2375,11 @@ app.patch('/api/portfolios/:id', wrap(async (req, res) => {
   const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
   const result = await renamePortfolio(req.user.id, id, { name, style }, portfolioCapFor(tier));
   if (!result.ok) {
-    return result.reason === 'not_found'
-      ? res.status(404).json({ error: 'المحفظة غير موجودة' })
-      : res.status(403).json({ error: 'المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة' });
+    if (result.reason === 'not_found') return res.status(404).json({ error: 'المحفظة غير موجودة' });
+    if (result.reason === 'duplicate_style') {
+      return res.status(409).json({ error: 'كل محفظة لازم يكون ليها أسلوب تداول مختلف' });
+    }
+    return res.status(403).json({ error: 'المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة' });
   }
   res.json({ ok: true });
 }));

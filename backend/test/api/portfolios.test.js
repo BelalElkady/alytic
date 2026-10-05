@@ -113,11 +113,14 @@ test('POST /api/portfolios rejects a missing or unknown style', async () => {
 test('a الحريفة User can create up to 3 Portfolios, and a 4th 403s', async () => {
   const { cookie, user } = await registerUser(baseUrl);
   await setUserAdmin(user.id, true);
-  const second = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثانية', style: 'trader' } });
+  const initial = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
+  const usedStyles = new Set(initial.body.portfolios.map((portfolio) => portfolio.style));
+  const styles = ['trader', 'medium', 'long'].filter((style) => !usedStyles.has(style));
+  const second = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثانية', style: styles[0] } });
   assert.equal(second.status, 201, second.text);
-  const third = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثالثة', style: 'long' } });
+  const third = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الثالثة', style: styles[1] } });
   assert.equal(third.status, 201, third.text);
-  const fourth = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الرابعة', style: 'medium' } });
+  const fourth = await request(baseUrl, 'POST', '/api/portfolios', { cookie, body: { name: 'الرابعة', style: styles[2] } });
   assert.equal(fourth.status, 403, fourth.text);
 
   const list = await request(baseUrl, 'GET', '/api/portfolios', { cookie });
@@ -125,7 +128,22 @@ test('a الحريفة User can create up to 3 Portfolios, and a 4th 403s', asyn
   assert.equal(list.body.cap, 3);
   assert.deepEqual(list.body.portfolios.map((p) => p.readOnly), [false, false, false]);
   assert.equal(list.body.portfolios[1].name, 'الثانية');
-  assert.equal(list.body.portfolios[1].style, 'trader');
+  assert.equal(new Set(list.body.portfolios.map((portfolio) => portfolio.style)).size, 3);
+});
+
+test('POST /api/portfolios rejects a trading style already assigned to a wallet', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  await setUserAdmin(user.id, true);
+  const existing = await request(baseUrl, 'POST', '/api/portfolios', {
+    cookie,
+    body: { name: 'محفظة المضاربة', style: 'trader' },
+  });
+  assert.equal(existing.status, 201, existing.text);
+  const res = await request(baseUrl, 'POST', '/api/portfolios', {
+    cookie,
+    body: { name: 'محفظة مكررة', style: 'trader' },
+  });
+  assert.equal(res.status, 409, res.text);
 });
 
 test('a Portfolio past the User\'s cap is marked read-only; the first stays writable', async () => {
@@ -164,6 +182,26 @@ test('PATCH /api/portfolios/:id renames and restyles a writable Portfolio', asyn
   const renamed = list.body.portfolios.find((p) => p.id === created.body.id);
   assert.equal(renamed.name, 'اسم جديد');
   assert.equal(renamed.style, 'long');
+});
+
+test('PATCH /api/portfolios/:id rejects a style used by another wallet', async () => {
+  const { cookie, user } = await registerUser(baseUrl);
+  await setUserAdmin(user.id, true);
+  const first = await request(baseUrl, 'POST', '/api/portfolios', {
+    cookie,
+    body: { name: 'الثانية', style: 'trader' },
+  });
+  assert.equal(first.status, 201, first.text);
+  const created = await request(baseUrl, 'POST', '/api/portfolios', {
+    cookie,
+    body: { name: 'الثالثة', style: 'medium' },
+  });
+  assert.equal(created.status, 201, created.text);
+  const res = await request(baseUrl, 'PATCH', `/api/portfolios/${created.body.id}`, {
+    cookie,
+    body: { style: 'trader' },
+  });
+  assert.equal(res.status, 409, res.text);
 });
 
 // Read-only via a direct insert (as above), not a downgrade: see Task 1's

@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { Lock, MoreHorizontal, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 type Pf = ReturnType<typeof useDesk>["portfolios"][number];
 
 /** One color per Portfolio, by its position in `portfolios` — same order everywhere (AllocationBar, the switcher cards, HeroBar's tag), so a Portfolio reads as the same color across the desk. */
-export const PORTFOLIO_COLORS = ["bg-primary", "bg-amber-500", "bg-sky-500"];
+export const PORTFOLIO_COLORS = ["bg-primary", "bg-amber-500", "bg-purple-500"];
 const COLORS = PORTFOLIO_COLORS;
 const round = (n: number) => Math.round(n * 100) / 100;
 /**
@@ -164,17 +164,28 @@ function PortfolioDialog({
   onOpenChange,
   title,
   initial,
+  portfolios,
+  portfolioId,
+  defaultStyle = "trader",
   onSave,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   title: string;
   initial?: { name: string; style: StyleKey };
+  portfolios: Pf[];
+  portfolioId?: number;
+  defaultStyle?: StyleKey;
   onSave: (name: string, style: StyleKey) => Promise<void>;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [style, setStyle] = useState<StyleKey>(initial?.style ?? "trader");
+  const [style, setStyle] = useState<StyleKey>(initial?.style ?? defaultStyle);
   const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setName(initial?.name ?? "");
+    setStyle(initial?.style ?? defaultStyle);
+  }, [defaultStyle, initial?.name, initial?.style, open]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent dir="rtl" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
@@ -197,19 +208,29 @@ function PortfolioDialog({
                 <button
                   key={x.key}
                   type="button"
+                  disabled={x.key !== style && portfolios.some(
+                    (portfolio) => portfolio.id !== portfolioId && portfolio.style === x.key,
+                  )}
                   onClick={() => setStyle(x.key)}
                   className={cn(
                     "rounded-lg border p-2.5 text-start text-[13px]",
                     style === x.key ? "border-primary bg-primary/5" : "border-border",
+                    x.key !== style && portfolios.some(
+                      (portfolio) => portfolio.id !== portfolioId && portfolio.style === x.key,
+                    ) && "cursor-not-allowed opacity-45",
                   )}
                 >
                   <div className="font-semibold">{x.label}</div>
-                  <div className="text-[11.5px] text-muted-foreground">أفق {x.horizon}</div>
+                  <div className="text-[11.5px] text-muted-foreground">
+                    {x.key !== style && portfolios.some(
+                      (portfolio) => portfolio.id !== portfolioId && portfolio.style === x.key,
+                    ) ? "مستخدم في محفظة أخرى" : `أفق ${x.horizon}`}
+                  </div>
                 </button>
               ))}
             </div>
             <p className="text-[11.5px] text-muted-foreground">
-              التوصيات ووقف الخسارة في المحفظة دي هتتعمل على الأسلوب ده.
+              لكل محفظة أسلوب تداول مختلف، والتوصيات ووقف الخسارة بتتحدد على أساسه.
             </p>
           </div>
         </div>
@@ -279,6 +300,8 @@ function ManageMenu({ p }: { p: Pf }) {
         onOpenChange={setEdit}
         title="تعديل المحفظة"
         initial={{ name: p.name, style: (p.style as StyleKey | null) ?? "medium" }}
+        portfolios={portfolios}
+        portfolioId={p.id}
         onSave={(name, style) => renamePortfolio(p.id, { name, style })}
       />
       <Dialog open={del} onOpenChange={setDel}>
@@ -320,6 +343,9 @@ function AddButton({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
   const { user, createPortfolio } = useDesk();
   const [open, setOpen] = useState(false);
   const [upsellOpen, setUpsellOpen] = useState(false);
+  const defaultStyle = INVEST_STYLES.find(
+    (candidate) => !portfolios.some((portfolio) => portfolio.style === candidate.key),
+  )?.key ?? "trader";
   if (portfolios.length >= cap) {
     if (user?.tier !== "trader" && portfolios.length === 1) {
       return (
@@ -352,6 +378,8 @@ function AddButton({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
         open={open}
         onOpenChange={setOpen}
         title="محفظة جديدة"
+        portfolios={portfolios}
+        defaultStyle={defaultStyle}
         onSave={(name, style) => createPortfolio(name, style)}
       />
     </>
@@ -372,9 +400,15 @@ function AddButton({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
 export function PortfolioSwitcher() {
   const { portfolioCap, switchPortfolio } = useDesk();
   const portfolios = useMergedPortfolios();
+  const total = portfolios.reduce((sum, portfolio) => sum + portfolio.value + portfolio.cash, 0) || 1;
 
   return (
-    <div className="flex flex-wrap gap-2.5">
+    <div
+      role="group"
+      aria-label="المحافظ"
+      aria-roledescription="شريط تمرير أفقي"
+      className="-mx-3 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-3 pb-2 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+    >
       {portfolios.map((p, i) => (
         <div
           key={p.id}
@@ -388,21 +422,35 @@ export function PortfolioSwitcher() {
             }
           }}
           className={cn(
-            "flex cursor-pointer items-center gap-2.5 rounded-xl border bg-card px-3.5 py-2.5 text-start transition",
+            "flex w-[min(78vw,20rem)] shrink-0 snap-start cursor-pointer items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 text-start transition sm:w-auto sm:px-3.5",
             p.active
-              ? "border-primary ring-2 ring-primary/30"
+              ? p.pl > 0
+                ? "border-up bg-up-soft ring-2 ring-up/45"
+                : p.pl < 0
+                  ? "border-down bg-down-soft ring-2 ring-down/45"
+                  : "border-primary bg-primary/5 ring-2 ring-primary/30"
               : "border-border hover:border-primary/40",
             p.readOnly && "opacity-70",
           )}
         >
           <ManageMenu p={p} />
           <span className={cn("size-2.5 shrink-0 rounded-full", COLORS[i % COLORS.length])} />
-          <div className="flex flex-col items-start gap-1">
+          <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
             <span className="flex items-center gap-1.5 font-semibold">
-              {p.name}
+              <span className="truncate">{p.name}</span>
               {p.readOnly && <Lock className="size-3.5" />}
             </span>
             <StyleBadge style={p.style} />
+            <span className="text-[10.5px] text-muted-foreground">
+              حصة من الإجمالي <span className="num font-semibold text-foreground">
+                {pct(round(((p.value + p.cash) / total) * 100))}
+              </span>
+            </span>
+            <PlText
+              pl={p.pl}
+              plPct={p.value - p.pl ? (p.pl / (p.value - p.pl)) * 100 : 0}
+              className="text-[10.5px]"
+            />
           </div>
         </div>
       ))}
@@ -419,7 +467,7 @@ export function PortfolioDesk({ children }: { children: ReactNode }) {
 
   return (
     <div className="space-y-4">
-      <Panel title="فلوسك كلها">
+      <Panel title="إجمالي المحافظ">
         <div className="space-y-5">
           <OverallStats portfolios={portfolios} cap={portfolioCap} />
           <AllocationBar portfolios={portfolios} />

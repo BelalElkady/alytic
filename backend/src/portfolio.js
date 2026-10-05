@@ -144,12 +144,15 @@ export async function withPortfolio(userId, portfolioId, mutator) {
  * other Portfolio write, so two concurrent creates can't both slip past
  * the cap.
  *
- * @returns {Promise<{ok: true, portfolio: object} | {ok: false, reason: 'cap'}>}
+ * @returns {Promise<{ok: true, portfolio: object} | {ok: false, reason: 'cap' | 'duplicate_style'}>}
  */
 export async function createPortfolioForUser(userId, { name, style }, cap) {
   return withUserLock(userId, async () => {
     const list = await listPortfoliosForUser(userId);
     if (list.length >= cap) return { ok: false, reason: 'cap' };
+    if (list.some((portfolio) => (portfolio.style ?? portfolio.state?.settings?.investStyle) === style)) {
+      return { ok: false, reason: 'duplicate_style' };
+    }
     const ordinal = list.length ? Math.max(...list.map((p) => p.ordinal)) + 1 : 0;
     const row = await insertPortfolio(userId, { name, style, ordinal });
     await savePortfolio({ ...EMPTY, settings: { investStyle: style } }, row.id);
@@ -173,13 +176,21 @@ export async function portfolioRankFor(userId, portfolioId) {
  * this User's live Portfolios. Keeps the two-place style write (see the
  * plan's Global Constraints) in step, the same as creation does.
  *
- * @returns {Promise<{ok: true} | {ok: false, reason: 'not_found' | 'readonly'}>}
+ * @returns {Promise<{ok: true} | {ok: false, reason: 'not_found' | 'readonly' | 'duplicate_style'}>}
  */
 export async function renamePortfolio(userId, portfolioId, { name, style }, cap) {
   return withUserLock(userId, async () => {
     const rank = await portfolioRankFor(userId, portfolioId);
     if (rank === -1) return { ok: false, reason: 'not_found' };
     if (rank >= cap) return { ok: false, reason: 'readonly' };
+    const list = await listPortfoliosForUser(userId);
+    const current = list.find((portfolio) => portfolio.id === portfolioId);
+    const currentStyle = current?.style ?? current?.state?.settings?.investStyle;
+    if (style && style !== currentStyle && list.some(
+      (portfolio) => portfolio.id !== portfolioId && (portfolio.style ?? portfolio.state?.settings?.investStyle) === style,
+    )) {
+      return { ok: false, reason: 'duplicate_style' };
+    }
     await updatePortfolioMeta(portfolioId, { name, style });
     if (style) {
       const portfolio = await loadPortfolio(portfolioId);
