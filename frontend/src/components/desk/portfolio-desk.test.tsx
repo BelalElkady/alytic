@@ -57,6 +57,7 @@ describe("PortfolioSwitcher", () => {
         basePortfolio({ id: 2, active: false }),
         basePortfolio({ id: 3, active: false }),
       ],
+      totals: { value: 90000, cost: 89500, pl: 500, plPct: 0.56, day: 0, cash: 2000, hasDay: false },
       portfolioCap: 3,
       user: { tier: "trader" },
     });
@@ -91,6 +92,8 @@ describe("PortfolioSwitcher", () => {
     render(<PortfolioSwitcher />);
     expect(screen.getByRole("group", { name: "المحافظ" })).toHaveClass("overflow-x-auto");
     expect(screen.getAllByText(/حصة من الإجمالي/)).toHaveLength(2);
+    expect(screen.getByText("+66.67%")).toBeInTheDocument();
+    expect(screen.getByText("+33.33%")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /المحفظة الرئيسية/ })).toHaveClass("border-up");
     expect(screen.getByRole("button", { name: /الثانية/ })).toHaveTextContent("-250 ج (-4.76%)");
   });
@@ -174,5 +177,16 @@ describe("PortfolioDesk", () => {
     render(<PortfolioDesk>علامة-مميزة-للمحتوى</PortfolioDesk>);
     expect(screen.getByText("علامة-مميزة-للمحتوى")).toBeInTheDocument();
     expect(screen.getByText("إجمالي المحافظ")).toBeInTheDocument();
+  });
+
+  it("keeps aggregate values on saved wallet snapshots instead of selected-wallet live totals", () => {
+    setDesk({
+      portfolios: [basePortfolio({ value: 4000, cash: 500, pl: 100 })],
+      totals: { value: 99000, cost: 98900, pl: 100, plPct: 0.1, day: 0, cash: 6000, hasDay: false },
+    });
+    render(<PortfolioDesk>مراكز</PortfolioDesk>);
+    expect(screen.getByText("4,000 ج")).toBeInTheDocument();
+    expect(screen.getByText("500 ج")).toBeInTheDocument();
+    expect(screen.queryByText("99,000 ج")).not.toBeInTheDocument();
   });
 });

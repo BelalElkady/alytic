@@ -2308,6 +2308,20 @@ async function portfolioIdFromRequest(req) {
   return primaryPortfolioIdFor(req.user.id);
 }
 
+/** Positions valued at each stock's last cached daily close — its average cost when no bar is cached. */
+async function valueAtLastClose(positions) {
+  let value = 0;
+  let cost = 0;
+  for (const [code, position] of Object.entries(positions)) {
+    const shares = position.shares ?? 0;
+    const avgCost = position.avgCost ?? 0;
+    const close = (await readBars(code))?.bars?.at(-1)?.c;
+    value += shares * (close ?? avgCost);
+    cost += shares * avgCost;
+  }
+  return { value: +value.toFixed(2), pl: +(value - cost).toFixed(2) };
+}
+
 app.get('/api/portfolios', wrap(async (req, res) => {
   const [rows, activePortfolioId, tier] = await Promise.all([
     listPortfoliosForUser(req.user.id),
@@ -2315,10 +2329,14 @@ app.get('/api/portfolios', wrap(async (req, res) => {
     req.access?.tier !== undefined ? Promise.resolve(req.access.tier) : accessInfo(req.user).then((a) => a.tier),
   ]);
   const cap = portfolioCapFor(tier);
-  const portfolios = rows.map((row, index) => {
+  const portfolios = await Promise.all(rows.map(async (row, index) => {
     const log = row.state?.log ?? {};
     const dates = Object.keys(log).sort();
     const last = dates.length ? log[dates[dates.length - 1]] : null;
+    // A Portfolio with no saved snapshot yet (created today, never closed a
+    // session) would otherwise report its positions as worth 0 — leaving a
+    // negative cash balance as its whole value.
+    const unsaved = last ? null : await valueAtLastClose(row.state?.positions ?? {});
     return {
       id: row.id,
       name: row.name,
@@ -2332,14 +2350,14 @@ app.get('/api/portfolios', wrap(async (req, res) => {
       // the frontend's active-Portfolio card already means "positions" by
       // `value` (store.tsx totals.value) and adds `cash` on top itself, so
       // a `value` that already included cash was being double-counted.
-      value: last ? (last.positionsValue ?? last.total - last.cash) : 0,
-      pl: last ? last.pl : 0,
+      value: last ? (last.positionsValue ?? last.total - last.cash) : unsaved.value,
+      pl: last ? last.pl : unsaved.pl,
       cash: last ? last.cash : (row.state?.cash ?? 0),
       positionCount: Object.keys(row.state?.positions ?? {}).length,
       active: row.id === activePortfolioId,
       readOnly: index >= cap,
     };
-  });
+  }));
   res.json({ portfolios, activePortfolioId, cap });
 }));
 

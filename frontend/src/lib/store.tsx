@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -223,7 +224,7 @@ type DeskValue = {
    * `knownStyle` lets a caller that already knows the target's style (a
    * just-created Portfolio, not yet in `portfolios`) skip the lookup.
    */
-  switchPortfolio: (id: number, knownStyle?: StyleKey) => void;
+  switchPortfolio: (id: number, knownStyle?: StyleKey, refreshPortfolioList?: boolean) => void;
   /** Creates a new Portfolio and switches the desk to it. */
   createPortfolio: (name: string, style: StyleKey) => Promise<void>;
   /** Renames and/or restyles a Portfolio, then refreshes the summary list. */
@@ -289,7 +290,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     if (serverStyle === undefined) return;
     const local = explicitInvestStyle();
     if (local && local !== serverStyle) {
-      void post("/api/settings/style", { style: local }).catch(() => {});
+      void post("/api/settings/style", { style: local }).catch(() => { });
     } else if (!local && isStyleKey(serverStyle)) {
       setInvestStyle(serverStyle);
     }
@@ -319,6 +320,13 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     [refreshUser],
   );
 
+  const reloadPortfolioList = useCallback(async () => {
+    const { portfolios: list, activePortfolioId: activeId, cap } = await api("/api/portfolios");
+    setPortfolios(list ?? []);
+    setActivePortfolioId(activeId ?? null);
+    setPortfolioCap(cap ?? 1);
+  }, []);
+
   /**
    * Same sequence as before: portfolio → scan of held codes → daily log.
    * `pf` and `rows` are committed together, only once both are known — never
@@ -327,30 +335,32 @@ export function DeskProvider({ children }: { children: ReactNode }) {
    * cash with the previous one's still-stale position values, a jump the
    * desk switcher made visible as numbers "hallucinating" before settling.
    */
-  const reload = useCallback(async () => {
+  const reload = useCallback(async ({
+    refreshPortfolioList = true,
+    scanStyle = style,
+  }: { refreshPortfolioList?: boolean; scanStyle?: StyleKey } = {}) => {
     setLoading(true);
     try {
       const portfolio = await api("/api/portfolio");
       const codes = Object.keys(portfolio?.positions ?? {});
       const scanned = codes.length
-        ? (await api(`/api/scan?codes=${codes.join(",")}&style=${style}`)).results.filter(
-            (r: Row) => r.position,
-          )
+        ? (await api(`/api/scan?codes=${codes.join(",")}&style=${scanStyle}`)).results.filter(
+          (r: Row) => r.position,
+        )
         : [];
       setPf(portfolio);
       setRows(scanned);
-      // A transient failure here (or a version-skew 404 against an old
-      // cached bundle) must never block the rest of reload()'s fetches,
-      // which the UI does depend on — the desk switcher just goes empty.
-      try {
-        const { portfolios: list, activePortfolioId: activeId, cap } = await api("/api/portfolios");
-        setPortfolios(list ?? []);
-        setActivePortfolioId(activeId ?? null);
-        setPortfolioCap(cap ?? 1);
-      } catch {
-        setPortfolios([]);
-        setActivePortfolioId(null);
-        setPortfolioCap(1);
+      if (refreshPortfolioList) {
+        // A transient failure here (or a version-skew 404 against an old
+        // cached bundle) must never block the rest of reload()'s fetches,
+        // which the UI does depend on — the desk switcher just goes empty.
+        try {
+          await reloadPortfolioList();
+        } catch {
+          setPortfolios([]);
+          setActivePortfolioId(null);
+          setPortfolioCap(1);
+        }
       }
       setLog((await api("/api/log")).log ?? {});
       setError(null);
@@ -360,11 +370,16 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [style, handledExpiry]);
+  }, [style, handledExpiry, reloadPortfolioList]);
 
   const reloadPortfolio = useCallback(async () => {
     setPf(await api("/api/portfolio"));
-  }, []);
+    try {
+      await reloadPortfolioList();
+    } catch {
+      // Keep the previous all-wallet summary if its refresh fails.
+    }
+  }, [reloadPortfolioList]);
 
   const reloadLog = useCallback(async () => {
     setLog((await api("/api/log")).log ?? {});
@@ -533,12 +548,16 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   // that the API would answer with 402 anyway is pure waste.
   const hasAccess = user ? user.hasAccess !== false : false;
 
-  useEffect(() => {
-    if (!user || !hasAccess) return;
+  const initialLoad = useEffectEvent(() => {
     void loadUniverse();
     void loadIndices();
     void reload();
-  }, [user, hasAccess, loadUniverse, loadIndices, reload]);
+  });
+
+  useEffect(() => {
+    if (!user || !hasAccess) return;
+    initialLoad();
+  }, [user, hasAccess]);
 
   useEffect(() => {
     if (!user || !hasAccess) return;
@@ -552,7 +571,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         // the background — a trade, or a recommendation asked for there (kept
         // in pf.lastVerdicts). A phone keeps a tab open for days, so without
         // this it went on showing the portfolio it first loaded.
-        void reloadPortfolio().catch(() => {});
+        void reloadPortfolio().catch(() => { });
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -619,7 +638,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   // wall until the next tab refocus.
   const markEmailVerified = useCallback(() => {
     setUser((previous) => (previous ? { ...previous, emailVerified: true } : previous));
-    void refreshUser().catch(() => {});
+    void refreshUser().catch(() => { });
   }, [refreshUser]);
 
   const updatePhone = useCallback(async (phone: string) => {
@@ -644,7 +663,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   // switched to with whatever style this device last had active, silently
   // discarding the style it was created or renamed with.
   const switchPortfolio = useCallback(
-    (id: number, knownStyle?: StyleKey) => {
+    (id: number, knownStyle?: StyleKey, refreshPortfolioList = false) => {
       try {
         localStorage.setItem("alytic-active-portfolio", String(id));
       } catch {
@@ -653,13 +672,14 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       const style = knownStyle ?? portfolios.find((p) => p.id === id)?.style;
       if (isStyleKey(style)) setInvestStyle(style);
       setActivePortfolioId(id);
+      setPortfolios((current) => current.map((portfolio) => ({ ...portfolio, active: portfolio.id === id })));
       // Clears the totals along with the tag: otherwise the switcher's active
       // highlight and HeroBar's name tag jump to the new Portfolio instantly,
       // while its numbers stay the previous Portfolio's until reload()
       // resolves — reload()'s loading skeleton (HeroBar) takes over instead.
       setPf(null);
       setRows([]);
-      void reload();
+      void reload({ refreshPortfolioList, scanStyle: isStyleKey(style) ? style : undefined });
     },
     [reload, portfolios],
   );
@@ -670,7 +690,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       const { id } = await post("/api/portfolios", { name, style });
       // Known immediately — the summary list a plain switch reads from
       // doesn't include this Portfolio yet (it only refreshes via reload()).
-      switchPortfolio(id, style);
+      switchPortfolio(id, style, true);
     },
     [switchPortfolio],
   );
@@ -696,7 +716,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     async (id: number) => {
       await del(`/api/portfolios/${id}`);
       if (activePortfolioId === id) {
-        const { activePortfolioId: fallbackId, portfolios: list } = await api("/api/portfolios");
+        const { activePortfolioId: fallbackId, portfolios: list, cap } = await api("/api/portfolios");
+        setPortfolios(list ?? []);
+        setPortfolioCap(cap ?? 1);
         const fallback = list?.find((p: { id: number }) => p.id === fallbackId) ?? list?.[0];
         switchPortfolio(fallback?.id, fallback?.style);
       } else {

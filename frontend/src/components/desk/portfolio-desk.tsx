@@ -30,6 +30,7 @@ type Pf = ReturnType<typeof useDesk>["portfolios"][number];
 /** One color per Portfolio, by its position in `portfolios` — same order everywhere (AllocationBar, the switcher cards, HeroBar's tag), so a Portfolio reads as the same color across the desk. */
 export const PORTFOLIO_COLORS = ["bg-primary", "bg-amber-500", "bg-purple-500"];
 const COLORS = PORTFOLIO_COLORS;
+const LABEL_COLORS = ["text-primary", "text-amber-500", "text-purple-500"];
 const round = (n: number) => Math.round(n * 100) / 100;
 /**
  * Every card is a clickable role="button" div; Radix portals its dropdown
@@ -82,16 +83,26 @@ function AllocationBar({ portfolios }: { portfolios: Pf[] }) {
           <div
             key={p.id}
             className={COLORS[i % COLORS.length]}
-            style={{ width: `${((p.value + p.cash) / total) * 100}%` }}
+            style={{ width: `${Math.max(0, ((p.value + p.cash) / total) * 100)}%` }}
           />
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
+      <div className="flex flex-wrap gap-2">
         {portfolios.map((p, i) => (
-          <span key={p.id} className="flex items-center gap-1.5">
-            <span className={cn("size-2 rounded-full", COLORS[i % COLORS.length])} />
-            {p.name}{" "}
-            <span className="num">{int(Math.round(((p.value + p.cash) / total) * 100))}%</span>
+          <span
+            key={p.id}
+            className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-[12px]"
+          >
+            <span className={cn("size-2.5 shrink-0 rounded-full", COLORS[i % COLORS.length])} />
+            <span className="text-muted-foreground">{p.name}</span>
+            <span
+              className={cn(
+                "num rounded-sm bg-card px-1.5 py-0.5 text-[13px] font-bold",
+                LABEL_COLORS[i % LABEL_COLORS.length],
+              )}
+            >
+              {int(Math.round(((p.value + p.cash) / total) * 100))}%
+            </span>
           </span>
         ))}
       </div>
@@ -398,9 +409,9 @@ function AddButton({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
  * shape (see PositionCard).
  */
 export function PortfolioSwitcher() {
-  const { portfolioCap, switchPortfolio } = useDesk();
+  const { portfolioCap, portfolios: savedPortfolios, switchPortfolio } = useDesk();
   const portfolios = useMergedPortfolios();
-  const total = portfolios.reduce((sum, portfolio) => sum + portfolio.value + portfolio.cash, 0) || 1;
+  const total = savedPortfolios.reduce((sum, portfolio) => sum + portfolio.value + portfolio.cash, 0) || 1;
 
   return (
     <div
@@ -443,7 +454,14 @@ export function PortfolioSwitcher() {
             <StyleBadge style={p.style} />
             <span className="text-[10.5px] text-muted-foreground">
               حصة من الإجمالي <span className="num font-semibold text-foreground">
-                {pct(round(((p.value + p.cash) / total) * 100))}
+                {pct(
+                  round(
+                    (((savedPortfolios.find((saved) => saved.id === p.id)?.value ?? p.value) +
+                      (savedPortfolios.find((saved) => saved.id === p.id)?.cash ?? p.cash)) /
+                      total) *
+                      100,
+                  ),
+                )}
               </span>
             </span>
             <PlText
@@ -461,8 +479,7 @@ export function PortfolioSwitcher() {
 
 /** Wraps the existing `/portfolio` page content with the overview panel (the switcher itself now lives in the shell, above HeroBar). */
 export function PortfolioDesk({ children }: { children: ReactNode }) {
-  const { portfolioCap } = useDesk();
-  const portfolios = useMergedPortfolios();
+  const { portfolioCap, portfolios } = useDesk();
   const active = portfolios.find((p) => p.active) ?? portfolios[0];
 
   return (
