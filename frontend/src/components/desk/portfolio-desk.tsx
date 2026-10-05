@@ -66,7 +66,29 @@ function StyleBadge({ style }: { style: string | null }) {
   );
 }
 
-function PlText({ pl, plPct, className }: { pl: number; plPct: number; className?: string }) {
+function PlText({
+  pl,
+  plPct,
+  className,
+  stacked = false,
+}: {
+  pl: number;
+  plPct: number;
+  className?: string;
+  /** Puts the percentage on its own smaller line instead of inline — the inline form
+   * ("+176,022.39 ج (+16.87%)") is too wide for OverallStats's grid-cols-2 cells on mobile. */
+  stacked?: boolean;
+}) {
+  if (stacked) {
+    return (
+      <span className={cn("num block", tone(pl), className)}>
+        <span className="block truncate">{signed(round(pl))} ج</span>
+        <span className="block text-[11px] font-normal text-muted-foreground">
+          ({pct(round(plPct))})
+        </span>
+      </span>
+    );
+  }
   return (
     <span className={cn("num", tone(pl), className)}>
       {signed(round(pl))} ج ({pct(round(plPct))})
@@ -123,7 +145,10 @@ function OverallStats({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       <Stat label="إجمالي القيمة" value={`${fmt(round(totalValue))} ج`} />
-      <Stat label="إجمالي الربح / الخسارة" value={<PlText pl={totalPl} plPct={totalPlPct} />} />
+      <Stat
+        label="إجمالي الربح / الخسارة"
+        value={<PlText pl={totalPl} plPct={totalPlPct} stacked />}
+      />
       <Stat label="إجمالي الكاش" value={`${fmt(round(totalCash))} ج`} />
       <Stat label="عدد المحافظ" value={`${int(portfolios.length)} / ${int(cap)}`} />
     </div>
