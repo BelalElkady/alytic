@@ -18,6 +18,28 @@ export const exact = (value: number) => {
 
 export const fmt = (value: unknown) => (missing(value) ? "—" : exact(Number(value)));
 
+/**
+ * A number abbreviated for tight spaces — "355.2k", "1.2m" — unscaled under
+ * 1000, where an abbreviation would just be noise. Rounds to 2 decimals
+ * first so `exact` (which also builds on toPrecision/parseFloat) drops any
+ * trailing zero on its own, giving "202.9k" rather than "202.90k".
+ */
+export const compact = (value: unknown) => {
+  if (missing(value)) return "—";
+  const n = Number(value);
+  const abs = Math.abs(n);
+  if (abs < 1000) return exact(n);
+  const sign = n < 0 ? "-" : "";
+  const [div, suffix] = (
+    [
+      [1_000_000_000, "b"],
+      [1_000_000, "m"],
+      [1_000, "k"],
+    ] as const
+  ).find(([d]) => abs >= d)!;
+  return `${sign}${exact(Math.round((abs / div) * 100) / 100)}${suffix}`;
+};
+
 export const int = (value: unknown) =>
   value === null || value === undefined || Number.isNaN(Number(value)) ? "—" : exact(Number(value));
 

@@ -80,7 +80,7 @@ describe("PortfolioSwitcher", () => {
     expect(desk.current.switchPortfolio).toHaveBeenCalledWith(2);
   });
 
-  it("shows wallet share and return percentages in the horizontal wallet row", () => {
+  it("shows the mobile tile's k-abbreviated value/return alongside the desktop pill's share and P/L", () => {
     setDesk({
       portfolios: [
         basePortfolio({ id: 1 }),
@@ -91,11 +91,18 @@ describe("PortfolioSwitcher", () => {
     });
     render(<PortfolioSwitcher />);
     expect(screen.getByRole("group", { name: "المحافظ" })).toHaveClass("overflow-x-auto");
+    // Mobile tile: merged live totals (value 10000 + cash 2000 = 12000) abbreviated to "12k".
+    expect(screen.getByText("12k")).toBeInTheDocument();
+    expect(screen.getByText("6k")).toBeInTheDocument();
+    // Desktop pill (sm and up — both variants render; only display toggles responsively):
+    // same totals expressed as share of the 18,000 grand total.
     expect(screen.getAllByText(/حصة من الإجمالي/)).toHaveLength(2);
     expect(screen.getByText("+66.67%")).toBeInTheDocument();
     expect(screen.getByText("+33.33%")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /المحفظة الرئيسية/ })).toHaveClass("border-up");
-    expect(screen.getByRole("button", { name: /الثانية/ })).toHaveTextContent("-250 ج (-4.76%)");
+    const second = screen.getByRole("button", { name: /الثانية/ });
+    expect(second).toHaveTextContent("4.76%"); // mobile tile's unsigned arrow %
+    expect(second).toHaveTextContent("-250 ج (-4.76%)"); // desktop pill's inline P/L
   });
 
   it("marks the third wallet purple and highlights a selected loss in red", () => {
@@ -113,7 +120,7 @@ describe("PortfolioSwitcher", () => {
     const activeWallet = screen.getByRole("button", { name: /المحفظة الرئيسية/ });
     const thirdWallet = screen.getByRole("button", { name: /الثالثة/ });
     expect(activeWallet).toHaveClass("border-down");
-    expect(thirdWallet.querySelector(".bg-purple-500")).toBeInTheDocument();
+    expect(thirdWallet.querySelector(".text-purple-500")).toBeInTheDocument();
   });
 
   it("prevents assigning a trading style already used by another wallet", async () => {

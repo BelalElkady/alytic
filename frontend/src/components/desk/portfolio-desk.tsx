@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Link } from "@tanstack/react-router";
-import { Lock, MoreHorizontal, Plus, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowUp, Lock, Minus, MoreHorizontal, Plus, Sparkles, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Panel, Spinner, Stat } from "@/components/desk/state-blocks";
@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { fmt, int, pct, signed, tone } from "@/lib/format";
+import { compact, exact, fmt, int, pct, signed, tone } from "@/lib/format";
 import { INVEST_STYLES, type StyleKey } from "@/lib/invest-style";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ type Pf = ReturnType<typeof useDesk>["portfolios"][number];
 export const PORTFOLIO_COLORS = ["bg-primary", "bg-amber-500", "bg-purple-500"];
 const COLORS = PORTFOLIO_COLORS;
 const LABEL_COLORS = ["text-primary", "text-amber-500", "text-purple-500"];
+const ICON_TINTS = ["bg-primary/15", "bg-amber-500/15", "bg-purple-500/15"];
 const round = (n: number) => Math.round(n * 100) / 100;
 /**
  * Every card is a clickable role="button" div; Radix portals its dropdown
@@ -92,6 +93,17 @@ function PlText({
   return (
     <span className={cn("num", tone(pl), className)}>
       {signed(round(pl))} ج ({pct(round(plPct))})
+    </span>
+  );
+}
+
+/** A wallet tile's headline return: an up/down arrow plus the unsigned P/L% — the arrow already carries the sign. */
+function WalletPl({ pl, plPct }: { pl: number; plPct: number }) {
+  const Icon = pl > 0 ? ArrowUp : pl < 0 ? ArrowDown : Minus;
+  return (
+    <span className={cn("flex items-center gap-0.5 text-[12.5px] font-bold", tone(pl))}>
+      <Icon className="size-3" />
+      {exact(Math.abs(round(plPct)))}%
     </span>
   );
 }
@@ -423,15 +435,19 @@ function AddButton({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
 }
 
 /**
- * The Portfolio switcher: a compact pill row, not a dashboard — each pill
- * only identifies a Portfolio (color dot, name, style) and switches to it on
- * click. Its value/P&L/cash/position count don't show here, only for
- * whichever one is active, in HeroBar's tag (desk-shell.tsx) — this renders
- * in the shell, above HeroBar, on every page, not just `/portfolio`. A
- * <button> can't validly contain ManageMenu's own trigger button (invalid
- * HTML, and this app is server-rendered — the mismatch breaks hydration) —
- * role="button" on a div is this codebase's existing pattern for the same
- * shape (see PositionCard).
+ * The Portfolio switcher: a compact row, not a dashboard. On mobile each
+ * entry is an icon/big-number tile (name, style, k-abbreviated total,
+ * up/down P/L% — a glance, not a dashboard); at `sm` and up it's the older
+ * wider pill (dot, name, style badge, share of total, inline P/L). Both
+ * variants render for every Portfolio and the unused one is hidden via
+ * Tailwind's responsive display classes — not swapped at runtime — so this
+ * stays one static-markup component. The rest (cash, position count, day
+ * change) only shows for whichever one is active, in HeroBar's tag
+ * (desk-shell.tsx) — this renders in the shell, above HeroBar, on every page,
+ * not just `/portfolio`. A <button> can't validly contain ManageMenu's own
+ * trigger button (invalid HTML, and this app is server-rendered — the
+ * mismatch breaks hydration) — role="button" on a div is this codebase's
+ * existing pattern for the same shape (see PositionCard).
  */
 export function PortfolioSwitcher() {
   const { portfolioCap, portfolios: savedPortfolios, switchPortfolio } = useDesk();
@@ -443,7 +459,7 @@ export function PortfolioSwitcher() {
       role="group"
       aria-label="المحافظ"
       aria-roledescription="شريط تمرير أفقي"
-      className="-mx-3 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-3 pb-2 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+      className="-mx-3 flex snap-x snap-mandatory gap-2 overflow-x-auto px-3 pb-2 sm:mx-0 sm:flex-wrap sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0"
     >
       {portfolios.map((p, i) => (
         <div
@@ -458,42 +474,78 @@ export function PortfolioSwitcher() {
             }
           }}
           className={cn(
-            "flex w-[min(78vw,20rem)] shrink-0 snap-start cursor-pointer items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 text-start transition sm:w-auto sm:px-3.5",
+            "relative flex w-[108px] shrink-0 snap-start cursor-pointer rounded-2xl border bg-card p-3 text-start transition sm:w-auto sm:items-center sm:gap-2.5 sm:rounded-xl sm:px-3.5 sm:py-2.5",
             p.active
               ? p.pl > 0
-                ? "border-up bg-up-soft ring-2 ring-up/45"
+                ? "border-up ring-2 ring-up/45 sm:bg-up-soft"
                 : p.pl < 0
-                  ? "border-down bg-down-soft ring-2 ring-down/45"
-                  : "border-primary bg-primary/5 ring-2 ring-primary/30"
+                  ? "border-down ring-2 ring-down/45 sm:bg-down-soft"
+                  : "border-primary ring-2 ring-primary/30 sm:bg-primary/5"
               : "border-border hover:border-primary/40",
             p.readOnly && "opacity-70",
           )}
         >
-          <ManageMenu p={p} />
-          <span className={cn("size-2.5 shrink-0 rounded-full", COLORS[i % COLORS.length])} />
-          <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
-            <span className="flex items-center gap-1.5 font-semibold">
+          {/* Mobile tile — hidden at sm and up. */}
+          <div className="flex w-full flex-col items-start gap-1.5 sm:hidden">
+            <div className="absolute end-1.5 top-1.5">
+              <ManageMenu p={p} />
+            </div>
+            <span
+              className={cn(
+                "flex size-8 items-center justify-center rounded-full",
+                ICON_TINTS[i % ICON_TINTS.length],
+              )}
+            >
+              <Wallet className={cn("size-4", LABEL_COLORS[i % LABEL_COLORS.length])} />
+            </span>
+            <span className="flex min-w-0 items-center gap-1 text-[11.5px] font-semibold text-muted-foreground">
               <span className="truncate">{p.name}</span>
-              {p.readOnly && <Lock className="size-3.5" />}
+              {p.readOnly && <Lock className="size-3 shrink-0" />}
             </span>
-            <StyleBadge style={p.style} />
-            <span className="text-[10.5px] text-muted-foreground">
-              حصة من الإجمالي <span className="num font-semibold text-foreground">
-                {pct(
-                  round(
-                    (((savedPortfolios.find((saved) => saved.id === p.id)?.value ?? p.value) +
-                      (savedPortfolios.find((saved) => saved.id === p.id)?.cash ?? p.cash)) /
-                      total) *
-                      100,
-                  ),
-                )}
+            <span className="truncate text-[10px] text-muted-foreground">{styleLabel(p.style)}</span>
+            <span className="num truncate text-[18px] font-bold leading-tight tracking-tight">
+              {compact(round(p.value + p.cash))}
+              <span className="text-[11px] font-medium text-muted-foreground"> ج</span>
+            </span>
+            <WalletPl pl={p.pl} plPct={p.value - p.pl ? (p.pl / (p.value - p.pl)) * 100 : 0} />
+          </div>
+
+          {/* Desktop pill (the original style) — hidden below sm. */}
+          <div className="hidden sm:flex sm:w-full sm:items-center sm:gap-2.5">
+            <ManageMenu p={p} />
+            <span
+              className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-full",
+                ICON_TINTS[i % ICON_TINTS.length],
+              )}
+            >
+              <Wallet className={cn("size-4", LABEL_COLORS[i % LABEL_COLORS.length])} />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+              <span className="flex items-center gap-1.5 font-semibold">
+                <span className="truncate">{p.name}</span>
+                {p.readOnly && <Lock className="size-3.5" />}
               </span>
-            </span>
-            <PlText
-              pl={p.pl}
-              plPct={p.value - p.pl ? (p.pl / (p.value - p.pl)) * 100 : 0}
-              className="text-[10.5px]"
-            />
+              <StyleBadge style={p.style} />
+              <span className="text-[10.5px] text-muted-foreground">
+                حصة من الإجمالي{" "}
+                <span className="num font-semibold text-foreground">
+                  {pct(
+                    round(
+                      (((savedPortfolios.find((saved) => saved.id === p.id)?.value ?? p.value) +
+                        (savedPortfolios.find((saved) => saved.id === p.id)?.cash ?? p.cash)) /
+                        total) *
+                        100,
+                    ),
+                  )}
+                </span>
+              </span>
+              <PlText
+                pl={p.pl}
+                plPct={p.value - p.pl ? (p.pl / (p.value - p.pl)) * 100 : 0}
+                className="text-[10.5px]"
+              />
+            </div>
           </div>
         </div>
       ))}
