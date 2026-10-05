@@ -705,9 +705,13 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
     let styleUnknown = 0;
 
     for (const row of rows) {
-      if (row.portfolio) {
-        capital += row.portfolio.cash + row.portfolio.positionsValue;
-        profit += row.portfolio.realizedPnl;
+      // Every live Portfolio, not just the primary the table's own "رأس
+      // المال" column shows (that one deliberately stays primary-only, with
+      // its "+N محفظة" badge) — this strip's total is the platform's whole
+      // capital, so a User's other wallets (#103) must count too.
+      for (const p of row.portfolios) {
+        capital += p.cash + p.positionsValue;
+        profit += p.realizedPnl;
       }
       const style = row.behavior?.chosenStyle ?? row.behavior?.inferredStyle ?? null;
       if (style) {
