@@ -211,6 +211,8 @@ type DeskValue = {
     value: number;
     pl: number;
     cash: number;
+    /** Its holdings, so a Portfolio that isn't selected is valued at the same live `quotes` as the one that is. `price` is the fallback for a code with no quote. */
+    positions?: Array<{ code: string; shares: number; avgCost: number; price: number }>;
     positionCount: number;
     active: boolean;
     readOnly: boolean;
@@ -350,6 +352,16 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         : [];
       setPf(portfolio);
       setRows(scanned);
+      // The switcher values a Portfolio from `quotes` once it's no longer the
+      // selected one — so they must hold the very prices its rows showed
+      // while it was, or its profit would change just by switching away.
+      setQuotes((previous) => {
+        const next = { ...previous };
+        for (const row of scanned as Row[]) {
+          if (row.price) next[row.code] = { ...next[row.code], price: row.price };
+        }
+        return next;
+      });
       if (refreshPortfolioList) {
         // A transient failure here (or a version-skew 404 against an old
         // cached bundle) must never block the rest of reload()'s fetches,
@@ -522,6 +534,27 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     },
     [refreshPrices],
   );
+
+  // Every Portfolio's holdings are priced, not just the selected one's, so the
+  // switcher can value them all from the same quotes. The poll only runs
+  // during the session — outside it, one fetch fills in the codes the
+  // selected Portfolio's own scan hasn't already priced.
+  const walletCodes = useMemo(
+    () => [...new Set(portfolios.flatMap((p) => (p.positions ?? []).map((x) => x.code)))].sort().join(","),
+    [portfolios],
+  );
+  useEffect(() => {
+    if (!walletCodes) return;
+    const stop = watchQuotes(walletCodes.split(","));
+    if (!egxSessionLikelyOpen()) {
+      void api(`/api/quotes?codes=${encodeURIComponent(walletCodes)}`)
+        .then(({ quotes: fresh }: { quotes?: Record<string, Quote> }) =>
+          setQuotes((previous) => ({ ...fresh, ...previous })),
+        )
+        .catch(() => {});
+    }
+    return stop;
+  }, [walletCodes, watchQuotes]);
 
   /* Session check on mount — unchanged endpoint and cookie behaviour. */
   useEffect(() => {

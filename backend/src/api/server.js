@@ -2308,18 +2308,18 @@ async function portfolioIdFromRequest(req) {
   return primaryPortfolioIdFor(req.user.id);
 }
 
-/** Positions valued at each stock's last cached daily close — its average cost when no bar is cached. */
-async function valueAtLastClose(positions) {
-  let value = 0;
-  let cost = 0;
-  for (const [code, position] of Object.entries(positions)) {
-    const shares = position.shares ?? 0;
+/**
+ * A Portfolio's holdings as the desk needs them to value it itself, at the
+ * same live quotes it prices the active Portfolio with. `price` is only the
+ * fallback for a stock with no live quote: its last cached daily close, else
+ * the last price saved in the log, else its average cost.
+ */
+async function holdingsOf(positions, lastLogPrices = {}) {
+  return Promise.all(Object.entries(positions).map(async ([code, position]) => {
     const avgCost = position.avgCost ?? 0;
     const close = (await readBars(code))?.bars?.at(-1)?.c;
-    value += shares * (close ?? avgCost);
-    cost += shares * avgCost;
-  }
-  return { value: +value.toFixed(2), pl: +(value - cost).toFixed(2) };
+    return { code, shares: position.shares ?? 0, avgCost, price: close ?? lastLogPrices[code] ?? avgCost };
+  }));
 }
 
 app.get('/api/portfolios', wrap(async (req, res) => {
@@ -2333,10 +2333,12 @@ app.get('/api/portfolios', wrap(async (req, res) => {
     const log = row.state?.log ?? {};
     const dates = Object.keys(log).sort();
     const last = dates.length ? log[dates[dates.length - 1]] : null;
+    const positions = await holdingsOf(row.state?.positions ?? {}, last?.prices);
     // A Portfolio with no saved snapshot yet (created today, never closed a
     // session) would otherwise report its positions as worth 0 — leaving a
     // negative cash balance as its whole value.
-    const unsaved = last ? null : await valueAtLastClose(row.state?.positions ?? {});
+    const heldValue = positions.reduce((sum, p) => sum + p.shares * p.price, 0);
+    const heldCost = positions.reduce((sum, p) => sum + p.shares * p.avgCost, 0);
     return {
       id: row.id,
       name: row.name,
@@ -2350,10 +2352,15 @@ app.get('/api/portfolios', wrap(async (req, res) => {
       // the frontend's active-Portfolio card already means "positions" by
       // `value` (store.tsx totals.value) and adds `cash` on top itself, so
       // a `value` that already included cash was being double-counted.
-      value: last ? (last.positionsValue ?? last.total - last.cash) : unsaved.value,
-      pl: last ? last.pl : unsaved.pl,
-      cash: last ? last.cash : (row.state?.cash ?? 0),
-      positionCount: Object.keys(row.state?.positions ?? {}).length,
+      value: last ? (last.positionsValue ?? last.total - last.cash) : +heldValue.toFixed(2),
+      pl: last ? last.pl : +(heldValue - heldCost).toFixed(2),
+      // Today's balance, not the last snapshot's: a deposit or a trade since
+      // then would otherwise show only once the Portfolio is selected.
+      cash: row.state?.cash ?? last?.cash ?? 0,
+      // What the desk values the Portfolio from, live — `value`/`pl` above
+      // are the last saved snapshot, kept for a client without quotes.
+      positions,
+      positionCount: positions.length,
       active: row.id === activePortfolioId,
       readOnly: index >= cap,
     };

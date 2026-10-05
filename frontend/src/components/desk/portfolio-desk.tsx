@@ -46,17 +46,29 @@ const stopCardBubble = (e: SyntheticEvent) => e.stopPropagation();
 const styleLabel = (s: string | null) => INVEST_STYLES.find((x) => x.key === s)?.label ?? s ?? "—";
 
 /**
- * `useDesk().portfolios` holds each Portfolio's last-saved snapshot (#101's
- * resolution). The active Portfolio's card instead shows today's live tick,
- * same as the rest of the desk — every other card keeps the snapshot as-is.
+ * Every Portfolio at today's live prices, so one reads the same whether or
+ * not it's the selected one. The selected Portfolio takes the desk's own
+ * totals (what HeroBar shows); the others are valued from their holdings at
+ * the same shared `quotes` — and so is the selected one while it's still
+ * loading after a switch, instead of flashing zeros. A Portfolio that came
+ * without holdings keeps its last-saved snapshot.
  */
 function useMergedPortfolios() {
-  const { portfolios, totals, rows } = useDesk();
-  return portfolios.map((p) =>
-    p.active
-      ? { ...p, value: totals.value, pl: totals.pl, cash: totals.cash, positionCount: rows.length }
-      : p,
-  );
+  const { portfolios, totals, rows, pf, quotes } = useDesk();
+  return portfolios.map((p) => {
+    if (p.active && pf !== null) {
+      return { ...p, value: totals.value, pl: totals.pl, cash: totals.cash, positionCount: rows.length };
+    }
+    if (!p.positions) return p;
+    // Exactly what the desk counts for a selected Portfolio (store.tsx
+    // `totals`): only holdings with a cost basis — the analysis gives no
+    // position to one without — at the average cost rounded as the desk
+    // shows it. Anything else here would change the number on selection.
+    const held = p.positions.filter((x) => x.shares > 0 && x.avgCost > 0);
+    const value = held.reduce((sum, x) => sum + round(x.shares * (quotes?.[x.code]?.price ?? x.price)), 0);
+    const cost = held.reduce((sum, x) => sum + x.shares * round(x.avgCost), 0);
+    return { ...p, value, pl: value - cost, positionCount: held.length };
+  });
 }
 
 function StyleBadge({ style }: { style: string | null }) {
@@ -450,9 +462,9 @@ function AddButton({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
  * existing pattern for the same shape (see PositionCard).
  */
 export function PortfolioSwitcher() {
-  const { portfolioCap, portfolios: savedPortfolios, switchPortfolio } = useDesk();
+  const { portfolioCap, switchPortfolio } = useDesk();
   const portfolios = useMergedPortfolios();
-  const total = savedPortfolios.reduce((sum, portfolio) => sum + portfolio.value + portfolio.cash, 0) || 1;
+  const total = portfolios.reduce((sum, portfolio) => sum + portfolio.value + portfolio.cash, 0) || 1;
 
   return (
     <div
@@ -530,14 +542,7 @@ export function PortfolioSwitcher() {
               <span className="text-[10.5px] text-muted-foreground">
                 حصة من الإجمالي{" "}
                 <span className="num font-semibold text-foreground">
-                  {pct(
-                    round(
-                      (((savedPortfolios.find((saved) => saved.id === p.id)?.value ?? p.value) +
-                        (savedPortfolios.find((saved) => saved.id === p.id)?.cash ?? p.cash)) /
-                        total) *
-                        100,
-                    ),
-                  )}
+                  {pct(round(((p.value + p.cash) / total) * 100))}
                 </span>
               </span>
               <PlText
@@ -556,7 +561,8 @@ export function PortfolioSwitcher() {
 
 /** Wraps the existing `/portfolio` page content with the overview panel (the switcher itself now lives in the shell, above HeroBar). */
 export function PortfolioDesk({ children }: { children: ReactNode }) {
-  const { portfolioCap, portfolios } = useDesk();
+  const { portfolioCap } = useDesk();
+  const portfolios = useMergedPortfolios();
   const active = portfolios.find((p) => p.active) ?? portfolios[0];
 
   return (

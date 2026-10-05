@@ -186,14 +186,71 @@ describe("PortfolioDesk", () => {
     expect(screen.getByText("إجمالي المحافظ")).toBeInTheDocument();
   });
 
-  it("keeps aggregate values on saved wallet snapshots instead of selected-wallet live totals", () => {
+  it("sums the same live numbers the wallet cards show, not the saved snapshots", () => {
     setDesk({
-      portfolios: [basePortfolio({ value: 4000, cash: 500, pl: 100 })],
-      totals: { value: 99000, cost: 98900, pl: 100, plPct: 0.1, day: 0, cash: 6000, hasDay: false },
+      portfolios: [
+        basePortfolio({ value: 4000, cash: 500, pl: 100 }),
+        // Snapshot says 1,000 / +50; its holdings at the live quote say 3,000 / +1,000.
+        basePortfolio({
+          id: 2,
+          name: "الثانية",
+          active: false,
+          value: 1000,
+          pl: 50,
+          cash: 0,
+          positions: [{ code: "ABUK", shares: 100, avgCost: 20, price: 25 }],
+        }),
+      ],
+      totals: { value: 9000, cost: 8900, pl: 100, plPct: 1.12, day: 0, cash: 6000, hasDay: false },
+      quotes: { ABUK: { price: 30 } },
     });
     render(<PortfolioDesk>مراكز</PortfolioDesk>);
-    expect(screen.getByText("4,000 ج")).toBeInTheDocument();
-    expect(screen.getByText("500 ج")).toBeInTheDocument();
-    expect(screen.queryByText("99,000 ج")).not.toBeInTheDocument();
+    expect(screen.getByText("12,000 ج")).toBeInTheDocument(); // 9,000 live + 3,000
+    expect(screen.getByText("+1,100 ج")).toBeInTheDocument(); // +100 live + 1,000
+    expect(screen.getByText("6,000 ج")).toBeInTheDocument();
+  });
+});
+
+describe("a wallet's numbers don't depend on whether it's selected", () => {
+  const holdings = [{ code: "ABUK", shares: 100, avgCost: 20, price: 25 }];
+
+  it("values an unselected wallet from its holdings at the shared live quote", () => {
+    setDesk({
+      portfolios: [
+        basePortfolio({ id: 1 }),
+        basePortfolio({ id: 2, name: "الثانية", active: false, value: 1000, pl: 50, cash: 0, positions: holdings }),
+      ],
+      quotes: { ABUK: { price: 30 } },
+      portfolioCap: 3,
+      user: { tier: "trader" },
+    });
+    render(<PortfolioSwitcher />);
+    expect(screen.getByRole("button", { name: /الثانية/ })).toHaveTextContent("+1,000 ج (+50%)");
+  });
+
+  it("falls back to the holding's last close when a stock has no live quote", () => {
+    setDesk({
+      portfolios: [
+        basePortfolio({ id: 1 }),
+        basePortfolio({ id: 2, name: "الثانية", active: false, value: 1000, pl: 50, cash: 0, positions: holdings }),
+      ],
+      quotes: {},
+      portfolioCap: 3,
+      user: { tier: "trader" },
+    });
+    render(<PortfolioSwitcher />);
+    expect(screen.getByRole("button", { name: /الثانية/ })).toHaveTextContent("+500 ج (+25%)");
+  });
+
+  it("values the selected wallet from its holdings while it is still loading, not as zero", () => {
+    setDesk({
+      portfolios: [basePortfolio({ value: 1000, pl: 50, cash: 0, positions: holdings })],
+      pf: null,
+      totals: { value: 0, cost: 0, pl: 0, plPct: 0, day: 0, cash: 0, hasDay: false },
+      rows: [],
+      quotes: { ABUK: { price: 30 } },
+    });
+    render(<PortfolioSwitcher />);
+    expect(screen.getByRole("button", { name: /المحفظة الرئيسية/ })).toHaveTextContent("+1,000 ج (+50%)");
   });
 });
