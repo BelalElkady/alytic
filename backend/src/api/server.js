@@ -21,13 +21,13 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
-import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor } from '../billing/plans.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
+import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
 import { sharedIpAccounts } from '../sharedIp.js';
-import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf } from '../portfolio.js';
+import { loadPortfolio, withPortfolio, withUserUsage, withPortfolioAndUsage, recordTrade, editTrade, setLevels, trackedCodes, recordSnapshot, setNote, recordCashFlow, positionsFlow, rememberVerdict, stopContextOf, createPortfolioForUser, renamePortfolio, deletePortfolio, portfolioRankFor } from '../portfolio.js';
 import { aiAvailable, callWithRetry, getOpenRouterClient, requestStructuredOR } from '../agent/clientOpenRouter.js';
 
 // Pinned independently of the shared MODEL export so a future ALYTIC_MODEL
@@ -605,6 +605,38 @@ app.use('/api', async (req, res, next) => {
     reason: expired ? 'subscription_expired' : 'trial_ended',
     requiresSubscription: true,
   });
+});
+
+// ---- Portfolio read-only gate (#103) ---------------------------------
+// Separate from PAID_PATHS (portfolio writes stay deliberately exempt from
+// the paywall — a lapsed account keeps editing its primary Portfolio, same
+// as today). Applied only to the mutating portfolio endpoints #103 named;
+// reads (GET /api/portfolio, GET /api/portfolios, GET /api/log) are never
+// gated — #102's cards show a locked Portfolio's value/P&L while dimmed,
+// which requires the data to keep loading. POST/PATCH/DELETE /api/portfolios
+// (plural — create/rename/delete) are not in this list: they already carry
+// their own cap/read-only checks.
+const PORTFOLIO_READONLY_GATED_PATHS = [
+  '/portfolio/trade', // also matches /portfolio/trades/:index and /portfolio/trades/:index/delete
+  '/portfolio/cash',
+  '/portfolio/corporate-action',
+  '/portfolio/levels',
+  '/portfolio/holding',
+  '/portfolio/watchlist',
+  '/portfolio/import-screenshot',
+  '/snapshot',
+  '/log/note',
+  '/settings/style',
+];
+app.use('/api', async (req, res, next) => {
+  if (!req.user || !PORTFOLIO_READONLY_GATED_PATHS.some((prefix) => req.path.startsWith(prefix))) return next();
+  const portfolioId = await portfolioIdFromRequest(req);
+  const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
+  const rank = await portfolioRankFor(req.user.id, portfolioId);
+  if (rank === -1 || rank >= portfolioCapFor(tier)) {
+    return res.status(403).json({ error: 'المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة' });
+  }
+  next();
 });
 
 // Per-account throttles on the endpoints that cost real money or CPU per call
@@ -1258,7 +1290,18 @@ app.get('/api/admin/users', wrap(async (req, res) => {
   ]);
   // The usage/credits figures below live on the User, not the Portfolio
   // blob — getAllUsers reads them in its own query, as each row's `usage`.
-  const portfolioByUser = new Map(portfolios.map((row) => [row.user_id, row.state_json]));
+  // A User can hold more than one Portfolio (#103); grouped and ordinal-sorted
+  // here so `portfolio`/`behavior` below can keep meaning the primary one
+  // (lowest `ordinal`) and `portfolios` can list every live one for #111's
+  // count badge and per-Portfolio drawer sections.
+  const portfoliosByUser = new Map();
+  for (const row of [...portfolios].sort((a, b) => a.ordinal - b.ordinal)) {
+    const list = portfoliosByUser.get(row.user_id);
+    if (list) list.push(row);
+    else portfoliosByUser.set(row.user_id, [row]);
+  }
+  const portfolioByUser = new Map();
+  for (const [userId, list] of portfoliosByUser) portfolioByUser.set(userId, list[0].state_json);
   const subscriptionByUser = new Map(subscriptions.map((row) => [row.user_id, row]));
   const followUpByUser = new Map(followUps.map((row) => [row.user_id, row]));
   // 'local' is the CLI/dev account (SYSTEM_USER_ID in the admin screen), not a customer.
@@ -1313,6 +1356,23 @@ app.get('/api/admin/users', wrap(async (req, res) => {
         realizedPnl: pf.realizedPnl ?? 0,
         updatedAt: pf.updatedAt ?? null,
       },
+      // Every live Portfolio (#111), primary first — the users list badges
+      // the count beyond one, and the detail drawer stacks one investment
+      // section per entry instead of only ever showing the primary's.
+      portfolios: (portfoliosByUser.get(u.id) ?? []).map((row) => {
+        const state = row.state_json;
+        const rowPositions = Object.values(state.positions ?? {});
+        return {
+          id: row.id,
+          name: row.name,
+          style: STYLE_KEYS.includes(row.style) ? row.style : null,
+          cash: state.cash ?? 0,
+          positionsCount: rowPositions.length,
+          positionsValue: rowPositions.reduce((sum, p) => sum + (p.shares ?? 0) * (p.avgCost ?? 0), 0),
+          tradesCount: (state.trades ?? []).filter((t) => t.side !== 'dividend').length,
+          realizedPnl: state.realizedPnl ?? 0,
+        };
+      }),
       behavior: profile && {
         chosenStyle,
         inferredStyle: profile.inferredStyle,
@@ -1757,8 +1817,8 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
   // named after it, and an AI stop-loss call — all attacker-chosen. Only
   // tickers in the universe are analyzable.
   if (!lookup(code)) return res.status(404).json({ error: 'السهم مش موجود' });
-  const portfolio = await loadPortfolio(req.user.id);
-  const portfolioId = await primaryPortfolioIdFor(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   const style = req.query.style;
   if (style && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: `أسلوب غير معروف: ${style}` });
   // Without this, the detail dialog silently analyzed every stock with the
@@ -1823,7 +1883,8 @@ function knownCodesFrom(raw) {
 }
 
 app.get('/api/quotes', wrap(async (req, res) => {
-  const portfolio = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   const requested = req.query.codes
     ? knownCodesFrom(req.query.codes)
     : Object.keys(portfolio.positions);
@@ -1902,8 +1963,8 @@ async function chargeScanSession(userId, kind, tier) {
 }
 
 app.get('/api/scan', wrap(async (req, res) => {
-  const portfolio = await loadPortfolio(req.user.id);
-  const portfolioId = await primaryPortfolioIdFor(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
 
   let cashScansLeftNow = null;
   let marketAnalysisLeftNow = null;
@@ -1996,7 +2057,7 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
   // A held stock that just jumped by a share ratio: settle the holding now
   // rather than on the next half-hourly check.
   if (userId && results.some((r) => r.position && r.corporateAction?.status === 'suspected')) {
-    checkCorporateActionsSoon(userId, portfolio, { now: true });
+    checkCorporateActionsSoon(userId, portfolioId, portfolio, { now: true });
   }
   // Held codes reuse heldQuotes, so a position's P&L and the price shown
   // beside it never come from two different feeds.
@@ -2210,10 +2271,130 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
 
 // ---- Portfolio -------------------------------------------------------------
 
+/**
+ * A positive integer safe to use as a `bigint` portfolios.id, or null.
+ * Never throws. Postgres bigint range, not just JS safe-integer:
+ * `Number.isSafeInteger` alone still admits values that are a valid double
+ * but too wide for the `portfolios.id` column.
+ */
+function parsePositiveId(raw) {
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 && /^\d{1,15}$/.test(String(raw).trim()) ? id : null;
+}
+
+/**
+ * Resolves which Portfolio this request means: the id named by the
+ * X-Portfolio-Id header, if present and owned by this User — otherwise
+ * (header absent, malformed, foreign, or pointing at a soft-deleted row)
+ * the User's primary Portfolio. Never throws, never 403s/404s: a
+ * forged/foreign id must be indistinguishable from no header at all, so an
+ * attacker can't use this to probe which Portfolio ids exist.
+ */
+async function portfolioIdFromRequest(req) {
+  const header = req.headers['x-portfolio-id'];
+  if (header !== undefined) {
+    const id = parsePositiveId(header);
+    if (id !== null) {
+      try {
+        const row = await getPortfolioById(id);
+        if (row && row.userId === req.user.id && !row.deletedAt) return id;
+      } catch {
+        // Any lookup failure (malformed id the regex missed, DB hiccup,
+        // shape surprise) falls through to the primary Portfolio below —
+        // this resolver must never throw.
+      }
+    }
+  }
+  return primaryPortfolioIdFor(req.user.id);
+}
+
+app.get('/api/portfolios', wrap(async (req, res) => {
+  const [rows, activePortfolioId, tier] = await Promise.all([
+    listPortfoliosForUser(req.user.id),
+    portfolioIdFromRequest(req),
+    req.access?.tier !== undefined ? Promise.resolve(req.access.tier) : accessInfo(req.user).then((a) => a.tier),
+  ]);
+  const cap = portfolioCapFor(tier);
+  const portfolios = rows.map((row, index) => {
+    const log = row.state?.log ?? {};
+    const dates = Object.keys(log).sort();
+    const last = dates.length ? log[dates[dates.length - 1]] : null;
+    return {
+      id: row.id,
+      name: row.name,
+      // The portfolios.style column is the source of truth once a Portfolio
+      // has been created or renamed through this API (both write it — see
+      // createPortfolioForUser/renamePortfolio), but the signup trigger
+      // leaves it null for every account's original primary Portfolio, whose
+      // real style lives only in state_json.settings.investStyle.
+      style: row.style ?? row.state?.settings?.investStyle ?? null,
+      // Positions only — never the snapshot's total (positions + cash):
+      // the frontend's active-Portfolio card already means "positions" by
+      // `value` (store.tsx totals.value) and adds `cash` on top itself, so
+      // a `value` that already included cash was being double-counted.
+      value: last ? (last.positionsValue ?? last.total - last.cash) : 0,
+      pl: last ? last.pl : 0,
+      cash: last ? last.cash : (row.state?.cash ?? 0),
+      positionCount: Object.keys(row.state?.positions ?? {}).length,
+      active: row.id === activePortfolioId,
+      readOnly: index >= cap,
+    };
+  });
+  res.json({ portfolios, activePortfolioId, cap });
+}));
+
+const PORTFOLIO_NAME_MAX_LEN = 60;
+
+app.post('/api/portfolios', wrap(async (req, res) => {
+  const name = String(req.body?.name ?? '').trim();
+  if (!name || name.length > PORTFOLIO_NAME_MAX_LEN) {
+    return res.status(400).json({ error: 'اسم المحفظة لازم يكون من حرف لحد 60' });
+  }
+  const style = req.body?.style;
+  if (!STYLE_KEYS.includes(style)) return res.status(400).json({ error: 'أسلوب غير معروف' });
+  const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
+  const result = await createPortfolioForUser(req.user.id, { name, style }, portfolioCapFor(tier));
+  if (!result.ok) return res.status(403).json({ error: 'وصلت للحد الأقصى من المحافظ' });
+  res.status(201).json({ id: result.portfolio.id, name: result.portfolio.name, style: result.portfolio.style });
+}));
+
+app.patch('/api/portfolios/:id', wrap(async (req, res) => {
+  const id = parsePositiveId(req.params.id);
+  if (id === null) return res.status(404).json({ error: 'المحفظة غير موجودة' });
+  const name = req.body?.name === undefined ? undefined : String(req.body.name).trim();
+  if (name !== undefined && (!name || name.length > PORTFOLIO_NAME_MAX_LEN)) {
+    return res.status(400).json({ error: 'اسم المحفظة لازم يكون من حرف لحد 60' });
+  }
+  const style = req.body?.style;
+  if (style !== undefined && !STYLE_KEYS.includes(style)) return res.status(400).json({ error: 'أسلوب غير معروف' });
+  if (name === undefined && style === undefined) return res.status(400).json({ error: 'مفيش حاجة للتعديل' });
+  const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
+  const result = await renamePortfolio(req.user.id, id, { name, style }, portfolioCapFor(tier));
+  if (!result.ok) {
+    return result.reason === 'not_found'
+      ? res.status(404).json({ error: 'المحفظة غير موجودة' })
+      : res.status(403).json({ error: 'المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة' });
+  }
+  res.json({ ok: true });
+}));
+
+app.delete('/api/portfolios/:id', wrap(async (req, res) => {
+  const id = parsePositiveId(req.params.id);
+  if (id === null) return res.status(404).json({ error: 'المحفظة غير موجودة' });
+  const result = await deletePortfolio(req.user.id, id);
+  if (!result.ok) {
+    return result.reason === 'not_found'
+      ? res.status(404).json({ error: 'المحفظة غير موجودة' })
+      : res.status(400).json({ error: 'مينفعش تمسح آخر محفظة' });
+  }
+  res.json({ ok: true });
+}));
+
 app.get('/api/portfolio', wrap(async (req, res) => {
-  const p = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const p = await loadPortfolio(portfolioId);
   const usage = await getUserUsage(req.user.id);
-  checkCorporateActionsSoon(req.user.id, p);
+  checkCorporateActionsSoon(req.user.id, portfolioId, p);
   // /api/portfolio isn't a PAID_PATHS entry (a lapsed account can still read
   // its own data), so req.access isn't guaranteed to be set the way it is on
   // /api/scan — compute it directly rather than assume.
@@ -2279,7 +2460,8 @@ app.post('/api/portfolio/trade', wrap(async (req, res) => {
   if (missing) return res.status(400).json({ error: missing });
   const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     recordTrade(portfolio, { code, side, shares: Number(shares), price: Number(price), fees: fees === '' ? 0 : fees, date, note }),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
@@ -2305,14 +2487,16 @@ app.post('/api/portfolio/trades/:index', wrap(async (req, res) => {
   if (missing) return res.status(400).json({ error: missing });
   const invalid = tradeInputError({ code, side, shares, price, fees, date, note });
   if (invalid) return res.status(400).json({ error: invalid });
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     editTrade(portfolio, tradeAt(portfolio, req), { code, side, shares, price, fees: fees === '' ? 0 : fees, date, note }),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
 }));
 
 app.post('/api/portfolio/trades/:index/delete', wrap(async (req, res) => {
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     editTrade(portfolio, tradeAt(portfolio, req), null),
   );
   res.json({ ...updated, capital: capitalOf(updated) });
@@ -2321,7 +2505,8 @@ app.post('/api/portfolio/trades/:index/delete', wrap(async (req, res) => {
 app.post('/api/portfolio/cash', wrap(async (req, res) => {
   const amount = Number(req.body?.cash);
   if (!Number.isFinite(amount) || amount < 0 || amount > MAX_MONEY) return res.status(400).json({ error: 'مبلغ غير صالح' });
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     recordCashFlow({ ...portfolio, cash: amount }, amount - (portfolio.cash ?? 0), 'cash'),
   );
   res.json(updated);
@@ -2349,8 +2534,8 @@ async function currentPrices(codes) {
  * when a search finds one that agrees with it.
  */
 const corporateActionResearch = new Map(); // one search per event, shared across users
-async function reconcileCorporateActions(userId) {
-  const portfolio = await loadPortfolio(userId);
+async function reconcileCorporateActions(userId, portfolioId) {
+  const portfolio = await loadPortfolio(portfolioId);
   const codes = Object.keys(portfolio.positions);
   if (!codes.length) return [];
   const quotes = await fetchLatestQuotes(codes).catch(() => new Map());
@@ -2386,12 +2571,12 @@ async function reconcileCorporateActions(userId) {
       .catch((err) => console.warn('[corporate-actions] event save failed:', err.message));
   }
   if (!proposals.length) return [];
-  await withPortfolio(userId, (p) => applyCorporateActions(p, proposals));
+  await withPortfolio(userId, portfolioId, (p) => applyCorporateActions(p, proposals));
   console.log(`[corporate-actions] ${userId}:`, JSON.stringify(proposals.map(({ code, factor, status, confirmedBy }) => ({ code, factor, status, confirmedBy }))));
   return proposals;
 }
 
-// Opening the desk looks again at most every half hour per user, in the
+// Opening the desk looks again at most every half hour per Portfolio, in the
 // background: the answer lands on the next reload, never holding this one up.
 const CORPORATE_ACTION_RECHECK_MS = 30 * 60 * 1000;
 // A scan that sees a fresh jump asks sooner, but not on every scan while a
@@ -2399,15 +2584,17 @@ const CORPORATE_ACTION_RECHECK_MS = 30 * 60 * 1000;
 const CORPORATE_ACTION_URGENT_RECHECK_MS = 2 * 60 * 1000;
 const corporateActionCheckedAt = new Map();
 const corporateActionRunning = new Set();
-function checkCorporateActionsSoon(userId, portfolio, { now = false } = {}) {
+function checkCorporateActionsSoon(userId, portfolioId, portfolio, { now = false } = {}) {
   if (!Object.keys(portfolio.positions ?? {}).length) return;
-  const key = `${currentTenant()?.id ?? ''}:${userId}`;
+  // Keyed per Portfolio, not per User — a User with more than one Portfolio
+  // (#103) checks and debounces each independently.
+  const key = `${currentTenant()?.id ?? ''}:${portfolioId}`;
   const last = corporateActionCheckedAt.get(key);
   if (corporateActionRunning.has(key)) return;
   if (last && Date.now() - last < (now ? CORPORATE_ACTION_URGENT_RECHECK_MS : CORPORATE_ACTION_RECHECK_MS)) return;
   corporateActionCheckedAt.set(key, Date.now());
   corporateActionRunning.add(key);
-  reconcileCorporateActions(userId)
+  reconcileCorporateActions(userId, portfolioId)
     .catch((err) => console.warn('[corporate-actions] check failed:', err.message))
     .finally(() => corporateActionRunning.delete(key));
 }
@@ -2417,7 +2604,8 @@ app.post('/api/portfolio/corporate-action', wrap(async (req, res) => {
   if (typeof code !== 'string' || !isDayString(lastBefore) || !['undo', 'apply', 'dismiss'].includes(action)) {
     return res.status(400).json({ error: 'محتاج code و lastBefore و action (undo/apply/dismiss)' });
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     resolveCorporateAction(portfolio, { code: code.toUpperCase(), lastBefore, action }),
   );
   res.json(updated);
@@ -2431,7 +2619,8 @@ app.post('/api/portfolio/levels', wrap(async (req, res) => {
       return res.status(400).json({ error: 'مستوى الوقف أو الهدف غير صالح' });
     }
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     setLevels(portfolio, code, { stop: stop == null ? null : Number(stop), target: target == null ? null : Number(target) }),
   );
   res.json(updated);
@@ -2462,7 +2651,8 @@ app.post('/api/portfolio/holding', wrap(async (req, res) => {
 
   // Fetched outside the lock; only a share-count change moves the book's value.
   const prices = nextShares != null ? await currentPrices([c]) : new Map();
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const existing = portfolio.positions[c];
     if (!existing) throw new Error(`مفيش مركز مفتوح في ${c}`);
     const positions = { ...portfolio.positions };
@@ -2497,7 +2687,8 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
       return res.status(400).json({ error: `الملاحظة لازم تكون نص (حد أقصى ${MAX_WATCH_NOTE} حرف)` });
     }
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const watchlist = { ...portfolio.watchlist };
     if (remove) delete watchlist[c];
     else watchlist[c] = { addedAt: watchlist[c]?.addedAt ?? new Date().toISOString(), note: note ?? null };
@@ -2510,9 +2701,9 @@ app.post('/api/portfolio/watchlist', wrap(async (req, res) => {
  * Snapshot one user's open positions into today's (or `date`'s) log entry.
  * Shared by the manual /api/snapshot endpoint and the daily-close cron below.
  */
-async function snapshotForUser(userId, date = null) {
-  const portfolioId = await primaryPortfolioIdFor(userId);
-  return withPortfolio(userId, async (portfolio) => {
+async function snapshotForUser(userId, portfolioId = null, date = null) {
+  const resolvedPortfolioId = portfolioId ?? await primaryPortfolioIdFor(userId);
+  return withPortfolio(userId, resolvedPortfolioId, async (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     // Whatever style this account has active — same resolution the admin
     // panel's "chosen style" column uses — so the ratchet the AI applies here
@@ -2527,7 +2718,7 @@ async function snapshotForUser(userId, date = null) {
       concurrency: 3,
       rules,
       style,
-      portfolioId,
+      portfolioId: resolvedPortfolioId,
     });
     // analyzeMany's price comes from the last data *sync*, not from now — a
     // run mid-session (before that day's sync has run) would otherwise save
@@ -2584,10 +2775,11 @@ async function snapshotForUser(userId, date = null) {
 app.post('/api/snapshot', wrap(async (req, res) => {
   // Fast, unlocked check for the common "nothing to snapshot" case, so it
   // still returns 400 immediately rather than paying for a lock acquisition.
-  const precheck = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const precheck = await loadPortfolio(portfolioId);
   if (!Object.keys(precheck.positions).length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة تتسجّل' });
 
-  const updated = await snapshotForUser(req.user.id, req.body?.date ?? null);
+  const updated = await snapshotForUser(req.user.id, portfolioId, req.body?.date ?? null);
   const day = Object.keys(updated.log).sort().pop();
   res.json({ saved: day, entry: updated.log[day], days: Object.keys(updated.log).length });
 }));
@@ -2658,18 +2850,19 @@ async function runDailyClose() {
   }
 
   const portfolios = await getAllPortfolios();
-  const userIds = portfolios
-    .filter((row) => Object.keys(row.state_json?.positions ?? {}).length > 0)
-    .map((row) => row.user_id);
+  // One entry per Portfolio, not deduped by user_id — a User can hold more
+  // than one (#103), and each needs its own snapshot and corporate-action
+  // check, not just the primary's.
+  const withPositions = portfolios.filter((row) => Object.keys(row.state_json?.positions ?? {}).length > 0);
 
   let saved = 0;
   let failed = 0;
-  for (const userId of userIds) {
+  for (const { user_id: userId, id: portfolioId } of withPositions) {
     // Before the close is saved, so a bonus issue or split landing today
     // doesn't go into the log as a day's loss.
-    await reconcileCorporateActions(userId).catch((err) => console.warn(`[daily-close] corporate actions for ${userId}:`, err.message));
+    await reconcileCorporateActions(userId, portfolioId).catch((err) => console.warn(`[daily-close] corporate actions for ${userId}:${portfolioId}:`, err.message));
     try {
-      await snapshotForUser(userId);
+      await snapshotForUser(userId, portfolioId);
       saved += 1;
     } catch {
       failed += 1;
@@ -2685,7 +2878,7 @@ async function runDailyClose() {
     console.error('[daily-close] recommendation prices failed:', err.message);
     recommendationPrices = { ok: false };
   }
-  return { ok: true, cairoNow, total: userIds.length, saved, failed, recommendationPrices };
+  return { ok: true, cairoNow, total: withPositions.length, saved, failed, recommendationPrices };
 }
 
 /**
@@ -2766,7 +2959,8 @@ function startStopPlanScheduler() {
  * never overwrite a real saved close.
  */
 app.post('/api/log/backfill', wrap(async (req, res) => {
-  const precheck = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const precheck = await loadPortfolio(portfolioId);
   const precheckCodes = Object.keys(precheck.positions);
   if (!precheckCodes.length) return res.status(400).json({ error: 'مفيش مراكز مفتوحة' });
 
@@ -2786,7 +2980,7 @@ app.post('/api/log/backfill', wrap(async (req, res) => {
   let from = null;
   let to = null;
 
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const codes = Object.keys(portfolio.positions);
     const log = { ...(portfolio.log ?? {}) };
     let priorTotal = null;
@@ -2841,7 +3035,8 @@ app.post('/api/log/backfill', wrap(async (req, res) => {
 }));
 
 app.get('/api/log', wrap(async (req, res) => {
-  const p = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const p = await loadPortfolio(portfolioId);
   res.json({ log: p.log ?? {}, days: Object.keys(p.log ?? {}).sort() });
 }));
 
@@ -2851,12 +3046,14 @@ app.post('/api/log/note', wrap(async (req, res) => {
   if (!isDayString(date) || (note != null && (typeof note !== 'string' || note.length > MAX_DAY_NOTE))) {
     return res.status(400).json({ error: 'التاريخ أو الملاحظة غير صالحة' });
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) => setNote(portfolio, date, note ?? ''));
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => setNote(portfolio, date, note ?? ''));
   res.json({ ok: true, entry: updated.log[date] });
 }));
 
 app.get('/api/settings', wrap(async (req, res) => {
-  const p = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const p = await loadPortfolio(portfolioId);
   // commissionPct was a setting before trades carried their own fees; older books still store it.
   const { commissionPct: _retired, ...settings } = p.settings ?? {};
   res.json({ settings: { ...RULES, ...settings }, rules: RULES });
@@ -2871,7 +3068,8 @@ app.post('/api/settings/style', wrap(async (req, res) => {
   if (style !== null && !STYLE_KEYS.includes(style)) {
     return res.status(400).json({ error: 'أسلوب غير معروف' });
   }
-  const updated = await withPortfolio(req.user.id, (portfolio) => {
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => {
     const { investStyle: _previous, ...settings } = portfolio.settings ?? {};
     return { ...portfolio, settings: style ? { ...settings, investStyle: style } : settings };
   });
@@ -2882,7 +3080,8 @@ app.post('/api/settings/style', wrap(async (req, res) => {
 app.post('/api/reset', wrap(async (req, res) => {
   const scope = req.body?.scope ?? 'log';
   if (scope !== 'log' && scope !== 'all') return res.status(400).json({ error: 'نطاق المسح غير معروف' });
-  await withPortfolio(req.user.id, (portfolio) =>
+  const portfolioId = await portfolioIdFromRequest(req);
+  await withPortfolio(req.user.id, portfolioId, (portfolio) =>
     scope === 'all'
       // imports survives the wipe — behaviorProfile() reads it to know
       // whether the account has ever imported a screenshot, wipe or not.
@@ -2978,6 +3177,7 @@ function screenshotImportsLeft(usage, tier) {
 app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'استيراد الصورة محتاج OPENROUTER_API_KEY في .env' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة لمحفظتك أولاً' });
+  const portfolioId = await portfolioIdFromRequest(req);
   // Checked before the model call so an exhausted allowance costs nothing.
   if (screenshotImportsLeft(await getUserUsage(req.user.id), req.access.tier) <= 0) {
     return res.status(429).json({ error: SCREENSHOT_LIMIT_MESSAGE, reason: 'screenshot_limit', screenshotImportsLeft: 0 });
@@ -3117,7 +3317,7 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
       console.warn(`[screenshot] nothing usable (${SCREENSHOT_VISION_MODEL}):`, JSON.stringify(rows).slice(0, 1500));
       throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
     }
-    const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, ({ usage, portfolio }) => {
+    const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, portfolioId, ({ usage, portfolio }) => {
       if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
       const watchlist = { ...portfolio.watchlist };
       for (const c of watchCodes) watchlist[c] ??= { addedAt: importedAt, note: null };
@@ -3143,13 +3343,13 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   // Prices for every code the import can add or remove, to record the value it
   // moves as a cash flow — fetched here, outside the lock.
   const importPrices = await currentPrices([
-    ...new Set([...Object.keys(positions), ...Object.keys((await loadPortfolio(req.user.id)).positions)]),
+    ...new Set([...Object.keys(positions), ...Object.keys((await loadPortfolio(portfolioId)).positions)]),
   ]);
   // Only the merge-and-save is locked. The AI extraction above can take
   // several seconds; holding the per-user write lock for that whole span
   // would block ordinary trades/cash edits for no reason, since none of it
   // touches portfolio state until this point.
-  const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, ({ usage, portfolio }) => {
+  const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, portfolioId, ({ usage, portfolio }) => {
     // Re-checked under the lock: parallel requests all pass the early check
     // while none of them has been recorded yet.
     if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
@@ -3188,15 +3388,14 @@ function keepAddedOrder(held, incoming) {
 
 // ---- AI endpoints ----------------------------------------------------------
 
-async function runReview({ userId, style, force }) {
+async function runReview({ userId, portfolioId, style, force }) {
   // The style sets both halves: the rule numbers the engine sizes with and
   // the horizon the analyst reasons in. Both must come from the same choice,
   // or the prose will argue against the numbers underneath it.
   const rules = style ? rulesForStyle(RULES, style) : RULES;
   const effectiveStyle = style ?? 'medium';
 
-  const portfolio = await loadPortfolio(userId);
-  const portfolioId = await primaryPortfolioIdFor(userId);
+  const portfolio = await loadPortfolio(portfolioId);
   const capital = capitalOf(portfolio);
 
   // An empty book has no personal fit to judge — the honest answer to "what
@@ -3261,8 +3460,8 @@ const REVIEW_INLINE_WAIT_MS = 20_000;
 const REVIEW_STATUS_WAIT_MS = 15_000;
 const REVIEW_JOB_TTL_MS = 30 * 60_000;
 
-function reviewJobKey(userId, style, code = null) {
-  return `${currentTenant()?.id ?? ''}:${userId}:${style ?? 'medium'}${code ? `:${code}` : ''}`;
+function reviewJobKey(userId, portfolioId, style, code = null) {
+  return `${currentTenant()?.id ?? ''}:${userId}:${portfolioId}:${style ?? 'medium'}${code ? `:${code}` : ''}`;
 }
 
 function sendReviewJob(res, job) {
@@ -3320,20 +3519,21 @@ function reviewPreflight(req, res) {
 app.post('/api/review', wrap(async (req, res) => {
   const pre = reviewPreflight(req, res);
   if (!pre) return;
-  await startReviewJob(res, reviewJobKey(req.user.id, pre.style), () => runReview({ userId: req.user.id, ...pre }));
+  const portfolioId = await portfolioIdFromRequest(req);
+  await startReviewJob(res, reviewJobKey(req.user.id, portfolioId, pre.style), () => runReview({ userId: req.user.id, portfolioId, ...pre }));
 }));
 
 app.post('/api/review/stock', wrap(async (req, res) => {
   const pre = reviewPreflight(req, res);
   if (!pre) return;
   const code = String(req.body?.code ?? '').toUpperCase();
-  const portfolio = await loadPortfolio(req.user.id);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   if (!portfolio.positions[code]) return res.status(400).json({ error: `مفيش مركز مفتوح في ${code || 'السهم ده'}` });
 
   const userId = req.user.id;
-  const portfolioId = await primaryPortfolioIdFor(userId);
   const tier = req.access.tier;
-  const jobKey = reviewJobKey(userId, pre.style, code);
+  const jobKey = reviewJobKey(userId, portfolioId, pre.style, code);
   // The live price on the card when it was asked for — only used to tell the
   // user later how far the price has moved since this recommendation.
   const sentPrice = Number(req.body?.price);
@@ -3388,7 +3588,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
     // The verdict itself is kept on the portfolio as the stock's last
     // recommendation: the card shows it on every device until the user asks
     // for a new one (see rememberVerdict).
-    await withPortfolioAndUsage(userId, ({ usage, portfolio: p }) => {
+    await withPortfolioAndUsage(userId, portfolioId, ({ usage, portfolio: p }) => {
       const kept = rememberVerdict(p, code, verdict, {
         style: pre.style ?? 'medium',
         price: requestPrice,
@@ -3416,8 +3616,8 @@ app.post('/api/review/stock', wrap(async (req, res) => {
 // asks for it right after its own focus=cash scan loads, for the same index
 // and style. Its job key has its own `cash:` namespace so it never collides
 // with a stock review's.
-function cashReviewJobKey(userId, style, index) {
-  return `${userId}:cash:${style ?? 'medium'}:${index}`;
+function cashReviewJobKey(userId, portfolioId, style, index) {
+  return `${userId}:cash:${portfolioId}:${style ?? 'medium'}:${index}`;
 }
 
 app.post('/api/review/cash', wrap(async (req, res) => {
@@ -3428,8 +3628,8 @@ app.post('/api/review/cash', wrap(async (req, res) => {
   if (!indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${index}` });
 
   const userId = req.user.id;
-  const portfolioId = await primaryPortfolioIdFor(userId);
-  const portfolio = await loadPortfolio(userId);
+  const portfolioId = await portfolioIdFromRequest(req);
+  const portfolio = await loadPortfolio(portfolioId);
   if (!(portfolio.cash > 0)) return res.status(400).json({ error: 'مفيش كاش متاح يتحلل.' });
 
   // This review rides on a cash-scan use that was already spent (or is
@@ -3443,7 +3643,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب مراجعة الخطة.' });
   }
 
-  await startReviewJob(res, cashReviewJobKey(userId, pre.style, index), async () => {
+  await startReviewJob(res, cashReviewJobKey(userId, portfolioId, pre.style, index), async () => {
     const startedAt = Date.now();
     let scanRows = [];
     const { getOrGenerateCashReview } = await import('../agent/cashAnalysis.js');
@@ -3481,7 +3681,8 @@ app.post('/api/review/cash', wrap(async (req, res) => {
 
 app.get('/api/review/cash/status', wrap(async (req, res) => {
   const index = String(req.query.index ?? 'ALL').toUpperCase();
-  await sendJobStatus(res, cashReviewJobKey(req.user.id, req.query.style, index));
+  const portfolioId = await portfolioIdFromRequest(req);
+  await sendJobStatus(res, cashReviewJobKey(req.user.id, portfolioId, req.query.style, index));
 }));
 
 /**
@@ -3502,7 +3703,8 @@ async function sendJobStatus(res, key) {
 
 app.get('/api/review/status', wrap(async (req, res) => {
   const code = req.query.code ? String(req.query.code).toUpperCase() : null;
-  await sendJobStatus(res, reviewJobKey(req.user.id, req.query.style, code));
+  const portfolioId = await portfolioIdFromRequest(req);
+  await sendJobStatus(res, reviewJobKey(req.user.id, portfolioId, req.query.style, code));
 }));
 
 app.get('/api/market-analysis', wrap(async (req, res) => {

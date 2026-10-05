@@ -84,8 +84,8 @@ async function cmdScan() {
 
 async function cmdAnalyze(code) {
   if (!code) throw new Error('اكتب كود السهم: node src/cli.js analyze COMI');
-  const portfolio = await loadPortfolio();
   const portfolioId = await primaryPortfolioIdFor('local');
+  const portfolio = await loadPortfolio(portfolioId);
   const position = portfolio.positions[code.toUpperCase()] ?? null;
   const capital = Object.values(portfolio.positions).reduce((a, p) => a + p.shares * p.avgCost, 0) + portfolio.cash;
 
@@ -161,8 +161,8 @@ async function cmdReview(styleArg) {
   }
   const { getOrGenerateReview } = await import('./agent/analyst.js');
 
-  const portfolio = await loadPortfolio();
   const portfolioId = await primaryPortfolioIdFor('local');
+  const portfolio = await loadPortfolio(portfolioId);
   const codes = trackedCodes(portfolio);
   if (!codes.length) {
     console.log(c.yellow('\nالمحفظة وقائمة المراقبة فاضيين. سجّل صفقة الأول:'));
@@ -262,9 +262,10 @@ async function cmdFundamentals(code) {
 
 async function cmdTrade(side, [code, shares, price]) {
   if (!code || !shares || !price) throw new Error(`الصيغة: node src/cli.js ${side} COMI 100 142.50`);
-  const portfolio = await loadPortfolio();
+  const portfolioId = await primaryPortfolioIdFor('local');
+  const portfolio = await loadPortfolio(portfolioId);
   const updated = await recordTrade(portfolio, { code, side, shares: +shares, price: +price });
-  await savePortfolio(updated);
+  await savePortfolio(updated, portfolioId);
   const pos = updated.positions[code.toUpperCase()];
   console.log(c.green(`\nاتسجلت: ${side === 'buy' ? 'شراء' : 'بيع'} ${shares} سهم ${code.toUpperCase()} بسعر ${price}`));
   if (pos) console.log(`المركز دلوقتي: ${pos.shares} سهم بمتوسط ${pos.avgCost}`);
@@ -273,12 +274,13 @@ async function cmdTrade(side, [code, shares, price]) {
 }
 
 async function cmdCash(amount) {
-  const portfolio = await loadPortfolio();
+  const portfolioId = await primaryPortfolioIdFor('local');
+  const portfolio = await loadPortfolio(portfolioId);
   if (amount == null) {
     console.log(`\nالكاش المتاح: ${portfolio.cash.toLocaleString('en-US')} ج\n`);
     return;
   }
-  await savePortfolio(recordCashFlow({ ...portfolio, cash: +amount }, +amount - (portfolio.cash ?? 0), 'cash'));
+  await savePortfolio(recordCashFlow({ ...portfolio, cash: +amount }, +amount - (portfolio.cash ?? 0), 'cash'), portfolioId);
   console.log(c.green(`\nالكاش اتحدّث لـ ${(+amount).toLocaleString('en-US')} ج\n`));
 }
 

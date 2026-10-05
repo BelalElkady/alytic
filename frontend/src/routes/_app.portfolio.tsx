@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { ArrowDownUp, Info, PencilLine, Sparkles, Trash2 } from "lucide-react";
 
+import { PortfolioDesk } from "@/components/desk/portfolio-desk";
 import { PriceRail } from "@/components/desk/price-rail";
 import {
   EmptyState,
@@ -57,8 +58,16 @@ export const Route = createFileRoute("/_app/portfolio")({
       { property: "og:url", content: `${siteUrl(match)}/portfolio` },
     ],
   }),
-  component: PositionsPage,
+  component: PortfolioRoute,
 });
+
+function PortfolioRoute() {
+  return (
+    <PortfolioDesk>
+      <PositionsPage />
+    </PortfolioDesk>
+  );
+}
 
 const REC_TONE: Record<string, string> = {
   buy: "border-up/40 bg-up-soft text-up",

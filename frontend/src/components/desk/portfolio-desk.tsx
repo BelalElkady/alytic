@@ -1,0 +1,436 @@
+import { useState, type ReactNode, type SyntheticEvent } from "react";
+import { Link } from "@tanstack/react-router";
+import { Lock, MoreHorizontal, Plus, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+
+import { Panel, Spinner, Stat } from "@/components/desk/state-blocks";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { fmt, int, pct, signed, tone } from "@/lib/format";
+import { INVEST_STYLES, type StyleKey } from "@/lib/invest-style";
+import { useDesk } from "@/lib/store";
+import { cn } from "@/lib/utils";
+
+type Pf = ReturnType<typeof useDesk>["portfolios"][number];
+
+/** One color per Portfolio, by its position in `portfolios` — same order everywhere (AllocationBar, the switcher cards, HeroBar's tag), so a Portfolio reads as the same color across the desk. */
+export const PORTFOLIO_COLORS = ["bg-primary", "bg-amber-500", "bg-sky-500"];
+const COLORS = PORTFOLIO_COLORS;
+const round = (n: number) => Math.round(n * 100) / 100;
+/**
+ * Every card is a clickable role="button" div; Radix portals its dropdown
+ * and dialog content out of the card's DOM subtree, but React still bubbles
+ * their events up the component tree (see the same hazard, same fix, in
+ * _app.portfolio.tsx's PositionCard/CorporateActionNotice). Without this, a
+ * click on a style tile or a save button also "clicks" the card underneath
+ * it, and the card's onKeyDown swallows every Space keystroke meant for an
+ * input inside one of these dialogs.
+ */
+const stopCardBubble = (e: SyntheticEvent) => e.stopPropagation();
+const styleLabel = (s: string | null) => INVEST_STYLES.find((x) => x.key === s)?.label ?? s ?? "—";
+
+/**
+ * `useDesk().portfolios` holds each Portfolio's last-saved snapshot (#101's
+ * resolution). The active Portfolio's card instead shows today's live tick,
+ * same as the rest of the desk — every other card keeps the snapshot as-is.
+ */
+function useMergedPortfolios() {
+  const { portfolios, totals, rows } = useDesk();
+  return portfolios.map((p) =>
+    p.active
+      ? { ...p, value: totals.value, pl: totals.pl, cash: totals.cash, positionCount: rows.length }
+      : p,
+  );
+}
+
+function StyleBadge({ style }: { style: string | null }) {
+  return (
+    <Badge variant="outline" className="text-[11px] font-medium">
+      {styleLabel(style)}
+    </Badge>
+  );
+}
+
+function PlText({ pl, plPct, className }: { pl: number; plPct: number; className?: string }) {
+  return (
+    <span className={cn("num", tone(pl), className)}>
+      {signed(round(pl))} ج ({pct(round(plPct))})
+    </span>
+  );
+}
+
+function AllocationBar({ portfolios }: { portfolios: Pf[] }) {
+  const total = portfolios.reduce((s, p) => s + p.value + p.cash, 0) || 1;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-2">
+        {portfolios.map((p, i) => (
+          <div
+            key={p.id}
+            className={COLORS[i % COLORS.length]}
+            style={{ width: `${((p.value + p.cash) / total) * 100}%` }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
+        {portfolios.map((p, i) => (
+          <span key={p.id} className="flex items-center gap-1.5">
+            <span className={cn("size-2 rounded-full", COLORS[i % COLORS.length])} />
+            {p.name}{" "}
+            <span className="num">{int(Math.round(((p.value + p.cash) / total) * 100))}%</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sums come straight off the summary's `value`/`pl`/`cash` (no `cost` field
+ * exists on it); the overall P/L % derives cost back out of value and pl.
+ */
+function OverallStats({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
+  const totalValue = portfolios.reduce((s, p) => s + p.value, 0);
+  const totalPl = portfolios.reduce((s, p) => s + p.pl, 0);
+  const totalCash = portfolios.reduce((s, p) => s + p.cash, 0);
+  const totalCost = totalValue - totalPl;
+  const totalPlPct = totalCost ? (totalPl / totalCost) * 100 : 0;
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <Stat label="إجمالي القيمة" value={`${fmt(round(totalValue))} ج`} />
+      <Stat label="إجمالي الربح / الخسارة" value={<PlText pl={totalPl} plPct={totalPlPct} />} />
+      <Stat label="إجمالي الكاش" value={`${fmt(round(totalCash))} ج`} />
+      <Stat label="عدد المحافظ" value={`${int(portfolios.length)} / ${int(cap)}`} />
+    </div>
+  );
+}
+
+function ReadOnlyNotice({ active }: { active: Pf }) {
+  if (!active.readOnly) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warn/40 bg-warn-soft px-3 py-2 text-[13px]">
+      <Lock className="size-4" />
+      المحفظة دي للعرض بس — باقتك الحالية بتسمح بمحفظة واحدة. جدّد الحريفة عشان تتعامل عليها تاني.
+      <Button size="sm" variant="outline" className="ms-auto" asChild>
+        <Link to="/subscribe">جدّد الحريفة</Link>
+      </Button>
+    </div>
+  );
+}
+
+function UpsellDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent dir="rtl">
+        <DialogHeader>
+          <DialogTitle>لحد ٣ محافظ مع باقة الحريفة</DialogTitle>
+        </DialogHeader>
+        <p className="text-[14px] leading-7 text-muted-foreground">
+          افصل المضاربة عن الاستثمار الطويل: كل محفظة ليها أسلوبها وكاشها وربحها، والتوصيات بتتعمل
+          على أسلوب كل محفظة. وكمان نظرة إجمالية على كل فلوسك.
+        </p>
+        <DialogFooter>
+          <Button asChild>
+            <Link to="/subscribe">طريقة الاشتراك</Link>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PortfolioDialog({
+  open,
+  onOpenChange,
+  title,
+  initial,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  title: string;
+  initial?: { name: string; style: StyleKey };
+  onSave: (name: string, style: StyleKey) => Promise<void>;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [style, setStyle] = useState<StyleKey>(initial?.style ?? "trader");
+  const [saving, setSaving] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent dir="rtl" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <div className="text-[13px] font-medium">اسم المحفظة</div>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="مثلًا: مضاربة سريعة"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="text-[13px] font-medium">أسلوب الاستثمار</div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {INVEST_STYLES.map((x) => (
+                <button
+                  key={x.key}
+                  type="button"
+                  onClick={() => setStyle(x.key)}
+                  className={cn(
+                    "rounded-lg border p-2.5 text-start text-[13px]",
+                    style === x.key ? "border-primary bg-primary/5" : "border-border",
+                  )}
+                >
+                  <div className="font-semibold">{x.label}</div>
+                  <div className="text-[11.5px] text-muted-foreground">أفق {x.horizon}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11.5px] text-muted-foreground">
+              التوصيات ووقف الخسارة في المحفظة دي هتتعمل على الأسلوب ده.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            disabled={!name.trim() || saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await onSave(name.trim(), style);
+                onOpenChange(false);
+              } catch (caught) {
+                toast.error(caught instanceof Error ? caught.message : "تعذر حفظ المحفظة");
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving && <Spinner />}
+            حفظ
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ManageMenu({ p }: { p: Pf }) {
+  const { portfolios, renamePortfolio, deletePortfolio } = useDesk();
+  const [edit, setEdit] = useState(false);
+  const [del, setDel] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const isLast = portfolios.length === 1;
+  return (
+    <>
+      <DropdownMenu dir="rtl">
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            onClick={stopCardBubble}
+            onKeyDown={stopCardBubble}
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
+          <DropdownMenuItem disabled={p.readOnly} onSelect={() => setEdit(true)}>
+            تعديل الاسم والأسلوب
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={isLast}
+            className="text-down"
+            onSelect={() => {
+              setTyped("");
+              setDel(true);
+            }}
+          >
+            حذف المحفظة
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <PortfolioDialog
+        open={edit}
+        onOpenChange={setEdit}
+        title="تعديل المحفظة"
+        initial={{ name: p.name, style: (p.style as StyleKey | null) ?? "medium" }}
+        onSave={(name, style) => renamePortfolio(p.id, { name, style })}
+      />
+      <Dialog open={del} onOpenChange={setDel}>
+        <DialogContent dir="rtl" onClick={stopCardBubble} onKeyDown={stopCardBubble}>
+          <DialogHeader>
+            <DialogTitle>حذف «{p.name}»</DialogTitle>
+          </DialogHeader>
+          <p className="text-[14px] leading-7 text-muted-foreground">
+            هتتمسح كل المراكز والصفقات والكاش اللي في المحفظة دي. اكتب اسم المحفظة للتأكيد.
+          </p>
+          <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={p.name} />
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              disabled={typed.trim() !== p.name || deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await deletePortfolio(p.id);
+                  setDel(false);
+                } catch (caught) {
+                  toast.error(caught instanceof Error ? caught.message : "تعذر حذف المحفظة");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? <Spinner /> : null}
+              احذف نهائيًا
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function AddButton({ portfolios, cap }: { portfolios: Pf[]; cap: number }) {
+  const { user, createPortfolio } = useDesk();
+  const [open, setOpen] = useState(false);
+  const [upsellOpen, setUpsellOpen] = useState(false);
+  if (portfolios.length >= cap) {
+    if (user?.tier !== "trader" && portfolios.length === 1) {
+      return (
+        <div className="flex flex-col items-start gap-1.5 rounded-xl border border-dashed border-border px-3.5 py-2.5">
+          <span className="text-[11.5px] text-muted-foreground">
+            افصل المضاربة عن الاستثمار الطويل — لحد ٣ محافظ مع الحريفة.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => setUpsellOpen(true)}
+          >
+            <Sparkles className="size-4" />
+            عايز أكتر من محفظة؟
+          </Button>
+          <UpsellDialog open={upsellOpen} onOpenChange={setUpsellOpen} />
+        </div>
+      );
+    }
+    return null;
+  }
+  return (
+    <>
+      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setOpen(true)}>
+        <Plus className="size-4" />
+        محفظة جديدة
+      </Button>
+      <PortfolioDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="محفظة جديدة"
+        onSave={(name, style) => createPortfolio(name, style)}
+      />
+    </>
+  );
+}
+
+/**
+ * The Portfolio switcher: a compact pill row, not a dashboard — each pill
+ * only identifies a Portfolio (color dot, name, style) and switches to it on
+ * click. Its value/P&L/cash/position count don't show here, only for
+ * whichever one is active, in HeroBar's tag (desk-shell.tsx) — this renders
+ * in the shell, above HeroBar, on every page, not just `/portfolio`. A
+ * <button> can't validly contain ManageMenu's own trigger button (invalid
+ * HTML, and this app is server-rendered — the mismatch breaks hydration) —
+ * role="button" on a div is this codebase's existing pattern for the same
+ * shape (see PositionCard).
+ */
+export function PortfolioSwitcher() {
+  const { portfolioCap, switchPortfolio } = useDesk();
+  const portfolios = useMergedPortfolios();
+
+  return (
+    <div className="flex flex-wrap gap-2.5">
+      {portfolios.map((p, i) => (
+        <div
+          key={p.id}
+          role="button"
+          tabIndex={0}
+          onClick={() => switchPortfolio(p.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              switchPortfolio(p.id);
+            }
+          }}
+          className={cn(
+            "flex cursor-pointer items-center gap-2.5 rounded-xl border bg-card px-3.5 py-2.5 text-start transition",
+            p.active
+              ? "border-primary ring-2 ring-primary/30"
+              : "border-border hover:border-primary/40",
+            p.readOnly && "opacity-70",
+          )}
+        >
+          <ManageMenu p={p} />
+          <span className={cn("size-2.5 shrink-0 rounded-full", COLORS[i % COLORS.length])} />
+          <div className="flex flex-col items-start gap-1">
+            <span className="flex items-center gap-1.5 font-semibold">
+              {p.name}
+              {p.readOnly && <Lock className="size-3.5" />}
+            </span>
+            <StyleBadge style={p.style} />
+          </div>
+        </div>
+      ))}
+      <AddButton portfolios={portfolios} cap={portfolioCap} />
+    </div>
+  );
+}
+
+/** Wraps the existing `/portfolio` page content with the overview panel (the switcher itself now lives in the shell, above HeroBar). */
+export function PortfolioDesk({ children }: { children: ReactNode }) {
+  const { portfolioCap } = useDesk();
+  const portfolios = useMergedPortfolios();
+  const active = portfolios.find((p) => p.active) ?? portfolios[0];
+
+  return (
+    <div className="space-y-4">
+      <Panel title="فلوسك كلها">
+        <div className="space-y-5">
+          <OverallStats portfolios={portfolios} cap={portfolioCap} />
+          <AllocationBar portfolios={portfolios} />
+        </div>
+      </Panel>
+
+      {active && <ReadOnlyNotice active={active} />}
+      {active && (
+        <div className="text-[13px] font-semibold text-muted-foreground">مراكز «{active.name}»</div>
+      )}
+      {children}
+    </div>
+  );
+}

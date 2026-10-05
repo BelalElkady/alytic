@@ -9,13 +9,14 @@ import {
   type ReactNode,
 } from "react";
 
-import { ApiError, api, post } from "./api";
+import { ApiError, api, post, patch as patchRequest, del } from "./api";
 import {
   clearInvestStyle,
   explicitInvestStyle,
   isStyleKey,
   setInvestStyle,
   useActiveInvestStyle,
+  type StyleKey,
 } from "./invest-style";
 
 /* Types kept intentionally loose: they mirror the existing API responses
@@ -83,7 +84,8 @@ export function repricePosition(position: Position, price: number): Position {
     next.distanceToStopPct = ((price - stop) / price) * 100;
     // The close is judged against the stop that was in force then, which a
     // stop raised during the session doesn't change.
-    if (typeof closePrice === "number") next.stopBreached = closePrice < (stopAtClose ?? stop) && price < stop;
+    if (typeof closePrice === "number")
+      next.stopBreached = closePrice < (stopAtClose ?? stop) && price < stop;
   }
   if (typeof targetLevel === "number") {
     next.distanceToTargetPct = ((targetLevel - price) / price) * 100;
@@ -200,6 +202,34 @@ type DeskValue = {
   manualTab: "edit" | "new";
   /** Opens the manual-entry dialog on the given tab ("edit" unless asked for "new" — logging a trade). */
   openManual: (tab?: "edit" | "new") => void;
+  /** The signed-in user's Portfolios, from GET /api/portfolios — verbatim, refreshed alongside pf. */
+  portfolios: Array<{
+    id: number;
+    name: string;
+    style: string | null;
+    value: number;
+    pl: number;
+    cash: number;
+    positionCount: number;
+    active: boolean;
+    readOnly: boolean;
+  }>;
+  /** The User's tier cap on Portfolios (#103) — 1 or 3. From GET /api/portfolios. */
+  portfolioCap: number;
+  /** The Portfolio the desk is currently pointed at, or null before it's known. */
+  activePortfolioId: number | null;
+  /**
+   * Switches the desk to another Portfolio: persists the choice and reloads.
+   * `knownStyle` lets a caller that already knows the target's style (a
+   * just-created Portfolio, not yet in `portfolios`) skip the lookup.
+   */
+  switchPortfolio: (id: number, knownStyle?: StyleKey) => void;
+  /** Creates a new Portfolio and switches the desk to it. */
+  createPortfolio: (name: string, style: StyleKey) => Promise<void>;
+  /** Renames and/or restyles a Portfolio, then refreshes the summary list. */
+  renamePortfolio: (id: number, patch: { name?: string; style?: StyleKey }) => Promise<void>;
+  /** Deletes a Portfolio — blocked server-side if it's the User's last one. */
+  deletePortfolio: (id: number) => Promise<void>;
 };
 
 const DeskContext = createContext<DeskValue | null>(null);
@@ -228,6 +258,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [marketFocus, setMarketFocus] = useState<"cash" | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualTab, setManualTab] = useState<"edit" | "new">("edit");
+  const [portfolios, setPortfolios] = useState<DeskValue["portfolios"]>([]);
+  const [portfolioCap, setPortfolioCap] = useState(1);
+  const [activePortfolioId, setActivePortfolioId] = useState<number | null>(null);
   const openManual = useCallback((tab: "edit" | "new" = "edit") => {
     setManualTab(tab);
     setManualOpen(true);
@@ -286,19 +319,39 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     [refreshUser],
   );
 
-  /** Same sequence as before: portfolio → scan of held codes → daily log. */
+  /**
+   * Same sequence as before: portfolio → scan of held codes → daily log.
+   * `pf` and `rows` are committed together, only once both are known — never
+   * `pf` alone — because `totals` reads `pf.cash` and `rows` together
+   * (below): committing `pf` first would briefly blend the new Portfolio's
+   * cash with the previous one's still-stale position values, a jump the
+   * desk switcher made visible as numbers "hallucinating" before settling.
+   */
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       const portfolio = await api("/api/portfolio");
-      setPf(portfolio);
       const codes = Object.keys(portfolio?.positions ?? {});
       const scanned = codes.length
         ? (await api(`/api/scan?codes=${codes.join(",")}&style=${style}`)).results.filter(
             (r: Row) => r.position,
           )
         : [];
+      setPf(portfolio);
       setRows(scanned);
+      // A transient failure here (or a version-skew 404 against an old
+      // cached bundle) must never block the rest of reload()'s fetches,
+      // which the UI does depend on — the desk switcher just goes empty.
+      try {
+        const { portfolios: list, activePortfolioId: activeId, cap } = await api("/api/portfolios");
+        setPortfolios(list ?? []);
+        setActivePortfolioId(activeId ?? null);
+        setPortfolioCap(cap ?? 1);
+      } catch {
+        setPortfolios([]);
+        setActivePortfolioId(null);
+        setPortfolioCap(1);
+      }
       setLog((await api("/api/log")).log ?? {});
       setError(null);
     } catch (caught) {
@@ -360,7 +413,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       lastLevelsAt.current = Date.now();
       try {
         const codes = current.map((row) => row.code).join(",");
-        const { results } = await api(`/api/scan?codes=${encodeURIComponent(codes)}&style=${style}`);
+        const { results } = await api(
+          `/api/scan?codes=${encodeURIComponent(codes)}&style=${style}`,
+        );
         const fresh = new Map<string, Row>(
           (results as Row[]).filter((r) => r.position).map((r) => [r.code, r]),
         );
@@ -412,7 +467,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         const crossedTarget = current.some((row) => {
           const q = quotes?.[row.code]?.price;
           const p = row.position;
-          return q && p && typeof p.targetLevel === "number" && q >= p.targetLevel && !p.reachedTarget;
+          return (
+            q && p && typeof p.targetLevel === "number" && q >= p.targetLevel && !p.reachedTarget
+          );
         });
         if (crossedTarget) void refreshLevels({ soon: true });
         setQuotes((previous) => ({ ...previous, ...quotes }));
@@ -575,6 +632,80 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  // Persists the choice under the same key activePortfolioHeader() reads, so
+  // every subsequent request (including this reload) is scoped to it.
+  //
+  // Also adopts the target Portfolio's own style locally, *before* reload()
+  // lands: the sync effect above (serverStyle) treats this device's local
+  // style as the thing to push to the server whenever it differs from what
+  // just loaded. Switching Portfolios changes serverStyle to a different
+  // Portfolio's style on purpose — without adopting it first, that effect
+  // reads it as a stale local pick and overwrites the Portfolio being
+  // switched to with whatever style this device last had active, silently
+  // discarding the style it was created or renamed with.
+  const switchPortfolio = useCallback(
+    (id: number, knownStyle?: StyleKey) => {
+      try {
+        localStorage.setItem("alytic-active-portfolio", String(id));
+      } catch {
+        /* localStorage unavailable — the switch still applies for this session */
+      }
+      const style = knownStyle ?? portfolios.find((p) => p.id === id)?.style;
+      if (isStyleKey(style)) setInvestStyle(style);
+      setActivePortfolioId(id);
+      // Clears the totals along with the tag: otherwise the switcher's active
+      // highlight and HeroBar's name tag jump to the new Portfolio instantly,
+      // while its numbers stay the previous Portfolio's until reload()
+      // resolves — reload()'s loading skeleton (HeroBar) takes over instead.
+      setPf(null);
+      setRows([]);
+      void reload();
+    },
+    [reload, portfolios],
+  );
+
+  /** Creates a new Portfolio and switches the desk to it. */
+  const createPortfolio = useCallback(
+    async (name: string, style: StyleKey) => {
+      const { id } = await post("/api/portfolios", { name, style });
+      // Known immediately — the summary list a plain switch reads from
+      // doesn't include this Portfolio yet (it only refreshes via reload()).
+      switchPortfolio(id, style);
+    },
+    [switchPortfolio],
+  );
+
+  /** Renames and/or restyles a Portfolio, then refreshes the summary list. */
+  const renamePortfolio = useCallback(
+    async (id: number, patch: { name?: string; style?: StyleKey }) => {
+      await patchRequest(`/api/portfolios/${id}`, patch);
+      // Restyling the Portfolio currently open adopts it locally too — same
+      // clobber risk switchPortfolio guards against, see its comment.
+      if (patch.style && id === activePortfolioId) setInvestStyle(patch.style);
+      await reload();
+    },
+    [reload, activePortfolioId],
+  );
+
+  /**
+   * Deletes a Portfolio. If it was the active one, switches to whichever
+   * Portfolio the server falls back to (the primary) rather than leaving
+   * activePortfolioId/localStorage pointing at a now-deleted id.
+   */
+  const deletePortfolio = useCallback(
+    async (id: number) => {
+      await del(`/api/portfolios/${id}`);
+      if (activePortfolioId === id) {
+        const { activePortfolioId: fallbackId, portfolios: list } = await api("/api/portfolios");
+        const fallback = list?.find((p: { id: number }) => p.id === fallbackId) ?? list?.[0];
+        switchPortfolio(fallback?.id, fallback?.style);
+      } else {
+        await reload();
+      }
+    },
+    [activePortfolioId, reload, switchPortfolio],
+  );
+
   const totals = useMemo<Totals>(() => {
     const cost = rows.reduce((sum, r) => sum + r.position.shares * r.position.avgCost, 0);
     const value = rows.reduce((sum, r) => sum + (r.position.marketValue ?? 0), 0);
@@ -630,6 +761,13 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setManualOpen,
     manualTab,
     openManual,
+    portfolios,
+    portfolioCap,
+    activePortfolioId,
+    switchPortfolio,
+    createPortfolio,
+    renamePortfolio,
+    deletePortfolio,
   };
 
   return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;

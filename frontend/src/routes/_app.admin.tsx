@@ -443,6 +443,18 @@ type AdminUserPortfolio = {
   updatedAt: string | null;
 };
 
+/** One of this User's live Portfolios (#111) — `portfolios[0]` is always the primary, same numbers as `portfolio`. */
+export type AdminUserPortfolioSummary = {
+  id: number;
+  name: string;
+  style: StyleKey | null;
+  cash: number;
+  positionsCount: number;
+  positionsValue: number;
+  tradesCount: number;
+  realizedPnl: number;
+};
+
 /** Cut-down behaviorProfile() (backend/src/scoring/behavior.js) plus the style picked in settings. */
 export type AdminUserBehavior = {
   chosenStyle: StyleKey | null;
@@ -499,6 +511,8 @@ export type AdminUserRow = {
   followUp: { whatsappAt: string | null; emailAt: string | null };
   subscription: AdminSubscription | null;
   portfolio: AdminUserPortfolio | null;
+  /** Every live Portfolio, primary first — empty only for a User with none. */
+  portfolios: AdminUserPortfolioSummary[];
   behavior: AdminUserBehavior | null;
   usage: AdminUserUsage;
 };

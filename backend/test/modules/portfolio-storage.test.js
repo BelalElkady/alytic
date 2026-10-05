@@ -15,6 +15,7 @@ import {
   listRecommendations,
   listOpenRecommendationKeys,
   deleteUser,
+  listPortfoliosForUser,
   supabase,
 } from '../../src/db.js';
 import { register } from '../../src/auth.js';
@@ -188,4 +189,19 @@ test('logRecommendations does not dedupe the same stock/action across two differ
     .eq('action', 'buy');
   assert.equal(selectErr, null);
   assert.deepEqual(new Set(rows.map((r) => r.portfolio_id)), new Set([portfolioA, portfolioB]));
+});
+
+test('listPortfoliosForUser returns every live Portfolio, ordered by ordinal', async () => {
+  const email = uniqueEmail();
+  await register({ email, phone: uniquePhone(), password: 'x'.repeat(8) });
+  const user = await getUserByEmail(email);
+  const primaryId = await primaryPortfolioIdFor(user.id);
+  // No higher-level "create a second Portfolio" API exists yet (Global
+  // Constraints) — insert one directly, same technique Plan 1's Task 5 used.
+  const { data: second } = await supabase.from('portfolios').insert({ user_id: user.id, name: 'محفظة ثانية', ordinal: 1 }).select('id').single();
+
+  const rows = await listPortfoliosForUser(user.id);
+  assert.deepEqual(rows.map((r) => r.id), [primaryId, second.id]);
+  assert.equal(rows[0].name, 'المحفظة الرئيسية');
+  assert.equal(rows[1].name, 'محفظة ثانية');
 });

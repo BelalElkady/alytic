@@ -14,6 +14,13 @@ export const TIERS = {
 };
 
 /**
+ * How many Portfolios a tier may hold (map #98 / issue #103): الحريفة gets
+ * 3; every other tier — including a lapsed or never-subscribed account,
+ * whose `tier` is `null` — gets 1.
+ */
+export const portfolioCapFor = (tier) => (tier === 'trader' ? 3 : 1);
+
+/**
  * The price list. Subscriptions are arranged over the support chat and
  * activated by hand from the admin panel, so nothing here charges anyone —
  * these are the figures the "اشترك" screen quotes and the admin panel

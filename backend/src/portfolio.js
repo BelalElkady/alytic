@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { primaryPortfolioIdFor, getPortfolioById, putPortfolioById, getUserUsage, putUserUsage } from './db.js';
+import { getPortfolioById, putPortfolioById, getUserUsage, putUserUsage, listPortfoliosForUser, insertPortfolio, updatePortfolioMeta, softDeletePortfolio } from './db.js';
 import { lookup } from './config/universe.js';
 import { currentTenant } from './tenancy/context.js';
 
@@ -29,21 +29,16 @@ const EMPTY = {
   updatedAt: null,
 };
 
-// A Portfolio now lives at its own `id`, not at the User's id — a User can
-// have more than one. Every call site here still only knows the User, so
-// each of these resolves the User's *primary* Portfolio (the one every
-// existing endpoint means by "the portfolio") via `primaryPortfolioIdFor`
-// before reading or writing it. That keeps `loadPortfolio`/`savePortfolio`'s
-// signatures exactly as every caller in server.js already expects.
-export async function loadPortfolio(userId = 'local') {
-  const portfolioId = await primaryPortfolioIdFor(userId);
+// A Portfolio lives at its own `id`, not at the User's id — a User can have
+// more than one. Callers resolve which Portfolio they mean (e.g. via
+// `primaryPortfolioIdFor`) and pass that id in directly.
+export async function loadPortfolio(portfolioId) {
   const row = await getPortfolioById(portfolioId);
   return stampAddedOrder({ ...EMPTY, ...(row?.state ?? {}) });
 }
 
-export async function savePortfolio(p, userId = 'local') {
+export async function savePortfolio(p, portfolioId) {
   const stamped = stampAddedOrder(p);
-  const portfolioId = await primaryPortfolioIdFor(userId);
   await putPortfolioById(portfolioId, stamped);
   return stamped;
 }
@@ -131,10 +126,83 @@ async function withUserLock(userId, fn) {
   }
 }
 
-export async function withPortfolio(userId, mutator) {
+export async function withPortfolio(userId, portfolioId, mutator) {
   return withUserLock(userId, async () => {
-    const portfolio = await loadPortfolio(userId);
-    return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), userId);
+    const portfolio = await loadPortfolio(portfolioId);
+    return savePortfolio(stampSharesSetAt(portfolio, await mutator(portfolio)), portfolioId);
+  });
+}
+
+/**
+ * Creates a new Portfolio for this User — named and styled from the start
+ * (map #98: every Portfolio has its own Investing style from creation) —
+ * unless the User is already at their tier's cap (#103). Seeds the new
+ * Portfolio's own style setting to match (see the plan's Global
+ * Constraints' two-place style write), so its first recommendation, before
+ * it has any trade history of its own, already follows the style it was
+ * given rather than defaulting to "medium". Locked per-user, same as every
+ * other Portfolio write, so two concurrent creates can't both slip past
+ * the cap.
+ *
+ * @returns {Promise<{ok: true, portfolio: object} | {ok: false, reason: 'cap'}>}
+ */
+export async function createPortfolioForUser(userId, { name, style }, cap) {
+  return withUserLock(userId, async () => {
+    const list = await listPortfoliosForUser(userId);
+    if (list.length >= cap) return { ok: false, reason: 'cap' };
+    const ordinal = list.length ? Math.max(...list.map((p) => p.ordinal)) + 1 : 0;
+    const row = await insertPortfolio(userId, { name, style, ordinal });
+    await savePortfolio({ ...EMPTY, settings: { investStyle: style } }, row.id);
+    return { ok: true, portfolio: row };
+  });
+}
+
+/**
+ * This Portfolio's writable rank — its 0-based position among the User's
+ * live Portfolios, ordered by ordinal (creation order) — #103's definition.
+ * -1 if portfolioId isn't one of this User's live Portfolios.
+ */
+export async function portfolioRankFor(userId, portfolioId) {
+  const list = await listPortfoliosForUser(userId);
+  return list.findIndex((p) => p.id === portfolioId);
+}
+
+/**
+ * Renames and/or restyles a Portfolio — blocked once it's past the User's
+ * cap (#103: read-only, same as every other write) or if it isn't one of
+ * this User's live Portfolios. Keeps the two-place style write (see the
+ * plan's Global Constraints) in step, the same as creation does.
+ *
+ * @returns {Promise<{ok: true} | {ok: false, reason: 'not_found' | 'readonly'}>}
+ */
+export async function renamePortfolio(userId, portfolioId, { name, style }, cap) {
+  return withUserLock(userId, async () => {
+    const rank = await portfolioRankFor(userId, portfolioId);
+    if (rank === -1) return { ok: false, reason: 'not_found' };
+    if (rank >= cap) return { ok: false, reason: 'readonly' };
+    await updatePortfolioMeta(portfolioId, { name, style });
+    if (style) {
+      const portfolio = await loadPortfolio(portfolioId);
+      await savePortfolio({ ...portfolio, settings: { ...portfolio.settings, investStyle: style } }, portfolioId);
+    }
+    return { ok: true };
+  });
+}
+
+/**
+ * Soft-deletes a Portfolio — allowed even when it's read-only (#102's
+ * resolution: deleting a locked Portfolio is how a User promotes the next
+ * one), refused only when it's the User's last live Portfolio.
+ *
+ * @returns {Promise<{ok: true} | {ok: false, reason: 'not_found' | 'last'}>}
+ */
+export async function deletePortfolio(userId, portfolioId) {
+  return withUserLock(userId, async () => {
+    const list = await listPortfoliosForUser(userId);
+    if (!list.some((p) => p.id === portfolioId)) return { ok: false, reason: 'not_found' };
+    if (list.length <= 1) return { ok: false, reason: 'last' };
+    await softDeletePortfolio(portfolioId);
+    return { ok: true };
   });
 }
 
@@ -162,14 +230,14 @@ export async function withUserUsage(userId, mutator) {
  * `withPortfolio` and `withUserUsage` use, so nothing else for this user can
  * observe it half-done.
  */
-export async function withPortfolioAndUsage(userId, mutator) {
+export async function withPortfolioAndUsage(userId, portfolioId, mutator) {
   return withUserLock(userId, async () => {
-    const [usage, portfolio] = await Promise.all([getUserUsage(userId), loadPortfolio(userId)]);
+    const [usage, portfolio] = await Promise.all([getUserUsage(userId), loadPortfolio(portfolioId)]);
     const next = await mutator({ usage, portfolio });
     const stamped = stampSharesSetAt(portfolio, next.portfolio);
     const [, savedPortfolio] = await Promise.all([
       putUserUsage(userId, next.usage),
-      savePortfolio(stamped, userId),
+      savePortfolio(stamped, portfolioId),
     ]);
     return { usage: next.usage, portfolio: savedPortfolio };
   });

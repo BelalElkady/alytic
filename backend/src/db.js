@@ -238,16 +238,64 @@ export async function primaryPortfolioIdFor(userId) {
   return data.id;
 }
 
-/** @returns {{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object}|null} the Portfolio row for this id, or null if it doesn't exist. */
+/** @returns {{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object,deletedAt:string|null}|null} the Portfolio row for this id, or null if it doesn't exist. */
 export async function getPortfolioById(portfolioId) {
   const { data, error } = await supabase
     .from('portfolios')
-    .select('id, user_id, name, style, ordinal, state_json')
+    .select('id, user_id, name, style, ordinal, state_json, deleted_at')
     .eq('id', portfolioId)
     .maybeSingle();
   if (error) throw new Error(`getPortfolioById: ${error.message}`);
   if (!data) return null;
-  return { id: data.id, userId: data.user_id, name: data.name, style: data.style, ordinal: data.ordinal, state: data.state_json };
+  return { id: data.id, userId: data.user_id, name: data.name, style: data.style, ordinal: data.ordinal, state: data.state_json, deletedAt: data.deleted_at };
+}
+
+/** @returns {Promise<{id:number,userId:string,name:string,style:string|null,ordinal:number,state:object}[]>} every non-soft-deleted Portfolio for this User, ordered by ordinal ascending. */
+export async function listPortfoliosForUser(userId) {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .select('id, user_id, name, style, ordinal, state_json')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('ordinal', { ascending: true });
+  if (error) throw new Error(`listPortfoliosForUser: ${error.message}`);
+  return data.map((row) => ({ id: row.id, userId: row.user_id, name: row.name, style: row.style, ordinal: row.ordinal, state: row.state_json }));
+}
+
+/**
+ * Inserts a new Portfolio row for this User at the given ordinal. The
+ * caller (createPortfolioForUser in portfolio.js) computes the ordinal and
+ * holds the per-user write lock, so two concurrent creates can never both
+ * land at the same ordinal or both slip past the cap.
+ */
+export async function insertPortfolio(userId, { name, style, ordinal }) {
+  const row = must(
+    await supabase.from('portfolios').insert({ user_id: userId, name, style, ordinal })
+      .select('id, user_id, name, style, ordinal, state_json, deleted_at').single(),
+    'insertPortfolio',
+  );
+  return { id: row.id, userId: row.user_id, name: row.name, style: row.style, ordinal: row.ordinal, state: row.state_json, deletedAt: row.deleted_at };
+}
+
+/** Column-only update — name and/or style, never state_json. */
+export async function updatePortfolioMeta(portfolioId, { name, style }) {
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (style !== undefined) patch.style = style;
+  const updated = must(
+    await supabase.from('portfolios').update(patch).eq('id', portfolioId).select('id'),
+    'updatePortfolioMeta',
+  );
+  if (!updated.length) throw new Error(`updatePortfolioMeta: no Portfolio with id ${portfolioId}`);
+}
+
+/** Soft-deletes a Portfolio (ADR 0002 §5) — sets deleted_at, never removes the row. */
+export async function softDeletePortfolio(portfolioId) {
+  const updated = must(
+    await supabase.from('portfolios').update({ deleted_at: new Date().toISOString() }).eq('id', portfolioId).select('id'),
+    'softDeletePortfolio',
+  );
+  if (!updated.length) throw new Error(`softDeletePortfolio: no Portfolio with id ${portfolioId}`);
 }
 
 /**
@@ -844,20 +892,23 @@ export async function setUserFollowUp(userId, channel, done, updatedBy) {
 }
 
 /**
- * Every stored portfolio's state, keyed by user_id — for the admin users
- * list's investment-behavior summary and the daily close. `id` is along for
- * callers that need to resolve a specific Portfolio row (still one per User —
- * see Global Constraints). Paged, like listOpenRecommendationKeys: every User
- * has a row now, and an unpaged select stops at PostgREST's 1000-row cap —
- * the daily close (runDailyClose in server.js) would silently skip whoever
- * fell past it.
+ * Every live (non-deleted) portfolio's state, one row per Portfolio — for the
+ * admin users list's per-Portfolio summary (#111) and the daily close. A User
+ * can hold more than one row since #103 (up to 3 for الحريفة); `ordinal` is
+ * along so callers that want a single row per User can pick the primary
+ * (lowest `ordinal`) deterministically instead of an arbitrary one, and
+ * `name`/`style` so each Portfolio can be labelled without a second query.
+ * Paged, like listOpenRecommendationKeys: every User has a row now, and an
+ * unpaged select stops at PostgREST's 1000-row cap — the daily close
+ * (runDailyClose in server.js) would silently skip whoever fell past it.
  */
 export async function getAllPortfolios() {
   const rows = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('portfolios')
-      .select('id, user_id, state_json')
+      .select('id, user_id, ordinal, name, style, state_json')
+      .is('deleted_at', null)
       .order('id')
       .range(from, from + 999);
     if (error) throw new Error(`getAllPortfolios: ${error.message}`);
