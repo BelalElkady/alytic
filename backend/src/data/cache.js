@@ -154,7 +154,7 @@ export function isFresh(cached) {
 }
 
 /** Fewer bars than this can't be analysed at all — see checkQuality's 60-session gate. */
-const MIN_USABLE_BARS = 60;
+export const MIN_USABLE_BARS = 60;
 
 /**
  * A fetch that came back with only a few weeks of sessions, on top of a cache

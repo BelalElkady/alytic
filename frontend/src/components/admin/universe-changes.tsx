@@ -12,6 +12,9 @@ type UniverseChanges = {
     name: string;
     /** Which feeds carry it — null when that one couldn't be checked. */
     sources: { tradingview: boolean; mubasher: boolean | null; yahoo: boolean | null };
+    /** Sessions of price history that exist for it — null when not checked. */
+    sessions: number | null;
+    lastSession: string | null;
   }[];
   removed: {
     code: string;
@@ -27,7 +30,28 @@ type UniverseChanges = {
   mubasher: { count: number; fetchedAt: string; via: "live" | "upload" } | null;
   universeCount: number;
   removedAfterSessions: number;
+  /** Sessions of history the analysis needs before a stock can be added. */
+  minSessions: number;
 };
+
+/** Whether a new stock has traded long enough to be analysed — the difference between "add it" and "not yet". */
+function Readiness({ sessions, lastSession, min }: { sessions: number | null; lastSession: string | null; min: number }) {
+  if (sessions == null) return null;
+  if (sessions >= min) {
+    return (
+      <div className="mt-1 text-[12px] font-medium text-up">
+        جاهز للإضافة — {int(sessions)} جلسة تداول
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1 text-[12px] text-muted-foreground">
+      {sessions === 0
+        ? `لسه ما اتداولش — مفيش أي جلسة مسجّلة (التحليل محتاج ${int(min)})`
+        : `لسه مفيش تداول كافي — ${int(sessions)} من ${int(min)} جلسة${lastSession ? `، آخرها ${arDay(lastSession)}` : ""}`}
+    </div>
+  );
+}
 
 /** Whether one price feed carries a stock: yes, no, or couldn't be checked. */
 function SourceBadge({ label, has }: { label: string; has: boolean | null }) {
@@ -64,7 +88,8 @@ export function UniverseChangesPanel() {
   }, []);
 
   if (error) return <Notice tone="warn">تعذر فحص تغيّرات قائمة أسهم البورصة: {error}</Notice>;
-  if (!data) return null;
+  // The first check of the day asks a feed about each new stock and can take a while.
+  if (!data) return <p className="text-[12px] text-muted-foreground">جاري فحص تغيّرات قائمة أسهم البورصة…</p>;
 
   const unchanged = data.added.length === 0 && data.removed.length === 0;
   return (
@@ -100,6 +125,7 @@ export function UniverseChangesPanel() {
                     <SourceBadge label="TradingView" has={stock.sources.tradingview} />
                     <SourceBadge label="Mubasher" has={stock.sources.mubasher} />
                   </div>
+                  <Readiness sessions={stock.sessions} lastSession={stock.lastSession} min={data.minSessions} />
                 </li>
               ))}
             </ul>

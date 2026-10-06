@@ -19,7 +19,8 @@
  *  - added:   on either directory, but in neither the universe nor the list
  *             the build rejected (too little history, not really trading),
  *             nor added by an admin since — each with which price feeds
- *             carry it, since that decides whether it can be analysed.
+ *             carry it and how many sessions of history exist, since those
+ *             decide whether it can be analysed yet.
  *  - removed: in the built universe, with no session for
  *             REMOVED_AFTER_SESSIONS trading days — or gone from every
  *             directory with no recent session on record to show it trades.
@@ -34,7 +35,8 @@ import { UNIVERSE, UNIVERSE_META } from './config/universe.js';
 import { cachedScreener } from './data/tradingview.js';
 import { fetchDaily } from './data/yahoo.js';
 import { fetchMubasherListing, readMubasherListing } from './data/mubasher.js';
-import { readBars, cairoToday } from './data/cache.js';
+import { readBars, cairoToday, MIN_USABLE_BARS } from './data/cache.js';
+import { fetchDailyTV } from './data/tv-history.js';
 import { tradingDaysBetween } from './data/quality.js';
 
 /** A missing session or two is a suspension or a thin stock, not a delisting. */
@@ -113,23 +115,40 @@ async function mubasherListing() {
   }
 }
 
-// Whether Yahoo carries a code doesn't change within a day, and the admin
+// A new stock's price history doesn't change within a day, and the admin
 // panel re-asks on every open.
-const yahooCarries = new Map(); // code -> { at, value }
-const YAHOO_ANSWER_TTL_MS = 24 * 60 * 60 * 1000;
-/** Beyond this many new stocks something else is wrong (a feed changed shape) — don't fire a request per row. */
-const YAHOO_CHECK_LIMIT = 25;
+const historyAnswers = new Map(); // code -> { at, value }
+const HISTORY_ANSWER_TTL_MS = 24 * 60 * 60 * 1000;
+/** Beyond this many new stocks something else is wrong (a feed changed shape) — don't fire requests per row. */
+const HISTORY_CHECK_LIMIT = 25;
 
-async function onYahoo(code) {
-  const cached = yahooCarries.get(code);
-  if (cached && Date.now() - cached.at < YAHOO_ANSWER_TTL_MS) return cached.value;
-  let value;
+/**
+ * How much price history exists for a stock that isn't in the universe yet,
+ * and whether Yahoo is one of the feeds carrying it. Yahoo first, as the
+ * fetch chain does (data/yahoo.js); TradingView's chart feed when Yahoo has
+ * nothing and the screener lists the stock. A feed that answers with nothing
+ * counts as no sessions — a registered listing that hasn't started trading.
+ */
+async function newStockHistory(code, onTradingView) {
+  const cached = historyAnswers.get(code);
+  if (cached && Date.now() - cached.at < HISTORY_ANSWER_TTL_MS) return cached.value;
+  let bars = [];
+  let yahoo = false;
   try {
-    value = (await fetchDaily(`${code}.CA`, { range: '1mo' })).bars.length > 0;
+    bars = (await fetchDaily(`${code}.CA`, { range: '2y' })).bars;
+    yahoo = bars.length > 0;
   } catch {
-    value = false;
+    // not on Yahoo
   }
-  yahooCarries.set(code, { at: Date.now(), value });
+  if (!bars.length && onTradingView) {
+    try {
+      bars = (await fetchDailyTV(code)).bars;
+    } catch {
+      // listed on the screener, but no chart series behind it
+    }
+  }
+  const value = { yahoo, sessions: bars.length, lastSession: bars.at(-1)?.date ?? null };
+  historyAnswers.set(code, { at: Date.now(), value });
   return value;
 }
 
@@ -149,12 +168,18 @@ export async function currentUniverseChanges() {
     historyOf: (code) => history.get(code) ?? null,
     today: cairoToday(),
   });
-  const checkYahoo = changes.added.length <= YAHOO_CHECK_LIMIT;
+  const checkHistory = changes.added.length <= HISTORY_CHECK_LIMIT;
   const added = await Promise.all(
-    changes.added.map(async (stock) => ({
-      ...stock,
-      sources: { ...stock.sources, yahoo: checkYahoo ? await onYahoo(stock.code) : null },
-    })),
+    changes.added.map(async (stock) => {
+      const found = checkHistory ? await newStockHistory(stock.code, stock.sources.tradingview) : null;
+      return {
+        ...stock,
+        sources: { ...stock.sources, yahoo: found ? found.yahoo : null },
+        // null when not checked. The analysis needs minSessions of them — see checkQuality.
+        sessions: found ? found.sessions : null,
+        lastSession: found?.lastSession ?? null,
+      };
+    }),
   );
   return {
     added,
@@ -166,5 +191,6 @@ export async function currentUniverseChanges() {
     mubasher: mubasher && { count: mubasher.stocks.length, fetchedAt: mubasher.fetchedAt, via: mubasher.via },
     universeCount: UNIVERSE.length,
     removedAfterSessions: REMOVED_AFTER_SESSIONS,
+    minSessions: MIN_USABLE_BARS,
   };
 }
