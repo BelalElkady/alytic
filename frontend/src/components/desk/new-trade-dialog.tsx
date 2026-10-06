@@ -40,11 +40,12 @@ export type LoggedTrade = {
 
 /**
  * The trade fields and their save button. Without `trade` it logs a new
- * executed buy/sell — shares, average cost and cash update server-side — or a
- * dividend received (shares entitled × cash per share, added to cash and
- * realised profit without touching the position). Given
- * `trade`, it corrects or deletes that logged trade instead. `onDone` fires
- * after a successful save or delete (before the desk reloads).
+ * executed buy/sell — shares, average cost and cash update server-side — a
+ * dividend received, or a subscription right sold on the market (shares/rights
+ * entitled × cash per share or per right, added to cash and realised profit
+ * without touching the position). Given `trade`, it corrects or deletes that
+ * logged trade instead. `onDone` fires after a successful save or delete
+ * (before the desk reloads).
  */
 export function TradeForm({
   trade = null,
@@ -71,6 +72,7 @@ export function TradeForm({
   const [busy, setBusy] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const dividend = form.side === "dividend";
+  const rightsSale = form.side === "rights_sale";
   const dividendTotal = +form.shares * +form.price;
 
   // Echoed back so the server can tell the log hasn't shifted under this row.
@@ -128,7 +130,9 @@ export function TradeForm({
           ? "تم تعديل الصفقة وتحديث المحفظة"
           : dividend
             ? "تم تسجيل التوزيعات وإضافتها للكاش"
-            : "تم تسجيل الصفقة وتحديث المحفظة",
+            : rightsSale
+              ? "تم تسجيل بيع حق الاكتتاب وإضافته للكاش"
+              : "تم تسجيل الصفقة وتحديث المحفظة",
       );
     } catch (caught) {
       setError(
@@ -168,6 +172,7 @@ export function TradeForm({
               <SelectItem value="buy">شراء</SelectItem>
               <SelectItem value="sell">بيع</SelectItem>
               <SelectItem value="dividend">توزيعات أرباح</SelectItem>
+              <SelectItem value="rights_sale">بيع حق الاكتتاب</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -182,7 +187,9 @@ export function TradeForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor={`${id}-shares`}>{dividend ? "عدد الأسهم المستحقة" : "العدد"}</Label>
+          <Label htmlFor={`${id}-shares`}>
+            {dividend ? "عدد الأسهم المستحقة" : rightsSale ? "عدد الحقوق المباعة" : "العدد"}
+          </Label>
           <Input
             id={`${id}-shares`}
             className="num"
@@ -194,7 +201,9 @@ export function TradeForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor={`${id}-price`}>{dividend ? "التوزيع للسهم (ج)" : "سعر التنفيذ"}</Label>
+          <Label htmlFor={`${id}-price`}>
+            {dividend ? "التوزيع للسهم (ج)" : rightsSale ? "سعر بيع الحق (ج)" : "سعر التنفيذ"}
+          </Label>
           <Input
             id={`${id}-price`}
             className="num"
@@ -240,6 +249,13 @@ export function TradeForm({
               <span className="num font-medium text-foreground">{fmt(dividendTotal)} ج</span>
             </span>
           )}
+        </p>
+      )}
+
+      {rightsSale && (
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          قيمة بيع حقوق الاكتتاب اللي متنازلتش عنها، بعد خصم العمولة. بتتضاف للكاش والربح المحقق من
+          غير ما تغيّر عدد الأسهم أو المتوسط.
         </p>
       )}
 

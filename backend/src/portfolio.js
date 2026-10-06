@@ -17,7 +17,7 @@ const EMPTY = {
   cash: 0,
   positions: {},   // code -> { shares, avgCost, stop, target, openedAt, addedOrder, sharesSetAt }
   watchlist: {},   // favorites the user picked to watch — code -> { addedAt, note }
-  trades: [],      // { date, code, side, shares, price, commission, note } — a 'dividend' row's price is the cash paid per share
+  trades: [],      // { date, code, side, shares, price, commission, note } — a 'dividend' row's price is the cash paid per share; a 'rights_sale' row's price is the cash received per right
   // One entry per saved close, keyed YYYY-MM-DD. This is what the calendar and
   // the equity curve read — without it the app can show today but has no
   // memory, so "how did the book do this month" is unanswerable.
@@ -292,6 +292,11 @@ function feesOf(fees) {
  * position alone — the shares may since have been sold, since a dividend is
  * paid to whoever held on the record date.
  *
+ * A rights sale (`shares` rights sold × `price` per right) is the same kind
+ * of event — cash in, position untouched — but for a subscription right
+ * sold on the market instead of exercised, so unlike a dividend it does pay
+ * a broker commission.
+ *
  * `fees` is what the broker actually charged for the trade, as the user
  * entered it; it's optional and a trade without it pays none.
  */
@@ -339,8 +344,11 @@ export async function recordTrade(portfolio, { code, side, shares, price, fees =
   } else if (side === 'dividend') {
     p.realizedPnl = +((p.realizedPnl ?? 0) + shares * price).toFixed(2);
     p.cash = +(p.cash + shares * price).toFixed(2);
+  } else if (side === 'rights_sale') {
+    p.realizedPnl = +((p.realizedPnl ?? 0) + shares * price - commission).toFixed(2);
+    p.cash = +(p.cash + shares * price - commission).toFixed(2);
   } else {
-    throw new Error(`نوع الصفقة لازم يكون buy أو sell أو dividend، مش ${side}`);
+    throw new Error(`نوع الصفقة لازم يكون buy أو sell أو dividend أو rights_sale، مش ${side}`);
   }
 
   p.trades.push({
@@ -353,6 +361,7 @@ export async function recordTrade(portfolio, { code, side, shares, price, fees =
     note,
     ...(side === 'sell' ? { realized: +(shares * (price - existing.avgCost) - commission).toFixed(2) } : {}),
     ...(side === 'dividend' ? { realized: +(shares * price).toFixed(2) } : {}),
+    ...(side === 'rights_sale' ? { realized: +(shares * price - commission).toFixed(2) } : {}),
   });
 
   return p;
@@ -362,8 +371,8 @@ export async function recordTrade(portfolio, { code, side, shares, price, fees =
  * Walk one stock's trades, in log order, from a starting holding. Returns the
  * shares and average cost it ends on, the cash it moved, the P&L it realised
  * (and each sell's share of it), and whether any sell exceeded what was held.
- * Same arithmetic as recordTrade, minus the rounding; a dividend only adds
- * cash and realised P&L.
+ * Same arithmetic as recordTrade, minus the rounding; a dividend or rights
+ * sale only adds cash and realised P&L (the rights sale net of commission).
  */
 function replayCode(trades, start) {
   let shares = start.shares;
@@ -382,6 +391,9 @@ function replayCode(trades, start) {
     } else if (t.side === 'dividend') {
       cash += value;
       realized += value;
+    } else if (t.side === 'rights_sale') {
+      cash += value - commission;
+      realized += value - commission;
     } else {
       if (t.shares > shares + 1e-9) oversold = true;
       const r = t.shares * (t.price - avgCost) - commission;
@@ -419,11 +431,13 @@ export function editTrade(portfolio, index, next) {
     const shares = Number(next.shares);
     const price = Number(next.price);
     if (!(shares > 0) || !(price > 0)) throw new Error('عدد الأسهم والسعر لازم يكونوا أكبر من صفر');
-    if (!['buy', 'sell', 'dividend'].includes(next.side)) throw new Error(`نوع الصفقة لازم يكون buy أو sell أو dividend، مش ${next.side}`);
+    if (!['buy', 'sell', 'dividend', 'rights_sale'].includes(next.side)) throw new Error(`نوع الصفقة لازم يكون buy أو sell أو dividend أو rights_sale، مش ${next.side}`);
     if (!lookup(code)) {
       throw new Error(`الكود "${code}" مش في قائمة الأسهم اللي التطبيق بيقدر يتابعها — اختاره من القائمة بدل الكتابة اليدوية.`);
     }
     const { realized: _realized, ...kept } = old;
+    // Fees left out of the edit keep what the trade was logged with.
+    const commission = next.side === 'dividend' ? 0 : +feesOf(next.fees ?? old.commission ?? 0).toFixed(2);
     replacement = {
       ...kept,
       date: next.date || old.date,
@@ -431,10 +445,10 @@ export function editTrade(portfolio, index, next) {
       side: next.side,
       shares,
       price,
-      // Fees left out of the edit keep what the trade was logged with.
-      commission: next.side === 'dividend' ? 0 : +feesOf(next.fees ?? old.commission ?? 0).toFixed(2),
+      commission,
       note: next.note !== undefined ? next.note : old.note ?? null,
       ...(next.side === 'dividend' ? { realized: +(shares * price).toFixed(2) } : {}),
+      ...(next.side === 'rights_sale' ? { realized: +(shares * price - commission).toFixed(2) } : {}),
     };
   }
 

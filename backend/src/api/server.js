@@ -1410,7 +1410,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
         positionsCount: positions.length,
         positionsValue,
         watchlistCount: Object.keys(pf.watchlist ?? {}).length,
-        tradesCount: (pf.trades ?? []).filter((t) => t.side !== 'dividend').length,
+        tradesCount: (pf.trades ?? []).filter((t) => t.side !== 'dividend' && t.side !== 'rights_sale').length,
         realizedPnl: pf.realizedPnl ?? 0,
         updatedAt: pf.updatedAt ?? null,
       },
@@ -1427,7 +1427,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
           cash: state.cash ?? 0,
           positionsCount: rowPositions.length,
           positionsValue: rowPositions.reduce((sum, p) => sum + (p.shares ?? 0) * (p.avgCost ?? 0), 0),
-          tradesCount: (state.trades ?? []).filter((t) => t.side !== 'dividend').length,
+          tradesCount: (state.trades ?? []).filter((t) => t.side !== 'dividend' && t.side !== 'rights_sale').length,
           realizedPnl: state.realizedPnl ?? 0,
         };
       }),
@@ -2623,7 +2623,7 @@ function missingTradeFields({ code, side, shares, price }) {
 
 function tradeInputError({ code, side, shares, price, fees, date, note }) {
   if (typeof code !== 'string') return 'الكود لازم يكون نص';
-  if (!['buy', 'sell', 'dividend'].includes(side)) return 'نوع الصفقة لازم يكون buy أو sell أو dividend';
+  if (!['buy', 'sell', 'dividend', 'rights_sale'].includes(side)) return 'نوع الصفقة لازم يكون buy أو sell أو dividend أو rights_sale';
   const s = Number(shares);
   const p = Number(price);
   if (!Number.isFinite(s) || s <= 0 || s > MAX_SHARES) return 'عدد الأسهم غير صالح';

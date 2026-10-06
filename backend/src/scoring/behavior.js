@@ -37,8 +37,8 @@ function sectorOf(code) {
  * @param {string} [opts.today] - YYYY-MM-DD, for trade-frequency windows
  */
 export function behaviorProfile(portfolio, { capital = 0, today = new Date().toISOString().slice(0, 10) } = {}) {
-  // Dividends are cash received, not a decision to buy or sell — they'd skew the frequency counts.
-  const trades = [...(portfolio.trades ?? [])].filter((t) => t?.date && t?.code && t.side !== 'dividend').sort((a, b) => a.date.localeCompare(b.date));
+  // Dividends and rights sales are cash received, not a decision to buy or sell — they'd skew the frequency counts.
+  const trades = [...(portfolio.trades ?? [])].filter((t) => t?.date && t?.code && t.side !== 'dividend' && t.side !== 'rights_sale').sort((a, b) => a.date.localeCompare(b.date));
 
   const lots = {};    // code -> [{ shares, date }] open FIFO lots
   const running = {}; // code -> { shares, avgCost } replayed position

@@ -250,8 +250,8 @@ export function ManualEntryDialog() {
 
           <TabsContent value="new" className="mt-4 space-y-4">
             <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-              أي بيع أو شراء اتنفذ فعليًا، أو توزيعات أرباح نقدية وصلتك. المتوسط والعدد والكاش
-              والتوصيات بتتحدث تلقائيًا.
+              أي بيع أو شراء اتنفذ فعليًا، أو توزيعات أرباح نقدية وصلتك، أو حق اكتتاب بعته في
+              السوق. المتوسط والعدد والكاش والتوصيات بتتحدث تلقائيًا.
             </p>
             <TradeForm key={newTradeKey} onDone={() => setNewTradeKey((key) => key + 1)} />
           </TabsContent>
@@ -291,6 +291,7 @@ const SIDE: Record<string, { label: string; className: string }> = {
   buy: { label: "شراء", className: "text-up" },
   sell: { label: "بيع", className: "text-down" },
   dividend: { label: "توزيعات", className: "text-primary" },
+  rights_sale: { label: "بيع حق", className: "text-primary" },
 };
 
 function TradeLog({

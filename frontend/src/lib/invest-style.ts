@@ -138,7 +138,7 @@ export function useInvestStyle(): StyleKey {
 export type Trade = {
   date: string;
   code: string;
-  side: "buy" | "sell" | "dividend";
+  side: "buy" | "sell" | "dividend" | "rights_sale";
   shares: number;
 };
 
