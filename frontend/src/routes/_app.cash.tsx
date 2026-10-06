@@ -63,7 +63,7 @@ const MAX_SECTOR_PCT = 30; // sizing.maxSectorPct
 const MAX_DAILY_TURNOVER_PCT = 10; // liquidity.maxPositionVsDailyTurnover
 
 /**
- * A plain-language account of exactly what "حلل استخدام الكاش" does, from the
+ * A plain-language account of exactly what "حلل الكاش" does, from the
  * cash you type in to the plan it hands back, and — as importantly — what it
  * does not do. Collapsed by default so it doesn't crowd the page, but sits
  * right under the button it explains. A native <details> keeps it keyboard-
@@ -80,8 +80,8 @@ function CashAnalysisExplainer() {
       title: "بيسيب احتياطي",
       body: (
         <>
-          بيحجز <b className="num">{CASH_RESERVE_PCT}%</b> من الكاش المسجّل عندك كاحتياطي مبيتوزّعش. الباقي هو
-          اللي بيتحلل ويتوزّع.
+          بيحجز <b className="num">{CASH_RESERVE_PCT}%</b> من الكاش المسجّل عندك كاحتياطي مبيتوزّعش.
+          الباقي هو اللي بيتحلل ويتوزّع.
         </>
       ),
     },
@@ -93,10 +93,10 @@ function CashAnalysisExplainer() {
       title: "بيستبعد اللي مش مناسب",
       body: (
         <>
-          بيسيب بس الأسهم اللي: مش موجودة عندك، ودخولها مناسب دلوقتي (شراء فوري أو أمر محدد على تصحيح — مش
-          سهم ممتد فات وقته)، وليها هدف واضح، والهدف بيدفع على الأقل{" "}
-          <b className="num">{fmt(rules.entry.minRiskReward)}</b> ضعف المخاطرة (حسب أسلوبك «{styleLabel}»)،
-          وحجمها حسب القواعد أكبر من صفر.
+          بيسيب بس الأسهم اللي: مش موجودة عندك، ودخولها مناسب دلوقتي (شراء فوري أو أمر محدد على
+          تصحيح — مش سهم ممتد فات وقته)، وليها هدف واضح، والهدف بيدفع على الأقل{" "}
+          <b className="num">{fmt(rules.entry.minRiskReward)}</b> ضعف المخاطرة (حسب أسلوبك «
+          {styleLabel}»)، وحجمها حسب القواعد أكبر من صفر.
         </>
       ),
     },
@@ -105,8 +105,8 @@ function CashAnalysisExplainer() {
       body: (
         <>
           بيرتّب المرشّحين حسب التقييم والعائد مقابل المخاطرة وقرب الوقف، ويختار لحد{" "}
-          <b className="num">{MAX_PICKS}</b> أسهم — بيفضّل سهم واحد من كل قطاع عشان مايبقاش كله في حتة واحدة.
-          كل ما الكاش يقل عدد الأسهم بيقل، لأنه مبيقسّمش على تذاكر أقل من حوالي{" "}
+          <b className="num">{MAX_PICKS}</b> أسهم — بيفضّل سهم واحد من كل قطاع عشان مايبقاش كله في
+          حتة واحدة. كل ما الكاش يقل عدد الأسهم بيقل، لأنه مبيقسّمش على تذاكر أقل من حوالي{" "}
           <b className="num">{int(MIN_TICKET_EGP)} ج</b>.
         </>
       ),
@@ -115,12 +115,13 @@ function CashAnalysisExplainer() {
       title: "بيوزّع الفلوس حسب قوة كل فرصة",
       body: (
         <>
-          التوزيع مش بالتساوي: السهم الأقوى ياخد نصيب أكبر. وعدد أسهم كل واحد بيتحدد بأصغر حد من أربعة:
-          ميزانية المخاطرة (<b className="num">{fmt(rules.sizing.riskPerTradePct)}%</b> من رأس المال في
-          الصفقة)، وأقصى وزن للسهم الواحد (<b className="num">{rules.sizing.maxPositionPct}%</b> من محفظتك)،
-          والسيولة (مش أكتر من <b className="num">{MAX_DAILY_TURNOVER_PCT}%</b> من تداوله اليومي)، وحد القطاع (
-          <b className="num">{MAX_SECTOR_PCT}%</b> من المحفظة). سهم نصيبه مايكفيش سهم واحد بيتشال، والفلوس
-          بتتوزّع على الباقي.
+          التوزيع مش بالتساوي: السهم الأقوى ياخد نصيب أكبر. وعدد أسهم كل واحد بيتحدد بأصغر حد من
+          أربعة: ميزانية المخاطرة (<b className="num">{fmt(rules.sizing.riskPerTradePct)}%</b> من
+          رأس المال في الصفقة)، وأقصى وزن للسهم الواحد (
+          <b className="num">{rules.sizing.maxPositionPct}%</b> من محفظتك)، والسيولة (مش أكتر من{" "}
+          <b className="num">{MAX_DAILY_TURNOVER_PCT}%</b> من تداوله اليومي)، وحد القطاع (
+          <b className="num">{MAX_SECTOR_PCT}%</b> من المحفظة). سهم نصيبه مايكفيش سهم واحد بيتشال،
+          والفلوس بتتوزّع على الباقي.
         </>
       ),
     },
@@ -138,15 +139,18 @@ function CashAnalysisExplainer() {
     <details className="group mt-4 rounded-lg border bg-surface">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-[13px] font-semibold marker:hidden [&::-webkit-details-marker]:hidden">
         تحليل الكاش بيعمل إيه بالظبط؟
-        <span aria-hidden className="text-muted-foreground transition-transform group-open:rotate-180">
+        <span
+          aria-hidden
+          className="text-muted-foreground transition-transform group-open:rotate-180"
+        >
           ▾
         </span>
       </summary>
 
       <div className="space-y-4 border-t px-4 py-4 text-[13px] leading-relaxed">
         <p>
-          بياخد الكاش المسجّل عندك ويقترحلك تشتري إيه وبكام، على أسهم مش موجودة في محفظتك. كل ده حسابات مباشرة
-          على أسعار وبيانات السوق، مش تخمين.
+          بياخد الكاش المسجّل عندك ويقترحلك تشتري إيه وبكام، على أسهم مش موجودة في محفظتك. كل ده
+          حسابات مباشرة على أسعار وبيانات السوق، مش تخمين.
         </p>
 
         <ol className="space-y-3">
@@ -167,8 +171,8 @@ function CashAnalysisExplainer() {
           <div className="font-semibold">اللي مبيعملوش</div>
           <ul className="mt-1 list-disc space-y-1 ps-5 text-muted-foreground">
             <li>
-              مبينفّذش أي أمر ومش متوصّل بالسمسار — إنت اللي بتدخل الأمر عنده، وبعدها سجّل الصفقة من «إدخال
-              يدوي» عشان الكاش والمراكز يتحدّثوا.
+              مبينفّذش أي أمر ومش متوصّل بالسمسار — إنت اللي بتدخل الأمر عنده، وبعدها سجّل الصفقة من
+              «إدخال يدوي» عشان الكاش والمراكز يتحدّثوا.
             </li>
             <li>بيشتغل على الكاش المسجّل هنا، فلو مش محدّثه الأرقام هتطلع غلط.</li>
             <li>مش توصية مالية مرخّصة — القرار الأخير مسؤوليتك.</li>
@@ -176,7 +180,8 @@ function CashAnalysisExplainer() {
         </div>
 
         <p className="text-[12px] text-muted-foreground">
-          فتح التحليل بيخصم محاولة من رصيدك الشهري، ولو فتحته تاني خلال 10 دقايق مبيتحسبش محاولة تانية.
+          فتح التحليل بيخصم محاولة من رصيدك الشهري، ولو فتحته تاني خلال 10 دقايق مبيتحسبش محاولة
+          تانية.
         </p>
       </div>
     </details>
@@ -202,8 +207,7 @@ function CashPage() {
   // free trial) has a monthly allowance for this feature, see TIERS in
   // backend/src/billing/plans.js.
   const cashScansLeft = typeof pf?.cashScansLeft === "number" ? pf.cashScansLeft : null;
-  const cashScansPerMonth =
-    typeof pf?.cashScansPerMonth === "number" ? pf.cashScansPerMonth : null;
+  const cashScansPerMonth = typeof pf?.cashScansPerMonth === "number" ? pf.cashScansPerMonth : null;
   const cashScanExhausted = cashScansLeft !== null && cashScansLeft <= 0;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the portfolio watchlist shape
@@ -229,7 +233,7 @@ function CashPage() {
         for (const row of result?.results ?? []) byCode[row.code] = row;
         setFavRows(byCode);
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => !cancelled && setFavLoading(false));
     return () => {
       cancelled = true;
@@ -246,12 +250,16 @@ function CashPage() {
           ? `الكاش ${fmt(share)}% — نسبة صحية. وزّعه: ثلث على أوامر محددة، وثلث ينتظر تصحيح المؤشر، وثلث يفضل نقدي.`
           : `الكاش ${fmt(share)}% — عالي. ابدأ نشر تدريجي على 3 أسابيع بأوامر محددة. الباقي صندوق نقدي — مش فلوس نايمة، ده عائد + ذخيرة.`;
 
-  const saveCash = async () => {
+  const saveCashAndAnalyze = async () => {
     setSavingCash(true);
     try {
       await post("/api/portfolio/cash", { cash: +cash });
       await reloadPortfolio();
-      toast.success("تم تحديث الكاش");
+      if (cashScanExhausted) {
+        toast.info("تم تحديث الكاش، لكن خلصت محاولات تحليل الكاش المتاحة الشهر ده.");
+        return;
+      }
+      openMarket("cash");
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "تعذر تحديث الكاش");
     } finally {
@@ -305,9 +313,9 @@ function CashPage() {
               onChange={(event) => setCash(event.target.value)}
             />
           </div>
-          <Button onClick={() => void saveCash()} disabled={savingCash}>
+          <Button variant="outline" onClick={() => void saveCashAndAnalyze()} disabled={savingCash}>
             {savingCash && <Spinner />}
-            حفظ
+            حلل الكاش
           </Button>
         </div>
 
@@ -320,14 +328,6 @@ function CashPage() {
 
         <Notice className="mt-4">{advice}</Notice>
 
-        <Button
-          variant="outline"
-          className="mt-4"
-          onClick={() => openMarket("cash")}
-          disabled={cashScanExhausted}
-        >
-          حلل استخدام الكاش
-        </Button>
         {cashScansLeft !== null && (
           <p
             className={`mt-2 text-[12px] ${cashScanExhausted ? "text-down" : "text-muted-foreground"}`}

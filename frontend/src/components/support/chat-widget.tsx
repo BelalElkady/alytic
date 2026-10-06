@@ -124,7 +124,7 @@ const TOPICS = [
   },
   {
     q: "تحليل الكاش بيعمل إيه؟",
-    a: 'من شاشة "تحليل الكاش" حدّث رصيدك ودوس "حلل استخدام الكاش" — هيقترح أسهم بعدد وسعر دخول ووقف وهدف وتكلفة لكل سهم، مع احتياطي، وعلى كل سهم رأي: اشتري دلوقتي، على تصحيح، استنى، أو سيبه.',
+    a: 'من شاشة "تحليل الكاش" حدّث رصيدك ودوس "حلل الكاش" — هيتحفظ الرصيد وهيقترح أسهم بعدد وسعر دخول ووقف وهدف وتكلفة لكل سهم، مع احتياطي، وعلى كل سهم رأي: اشتري دلوقتي، على تصحيح، استنى، أو سيبه.',
     to: "/how-to-use",
     hash: "cash-analysis",
     linkLabel: "دليل الاستخدام",
@@ -615,7 +615,9 @@ export function ChatWidget() {
                     }
                   }}
                   onPaste={(event) => {
-                    const file = [...event.clipboardData.files].find((f) => IMAGE_TYPES.includes(f.type));
+                    const file = [...event.clipboardData.files].find((f) =>
+                      IMAGE_TYPES.includes(f.type),
+                    );
                     if (file) void sendImage(file);
                   }}
                   placeholder="اكتب رسالتك… أو الصق/ارفق صورة"
@@ -751,7 +753,9 @@ function InstapayCard({
   const isLink = /^https?:\/\//i.test(info.address);
   return (
     <div className="mt-2 rounded-lg border bg-card p-2.5">
-      <p className="text-[11px] text-muted-foreground">{isLink ? "لينك دفع InstaPay" : "حساب InstaPay"}</p>
+      <p className="text-[11px] text-muted-foreground">
+        {isLink ? "لينك دفع InstaPay" : "حساب InstaPay"}
+      </p>
       {!isLink && (
         <code className="mt-0.5 block text-[13px] font-semibold text-foreground" dir="ltr">
           {info.address}

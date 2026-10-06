@@ -680,8 +680,9 @@ carries the history.
 ## 10. Cash and favourites (الكاش)
 
 **CASH-01 — Update cash** · P1
-- Steps: type an amount → حفظ.
-- Expect: toast "تم تحديث الكاش"; the header الكاش stat and the capital total update.
+- Steps: type an amount → حلل الكاش.
+- Expect: the amount is saved, the cash-analysis dialog opens, and the header الكاش stat
+  and capital total update.
 
 **CASH-02 — Negative cash is refused** · P2
 - Expect: an Arabic "مبلغ غير صالح" and no change.
@@ -693,7 +694,7 @@ carries the history.
 
 **CASH-03b — "تحليل الكاش بيعمل إيه بالظبط؟"** · P2
 - Steps: on الكاش, open the collapsed "تحليل الكاش بيعمل إيه بالظبط؟" section under the
-  "حلل استخدام الكاش" button.
+  "حلل الكاش" button.
 - Expect: an intro, seven numbered steps (احتياطي 5%, فحص الأسهم, استبعاد, ترتيب واختيار لحد 6,
   توزيع حسب القوة, خطة لكل سهم, مراجعة الذكاء الاصطناعي), an "اللي مبيعملوش" box (no orders,
   no broker link, uses the recorded cash, not licensed advice) and the note that opening
