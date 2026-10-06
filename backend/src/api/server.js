@@ -3003,7 +3003,10 @@ app.post('/api/cron/daily-close', cronLimiter, wrap(async (req, res) => {
   if (!safeEqual(req.get('X-Cron-Secret'), DAILY_CLOSE_CRON_SECRET)) {
     return res.status(403).json({ error: 'forbidden' });
   }
-  res.json(await runDailyCloseForAllSites());
+  // `force` is what a hand-started run of the workflow sends: it skips the
+  // holiday and 14:30 checks, same as the admin button below. The scheduled
+  // runs never send it, so a real holiday still records nothing.
+  res.json(await runDailyCloseForAllSites({ force: req.body?.force === true }));
 }));
 
 // A full run (every tenant, every portfolio with open positions) can run past

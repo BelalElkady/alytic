@@ -24,10 +24,22 @@ on:
     - cron: '30 12 * * 0-4'
     - cron: '7 14 * * 0-4'
     - cron: '7 17 * * 0-4'
-  workflow_dispatch: {}
+  # Started by hand (Actions tab → Run workflow), for a day the built-in
+  # holiday list got wrong — Islamic holidays move with the moon sighting, so
+  # the EGX can trade on a day the list calls closed. A manual run forces the
+  # close past the holiday, weekend and 14:30 checks; the scheduled runs above
+  # never do, so a real holiday still records nothing.
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Record the close even if the calendar says today is a holiday or the session has not closed'
+        type: boolean
+        default: true
 
 env:
   BACKEND_PORT: 3000
+  # 'false' on a scheduled run, where there are no inputs.
+  FORCE_CLOSE: ${{ inputs.force && 'true' || 'false' }}
 
 jobs:
   snapshot:
@@ -65,11 +77,11 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           command_timeout: 10m
-          envs: DAILY_CLOSE_CRON_SECRET,BACKEND_PORT
+          envs: DAILY_CLOSE_CRON_SECRET,BACKEND_PORT,FORCE_CLOSE
           script: |
             curl --fail --silent --show-error --max-time 300 -X POST "http://127.0.0.1:$BACKEND_PORT/api/cron/daily-close" \
               -H "X-Cron-Secret: $DAILY_CLOSE_CRON_SECRET" \
               -H "Content-Type: application/json" \
-              -d '{}'
+              -d "{\"force\": $FORCE_CLOSE}"
         env:
           DAILY_CLOSE_CRON_SECRET: ${{ secrets.DAILY_CLOSE_CRON_SECRET }}
