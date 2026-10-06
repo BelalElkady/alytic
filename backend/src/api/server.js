@@ -2054,6 +2054,11 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
     style,
     portfolioId,
   });
+  // A holding whose analysis failed drops off the Portfolio page (it shows a
+  // notice instead) — the reason is otherwise only in the response.
+  for (const failure of errors) {
+    if (portfolio.positions[failure.code]) console.error(`[scan] held ${failure.code} not analysed (portfolio ${portfolioId}):`, failure.error);
+  }
   // A held stock that just jumped by a share ratio: settle the holding now
   // rather than on the next half-hourly check.
   if (userId && results.some((r) => r.position && r.corporateAction?.status === 'suspected')) {

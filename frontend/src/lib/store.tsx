@@ -178,7 +178,7 @@ type DeskValue = {
    * load — "no-cost": no average cost recorded, so there's no P&L to show;
    * "analysis": the stock's analysis failed. They're in none of the totals.
    */
-  unlisted: Array<{ code: string; reason: "no-cost" | "analysis" }>;
+  unlisted: Array<{ code: string; reason: "no-cost" | "analysis"; /** The analysis's own error, when it reported one. */ detail: string | null }>;
   log: Record<string, LogEntry>;
   universe: Stock[];
   indices: Record<string, string[]>;
@@ -352,20 +352,23 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     try {
       const portfolio = await api("/api/portfolio");
       const codes = Object.keys(portfolio?.positions ?? {});
-      const scanned = codes.length
-        ? (await api(`/api/scan?codes=${codes.join(",")}&style=${scanStyle}`)).results.filter(
-          (r: Row) => r.position,
-        )
-        : [];
+      const scan = codes.length
+        ? await api(`/api/scan?codes=${codes.join(",")}&style=${scanStyle}`)
+        : { results: [], errors: [] };
+      const scanned = scan.results.filter((r: Row) => r.position);
       setPf(portfolio);
       setRows(scanned);
       const listed = new Set((scanned as Row[]).map((row) => row.code));
+      const failures = new Map<string, string>(
+        ((scan.errors ?? []) as { code: string; error?: string }[]).map((e) => [e.code, e.error ?? ""]),
+      );
       setUnlisted(
         codes
           .filter((code) => (portfolio.positions[code]?.shares ?? 0) > 0 && !listed.has(code))
           .map((code) => ({
             code,
             reason: portfolio.positions[code].avgCost > 0 ? ("analysis" as const) : ("no-cost" as const),
+            detail: failures.get(code) || null,
           })),
       );
       // The switcher values a Portfolio from `quotes` once it's no longer the

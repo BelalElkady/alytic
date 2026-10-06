@@ -437,7 +437,7 @@ function UnlistedHoldings() {
   if (!unlisted.length) return null;
   return (
     <div className="space-y-2">
-      {unlisted.map(({ code, reason }) => (
+      {unlisted.map(({ code, reason, detail }) => (
         <Notice key={code} tone="warn">
           <div className="flex flex-wrap items-center gap-2">
             <span>
@@ -445,6 +445,9 @@ function UnlistedHoldings() {
               {reason === "no-cost"
                 ? " موجود في المحفظة بس مش ظاهر في المراكز ولا محسوب في الإجمالي — متوسط سعر الشراء مش متسجل."
                 : " موجود في المحفظة بس مش ظاهر في المراكز ولا محسوب في الإجمالي — تحليل السهم ما اكتملش."}
+              {reason === "analysis" && detail && (
+                <span className="block text-[12px] text-muted-foreground">السبب: {detail}</span>
+              )}
             </span>
             {reason === "no-cost" ? (
               <Button size="sm" variant="outline" className="ms-auto" onClick={() => openManual("edit")}>
