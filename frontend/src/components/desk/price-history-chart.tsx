@@ -92,14 +92,13 @@ function niceScale(lo: number, hi: number, targetTicks = 4) {
   return { min: +min.toFixed(6), max: +max.toFixed(6), ticks, step };
 }
 
-// The dialog re-mounts this for every stock, so the last zoom level is kept
-// here — comparing several stocks over the same period shouldn't mean
-// re-picking it each time.
-let lastRange: RangeKey = "5y";
-
-/** Price chart for one stock at six zoom levels — from today's session to five years. */
+/**
+ * Price chart for one stock at six zoom levels — from today's session to five
+ * years. Every stock opens on today's session: the dialog re-mounts this per
+ * stock, and what the price is doing now is the first thing anyone opens it for.
+ */
 export function PriceHistoryChart({ code }: { code: string }) {
-  const [range, setRange] = useState<RangeKey>(lastRange);
+  const [range, setRange] = useState<RangeKey>("1d");
   const [results, setResults] = useState<Record<string, History>>({});
   const [failedKey, setFailedKey] = useState<string | null>(null);
 
@@ -130,8 +129,7 @@ export function PriceHistoryChart({ code }: { code: string }) {
           value={range}
           onValueChange={(value) => {
             if (!value) return;
-            lastRange = value as RangeKey;
-            setRange(lastRange);
+            setRange(value as RangeKey);
           }}
           className="flex-wrap justify-start"
         >
