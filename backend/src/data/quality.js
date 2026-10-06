@@ -13,7 +13,7 @@ import { cairoToday, isTradingDay } from './cache.js';
 export const SEVERITY = { OK: 'ok', WARN: 'warn', FATAL: 'fatal' };
 
 /** Trading days (Sun-Thu) between two ISO dates. */
-function tradingDaysBetween(fromIso, toIso) {
+export function tradingDaysBetween(fromIso, toIso) {
   let count = 0;
   const cur = new Date(`${fromIso}T12:00:00Z`);
   const end = new Date(`${toIso}T12:00:00Z`);

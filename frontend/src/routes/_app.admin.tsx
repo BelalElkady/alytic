@@ -48,6 +48,7 @@ import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { LivePricesTab, useLivePricesAlert } from "@/components/admin/live-prices-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
+import { UniverseChangesPanel } from "@/components/admin/universe-changes";
 import { RENEWAL_LABEL, UsersScreen, renewalStatus, type FollowUpChannel } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
 import { arDay, exact, signed } from "@/lib/format";
@@ -197,7 +198,8 @@ function AdminPage() {
         )}
       </TabsList>
       {canEditIndices && (
-        <TabsContent value="indices">
+        <TabsContent value="indices" className="space-y-4">
+          <UniverseChangesPanel />
           <IndicesTab />
         </TabsContent>
       )}

@@ -46,6 +46,7 @@ import { fetchLatestQuotes } from '../data/tv-history.js';
 import { fetchFundamentals, cachedScreener } from '../data/tradingview.js';
 import { buildHeatmap } from '../marketHeatmap.js';
 import { fetchLiveQuotes, liveQuoteStatus } from '../data/live-quotes.js';
+import { currentUniverseChanges } from '../universeWatch.js';
 import { login, register, userFromRequest, sessionCookie, clearSessionCookie, googleSignIn, verifyEmail, resendVerification, updatePhone, updateName, forgotPassword, resetPassword } from '../auth.js';
 import { sendEmail } from '../email.js';
 import { contactEmailHtml, supportMessageEmailHtml } from '../emailTemplates.js';
@@ -1230,6 +1231,13 @@ function parseTickerFile(buffer) {
   }
   return [...seen.entries()].map(([code, name]) => ({ code, name }));
 }
+
+// Stocks that have joined or left the EGX listing since the universe was
+// built — a report for the admin, never an automatic change. Under /indices
+// so it carries that path's main-site-only guard (see above).
+app.get('/api/admin/indices/universe-changes', wrap(async (_req, res) => {
+  res.json(await currentUniverseChanges());
+}));
 
 app.get('/api/admin/indices', wrap(async (req, res) => {
   const overrides = await getAllIndexOverrides();
@@ -3018,6 +3026,16 @@ function startDailyCloseScheduler() {
     } catch (err) {
       dailyCloseRanFor = null; // retry on the next tick
       console.error('[daily-close] failed:', err.message);
+    }
+    // Once a day, after the close: has the EGX listing moved since the
+    // universe was built? Report only — see universeWatch.js.
+    try {
+      const { added, removed } = await currentUniverseChanges();
+      if (added.length || removed.length) {
+        console.warn(`[universe] listing changed — added: ${added.map((s) => s.code).join(',') || 'none'}; removed: ${removed.map((s) => s.code).join(',') || 'none'}`);
+      }
+    } catch (err) {
+      console.error('[universe] listing check failed:', err.message);
     }
   }, 30_000);
 }
