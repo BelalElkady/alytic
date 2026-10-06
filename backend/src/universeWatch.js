@@ -17,10 +17,13 @@
  * and reports:
  *
  *  - added:   on either directory, but in neither the universe nor the list
- *             the build rejected (too little history, not really trading),
- *             nor added by an admin since — each with which price feeds
- *             carry it and how many sessions of history exist, since those
- *             decide whether it can be analysed yet.
+ *             the build rejected (too little history, not really trading) —
+ *             each with which price feeds carry it and how many sessions of
+ *             history exist, since those decide whether it can be analysed
+ *             yet. A stub an admin's index upload registered (see
+ *             addCustomStocks) counts too, flagged `stub: true` — it can
+ *             already be used, but still lacks the build's vetting
+ *             (sector, shariah screening, a verified identity).
  *  - removed: in the built universe, with no session for
  *             REMOVED_AFTER_SESSIONS trading days — or gone from every
  *             directory with no recent session on record to show it trades.
@@ -59,7 +62,13 @@ const MUBASHER_LISTING_TRUSTED_FOR_MS = 7 * 24 * 60 * 60 * 1000;
  * @param {number} [input.now] - epoch ms
  */
 export function universeChanges({ tradingview, mubasher = null, universe, rejected, historyOf, today, now = Date.now() }) {
-  const known = new Set([...universe.map((s) => s.code), ...rejected.map((s) => s.code)]);
+  // A custom entry (registered from an index CSV, see addCustomStocks) is a
+  // stub — no sector, no shariah screening, identity unverified. It stays
+  // "known" to the app (an index can reference it) but not to this report,
+  // so it keeps showing up as unfinished business until a real build gives
+  // it the same proof every other entry has.
+  const customByCode = new Map(universe.filter((s) => s.custom).map((s) => [s.code, s]));
+  const known = new Set([...universe.filter((s) => !s.custom).map((s) => s.code), ...rejected.map((s) => s.code)]);
   const onTradingView = new Map(tradingview.map((s) => [s.code, s]));
   // Mubasher keeps companies that stopped trading years ago: only one that
   // has traded lately is "listed" for this purpose.
@@ -69,13 +78,16 @@ export function universeChanges({ tradingview, mubasher = null, universe, reject
       .map((s) => [s.code, s]),
   );
 
-  const added = [...new Set([...onTradingView.keys(), ...onMubasher.keys()])]
+  const added = [...new Set([...onTradingView.keys(), ...onMubasher.keys(), ...customByCode.keys()])]
     .filter((code) => !known.has(code))
     .sort()
     .map((code) => ({
       code,
-      name: onTradingView.get(code)?.name ?? onMubasher.get(code)?.name ?? code,
+      name: onTradingView.get(code)?.name ?? onMubasher.get(code)?.name ?? customByCode.get(code)?.en ?? code,
       sources: { tradingview: onTradingView.has(code), mubasher: mubasher ? onMubasher.has(code) : null },
+      // Already usable in the app (an index upload registered it), just
+      // missing the real build's vetting — not a brand-new, untouched stock.
+      stub: customByCode.has(code),
     }));
 
   const removed = [];

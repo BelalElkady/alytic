@@ -15,6 +15,8 @@ type UniverseChanges = {
     /** Sessions of price history that exist for it — null when not checked. */
     sessions: number | null;
     lastSession: string | null;
+    /** Already usable in the app via an index upload, just missing the real build's vetting (sector, shariah, verified identity). */
+    stub: boolean;
   }[];
   removed: {
     code: string;
@@ -110,7 +112,7 @@ export function UniverseChangesPanel() {
         {data.added.length > 0 && (
           <div>
             <div className="mb-1.5 font-semibold">
-              أسهم جديدة مش في التطبيق ({int(data.added.length)})
+              أسهم جديدة أو محتاجة مراجعة ({int(data.added.length)})
             </div>
             <ul className="divide-y rounded-lg border">
               {data.added.map((stock) => (
@@ -118,6 +120,11 @@ export function UniverseChangesPanel() {
                   <div className="flex items-center gap-2">
                     <span className="num font-semibold">{stock.code}</span>
                     <span className="truncate text-muted-foreground">{stock.name}</span>
+                    {stock.stub && (
+                      <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        مضاف من رفع مؤشر — محتاج مراجعة
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px]">
                     <span className="text-muted-foreground">مصادر الأسعار:</span>
