@@ -34,6 +34,12 @@ alter table users add column if not exists reset_token_expires timestamptz;
 -- app.use('/api/admin') in src/api/server.js. Apply to every client database.
 alter table users add column if not exists is_marketer boolean not null default false;
 
+-- An admin-suspended account: blocked from the app regardless of trial or
+-- subscription state, shown `suspension_message` instead (a WhatsApp button
+-- to management, same as the paywall) — see setUserSuspended in src/db.js.
+alter table users add column if not exists is_suspended boolean not null default false;
+alter table users add column if not exists suspension_message text;
+
 -- One free trial per person. email_canonical collapses the spellings that
 -- reach one mailbox (Gmail dots, +tags, googlemail.com) — the same rule as
 -- canonicalEmail() in src/emailIdentity.js, keep the two in step. Phone is

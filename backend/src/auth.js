@@ -192,6 +192,8 @@ function publicUser(user) {
     emailVerified: Boolean(user.email_verified ?? user.emailVerified),
     isAdmin: Boolean(user.is_admin ?? user.isAdmin),
     isMarketer: Boolean(user.is_marketer ?? user.isMarketer),
+    isSuspended: Boolean(user.is_suspended ?? user.isSuspended),
+    suspensionMessage: user.suspension_message ?? user.suspensionMessage ?? null,
   };
 }
 

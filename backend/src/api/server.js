@@ -21,7 +21,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -107,7 +107,10 @@ async function accessInfo(user) {
   const subscription = await getSubscription(user.id);
   const periodEnd = subscription ? new Date(subscription.current_period_end) : null;
   const subscriptionActive = Boolean(periodEnd && periodEnd.getTime() > Date.now());
-  const exempt = Boolean(user.isAdmin) || Boolean(user.isMarketer) || user.id === 'local';
+  // A suspension is a deliberate, individual lockout — it wins over every
+  // other exemption (staff, CLI) and over an otherwise-live trial/subscription.
+  const suspended = Boolean(user.isSuspended);
+  const exempt = !suspended && (Boolean(user.isAdmin) || Boolean(user.isMarketer) || user.id === 'local');
   // The free trial only counts once the email is confirmed: an unconfirmed
   // address costs nothing to invent, so honoring the trial before then would
   // let anyone mint a fresh one with a throwaway. The clock still runs from
@@ -132,7 +135,9 @@ async function accessInfo(user) {
     // True while a still-running trial is being held back by an unconfirmed
     // email — lets the wall say "confirm your email" instead of "trial ended".
     awaitingEmailVerification: !exempt && !subscriptionActive && trial.trialActive && !trialUsable,
-    hasAccess: exempt || trialUsable || subscriptionActive,
+    hasAccess: !suspended && (exempt || trialUsable || subscriptionActive),
+    suspended,
+    suspensionMessage: suspended ? user.suspensionMessage ?? null : null,
   };
 }
 
@@ -1378,6 +1383,8 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       phone: u.phone,
       isAdmin: u.is_admin,
       isMarketer: Boolean(u.is_marketer),
+      isSuspended: Boolean(u.is_suspended),
+      suspensionMessage: u.suspension_message ?? null,
       emailVerified: u.email_verified,
       googleLinked: Boolean(u.google_id),
       createdAt: u.created_at,
@@ -1618,6 +1625,30 @@ app.post('/api/admin/users/:id/role', wrap(async (req, res) => {
     console.log(`[audit] role ${before} -> ${role}: ${target.email} (by ${req.user.email}, site ${req.tenant.id})`);
   }
   res.json({ ok: true, role });
+}));
+
+const SUSPENSION_MESSAGE_MAX_LEN = 600;
+
+// Blocks or reinstates an account — see setUserSuspended's comment on why it
+// overrides every other access path. Body: { suspended: boolean, message?:
+// string }. `message` is shown to the user with a WhatsApp button in place of
+// the app; left blank, the frontend falls back to a generic one.
+app.post('/api/admin/users/:id/suspend', wrap(async (req, res) => {
+  const suspended = Boolean(req.body?.suspended);
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+  if (message.length > SUSPENSION_MESSAGE_MAX_LEN) {
+    return res.status(400).json({ error: `الرسالة لازم تكون أقصر من ${SUSPENSION_MESSAGE_MAX_LEN} حرف` });
+  }
+  const target = await getUserById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  if (target.id === 'local') return res.status(400).json({ error: 'ده حساب النظام الداخلي (للـ CLI) — مينفعش يتعلّق' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'مينفعش تعلّق حسابك بنفسك' });
+  if (req.tenant.isDefault && isPlatformAdminEmail(target.email)) {
+    return res.status(400).json({ error: 'ده حساب مالك المنصة — مينفعش يتعلّق' });
+  }
+  await setUserSuspended(target.id, suspended, message || null);
+  console.log(`[audit] ${suspended ? 'suspended' : 'reinstated'}: ${target.email} (by ${req.user.email}, site ${req.tenant.id})`);
+  res.json({ ok: true, suspended });
 }));
 
 /** Activation history for one user — what to check when a payment is disputed or entered twice. Capped at 5: this is a quick sanity check for the admin panel's history disclosure, not a ledger. */

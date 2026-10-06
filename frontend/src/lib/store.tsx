@@ -120,6 +120,9 @@ export type User = {
   currentPeriodEnd?: string | null;
   hasAccess?: boolean;
   awaitingEmailVerification?: boolean;
+  /** Blocked by an admin regardless of trial/subscription — see suspensionMessage and SuspendedWall in desk-shell.tsx. */
+  suspended?: boolean;
+  suspensionMessage?: string | null;
   [key: string]: any;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */

@@ -21,6 +21,7 @@ export type UsersScreenEditors = {
   /** Collapsed disclosure of past Subscription/Credits grants — for checking a disputed or repeated payment. */
   History: (p: { row: AdminUserRow }) => ReactNode;
   Role: (p: EditorProps) => ReactNode;
+  Suspend: (p: EditorProps) => ReactNode;
   Delete: (p: { row: AdminUserRow; onDeleted: () => void }) => ReactNode;
   Behavior: (p: { behavior: AdminUserBehavior }) => ReactNode;
 };
@@ -116,6 +117,11 @@ function Identity({ row, systemUserId, phoneClassName }: { row: AdminUserRow; sy
       <div className="mt-1 flex flex-wrap gap-1 empty:hidden">
         {row.isAdmin && <Badge>مشرف</Badge>}
         {row.isMarketer && <Badge variant="secondary">مسوّق</Badge>}
+        {row.isSuspended && (
+          <Badge variant="destructive" title={row.suspensionMessage || undefined}>
+            معلّق
+          </Badge>
+        )}
         {!row.emailVerified && <Badge variant="destructive">بريد غير مفعّل</Badge>}
         {row.id === systemUserId && <Badge variant="outline">حساب النظام</Badge>}
         {row.sameNetworkAccounts.length > 0 && (
@@ -318,6 +324,14 @@ function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: 
   const { editors: E, readOnly, onChanged, systemUserId } = p;
   return (
     <div className="space-y-4 text-sm">
+      {row.isSuspended && (
+        <div className="rounded-lg border border-down/40 bg-down-soft px-3 py-2 text-[13px]">
+          <div className="font-semibold">الحساب معلّق — محجوب عن استخدام الأداة.</div>
+          {row.suspensionMessage && (
+            <div className="mt-1 text-muted-foreground">الرسالة المعروضة له: «{row.suspensionMessage}»</div>
+          )}
+        </div>
+      )}
       <SameNetworkWarning row={row} onOpen={onOpen} />
       <Section title="الاشتراك والرصيد">
         <Renewal row={row} />
@@ -398,6 +412,9 @@ function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: 
         <div className="flex flex-wrap items-center gap-2">
           <E.Role row={row} onChanged={onChanged} readOnly={readOnly} />
           {row.googleLinked && <Badge variant="secondary">Google</Badge>}
+          {!readOnly && !row.isAdmin && row.id !== systemUserId && (
+            <E.Suspend row={row} onChanged={onChanged} readOnly={readOnly} />
+          )}
           {!readOnly && !row.isAdmin && row.id !== systemUserId && (
             <span className="ms-auto">
               <E.Delete row={row} onDeleted={onChanged} />

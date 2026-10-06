@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Trash2 } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight, Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -27,12 +27,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -491,6 +493,9 @@ export type AdminUserRow = {
   phone: string | null;
   isAdmin: boolean;
   isMarketer: boolean;
+  isSuspended: boolean;
+  /** Shown to the user, with a WhatsApp button, in place of the app — null when not suspended, or suspended with no custom text (a generic message shows instead). */
+  suspensionMessage: string | null;
   emailVerified: boolean;
   googleLinked: boolean;
   createdAt: string;
@@ -836,6 +841,7 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
         Credits: CreditsCell,
         History: GrantHistoryCell,
         Role: RoleCell,
+        Suspend: SuspendUserButton,
         Delete: DeleteUserButton,
         Behavior: BehaviorCell,
       }}
@@ -1016,6 +1022,100 @@ function RoleCell({
 }
 
 /** Permanent — takes the portfolio, subscription history and support thread with it. */
+const DEFAULT_SUSPENSION_MESSAGE =
+  "حسابك متوقف مؤقتًا. تواصل مع الإدارة لمعرفة السبب ومتابعة الموضوع.";
+
+/**
+ * Suspends or reinstates an account — blocks it from the app entirely (ahead
+ * of trial/subscription state), showing the message below with a WhatsApp
+ * button in place of the desk. Suspending asks for the message; reinstating
+ * is a one-click confirm since the message is cleared either way.
+ */
+function SuspendUserButton({
+  row,
+  onChanged,
+  readOnly,
+}: {
+  row: AdminUserRow;
+  onChanged: () => void;
+  readOnly: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const setSuspended = async (suspended: boolean) => {
+    setBusy(true);
+    try {
+      await post(`/api/admin/users/${row.id}/suspend`, { suspended, message });
+      toast.success(suspended ? `تم تعليق ${row.email}` : `تم إلغاء تعليق ${row.email}`);
+      setOpen(false);
+      onChanged();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تحديث حالة الحساب");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (row.isSuspended) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={readOnly || busy}
+        onClick={() => void setSuspended(false)}
+      >
+        {busy ? <Spinner /> : <Ban className="size-4" />}
+        إلغاء التعليق
+      </Button>
+    );
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setMessage(row.suspensionMessage || "");
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" disabled={readOnly} className="text-down hover:text-down">
+          <Ban className="size-4" />
+          تعليق الحساب
+        </Button>
+      </DialogTrigger>
+      <DialogContent dir="rtl">
+        <DialogHeader>
+          <DialogTitle>تعليق {row.email}</DialogTitle>
+          <DialogDescription className="leading-relaxed">
+            الحساب هيتحجب عن استخدام الأداة فورًا، وهيشوف الرسالة دي بدل الشاشة الرئيسية مع زرار
+            تواصل واتساب. سيبها فاضية عشان يتبعت رسالة افتراضية.
+          </DialogDescription>
+        </DialogHeader>
+        <Textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder={DEFAULT_SUSPENSION_MESSAGE}
+          maxLength={600}
+          rows={4}
+        />
+        <DialogFooter className="gap-2 sm:justify-start">
+          <Button
+            variant="destructive"
+            disabled={busy}
+            onClick={() => void setSuspended(true)}
+          >
+            {busy ? <Spinner /> : <Ban className="size-4" />}
+            علّق الحساب
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DeleteUserButton({ row, onDeleted }: { row: AdminUserRow; onDeleted: () => void }) {
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);

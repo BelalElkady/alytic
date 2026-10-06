@@ -35,6 +35,7 @@ import { Spinner, Stat } from "@/components/desk/state-blocks";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { ChatWidget } from "@/components/support/chat-widget";
+import { WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -134,7 +135,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
       )}
       {!locked && <HeroBar />}
       <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
-        {locked ? <SubscriptionWall /> : children}
+        {locked ? (user.suspended ? <SuspendedWall /> : <SubscriptionWall />) : children}
       </main>
       <SiteFooter />
       <MobileNav />
@@ -188,6 +189,33 @@ function ExpiryBanner() {
  * subscription they never had expired; currentPeriodEnd is what separates the
  * two (it is only ever set by an admin granting a period).
  */
+const DEFAULT_SUSPENSION_MESSAGE =
+  "حسابك متوقف مؤقتًا. تواصل مع الإدارة لمعرفة السبب ومتابعة الموضوع.";
+
+/**
+ * Replaces the desk for a suspended account — ahead of SubscriptionWall,
+ * regardless of trial/subscription state (see the `locked` branch above and
+ * accessInfo's `suspended` in backend/src/api/server.js). No dismiss, no
+ * subscribe panel: the only way out is contacting support.
+ */
+function SuspendedWall() {
+  const { user } = useDesk();
+  return (
+    <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+      <h2 className="text-[17px] font-semibold">الحساب متوقف</h2>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+        {user?.suspensionMessage || DEFAULT_SUSPENSION_MESSAGE}
+      </p>
+      <Button asChild className="mt-5 gap-2 bg-[#25D366] text-white hover:bg-[#25D366]/90">
+        <a href={whatsappLink()} target="_blank" rel="noopener noreferrer">
+          <WhatsAppIcon className="size-4" />
+          تواصل معانا على واتساب
+        </a>
+      </Button>
+    </section>
+  );
+}
+
 function SubscriptionWall() {
   const { user } = useDesk();
   const { name: brandName } = useTenant();

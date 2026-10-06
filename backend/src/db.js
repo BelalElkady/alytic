@@ -808,6 +808,23 @@ export async function setUserMarketer(id, isMarketer) {
 }
 
 /**
+ * Suspends or reinstates an account. Suspension blocks the app entirely —
+ * ahead of trial/subscription state, even for staff — until lifted; the
+ * message (shown with a WhatsApp button, same spot the paywall occupies) is
+ * cleared on reinstatement so a later suspension never reuses a stale reason.
+ */
+export async function setUserSuspended(id, suspended, message = null) {
+  must(
+    await supabase.from('users').update({
+      is_suspended: suspended,
+      suspension_message: suspended ? (message ?? null) : null,
+    }).eq('id', id),
+    'setUserSuspended',
+  );
+  forgetSessionUser(id);
+}
+
+/**
  * Permanently removes a user. Their portfolio, reviews, subscription, grants
  * and support thread go with them via `on delete cascade`; the columns that
  * only record *who acted* (granted_by, sent_by, approved_by) don't cascade, so
@@ -843,7 +860,7 @@ export async function getAllUsers() {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('users')
-      .select(`id, email, name, phone, is_admin, is_marketer, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
+      .select(`id, email, name, phone, is_admin, is_marketer, is_suspended, suspension_message, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
       .order('created_at', { ascending: false })
       .order('id')
       .range(from, from + 999);
