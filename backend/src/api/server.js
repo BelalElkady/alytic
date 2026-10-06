@@ -3006,12 +3006,23 @@ app.post('/api/cron/daily-close', cronLimiter, wrap(async (req, res) => {
   res.json(await runDailyCloseForAllSites());
 }));
 
+// Platform admin only — this loops over every tenant's own database, same as
+// the cron trigger. `force` skips the isTradingDay/14:30 checks, for the one
+// case those can't get right on their own: a bank holiday that moved (Islamic
+// holidays are sighting-based, not fixed) so the EGX traded on a day the
+// built-in calendar thought was closed, and nothing records a close for it
+// unless an admin runs this by hand.
+app.post('/api/admin/daily-close', wrap(async (req, res) => {
+  if (!isPlatformAdmin(req.user, req.tenant)) return res.status(403).json({ error: 'الميزة دي من الموقع الأساسي بس' });
+  res.json(await runDailyCloseForAllSites({ force: req.body?.force === true }));
+}));
+
 /** runDailyClose once per active site, each against its own database. One site failing doesn't stop the rest. */
-async function runDailyCloseForAllSites() {
+async function runDailyCloseForAllSites(opts) {
   const sites = {};
   for (const tenant of activeTenants()) {
     try {
-      sites[tenant.id] = await runWithTenant(tenant, runDailyClose);
+      sites[tenant.id] = await runWithTenant(tenant, () => runDailyClose(opts));
     } catch (err) {
       console.error(`[daily-close] ${tenant.id} failed:`, err.message);
       sites[tenant.id] = { ok: false };
@@ -3022,13 +3033,13 @@ async function runDailyCloseForAllSites() {
   return { ...(sites[defaultTenant().id] ?? {}), sites };
 }
 
-async function runDailyClose() {
+async function runDailyClose({ force = false } = {}) {
   const today = cairoToday();
-  if (!isTradingDay(today)) {
+  if (!force && !isTradingDay(today)) {
     return { ok: true, skipped: 'not_a_trading_day', date: today };
   }
   const cairoNow = cairoClock.format(new Date());
-  if (cairoNow < DAILY_CLOSE_AT) {
+  if (!force && cairoNow < DAILY_CLOSE_AT) {
     return { ok: true, skipped: true, cairoNow };
   }
 

@@ -201,6 +201,7 @@ function AdminPage() {
       </TabsList>
       {canEditIndices && (
         <TabsContent value="indices" className="space-y-4">
+          {isPlatformAdmin && <DailyClosePanel />}
           <UniverseChangesPanel />
           <IndicesTab />
         </TabsContent>
@@ -318,6 +319,95 @@ function IndicesTab() {
         <IndexPanel key={row.name} row={row} onChanged={load} highlight={query} />
       ))}
     </div>
+  );
+}
+
+type DailyCloseSiteResult = {
+  ok: boolean;
+  skipped?: string | boolean;
+  date?: string;
+  cairoNow?: string;
+  total?: number;
+  saved?: number;
+  failed?: number;
+};
+
+type DailyCloseResult = DailyCloseSiteResult & { sites: Record<string, DailyCloseSiteResult> };
+
+const dailyCloseSummary = (result: DailyCloseSiteResult) => {
+  if (!result.ok) return "فشل";
+  if (result.skipped === "not_a_trading_day") return `تخطّى — مش يوم تداول (${result.date})`;
+  if (result.skipped) return `تخطّى — السوق لسه ما قفلش (${result.cairoNow})`;
+  return `اتسجّل: ${result.saved ?? 0} من ${result.total ?? 0}${result.failed ? `، فشل ${result.failed}` : ""}`;
+};
+
+/**
+ * Manual override for the 14:30 auto-close. Needed because Islamic bank
+ * holidays shift with the moon sighting, so the built-in EGX calendar
+ * occasionally calls a real trading day a holiday and the scheduler skips it
+ * silently — this re-runs it by hand, past that calendar, for every site.
+ */
+function DailyClosePanel() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<DailyCloseResult | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const data = await post<DailyCloseResult>("/api/admin/daily-close", { force: true });
+      setResult(data);
+      toast.success("تم تشغيل الإغلاق اليومي");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر تشغيل الإغلاق اليومي");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel
+      title="الإغلاق اليومي"
+      description="لو يوم إجازة اتزاح وفات معاد الإغلاق التلقائي (2:30)، شغّله يدوي من هنا — بيتخطى فحص الإجازات والوقت ويسجّل إغلاق اليوم لكل المستخدمين على كل المواقع."
+    >
+      <div className="space-y-3">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" size="sm" disabled={busy}>
+              {busy && <Spinner />}
+              تشغيل الإغلاق اليومي يدويًا
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>تشغيل الإغلاق اليومي يدويًا؟</AlertDialogTitle>
+              <AlertDialogDescription>
+                هيسجّل إغلاق اليوم بالأسعار الحالية لكل مستخدم عنده مراكز مفتوحة، على كل المواقع —
+                حتى لو التقويم شايف النهارده إجازة. إعادة التشغيل في نفس اليوم بتستبدل القفلة
+                باللي قبلها بنفس الأسعار، من غير ضرر.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void run()}>تشغيل</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {result && (
+          <div className="space-y-1 rounded-lg border bg-surface p-3 text-[12.5px]">
+            {Object.entries(result.sites).map(([siteId, site]) => (
+              <div key={siteId} className="flex items-center justify-between gap-2">
+                <span className="font-medium">{siteId}</span>
+                <span className={site.ok ? "text-muted-foreground" : "text-down"}>
+                  {dailyCloseSummary(site)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Panel>
   );
 }
 
