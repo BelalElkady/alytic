@@ -332,7 +332,12 @@ type DailyCloseSiteResult = {
   failed?: number;
 };
 
-type DailyCloseResult = DailyCloseSiteResult & { sites: Record<string, DailyCloseSiteResult> };
+type DailyCloseStatus = {
+  running: boolean;
+  startedAt?: string;
+  finishedAt?: string | null;
+  result?: (DailyCloseSiteResult & { sites: Record<string, DailyCloseSiteResult> }) | null;
+};
 
 const dailyCloseSummary = (result: DailyCloseSiteResult) => {
   if (!result.ok) return "فشل";
@@ -346,24 +351,42 @@ const dailyCloseSummary = (result: DailyCloseSiteResult) => {
  * holidays shift with the moon sighting, so the built-in EGX calendar
  * occasionally calls a real trading day a holiday and the scheduler skips it
  * silently — this re-runs it by hand, past that calendar, for every site.
+ *
+ * A full run across every site's users can take longer than nginx's proxy
+ * timeout, so the request that starts it returns immediately and this polls
+ * /api/admin/daily-close for how it's going instead of waiting on one
+ * response (see the backend route for why).
  */
 function DailyClosePanel() {
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<DailyCloseResult | null>(null);
+  const [status, setStatus] = useState<DailyCloseStatus | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  useEffect(() => {
+    if (!status?.running) return;
+    const timer = setInterval(() => {
+      api<DailyCloseStatus>("/api/admin/daily-close")
+        .then(setStatus)
+        .catch(() => {
+          // A failed poll just tries again next tick.
+        });
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [status?.running]);
 
   const run = async () => {
-    setBusy(true);
-    setResult(null);
+    setStarting(true);
     try {
-      const data = await post<DailyCloseResult>("/api/admin/daily-close", { force: true });
-      setResult(data);
-      toast.success("تم تشغيل الإغلاق اليومي");
+      await post("/api/admin/daily-close", { force: true });
+      setStatus({ running: true });
+      toast.success("بدأ تشغيل الإغلاق اليومي — النتيجة هتظهر هنا لما يخلص");
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "تعذر تشغيل الإغلاق اليومي");
     } finally {
-      setBusy(false);
+      setStarting(false);
     }
   };
+
+  const busy = starting || Boolean(status?.running);
 
   return (
     <Panel
@@ -375,7 +398,7 @@ function DailyClosePanel() {
           <AlertDialogTrigger asChild>
             <Button variant="outline" size="sm" disabled={busy}>
               {busy && <Spinner />}
-              تشغيل الإغلاق اليومي يدويًا
+              {status?.running ? "بيشتغل…" : "تشغيل الإغلاق اليومي يدويًا"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -384,7 +407,7 @@ function DailyClosePanel() {
               <AlertDialogDescription>
                 هيسجّل إغلاق اليوم بالأسعار الحالية لكل مستخدم عنده مراكز مفتوحة، على كل المواقع —
                 حتى لو التقويم شايف النهارده إجازة. إعادة التشغيل في نفس اليوم بتستبدل القفلة
-                باللي قبلها بنفس الأسعار، من غير ضرر.
+                باللي قبلها بنفس الأسعار، من غير ضرر. ممكن ياخد شوية دقايق.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -394,9 +417,9 @@ function DailyClosePanel() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {result && (
+        {status?.result && (
           <div className="space-y-1 rounded-lg border bg-surface p-3 text-[12.5px]">
-            {Object.entries(result.sites).map(([siteId, site]) => (
+            {Object.entries(status.result.sites).map(([siteId, site]) => (
               <div key={siteId} className="flex items-center justify-between gap-2">
                 <span className="font-medium">{siteId}</span>
                 <span className={site.ok ? "text-muted-foreground" : "text-down"}>

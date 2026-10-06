@@ -3006,6 +3006,15 @@ app.post('/api/cron/daily-close', cronLimiter, wrap(async (req, res) => {
   res.json(await runDailyCloseForAllSites());
 }));
 
+// A full run (every tenant, every portfolio with open positions) can run past
+// nginx's proxy_read_timeout (180s, see deploy/nginx/egxpert.conf) once there
+// are enough users — the cron trigger never hits this because it runs
+// in-process or over the VPS's own loopback, outside that proxy. The admin
+// button goes through it like any other browser request, so it can't wait on
+// the result: it kicks the run off in the background and the panel polls
+// /api/admin/daily-close (GET) for how it's going.
+let lastManualDailyClose = null; // { startedAt, finishedAt, running, result }
+
 // Platform admin only — this loops over every tenant's own database, same as
 // the cron trigger. `force` skips the isTradingDay/14:30 checks, for the one
 // case those can't get right on their own: a bank holiday that moved (Islamic
@@ -3014,7 +3023,28 @@ app.post('/api/cron/daily-close', cronLimiter, wrap(async (req, res) => {
 // unless an admin runs this by hand.
 app.post('/api/admin/daily-close', wrap(async (req, res) => {
   if (!isPlatformAdmin(req.user, req.tenant)) return res.status(403).json({ error: 'الميزة دي من الموقع الأساسي بس' });
-  res.json(await runDailyCloseForAllSites({ force: req.body?.force === true }));
+  if (lastManualDailyClose?.running) return res.status(409).json({ error: 'في تشغيل شغال لسه — استنى لحد ما يخلص' });
+  const force = req.body?.force === true;
+  lastManualDailyClose = { startedAt: new Date().toISOString(), finishedAt: null, running: true, result: null };
+  res.json({ ok: true, started: true });
+  runDailyCloseForAllSites({ force })
+    .then((result) => {
+      lastManualDailyClose = { ...lastManualDailyClose, finishedAt: new Date().toISOString(), running: false, result };
+    })
+    .catch((err) => {
+      console.error('[daily-close] manual run failed:', err.message);
+      lastManualDailyClose = {
+        ...lastManualDailyClose,
+        finishedAt: new Date().toISOString(),
+        running: false,
+        result: { ok: false, error: err.message },
+      };
+    });
+}));
+
+app.get('/api/admin/daily-close', wrap(async (req, res) => {
+  if (!isPlatformAdmin(req.user, req.tenant)) return res.status(403).json({ error: 'الميزة دي من الموقع الأساسي بس' });
+  res.json(lastManualDailyClose ?? { running: false });
 }));
 
 /** runDailyClose once per active site, each against its own database. One site failing doesn't stop the rest. */
