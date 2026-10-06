@@ -173,6 +173,12 @@ type DeskValue = {
   refreshUser: () => Promise<User | null>;
   pf: Portfolio;
   rows: Row[];
+  /**
+   * Stocks the Portfolio holds that `rows` leaves out, as of the last full
+   * load — "no-cost": no average cost recorded, so there's no P&L to show;
+   * "analysis": the stock's analysis failed. They're in none of the totals.
+   */
+  unlisted: Array<{ code: string; reason: "no-cost" | "analysis" }>;
   log: Record<string, LogEntry>;
   universe: Stock[];
   indices: Record<string, string[]>;
@@ -273,6 +279,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   rowsRef.current = rows;
   const lastRefreshAt = useRef(0);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  const [unlisted, setUnlisted] = useState<DeskValue["unlisted"]>([]);
   // Codes a page (the market or cash scan) wants priced beyond the held ones,
   // counted so two views watching the same code don't drop it for each other.
   const watchedRef = useRef(new Map<string, number>());
@@ -352,6 +359,15 @@ export function DeskProvider({ children }: { children: ReactNode }) {
         : [];
       setPf(portfolio);
       setRows(scanned);
+      const listed = new Set((scanned as Row[]).map((row) => row.code));
+      setUnlisted(
+        codes
+          .filter((code) => (portfolio.positions[code]?.shares ?? 0) > 0 && !listed.has(code))
+          .map((code) => ({
+            code,
+            reason: portfolio.positions[code].avgCost > 0 ? ("analysis" as const) : ("no-cost" as const),
+          })),
+      );
       // The switcher values a Portfolio from `quotes` once it's no longer the
       // selected one — so they must hold the very prices its rows showed
       // while it was, or its profit would change just by switching away.
@@ -712,6 +728,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       // resolves — reload()'s loading skeleton (HeroBar) takes over instead.
       setPf(null);
       setRows([]);
+      setUnlisted([]);
       void reload({ refreshPortfolioList, scanStyle: isStyleKey(style) ? style : undefined });
     },
     [reload, portfolios],
@@ -793,6 +810,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     refreshUser,
     pf,
     rows,
+    unlisted,
     log,
     universe,
     indices,

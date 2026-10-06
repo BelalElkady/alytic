@@ -427,8 +427,43 @@ function PositionSortControl({
   );
 }
 
+/**
+ * A held stock the list below can't show is never just left out: each one is
+ * named here with what's missing and the way to fix it, since it is counted
+ * in none of the page's totals either.
+ */
+function UnlistedHoldings() {
+  const { unlisted, reload, openManual, loading } = useDesk();
+  if (!unlisted.length) return null;
+  return (
+    <div className="space-y-2">
+      {unlisted.map(({ code, reason }) => (
+        <Notice key={code} tone="warn">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              <span className="num font-semibold">{code}</span>
+              {reason === "no-cost"
+                ? " موجود في المحفظة بس مش ظاهر في المراكز ولا محسوب في الإجمالي — متوسط سعر الشراء مش متسجل."
+                : " موجود في المحفظة بس مش ظاهر في المراكز ولا محسوب في الإجمالي — تحليل السهم ما اكتملش."}
+            </span>
+            {reason === "no-cost" ? (
+              <Button size="sm" variant="outline" className="ms-auto" onClick={() => openManual("edit")}>
+                سجّل سعر الشراء
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" className="ms-auto" disabled={loading} onClick={() => void reload()}>
+                حاول تاني
+              </Button>
+            )}
+          </div>
+        </Notice>
+      ))}
+    </div>
+  );
+}
+
 function PositionsPage() {
-  const { rows, loading, error, reload, openDetail, pf, aiAvailable, user } = useDesk();
+  const { rows, loading, error, reload, openDetail, pf, aiAvailable, user, unlisted } = useDesk();
   const { style } = useActiveInvestStyle(pf?.trades);
   const nearStopPct = STYLE_RULES[style].nearStopPct;
   const { sort, setSort } = usePositionSort();
@@ -500,6 +535,8 @@ function PositionsPage() {
   if (loading && rows.length === 0) return <LoadingBlock rows={3} />;
 
   if (rows.length === 0) {
+    // Holdings exist but none could be listed: say which, not "no positions".
+    if (unlisted.length) return <UnlistedHoldings />;
     return (
       <Panel title="المراكز المفتوحة">
         <EmptyState
@@ -543,6 +580,8 @@ function PositionsPage() {
   return (
     <div className="space-y-4">
       <TradeReminder />
+
+      <UnlistedHoldings />
 
       <div className="space-y-2">
         {alerts.length ? (
