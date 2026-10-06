@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { arDay, exact, int, signed, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { STYLE_LABEL, type AdminUserBehavior, type AdminUserRow } from "@/routes/_app.admin";
+import { STYLE_LABEL, walletCapital, type AdminUserBehavior, type AdminUserRow } from "@/routes/_app.admin";
 
 type EditorProps = { row: AdminUserRow; onChanged: () => void; readOnly: boolean };
 
@@ -166,7 +166,7 @@ function Capital({ row }: { row: AdminUserRow }) {
   const extra = row.portfolios.length - 1;
   return (
     <div className="flex items-center gap-1.5">
-      <span className="num text-[13px]">{pf ? `${int(pf.cash + pf.positionsValue)} ج` : "—"}</span>
+      <span className="num text-[13px]">{pf ? `${int(walletCapital(pf))} ج` : "—"}</span>
       {extra > 0 && (
         <Badge variant="outline" className="tabular-nums text-[11px]" title={`فيه ${extra} محفظة تانية (الأرقام هنا للمحفظة الرئيسية بس)`}>
           +{extra} محفظة
@@ -375,7 +375,7 @@ function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: 
                 <div className="tabular-nums grid grid-cols-3 gap-2 text-[13px]">
                   <div>
                     <div className="text-muted-foreground">رأس المال</div>
-                    {int(p.cash + p.positionsValue)} ج
+                    {int(walletCapital(p))} ج
                   </div>
                   <div>
                     <div className="text-muted-foreground">ربح محقق</div>

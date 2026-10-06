@@ -558,7 +558,15 @@ const USER_SORTS: { key: UserSort; label: string }[] = [
   { key: "profit", label: "الأرباح" },
 ];
 
-const capitalOf = (row: AdminUserRow) => (row.portfolio ? row.portfolio.cash + row.portfolio.positionsValue : -Infinity);
+/**
+ * A Portfolio's capital: its holdings at cost plus its cash. A cash balance
+ * below zero counts as none — it isn't borrowed money, it's buys logged
+ * without the cash behind them (or at a mistyped price), and letting it
+ * subtract made the platform total smaller than a single User's capital.
+ */
+export const walletCapital = (p: { cash: number; positionsValue: number }) => p.positionsValue + Math.max(p.cash, 0);
+
+const capitalOf = (row: AdminUserRow) => (row.portfolio ? walletCapital(row.portfolio) : -Infinity);
 const profitOf = (row: AdminUserRow) => row.portfolio?.realizedPnl ?? -Infinity;
 
 /**
@@ -615,7 +623,7 @@ function downloadUsersCsv(rows: AdminUserRow[]) {
       row.sameNetworkAccounts.map((other) => other.email).join(" | "),
       row.createdAt?.slice(0, 10) ?? "",
       row.lastLoginAt ?? "",
-      pf ? pf.cash + pf.positionsValue : "",
+      pf ? walletCapital(pf) : "",
       pf?.realizedPnl ?? "",
       pf?.tradesCount ?? "",
       pf?.positionsCount ?? "",
@@ -710,7 +718,7 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
       // its "+N محفظة" badge) — this strip's total is the platform's whole
       // capital, so a User's other wallets (#103) must count too.
       for (const p of row.portfolios) {
-        capital += p.cash + p.positionsValue;
+        capital += walletCapital(p);
         profit += p.realizedPnl;
       }
       const style = row.behavior?.chosenStyle ?? row.behavior?.inferredStyle ?? null;
