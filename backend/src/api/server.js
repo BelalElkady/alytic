@@ -2261,6 +2261,32 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
       pool = pool.filter((c) => !settled.has(c.code));
     }
   }
+  // Why a stock isn't in the cash plan, in the order the plan itself rules
+  // stocks out — so the strongest-stocks list can say why a strong stock
+  // still isn't a recommendation. Null for one that is in the plan.
+  const candidateCodes = new Set(candidates.map((candidate) => candidate.code));
+  const notInCashPlan = (r) => {
+    if (selectedCodes.has(r.code)) return null;
+    if (r.position) return 'موجود في محفظتك بالفعل — خطة الكاش بتقترح مشتريات جديدة بس.';
+    if (r.halted) return 'السهم موقوف عن التداول دلوقتي.';
+    if (r.plan.shariahExcluded) return 'السهم غير متوافق مع الشريعة، فمش بيترشّح للشراء.';
+    if (r.plan.entryStatus === 'too_extended') return 'السعر ممتد وبعيد عن أقرب دعم — استنى تصحيح بدل مطاردة السعر.';
+    const riskReward = r.plan.buyingNow.riskReward;
+    if (!r.plan.buyingNow.worthIt) {
+      return riskReward != null
+        ? `العائد للمخاطرة من السعر الحالي ${riskReward} وأقل من المطلوب لأسلوبك (${rules.entry.minRiskReward}).`
+        : 'مفيش عائد للمخاطرة محسوب من السعر الحالي.';
+    }
+    if (!r.plan.actionable) return 'مفيش نقطة دخول مناسبة دلوقتي.';
+    if (!r.plan.targets.mid?.price) return 'مفيش هدف متوسط المدى نقيس عليه الصفقة.';
+    if (!((r.plan.sizing?.shares ?? 0) > 0)) return r.plan.sizing?.reason ?? 'حجم المركز المسموح به صفر حسب قواعد المخاطرة.';
+    if (styleStrength(r, style) == null) return 'مفيش بيانات أساسية للشركة، فمش بيترشّح.';
+    if (candidateCodes.has(r.code)) {
+      return `فرصة صالحة، بس الخطة اكتفت بـ ${selected.length} أسهم أفضل كصفقة (عائد للمخاطرة أعلى أو قطاع مختلف).`;
+    }
+    return null;
+  };
+
   let investedTotal = 0;
   const payload = {
     asOf: results[0]?.asOf ?? null,
@@ -2329,6 +2355,8 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
       worthBuyingNow: r.plan.buyingNow.worthIt,
       buyPlan,
       cashPlanSelected,
+      // Why not, when it isn't — see notInCashPlan above.
+      cashPlanNote: notInCashPlan(r),
       // Compact form — the full breakdown and reasons are one /api/analyze/:code
       // request away (see the DetailDialog), same tradeoff as the rest of this row.
       classification: r.classification && {

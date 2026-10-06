@@ -692,6 +692,12 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                     <Badge variant="outline" className={cn("mt-2.5", toneClass[state.tone])}>
                       {state.label}
                     </Badge>
+                    {!row.cashPlanSelected && row.cashPlanNote && (
+                      <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+                        <span className="font-medium text-foreground">مش في خطة الكاش: </span>
+                        {row.cashPlanNote}
+                      </p>
+                    )}
                   </div>
                 );
               })}
