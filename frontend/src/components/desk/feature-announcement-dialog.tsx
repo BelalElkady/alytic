@@ -10,9 +10,15 @@ type ActiveAnnouncement = {
   body: string;
   imageUrls: string[];
   videoUrl: string | null;
+  cta?: { label: string; url: string } | null;
 };
 
-export function FeatureAnnouncementDialog() {
+/**
+ * `onNavigate` takes an in-app path ("/subscribe") so the button can use the
+ * client-side router; without it the button is a plain link. Client-side matters
+ * here: a full page load would risk cancelling the dismiss request in flight.
+ */
+export function FeatureAnnouncementDialog({ onNavigate }: { onNavigate?: (path: string) => void }) {
   const [announcement, setAnnouncement] = useState<ActiveAnnouncement | null>(null);
   const [open, setOpen] = useState(false);
   const dismissedRef = useRef(false);
@@ -37,6 +43,9 @@ export function FeatureAnnouncementDialog() {
   };
 
   if (!announcement) return null;
+
+  // In-app paths stay in this tab; the server only ever stores a "/path" or an https URL.
+  const ctaExternal = announcement.cta ? !announcement.cta.url.startsWith("/") : false;
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
@@ -65,7 +74,30 @@ export function FeatureAnnouncementDialog() {
             />
           )}
         </div>
-        <Button onClick={close}>تمام</Button>
+        {announcement.cta ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button asChild className="sm:flex-1">
+              <a
+                href={announcement.cta.url}
+                {...(ctaExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                onClick={(event) => {
+                  close();
+                  if (!ctaExternal && onNavigate) {
+                    event.preventDefault();
+                    onNavigate(announcement.cta!.url);
+                  }
+                }}
+              >
+                {announcement.cta.label}
+              </a>
+            </Button>
+            <Button variant="outline" onClick={close}>
+              تمام
+            </Button>
+          </div>
+        ) : (
+          <Button onClick={close}>تمام</Button>
+        )}
       </DialogContent>
     </Dialog>
   );

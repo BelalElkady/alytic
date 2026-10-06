@@ -34,6 +34,10 @@ _Avoid_: Lapsed, churned, inactive
 A User who has never paid and whose Trial is over. Labelled "لم يشترك".
 _Avoid_: Lapsed, free user
 
+**Trial ending**:
+A User on Trial with two days or fewer left, the same cut-off the admin users screen uses to flag a trial as about to end. It overlaps Trial: such a User is in both. Used to target announcements.
+_Avoid_: Expiring, last chance
+
 **Credits**:
 Extra AI-usage balance an Admin adds to a User (usually a paid pack), spent only after the User's normal allowance runs out.
 _Avoid_: Tokens, points

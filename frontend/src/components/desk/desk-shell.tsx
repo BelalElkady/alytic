@@ -1,4 +1,4 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   BarChart3,
@@ -93,6 +93,7 @@ const NAV = [
 export function DeskShell({ children }: { children: ReactNode }) {
   const { user, authChecked } = useDesk();
   const navigate = useNavigate();
+  const router = useRouter();
 
   useEffect(() => {
     if (authChecked && !user)
@@ -121,7 +122,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <BlogTicker />
       <RequirePhoneDialog />
       <RequireInvestStyleDialog />
-      <FeatureAnnouncementDialog />
+      <FeatureAnnouncementDialog onNavigate={(path) => router.history.push(path)} />
       <VerifyEmailBanner />
       <ExpiryBanner />
       {!locked && (

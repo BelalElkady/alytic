@@ -34,4 +34,36 @@ describe("FeatureAnnouncementDialog", () => {
     expect(postMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("renders the button as a link, opening external links in a new tab, and dismisses on click", async () => {
+    apiMock.mockResolvedValue({
+      announcement: { id: "a2", title: "عرض", body: "نص", imageUrls: [], videoUrl: null, cta: { label: "شوف العرض", url: "https://example.com/offer" } },
+    });
+    postMock.mockResolvedValue({ ok: true });
+    render(<FeatureAnnouncementDialog />);
+
+    const link = await screen.findByRole("link", { name: "شوف العرض" });
+    expect(link).toHaveAttribute("href", "https://example.com/offer");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+
+    fireEvent.click(link);
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith("/api/announcements/a2/dismiss"));
+    expect(postMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends an in-app button through the router instead of reloading the page", async () => {
+    apiMock.mockResolvedValue({
+      announcement: { id: "a3", title: "جدّد", body: "نص", imageUrls: [], videoUrl: null, cta: { label: "جدّد اشتراكك", url: "/subscribe" } },
+    });
+    postMock.mockResolvedValue({ ok: true });
+    const onNavigate = vi.fn();
+    render(<FeatureAnnouncementDialog onNavigate={onNavigate} />);
+
+    const link = await screen.findByRole("link", { name: "جدّد اشتراكك" });
+    expect(link).not.toHaveAttribute("target");
+    fireEvent.click(link);
+    expect(onNavigate).toHaveBeenCalledWith("/subscribe");
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith("/api/announcements/a3/dismiss"));
+  });
 });

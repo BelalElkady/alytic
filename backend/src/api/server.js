@@ -53,6 +53,7 @@ import { uploadSupportImage, signedUrlsFor, removeSupportImagesFor, SUPPORT_IMAG
 import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
 import { uploadAnnouncementImage } from '../announcementImages.js';
 import { normalizeAnnouncementVideoUrl } from '../announcementVideo.js';
+import { audienceSegmentsOf, normalizeAudiences, normalizeCtaUrl } from '../announcementAudience.js';
 import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
 import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
@@ -669,8 +670,19 @@ app.get(['/api/fundamentals/:code', '/api/market-analysis'], aiLimiter);
 // non-admin endpoint.
 
 app.get('/api/announcements/active', wrap(async (req, res) => {
-  const row = await getActiveAnnouncementForUser(req.user.id);
-  res.json({ announcement: row ? { id: row.id, title: row.title, body: row.body, imageUrls: row.image_urls, videoUrl: row.video_url } : null });
+  const row = await getActiveAnnouncementForUser(req.user.id, audienceSegmentsOf(await accessInfo(req.user)));
+  res.json({
+    announcement: row
+      ? {
+          id: row.id,
+          title: row.title,
+          body: row.body,
+          imageUrls: row.image_urls,
+          videoUrl: row.video_url,
+          cta: row.cta_label && row.cta_url ? { label: row.cta_label, url: row.cta_url } : null,
+        }
+      : null,
+  });
 }));
 
 app.post('/api/announcements/:id/dismiss', wrap(async (req, res) => {
@@ -1009,12 +1021,16 @@ const toAdminAnnouncement = (row) => ({
   body: row.body,
   imageUrls: row.image_urls,
   videoUrl: row.video_url,
+  ctaLabel: row.cta_label ?? null,
+  ctaUrl: row.cta_url ?? null,
+  audiences: row.audiences ?? [],
   startsAt: row.starts_at,
   endsAt: row.ends_at,
   createdAt: row.created_at,
 });
 
 const MAX_ANNOUNCEMENT_IMAGES = 6;
+const MAX_CTA_LABEL = 40;
 
 /** Shared POST/PUT body validation. Returns { value } on success or { error } (an Arabic message) on failure. */
 function validateAnnouncementBody(body) {
@@ -1044,7 +1060,34 @@ function validateAnnouncementBody(body) {
     if (!videoUrl) return { error: 'رابط الفيديو لازم يكون من يوتيوب أو فيميو' };
   }
 
-  return { value: { title, body: text, imageUrls, videoUrl, startsAt: body.startsAt, endsAt: body.endsAt } };
+  // The button needs both a label and a link, or neither.
+  const ctaLabel = typeof body?.ctaLabel === 'string' ? body.ctaLabel.trim() : '';
+  const rawCtaUrl = typeof body?.ctaUrl === 'string' ? body.ctaUrl.trim() : '';
+  let ctaUrl = null;
+  if (ctaLabel.length > MAX_CTA_LABEL) return { error: 'نص الزرار طويل أوي' };
+  if (ctaLabel || rawCtaUrl) {
+    if (!ctaLabel) return { error: 'اكتب نص الزرار' };
+    if (!rawCtaUrl) return { error: 'اكتب رابط الزرار' };
+    ctaUrl = normalizeCtaUrl(rawCtaUrl);
+    if (!ctaUrl) return { error: 'رابط الزرار لازم يبدأ بـ / (صفحة جوه الموقع) أو https://' };
+  }
+
+  const audiences = normalizeAudiences(body?.audiences);
+  if (!audiences) return { error: 'الفئة المستهدفة غير صالحة' };
+
+  return {
+    value: {
+      title,
+      body: text,
+      imageUrls,
+      videoUrl,
+      ctaLabel: ctaUrl ? ctaLabel : null,
+      ctaUrl,
+      audiences,
+      startsAt: body.startsAt,
+      endsAt: body.endsAt,
+    },
+  };
 }
 
 app.get('/api/admin/announcements', wrap(async (_req, res) => {
