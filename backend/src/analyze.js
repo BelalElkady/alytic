@@ -24,7 +24,7 @@ import { fetchLatestQuotes } from './data/tv-history.js';
 import { lookup, toYahoo, sectorLabel } from './config/universe.js';
 import { buildSnapshot } from './ta/snapshot.js';
 import { scoreTechnical } from './scoring/technical.js';
-import { computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation, consecutiveClosesUnder } from './scoring/risk.js';
+import { computeStop, computeLongTermStop, positionSize, liquidityCheck, riskReward, positionRecommendation, consecutiveClosesUnder } from './scoring/risk.js';
 import { getOrGenerateStopPlan, getOrGenerateTrailingStop, getLiveTrailingStop } from './agent/stopPlanner.js';
 import { buildTargets, targetEstimate } from './scoring/targets.js';
 import { classifyStock } from './scoring/classification.js';
@@ -277,7 +277,18 @@ export async function analyzeTicker(code, opts = {}) {
     corporateAction && onOldScale(plan.stop, corporateAction.factor, price)
       ? { ...plan, stop: r2(plan.stop / corporateAction.factor) }
       : plan;
-  const stopPlanAi = rebaseStop(await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, suggestedEntry, style, rules));
+  // A failed AI call fails the whole analysis — right for a buy candidate
+  // (better none than a made-up stop), but a stock already held would then
+  // vanish from the Portfolio page and its totals. A holding falls back to
+  // the rule-based stop instead, so it is always listed.
+  const stopPlanFor = (entry) =>
+    getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, entry, style, rules).catch((err) => {
+      if (!(position?.shares > 0)) throw err;
+      console.error(`[stop] AI stop plan failed for held ${code}, using the rule-based stop:`, err.message);
+      const fallback = computeStop(snapshot, entry, rules);
+      return { stop: fallback.stop, basis: fallback.note };
+    });
+  const stopPlanAi = rebaseStop(await stopPlanFor(suggestedEntry));
   const stopPlan = { stop: stopPlanAi.stop, riskPct: r2(((suggestedEntry - stopPlanAi.stop) / suggestedEntry) * 100), basis: stopPlanAi.basis };
   const targets = buildTargets(snapshot, bars, { entry: suggestedEntry, stop: stopPlan.stop }, rules);
 
@@ -285,7 +296,7 @@ export async function analyzeTicker(code, opts = {}) {
   // this is the ratio to judge "should I buy today" by. Priced at market
   // rather than the suggested entry, so it needs its own AI stop call.
   const stopNowAi =
-    price === suggestedEntry ? stopPlanAi : rebaseStop(await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, price, style, rules));
+    price === suggestedEntry ? stopPlanAi : rebaseStop(await stopPlanFor(price));
   const stopNow = { stop: stopNowAi.stop, riskPct: r2(((price - stopNowAi.stop) / price) * 100) };
   const buyingNow = {
     entry: r2(price),
@@ -390,7 +401,12 @@ export async function analyzeTicker(code, opts = {}) {
       { avgCost: position.avgCost, shares: position.shares, existingStop },
       style,
       rules,
-    );
+    ).catch((err) => {
+      // Same reason as the stop plan above: the holding keeps its current
+      // stop rather than dropping off the page.
+      console.error(`[stop] AI trailing stop failed for ${code}, keeping the current stop:`, err.message);
+      return { stop: null, rationale: null, moved: false };
+    });
     // The stop set off the last completed close — the one in force when that
     // session ended, and so the one a "did it close under its stop" check is
     // judged against.
