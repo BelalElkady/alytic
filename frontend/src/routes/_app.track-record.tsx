@@ -1069,8 +1069,8 @@ function RecordTable({ rows, vs }: { rows: RecRow[]; vs: Vs }) {
   }
   return (
     <div className="scrollbar-slim hidden overflow-x-auto sm:block">
-      <Table>
-        <TableHeader>
+      <Table wrapperClassName="max-h-[65vh]">
+        <TableHeader className="sticky top-0 z-10 bg-card">
           <TableRow>
             <TableHead className="text-start">السهم</TableHead>
             <TableHead className="text-start">القرار</TableHead>
