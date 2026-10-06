@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ErrorState, LoadingBlock, Panel, Spinner } from "@/components/desk/state-blocks";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,12 +24,42 @@ import { api, del, post, postRaw } from "@/lib/api";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+/** Renewal-status segments an announcement can target; none ticked means everyone. Mirrors backend/src/announcementAudience.js. */
+export type Audience = "trial" | "trial_ending" | "active" | "expired" | "never";
+
+const AUDIENCE_LABEL: Record<Audience, string> = {
+  trial: "في التجربة المجانية",
+  trial_ending: "تجربتهم على وشك الانتهاء (يومين أو أقل)",
+  active: "مشتركين فعالين",
+  expired: "اشتراك منتهي",
+  never: "لم يشترك (التجربة انتهت)",
+};
+
+const AUDIENCES = Object.keys(AUDIENCE_LABEL) as Audience[];
+
+// Pages inside the app the button can send people to; the field also takes any
+// other "/path" or https:// link.
+const PAGE_SUGGESTIONS: { url: string; label: string }[] = [
+  { url: "/subscribe", label: "الاشتراك" },
+  { url: "/pricing", label: "الأسعار" },
+  { url: "/portfolio", label: "المحفظة" },
+  { url: "/cash", label: "تحليل الكاش" },
+  { url: "/market", label: "السوق" },
+  { url: "/targets", label: "الأهداف" },
+  { url: "/track-record", label: "سجل الأداء" },
+  { url: "/charts", label: "الرسوم البيانية" },
+  { url: "/settings", label: "الإعدادات" },
+];
+
 export type Announcement = {
   id: string;
   title: string;
   body: string;
   imageUrls: string[];
   videoUrl: string | null;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
+  audiences: Audience[];
   startsAt: string;
   endsAt: string;
   createdAt: string;
@@ -66,6 +97,9 @@ const emptyForm = () => ({
   endsAt: "",
   videoUrl: "",
   imageUrls: [] as string[],
+  ctaLabel: "",
+  ctaUrl: "",
+  audiences: [] as Audience[],
 });
 
 type Form = ReturnType<typeof emptyForm>;
@@ -104,6 +138,9 @@ export function AnnouncementsTab() {
       endsAt: row.endsAt.slice(0, 10),
       videoUrl: row.videoUrl ?? "",
       imageUrls: row.imageUrls,
+      ctaLabel: row.ctaLabel ?? "",
+      ctaUrl: row.ctaUrl ?? "",
+      audiences: row.audiences ?? [],
     });
   };
 
@@ -133,6 +170,15 @@ export function AnnouncementsTab() {
     }
   };
 
+  const toggleAudience = (audience: Audience, on: boolean) => {
+    setForm((f) => ({
+      ...f,
+      audiences: on
+        ? [...f.audiences.filter((a) => a !== audience), audience]
+        : f.audiences.filter((a) => a !== audience),
+    }));
+  };
+
   const removeImage = (url: string) => {
     setForm((f) => ({ ...f, imageUrls: f.imageUrls.filter((u) => u !== url) }));
   };
@@ -142,6 +188,11 @@ export function AnnouncementsTab() {
     if (!form.body.trim()) return "النص مطلوب";
     if (!form.startsAt) return "تاريخ البدء مطلوب";
     if (!form.endsAt) return "تاريخ الانتهاء مطلوب";
+    const ctaUrl = form.ctaUrl.trim();
+    if (form.ctaLabel.trim() && !ctaUrl) return "اكتب رابط الزرار";
+    if (ctaUrl && !form.ctaLabel.trim()) return "اكتب نص الزرار";
+    if (ctaUrl && !/^(\/(?!\/)|https:\/\/)/.test(ctaUrl))
+      return "رابط الزرار لازم يبدأ بـ / (صفحة جوه الموقع) أو https://";
     return null;
   };
 
@@ -157,6 +208,9 @@ export function AnnouncementsTab() {
       body: form.body.trim(),
       imageUrls: form.imageUrls,
       videoUrl: form.videoUrl.trim() || null,
+      ctaLabel: form.ctaLabel.trim() || null,
+      ctaUrl: form.ctaUrl.trim() || null,
+      audiences: form.audiences,
       startsAt: startOfCairoDay(form.startsAt),
       endsAt: endOfCairoDay(form.endsAt),
     };
@@ -281,6 +335,66 @@ export function AnnouncementsTab() {
               </Button>
             </div>
           </div>
+          <div className="space-y-2 rounded-lg border p-3">
+            <div className="text-[13px] font-medium">زرار الإجراء (اختياري)</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label htmlFor="cta-label" className="text-[12px] text-muted-foreground">
+                  نص الزرار
+                </label>
+                <Input
+                  id="cta-label"
+                  maxLength={40}
+                  value={form.ctaLabel}
+                  onChange={(e) => setForm({ ...form, ctaLabel: e.target.value })}
+                  placeholder="اشترك دلوقتي"
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="cta-url" className="text-[12px] text-muted-foreground">
+                  رابط الزرار
+                </label>
+                <Input
+                  id="cta-url"
+                  dir="ltr"
+                  list="cta-page-suggestions"
+                  value={form.ctaUrl}
+                  onChange={(e) => setForm({ ...form, ctaUrl: e.target.value })}
+                  placeholder="/subscribe"
+                />
+                <datalist id="cta-page-suggestions">
+                  {PAGE_SUGGESTIONS.map((page) => (
+                    <option key={page.url} value={page.url}>
+                      {page.label}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+            </div>
+            <p className="text-[12px] text-muted-foreground">
+              صفحة جوه الموقع (زي /subscribe) أو رابط https://. لو سيبت الاتنين فاضيين مفيش زرار.
+            </p>
+          </div>
+          <div className="space-y-2 rounded-lg border p-3">
+            <div className="text-[13px] font-medium">مين يشوف التنبيه؟</div>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {AUDIENCES.map((audience) => (
+                <label
+                  key={audience}
+                  className="flex cursor-pointer items-center gap-2 text-[13px]"
+                >
+                  <Checkbox
+                    checked={form.audiences.includes(audience)}
+                    onCheckedChange={(checked) => toggleAudience(audience, checked === true)}
+                  />
+                  {AUDIENCE_LABEL[audience]}
+                </label>
+              ))}
+            </div>
+            <p className="text-[12px] text-muted-foreground">
+              لو ما اخترتش حاجة هيظهر لكل المستخدمين.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2 border-t pt-3">
             <Button disabled={busy || uploadingImage} onClick={() => void submit()}>
               {busy && <Spinner />}
@@ -383,6 +497,23 @@ function AnnouncementRow({
       }
     >
       <p className="text-[13px] leading-relaxed text-muted-foreground">{row.body}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
+        <span>الفئة:</span>
+        {row.audiences?.length ? (
+          row.audiences.map((audience) => (
+            <Badge key={audience} variant="outline">
+              {AUDIENCE_LABEL[audience]}
+            </Badge>
+          ))
+        ) : (
+          <Badge variant="outline">الكل</Badge>
+        )}
+        {row.ctaLabel && row.ctaUrl && (
+          <span dir="ltr" className="ms-auto">
+            {row.ctaLabel} → {row.ctaUrl}
+          </span>
+        )}
+      </div>
     </Panel>
   );
 }

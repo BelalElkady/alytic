@@ -2,6 +2,7 @@ import { platformDb, supabase } from './supabaseClient.js';
 import { currentTenant } from './tenancy/context.js';
 import { canonicalEmail } from './emailIdentity.js';
 import { cairoToday } from './data/cache.js';
+import { audienceMatches } from './announcementAudience.js';
 
 function must(result, context) {
   if (result.error) throw new Error(`${context}: ${result.error.message}`);
@@ -1225,7 +1226,7 @@ export async function listAnnouncements() {
   return data;
 }
 
-export async function createAnnouncement({ title, body, imageUrls, videoUrl, startsAt, endsAt, createdBy }) {
+export async function createAnnouncement({ title, body, imageUrls, videoUrl, ctaLabel, ctaUrl, audiences, startsAt, endsAt, createdBy }) {
   const { data, error } = await supabase
     .from('feature_announcements')
     .insert({
@@ -1233,6 +1234,9 @@ export async function createAnnouncement({ title, body, imageUrls, videoUrl, sta
       body,
       image_urls: imageUrls ?? [],
       video_url: videoUrl ?? null,
+      cta_label: ctaLabel ?? null,
+      cta_url: ctaUrl ?? null,
+      audiences: audiences ?? [],
       starts_at: startsAt,
       ends_at: endsAt,
       created_by: createdBy ?? null,
@@ -1243,7 +1247,7 @@ export async function createAnnouncement({ title, body, imageUrls, videoUrl, sta
   return data;
 }
 
-export async function updateAnnouncement(id, { title, body, imageUrls, videoUrl, startsAt, endsAt }) {
+export async function updateAnnouncement(id, { title, body, imageUrls, videoUrl, ctaLabel, ctaUrl, audiences, startsAt, endsAt }) {
   const { data, error } = await supabase
     .from('feature_announcements')
     .update({
@@ -1251,6 +1255,9 @@ export async function updateAnnouncement(id, { title, body, imageUrls, videoUrl,
       body,
       image_urls: imageUrls ?? [],
       video_url: videoUrl ?? null,
+      cta_label: ctaLabel ?? null,
+      cta_url: ctaUrl ?? null,
+      audiences: audiences ?? [],
       starts_at: startsAt,
       ends_at: endsAt,
     })
@@ -1268,15 +1275,16 @@ export async function deleteAnnouncement(id) {
 
 /**
  * The one announcement this user should currently see, or null: among the
- * announcements whose window covers now, the one with the latest startsAt
- * that this user hasn't dismissed. Two separate queries (candidates,
+ * announcements whose window covers now and whose audience includes one of
+ * the user's `segments` (see announcementAudience.js), the one with the latest
+ * startsAt that this user hasn't dismissed. Two separate queries (candidates,
  * dismissed ids) rather than a join, since this table is small and a plain
  * `.not('id', 'in', ...)` filter would need the dismissed set client-side
  * anyway to also exclude it from an "active" window that already passed.
  */
 let warnedMissingAnnouncementsTable = false;
 
-export async function getActiveAnnouncementForUser(userId) {
+export async function getActiveAnnouncementForUser(userId, segments = []) {
   const now = new Date().toISOString();
   const [{ data: candidates, error: candidatesError }, { data: dismissed, error: dismissedError }] = await Promise.all([
     supabase.from('feature_announcements').select('*').lte('starts_at', now).gte('ends_at', now).order('starts_at', { ascending: false }),
@@ -1292,7 +1300,7 @@ export async function getActiveAnnouncementForUser(userId) {
   if (candidatesError) throw new Error(`getActiveAnnouncementForUser: ${candidatesError.message}`);
   if (dismissedError) throw new Error(`getActiveAnnouncementForUser: ${dismissedError.message}`);
   const dismissedIds = new Set(dismissed.map((row) => row.announcement_id));
-  return candidates.find((row) => !dismissedIds.has(row.id)) ?? null;
+  return candidates.find((row) => !dismissedIds.has(row.id) && audienceMatches(row.audiences, segments)) ?? null;
 }
 
 /** Hides one announcement for one account, forever — idempotent by the upsert's onConflict. */

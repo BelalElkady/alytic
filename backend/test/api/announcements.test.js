@@ -206,3 +206,51 @@ test('of two overlapping active announcements, the one with the later startsAt w
 test('an anonymous request to the public announcement endpoints is rejected', async () => {
   assert.equal((await request(baseUrl, 'GET', '/api/announcements/active')).status, 401);
 });
+
+test('a button needs both a label and a link, and the link must be an in-app path or https', async () => {
+  const admin = await platformAdmin();
+  const { startsAt, endsAt } = futureWindow();
+  const post = (extra) => request(baseUrl, 'POST', '/api/admin/announcements', { cookie: admin.cookie, body: { title: 't', body: 'b', startsAt, endsAt, ...extra } });
+
+  assert.equal((await post({ ctaLabel: 'اشترك' })).status, 400);
+  assert.equal((await post({ ctaUrl: '/subscribe' })).status, 400);
+  assert.equal((await post({ ctaLabel: 'اشترك', ctaUrl: 'javascript:alert(1)' })).status, 400);
+  assert.equal((await post({ ctaLabel: 'اشترك', ctaUrl: '//evil.example.com' })).status, 400);
+  assert.equal((await post({ audiences: ['vip'] })).status, 400);
+
+  const ok = await post({ ctaLabel: ' اشترك دلوقتي ', ctaUrl: '/subscribe', audiences: ['trial_ending', 'expired'] });
+  assert.equal(ok.status, 201, ok.text);
+  assert.equal(ok.body.announcement.ctaLabel, 'اشترك دلوقتي');
+  assert.equal(ok.body.announcement.ctaUrl, '/subscribe');
+  assert.deepEqual(ok.body.announcement.audiences, ['trial_ending', 'expired']);
+  await deleteAnnouncement(ok.body.announcement.id);
+});
+
+test('the active announcement carries its button, and is only shown to the targeted audience', async () => {
+  // A brand-new, email-verified account is in the free trial, with days left.
+  const row = await createAnnouncement({
+    title: 'للمنتهي اشتراكهم', body: 'b', imageUrls: [], videoUrl: null,
+    ctaLabel: 'جدّد', ctaUrl: '/subscribe', audiences: ['expired', 'never'], ...windowAround(0, 2),
+  });
+  const user = await registerUser(baseUrl);
+  assert.equal((await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie })).body.announcement, null);
+  await deleteAnnouncement(row.id);
+
+  const forTrial = await createAnnouncement({
+    title: 'للتجربة', body: 'b', imageUrls: [], videoUrl: null,
+    ctaLabel: 'اشترك', ctaUrl: '/subscribe', audiences: ['trial'], ...windowAround(0, 2),
+  });
+  const shown = await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie });
+  assert.equal(shown.body.announcement.id, forTrial.id);
+  assert.deepEqual(shown.body.announcement.cta, { label: 'اشترك', url: '/subscribe' });
+  await deleteAnnouncement(forTrial.id);
+});
+
+test('an announcement without a button or audiences still reaches everyone, with cta null', async () => {
+  const row = await createAnnouncement({ title: 't', body: 'b', imageUrls: [], videoUrl: null, ...windowAround(0, 2) });
+  const user = await registerUser(baseUrl);
+  const res = await request(baseUrl, 'GET', '/api/announcements/active', { cookie: user.cookie });
+  assert.equal(res.body.announcement.id, row.id);
+  assert.equal(res.body.announcement.cta, null);
+  await deleteAnnouncement(row.id);
+});

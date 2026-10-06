@@ -810,6 +810,13 @@ create table if not exists user_announcement_dismissals (
   primary key (user_id, announcement_id)
 );
 
+-- Optional call-to-action button and audience targeting. `audiences` holds
+-- renewal-status segments (see announcementAudience.js); an empty array means
+-- everyone.
+alter table feature_announcements add column if not exists cta_label text;
+alter table feature_announcements add column if not exists cta_url text;
+alter table feature_announcements add column if not exists audiences jsonb not null default '[]'::jsonb;
+
 -- ---------------------------------------------------------------------------
 -- Lock the tables away from Supabase's public API.
 --
