@@ -588,7 +588,7 @@ function PositionsPage() {
 
       <UnlistedHoldings />
 
-      <div className="space-y-2">
+      <div className="space-y-2" data-tour="alerts">
         {alerts.length ? (
           alerts.map((alert) => (
             <Notice key={alert.text} tone={alert.tone}>
@@ -603,7 +603,7 @@ function PositionsPage() {
       {aiAvailable && rows.length > 1 && (
         // The page is RTL, so justify-start (and the button coming first) puts it on the right.
         <div className="flex flex-wrap items-center justify-start gap-2">
-          <Button className="font-semibold shadow-sm" disabled={batchPending.size > 0} onClick={openBatchConfirm}>
+          <Button className="font-semibold shadow-sm" disabled={batchPending.size > 0} onClick={openBatchConfirm} data-tour="daily-reco">
             {batchPending.size > 0 ? <Spinner /> : <Sparkles className="size-4" />}
             توصية اليوم لكل الأسهم
           </Button>
@@ -1001,6 +1001,7 @@ function PositionCard({
   return (
     <article
       role="button"
+      data-tour="position"
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {

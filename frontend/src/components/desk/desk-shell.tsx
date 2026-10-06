@@ -28,6 +28,7 @@ import { LogoMark } from "@/components/brand/logo";
 import { CashDialog } from "@/components/desk/cash-dialog";
 import { DetailDialog } from "@/components/desk/detail-dialog";
 import { FeatureAnnouncementDialog } from "@/components/desk/feature-announcement-dialog";
+import { MainTour } from "@/components/tour/main-tour";
 import { ManualEntryDialog } from "@/components/desk/manual-entry-dialog";
 import { PORTFOLIO_COLORS, PortfolioSwitcher } from "@/components/desk/portfolio-desk";
 import { Spinner, Stat } from "@/components/desk/state-blocks";
@@ -123,6 +124,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
       <RequirePhoneDialog />
       <RequireInvestStyleDialog />
       <FeatureAnnouncementDialog onNavigate={(path) => router.history.push(path)} />
+      <MainTour />
       <VerifyEmailBanner />
       <ExpiryBanner />
       {!locked && (
@@ -702,7 +704,7 @@ function DeskHeader() {
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="relative inline-flex">
+                <span className="relative inline-flex" data-tour="market">
                   {/* A link to the page while attempts remain; a disabled
                       button once they are gone, as it was before it was a page. */}
                   <Button
@@ -740,7 +742,7 @@ function DeskHeader() {
             <Tooltip>
               {/* The wrapper takes the hover: a disabled button gets no pointer events. */}
               <TooltipTrigger asChild>
-                <span className="relative inline-flex">
+                <span className="relative inline-flex" data-tour="upload">
                   <Button
                     size="sm"
                     variant="outline"
@@ -774,7 +776,7 @@ function DeskHeader() {
               {screenshotsHint && <TooltipContent>{screenshotsHint}</TooltipContent>}
             </Tooltip>
           </TooltipProvider>
-          <Button size="sm" variant="outline" onClick={() => openManual()}>
+          <Button size="sm" variant="outline" onClick={() => openManual()} data-tour="manual">
             <PencilLine className="size-4" />
             إدخال يدوي
           </Button>
@@ -851,6 +853,7 @@ function DesktopNav() {
   const { user } = useDesk();
   return (
     <nav
+      data-tour="nav"
       className="scrollbar-slim -mx-1 hidden gap-1 overflow-x-auto px-1 md:flex"
       aria-label="التبويبات"
     >
@@ -892,6 +895,7 @@ function MobileNav() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <nav
+        data-tour="nav"
         className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden"
         aria-label="التبويبات"
       >
@@ -969,7 +973,7 @@ function HeroBar() {
   // them with.
   const showTag = portfolios.length > 1 && active;
   return (
-    <section className="border-b bg-card">
+    <section className="border-b bg-card" data-tour="totals">
       {showTag && (
         <div className="mx-auto flex w-full max-w-6xl items-center gap-1.5 px-3 pt-2.5 sm:px-5 sm:pt-3">
           <span

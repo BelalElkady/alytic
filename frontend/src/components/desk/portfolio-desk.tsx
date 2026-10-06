@@ -469,6 +469,7 @@ export function PortfolioSwitcher() {
   return (
     <div
       role="group"
+      data-tour="wallets"
       aria-label="المحافظ"
       aria-roledescription="شريط تمرير أفقي"
       className="-mx-3 flex snap-x snap-mandatory gap-2 overflow-x-auto px-3 pb-2 sm:mx-0 sm:flex-wrap sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0"

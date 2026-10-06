@@ -22,6 +22,7 @@ import {
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { requestMainTour } from "@/components/tour/main-tour";
 import { canonical, siteUrl, siteName } from "@/lib/seo";
 import { useTenant, withBrand } from "@/lib/tenant";
 
@@ -383,6 +384,13 @@ function HowToUsePage() {
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
             شرح مبسّط بالعربي لكل خطوة، من عمل الحساب لحد ما تبدأ تاخد قرارك اليومي في كل سهم عندك.
           </p>
+          {/* The same tour a User gets on first opening the app, on demand. */}
+          <Button asChild className="mt-5">
+            <Link to="/portfolio" onClick={requestMainTour}>
+              <HelpCircle className="size-4" />
+              ابدأ جولة في الشاشة الرئيسية
+            </Link>
+          </Button>
         </div>
       </section>
 
