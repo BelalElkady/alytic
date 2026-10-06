@@ -28,8 +28,10 @@ export function checkQuality(bars, { code = '?', maxStaleSessions = 5 } = {}) {
   const issues = [];
   let severity = SEVERITY.OK;
 
-  const fail = (msg) => {
-    issues.push({ level: SEVERITY.FATAL, message: msg });
+  // `kind` names the failures a User gets their own wording for (see
+  // notAnalysableMessage in analyze.js); `message` stays the diagnostic one.
+  const fail = (msg, kind = null) => {
+    issues.push({ level: SEVERITY.FATAL, message: msg, ...(kind ? { kind } : {}) });
     severity = SEVERITY.FATAL;
   };
   const warn = (msg) => {
@@ -38,12 +40,12 @@ export function checkQuality(bars, { code = '?', maxStaleSessions = 5 } = {}) {
   };
 
   if (!bars?.length) {
-    fail('لا توجد بيانات أسعار');
+    fail('لا توجد بيانات أسعار', 'no_data');
     return { ok: false, severity, issues, code };
   }
 
   if (bars.length < 60) {
-    fail(`تاريخ قصير جدًا (${bars.length} جلسة) — محتاج 60 على الأقل للتحليل الفني`);
+    fail(`تاريخ قصير جدًا (${bars.length} جلسة) — محتاج 60 على الأقل للتحليل الفني`, 'short_history');
   }
 
   // --- Staleness ---

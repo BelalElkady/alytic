@@ -444,9 +444,11 @@ function UnlistedHoldings() {
               <span className="num font-semibold">{code}</span>
               {reason === "no-cost"
                 ? " موجود في المحفظة بس مش ظاهر في المراكز ولا محسوب في الإجمالي — متوسط سعر الشراء مش متسجل."
-                : " موجود في المحفظة بس مش ظاهر في المراكز ولا محسوب في الإجمالي — تحليل السهم ما اكتملش."}
+                : detail
+                  ? " موجود في محفظتك، بس مش ظاهر في المراكز ولا محسوب في الإجمالي دلوقتي."
+                  : " موجود في محفظتك، بس مش ظاهر في المراكز ولا محسوب في الإجمالي دلوقتي — تحليل السهم ما اكتملش."}
               {reason === "analysis" && detail && (
-                <span className="block text-[12px] text-muted-foreground">السبب: {detail}</span>
+                <span className="mt-0.5 block text-[12.5px] leading-relaxed text-muted-foreground">{detail}</span>
               )}
             </span>
             {reason === "no-cost" ? (

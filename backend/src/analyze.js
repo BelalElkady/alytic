@@ -15,7 +15,7 @@
  */
 
 import { fetchDailyAuto } from './data/yahoo.js';
-import { getBars, cairoToday, tradingHalted } from './data/cache.js';
+import { getBars, cairoToday, tradingHalted, MIN_USABLE_BARS } from './data/cache.js';
 import { latestEventFor, recordEvent } from './data/corporateEvents.js';
 import { gapEvent, onNewBasis, onOldScale } from './corporateActions.js';
 import { checkQuality } from './data/quality.js';
@@ -32,6 +32,22 @@ import RULES from './config/rules.js';
 import { DEFAULT_STYLE } from './config/styles.js';
 
 const r2 = (x) => (x == null ? null : +x.toFixed(2));
+
+/**
+ * What a User is told when a stock can't be analysed. The two cases a person
+ * can do nothing about — the stock hasn't traded long enough, or no feed has
+ * prices for it — are said plainly and without blame: usually it is simply a
+ * new listing. Every other failure keeps the quality gate's own message.
+ */
+function notAnalysableMessage(issue, sessions = 0) {
+  if (issue?.kind === 'short_history') {
+    return `مفيش تاريخ تداول كافي للسهم ده لحد دلوقتي (${sessions} جلسة من ${MIN_USABLE_BARS} مطلوبة) — غالبًا لأنه جديد في البورصة. نعتذر، مش هنقدر نحلله أو نقدّم توصية عليه دلوقتي، وهيتحلل تلقائيًا أول ما تاريخه يكمل.`;
+  }
+  if (issue?.kind === 'no_data') {
+    return 'نعتذر، مش متاح لنا بيانات أسعار للسهم ده دلوقتي — ممكن يكون جديد في البورصة أو لسه ما بدأش تداول. مش هنقدر نحلله أو نقدّم توصية عليه لحد ما بياناته تتوفر.';
+  }
+  return issue?.message ?? 'بيانات غير صالحة';
+}
 
 /**
  * R1's one exception (rules.stop.fundamentalHold): when the stop has fired on
@@ -206,12 +222,14 @@ export async function analyzeTicker(code, opts = {}) {
       { range, force },
     );
   } catch (err) {
+    // The feeds' own error text is for the log, not for the User.
+    console.error(`[bars] no price data for ${code}:`, err.message);
     return {
       code: meta.code ?? code,
       name: meta.ar ?? code,
       asOf: null,
       usable: false,
-      error: `تعذر جلب بيانات السعر لهذا السهم: ${err.message}`,
+      error: notAnalysableMessage({ kind: 'no_data' }),
     };
   }
   // A bonus issue, split or merger: the bars are put on the new share basis
@@ -232,7 +250,7 @@ export async function analyzeTicker(code, opts = {}) {
       asOf: bars[bars.length - 1]?.date ?? null,
       usable: false,
       quality,
-      error: quality.issues.find((i) => i.level === 'fatal')?.message ?? 'بيانات غير صالحة',
+      error: notAnalysableMessage(quality.issues.find((i) => i.level === 'fatal'), bars.length),
     };
   }
 
