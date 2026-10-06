@@ -8,7 +8,8 @@
  * server's address, so there the chain falls through to a source with about a
  * month of sessions. Run this from a machine Mubasher does serve (after the
  * session's close is published, 16:00 Cairo) and the server gets Mubasher's
- * full series without ever contacting it.
+ * full series without ever contacting it. Mubasher's company directory is
+ * uploaded with them, for the server's new/removed-stocks check.
  *
  *   node scripts/sync-mubasher-bars.mjs                  refresh, then upload
  *   node scripts/sync-mubasher-bars.mjs --codes FCMD,AIHC   these stocks only
@@ -27,7 +28,7 @@ import path from 'node:path';
 
 import '../src/loadEnv.js';
 import { BARS_DIR, readBars, writeBars } from '../src/data/cache.js';
-import { fetchDailyMubasher } from '../src/data/mubasher.js';
+import { fetchDailyMubasher, fetchMubasherListing, writeMubasherListing } from '../src/data/mubasher.js';
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
@@ -69,18 +70,29 @@ for (const code of codes) {
   await new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
+// Mubasher's company directory rides along: the server's listing check
+// (universeWatch.js) reads this copy, since it can't ask Mubasher itself.
+let listingFile = null;
+try {
+  const listing = await fetchMubasherListing();
+  listingFile = await writeMubasherListing(listing);
+  console.log(`Mubasher directory: ${listing.length} companies with a dated trade`);
+} catch (err) {
+  console.error(`Mubasher directory: failed — ${err.message}`);
+}
+
 const target = process.env.ALYTIC_BARS_SYNC_TARGET;
-if (dryRun || !refreshed.length) process.exit(refreshed.length ? 0 : 1);
+if (dryRun || (!refreshed.length && !listingFile)) process.exit(refreshed.length || listingFile ? 0 : 1);
 if (!target) {
   console.error('Refreshed locally, not uploaded: set ALYTIC_BARS_SYNC_TARGET in backend/.env.');
   process.exit(1);
 }
 
 const key = process.env.ALYTIC_BARS_SYNC_KEY;
-const files = refreshed.map((code) => path.join(BARS_DIR, `${code}.json`));
+const files = [...refreshed.map((code) => path.join(BARS_DIR, `${code}.json`)), ...(listingFile ? [listingFile] : [])];
 const upload = spawnSync('scp', ['-o', 'BatchMode=yes', ...(key ? ['-i', key] : []), ...files, target], { stdio: 'inherit' });
 if (upload.status !== 0) {
   console.error('Upload failed — the files above are refreshed on this machine only.');
   process.exit(1);
 }
-console.log(`Uploaded ${refreshed.length} file(s) to ${target}`);
+console.log(`Uploaded ${files.length} file(s) to ${target}`);

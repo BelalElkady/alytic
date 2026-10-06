@@ -14,6 +14,10 @@
  * cannot tell the difference.
  */
 
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { BARS_DIR } from './cache.js';
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const pageUrl = (code) => `https://english.mubasher.info/markets/EGX/stocks/${encodeURIComponent(code)}/`;
@@ -76,4 +80,45 @@ export async function fetchDailyMubasher(code) {
   if (!deduped.length) throw new Error(`Mubasher: no usable bars for ${symbol}`);
 
   return { symbol, currency: 'EGP', longName, source: 'mubasher', bars: deduped };
+}
+
+const LISTING_URL = 'https://english.mubasher.info/api/1/listed-companies?country=eg&size=600&start=0';
+/** Beside the bar files, so the collector's one upload carries it — `_` keeps it out of the ticker namespace. */
+const LISTING_FILE = path.join(BARS_DIR, '_mubasher-listing.json');
+
+/**
+ * Mubasher's directory of EGX companies, cut down to the rows that are a
+ * plain ticker with a dated last trade. The raw list is not clean: it keeps
+ * rights-issue symbols from years ago (`IRON_r1`) and lists some companies
+ * under a spelling of its own with no trade date (`MOBCO` for MFPC) — both
+ * would read as "new stocks" to anything comparing lists.
+ * @returns {Promise<Array<{code:string,name:string,lastSession:string}>>}
+ */
+export async function fetchMubasherListing() {
+  const body = JSON.parse(await fetchText(LISTING_URL));
+  const stocks = [];
+  for (const row of body.rows ?? []) {
+    const code = String(row.symbol ?? '').toUpperCase();
+    const traded = row.lastUpdate ? new Date(`${row.lastUpdate} UTC`) : null;
+    if (!/^[A-Z][A-Z0-9]{2,5}$/.test(code) || !traded || Number.isNaN(traded.getTime())) continue;
+    stocks.push({ code, name: row.name ?? code, lastSession: traded.toISOString().slice(0, 10) });
+  }
+  if (!stocks.length) throw new Error('Mubasher: empty company listing');
+  return stocks;
+}
+
+/** Saves a fetched listing where a server that can't reach Mubasher will read it (see scripts/sync-mubasher-bars.mjs). */
+export async function writeMubasherListing(stocks) {
+  await fs.mkdir(BARS_DIR, { recursive: true });
+  await fs.writeFile(LISTING_FILE, JSON.stringify({ fetchedAt: new Date().toISOString(), stocks }), 'utf8');
+  return LISTING_FILE;
+}
+
+/** @returns {Promise<{fetchedAt:string,stocks:Array}|null>} the last saved listing, or null if there is none. */
+export async function readMubasherListing() {
+  try {
+    return JSON.parse(await fs.readFile(LISTING_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
 }

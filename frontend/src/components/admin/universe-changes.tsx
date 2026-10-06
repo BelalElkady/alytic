@@ -3,10 +3,16 @@ import { useEffect, useState } from "react";
 import { Notice, Panel } from "@/components/desk/state-blocks";
 import { api } from "@/lib/api";
 import { arDay, int } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 /** Mirrors currentUniverseChanges() in backend/src/universeWatch.js. */
 type UniverseChanges = {
-  added: { code: string; name: string }[];
+  added: {
+    code: string;
+    name: string;
+    /** Which feeds carry it — null when that one couldn't be checked. */
+    sources: { tradingview: boolean; mubasher: boolean | null; yahoo: boolean | null };
+  }[];
   removed: {
     code: string;
     name: string;
@@ -16,10 +22,30 @@ type UniverseChanges = {
   }[];
   checkedAt: string;
   universeBuiltAt: string | null;
-  listedCount: number;
+  tradingviewCount: number;
+  /** null when Mubasher's directory couldn't be reached and no recent upload exists. */
+  mubasher: { count: number; fetchedAt: string; via: "live" | "upload" } | null;
   universeCount: number;
   removedAfterSessions: number;
 };
+
+/** Whether one price feed carries a stock: yes, no, or couldn't be checked. */
+function SourceBadge({ label, has }: { label: string; has: boolean | null }) {
+  return (
+    <span
+      className={cn(
+        "rounded border px-1.5 py-0.5",
+        has === true && "border-up/40 bg-up-soft text-up",
+        has === false && "border-border bg-surface text-muted-foreground line-through",
+        has === null && "border-border bg-surface text-muted-foreground",
+      )}
+      title={has === null ? "لم يتم الفحص" : has ? "متاح" : "غير متاح"}
+    >
+      {label}
+      {has === null ? " ؟" : ""}
+    </span>
+  );
+}
 
 /**
  * Stocks that have joined or left the EGX listing since the app's stock list
@@ -47,8 +73,11 @@ export function UniverseChangesPanel() {
         <p className="text-[12px] leading-relaxed text-muted-foreground">
           مقارنة قائمة التطبيق ({int(data.universeCount)} سهم
           {data.universeBuiltAt ? `، اتبنت ${arDay(data.universeBuiltAt.slice(0, 10))}` : ""}) بقائمة
-          TradingView الحالية ({int(data.listedCount)} سهم). للعلم بس — مفيش سهم بيتضاف أو يتشال
-          تلقائيًا.
+          TradingView ({int(data.tradingviewCount)} سهم)
+          {data.mubasher
+            ? ` وقائمة Mubasher (${int(data.mubasher.count)} سهم ليه تداول حديث، بتاريخ ${arDay(data.mubasher.fetchedAt.slice(0, 10))})`
+            : " — قائمة Mubasher مش متاحة دلوقتي"}
+          . للعلم بس — مفيش سهم بيتضاف أو يتشال تلقائيًا.
         </p>
 
         {unchanged && <Notice tone="success">مفيش أسهم جديدة أو متوقفة من وقت بناء القائمة.</Notice>}
@@ -60,9 +89,17 @@ export function UniverseChangesPanel() {
             </div>
             <ul className="divide-y rounded-lg border">
               {data.added.map((stock) => (
-                <li key={stock.code} className="flex items-center gap-2 px-3 py-2">
-                  <span className="num font-semibold">{stock.code}</span>
-                  <span className="truncate text-muted-foreground">{stock.name}</span>
+                <li key={stock.code} className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="num font-semibold">{stock.code}</span>
+                    <span className="truncate text-muted-foreground">{stock.name}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px]">
+                    <span className="text-muted-foreground">مصادر الأسعار:</span>
+                    <SourceBadge label="Yahoo" has={stock.sources.yahoo} />
+                    <SourceBadge label="TradingView" has={stock.sources.tradingview} />
+                    <SourceBadge label="Mubasher" has={stock.sources.mubasher} />
+                  </div>
                 </li>
               ))}
             </ul>
