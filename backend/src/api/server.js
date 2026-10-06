@@ -2014,6 +2014,30 @@ app.get('/api/scan', wrap(async (req, res) => {
 }));
 
 /**
+ * What "a strong stock" means depends on who is buying it, so each style
+ * weighs the engine's three 0-100 scores differently:
+ *  - trader: a stock that trades — the setup and the speculation score
+ *    (liquidity, volume surge, momentum, price action), half each.
+ *  - medium: a move over weeks to months on a sound company — the setup and
+ *    the investment score (the company's own figures), half each.
+ *  - long: the business first — the investment score carries most of it.
+ */
+const STYLE_STRENGTH_WEIGHTS = {
+  trader: { technical: 0.5, speculation: 0.5 },
+  medium: { technical: 0.5, investment: 0.5 },
+  long: { technical: 0.3, investment: 0.7 },
+};
+
+/** A stock's strength for a style, 0-100 — null when there is no fundamental data to judge it on. */
+function styleStrength(r, style) {
+  const c = r.classification;
+  if (!c?.dataQuality?.hasFundamentals || c.investmentScore == null) return null;
+  const weights = STYLE_STRENGTH_WEIGHTS[style] ?? STYLE_STRENGTH_WEIGHTS[DEFAULT_STYLE];
+  const scores = { technical: r.technical.score, investment: c.investmentScore, speculation: c.speculationScore ?? r.technical.score };
+  return +Object.entries(weights).reduce((sum, [key, weight]) => sum + scores[key] * weight, 0).toFixed(1);
+}
+
+/**
  * The scan itself — engine analysis, sector-aware sizing and the cash plan —
  * without the HTTP layer, so the AI cash review (/api/review/cash) judges
  * exactly the plan the dialog shows. Returns the response payload plus the
@@ -2116,12 +2140,18 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
       maxPositionEgp > 0 ? Math.ceil(investableCash / maxPositionEgp) : MAX_RECOMMENDATIONS,
       Math.max(1, Math.floor(investableCash / MIN_TICKET_EGP)),
     ));
+  // A cash-plan pick has to stand on both legs: the setup (technical score)
+  // and the business behind it (the investment score, built from the
+  // company's own figures). A stock with no fundamental data can't be judged
+  // on the second, so it is never recommended. How the legs are weighed
+  // follows the wallet's style — see styleStrength.
   const candidates = results
     .filter((r) => !r.position && r.plan.actionable && r.plan.buyingNow.worthIt && r.plan.targets.mid?.price && (r.plan.sizing?.shares ?? 0) > 0)
+    .filter((r) => styleStrength(r, style) != null)
     .map((r) => ({
       code: r.code,
       sector: r.sectorAr,
-      rankScore: r.technical.score + Math.min(r.plan.buyingNow.riskReward ?? 0, 5) * 4 - r.plan.stop.riskPct * 1.5,
+      rankScore: styleStrength(r, style) + Math.min(r.plan.buyingNow.riskReward ?? 0, 5) * 4 - r.plan.stop.riskPct * 1.5,
     }))
     .sort((a, b) => b.rankScore - a.rankScore);
   const selected = [];
@@ -2255,7 +2285,14 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
         investmentScore: r.classification.investmentScore,
         speculationScore: r.classification.speculationScore,
         confidence: r.classification.confidence,
+        // False when the screener has nothing on the company: investmentScore
+        // then rests on price behaviour alone and is no fundamental verdict.
+        hasFundamentals: Boolean(r.classification.dataQuality?.hasFundamentals),
       },
+      // How strong the stock is for this wallet's style (0-100) — what the
+      // cash plan and the strongest-stocks list both rank by. Null without
+      // fundamental data.
+      styleStrength: styleStrength(r, style),
       position,
     });
     }),

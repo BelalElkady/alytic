@@ -52,6 +52,72 @@ const action = (row: ScanRow, style: StyleKey) => {
   return { label: row.signal?.ar ?? "استنى", tone: "avoid" };
 };
 
+/** The fundamental (investment) score, or null when the screener has no company figures to build one from. */
+const fundamentalScore = (row: ScanRow): number | null =>
+  row.classification?.hasFundamentals && row.classification.investmentScore != null
+    ? row.classification.investmentScore
+    : null;
+
+/**
+ * How far the stock's target sits from the price shown — the nearer target
+ * when the two are really one (see mergedTarget), else the mid-term one —
+ * measured from the live price, not the close the target was drawn off.
+ */
+const potentialMove = (row: ScanRow): { pct: number; horizon: string } | null => {
+  const target = mergedTarget(row.midTarget, row.longTarget) ?? row.midTarget;
+  if (!target?.price || !row.price) return null;
+  return { pct: ((target.price - row.price) / row.price) * 100, horizon: target.horizon?.ar ?? "" };
+};
+
+const STRONGEST_COUNT = 5;
+
+/** What each style ranks stocks by — mirrors STYLE_STRENGTH_WEIGHTS in backend/src/api/server.js. */
+const STYLE_BASIS: Record<StyleKey, string> = {
+  trader: "أسهم المضاربة: قوة الحركة الفنية مع السيولة والزخم وحجم التداول",
+  medium: "أسهم لحركة أسابيع لشهور: قوة فنية وشركة سليمة أساسيًا بنفس الوزن",
+  long: "أسهم الاستثمار: قوة الشركة أساسيًا أولًا، ثم الاتجاه الفني",
+};
+
+/** Technical score, fundamental score and potential move, side by side — plus the trading score for a trader. */
+function StockFigures({ row, style, className }: { row: ScanRow; style: StyleKey; className?: string }) {
+  const fundamental = fundamentalScore(row);
+  const move = potentialMove(row);
+  const trading = style === "trader" ? row.classification?.speculationScore : null;
+  const cell = "rounded-md border bg-surface px-2.5 py-1.5";
+  const label = "text-[11px] text-muted-foreground";
+  return (
+    <div
+      className={cn(
+        "grid gap-2 text-[12.5px]",
+        trading != null ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3",
+        className,
+      )}
+    >
+      {trading != null && (
+        <div className={cell}>
+          <div className={label}>قوة المضاربة</div>
+          <div className="num font-semibold">{int(Math.round(trading))}/100</div>
+        </div>
+      )}
+      <div className={cell}>
+        <div className={label}>التحليل الفني</div>
+        <div className="num font-semibold">{row.score != null ? `${int(row.score)}/100` : "—"}</div>
+      </div>
+      <div className={cell}>
+        <div className={label}>التحليل الأساسي</div>
+        <div className="num font-semibold">{fundamental != null ? `${int(Math.round(fundamental))}/100` : "—"}</div>
+      </div>
+      <div className={cell}>
+        <div className={label}>الحركة المتوقعة</div>
+        <div className={cn("num font-semibold", move && move.pct > 0 && "text-up")}>
+          {move ? pct(Math.round(move.pct * 10) / 10) : "—"}
+        </div>
+        {move?.horizon && <div className="truncate text-[10.5px] text-muted-foreground">{move.horizon}</div>}
+      </div>
+    </div>
+  );
+}
+
 const toneClass: Record<string, string> = {
   buy: "border-up/40 bg-up-soft text-up",
   wait: "border-warn/40 bg-warn-soft text-foreground",
@@ -267,6 +333,18 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
       : rows;
   const unscanned = searching ? hits.filter((stock) => !rowByCode.has(stock.code)) : [];
 
+  // The market's strongest stocks, beside the cash plan and independent of it:
+  // no cash, sector or sizing limit applies — only that both analyses exist
+  // (the server leaves styleStrength null for a stock with no fundamental
+  // data) and that it is trading. Ranked by the same style-weighted strength
+  // the cash plan picks by — see styleStrength in backend/src/api/server.js.
+  const strongest: ScanRow[] = isCash
+    ? rows
+        .filter((row: ScanRow) => !row.halted && row.styleStrength != null)
+        .sort((a: ScanRow, b: ScanRow) => b.styleStrength - a.styleStrength)
+        .slice(0, STRONGEST_COUNT)
+    : [];
+
   // Every stock card opens the same per-stock analysis the portfolio does.
   const openable = (code: string) => ({
     role: "button" as const,
@@ -288,7 +366,7 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
     <div className="space-y-4">
       <p className="text-[12.5px] leading-relaxed text-muted-foreground">
         {isCash
-          ? `أسهم مختارة من أقل المخاطر وأعلى الجودة، بتوزيع مرجّح حسب قوة كل فرصة واحتياطي ${fmt(data?.cashPlan?.reserveCash ?? 0)} ج.`
+          ? `${STYLE_BASIS[style]} — بتوزيع مرجّح حسب قوة كل فرصة واحتياطي ${fmt(data?.cashPlan?.reserveCash ?? 0)} ج.`
           : `ترتيب الأسهم حسب التقييم والفرص القابلة للتنفيذ${index !== "ALL" ? ` — أسهم ${index} بس` : ""}.`}{" "}
         حسب أسلوبك: {INVEST_STYLES.find((s) => s.key === style)?.label ?? "متوسط المدى"}
         {auto ? " (مستنتج من سلوكك في التداول)" : ""}.
@@ -376,6 +454,12 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
           )}
 
           <div className={cn(isCash ? "space-y-3" : "grid gap-3 md:grid-cols-2")}>
+            {isCash && data && shown.length === 0 && (
+              <Notice tone="info">
+                مفيش سهم دلوقتي مستوفي شروط خطة الكاش: فرصة قابلة للتنفيذ فنيًا ومعاها بيانات أساسية
+                للشركة. جرّب مؤشر تاني أو ارجع بعد جلسة.
+              </Notice>
+            )}
             {shown.map((row: ScanRow) => {
               const state = action(row, style);
               return (
@@ -415,6 +499,8 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                   <Badge variant="outline" className={cn("mt-2.5", toneClass[state.tone])}>
                     {state.label}
                   </Badge>
+
+                  {isCash && <StockFigures row={row} style={style} className="mt-3" />}
 
                   {(() => {
                     const one = mergedTarget(row.midTarget, row.longTarget);
@@ -565,6 +651,52 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
               </details>
             )}
           </div>
+
+          {strongest.length > 0 && (
+            <section className="space-y-2.5 border-t pt-4" aria-label="أقوى الأسهم في السوق">
+              <div>
+                <h3 className="text-[14px] font-semibold">أقوى الأسهم في السوق دلوقتي</h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                  أعلى {int(strongest.length)} أسهم حسب أسلوب محفظتك — {STYLE_BASIS[style]} — بغض النظر
+                  عن الكاش وحدود القطاعات. قوة السهم مش معناها إن ده وقت الشراء — شوف حالة كل سهم.
+                </p>
+              </div>
+              {strongest.map((row: ScanRow) => {
+                const state = action(row, style);
+                return (
+                  <div
+                    key={row.code}
+                    {...openable(row.code)}
+                    className={cn("rounded-lg border bg-card p-3", openableClass)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-semibold">{row.code}</span>
+                          {row.cashPlanSelected && (
+                            <Badge variant="outline" className="text-[10.5px]">
+                              ضمن خطة الكاش
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="truncate text-[12px] text-muted-foreground">
+                          {row.name} · {row.sector}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="num text-[12px] text-muted-foreground">السعر {fmt(row.price)}</span>
+                        <ChevronLeft className="size-4 text-muted-foreground" aria-hidden />
+                      </div>
+                    </div>
+                    <StockFigures row={row} style={style} className="mt-2.5" />
+                    <Badge variant="outline" className={cn("mt-2.5", toneClass[state.tone])}>
+                      {state.label}
+                    </Badge>
+                  </div>
+                );
+              })}
+            </section>
+          )}
         </>
       )}
     </div>
