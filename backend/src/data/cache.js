@@ -153,13 +153,29 @@ export function isFresh(cached) {
   return age >= 0 && age < RECHECK_AFTER_MS;
 }
 
+/** Fewer bars than this can't be analysed at all — see checkQuality's 60-session gate. */
+const MIN_USABLE_BARS = 60;
+
+/**
+ * A fetch that came back with only a few weeks of sessions, on top of a cache
+ * that already holds more: keep the cached sessions from before it. The last
+ * resort in the fallback chain (stockanalysis.js) serves about a month, and
+ * storing that as-is replaced years of history with a series too short to
+ * analyse — the stock then failed the quality gate for everyone holding it.
+ */
+export function extendShortSeries(cached, fresh) {
+  if (!fresh.bars?.length || fresh.bars.length >= MIN_USABLE_BARS) return fresh;
+  // Also true of a cache that is itself still short: the window rolls forward
+  // a session a day, so keeping what falls off the back builds the history up.
+  const earlier = (cached?.bars ?? []).filter((bar) => bar.date < fresh.bars[0].date);
+  return earlier.length ? { ...fresh, bars: [...earlier, ...fresh.bars] } : fresh;
+}
+
 /** Cached bars if fresh, otherwise fetch, store and return. */
 export async function getBars(code, yahooSymbol, fetcher, { range = '2y', force = false } = {}) {
-  if (!force) {
-    const cached = await readBars(code);
-    if (isFresh(cached)) return { ...cached, fromCache: true };
-  }
-  const fresh = await fetcher(yahooSymbol, { range });
+  const cached = await readBars(code);
+  if (!force && isFresh(cached)) return { ...cached, fromCache: true };
+  const fresh = extendShortSeries(cached, await fetcher(yahooSymbol, { range }));
   await writeBars(code, { code, ...fresh });
   return { code, ...fresh, fromCache: false };
 }
