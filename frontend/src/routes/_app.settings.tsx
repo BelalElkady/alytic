@@ -159,6 +159,24 @@ function SettingsPage() {
     toast.success(`تم تفعيل قواعد ${INVEST_STYLES.find((item) => item.key === next)!.label}`);
   };
 
+  // Unset means Shariah-only: that is how the app has always recommended.
+  const shariahOnly = pf?.settings?.shariahOnly !== false;
+  const [savingShariah, setSavingShariah] = useState(false);
+
+  const chooseShariah = async (next: boolean) => {
+    if (next === shariahOnly) return;
+    setSavingShariah(true);
+    try {
+      await post("/api/settings/shariah", { shariahOnly: next });
+      await reload();
+      toast.success(next ? "التوصيات هتبقى للأسهم المتوافقة مع الشريعة بس" : "التوصيات هتشمل كل الأسهم");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر الحفظ");
+    } finally {
+      setSavingShariah(false);
+    }
+  };
+
   const resetAll = async () => {
     if (!armed) {
       setArmed(true);
@@ -269,6 +287,41 @@ function SettingsPage() {
             );
           })}
         </div>
+      </Panel>
+
+      <Panel
+        title="التوافق مع الشريعة"
+        description="اختار الأسهم اللي تحب توصيات الشراء الجديدة (خطة الكاش وتحليل السوق) تشملها."
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[
+            { value: true, label: "متوافقة مع الشريعة بس", hint: "الأسهم غير المتوافقة مش بتتقترح للشراء" },
+            { value: false, label: "كل الأسهم", hint: "بتشمل غير المتوافقة، وشارة الشريعة بتفضل ظاهرة" },
+          ].map((item) => {
+            const active = item.value === shariahOnly;
+            return (
+              <button
+                key={String(item.value)}
+                type="button"
+                disabled={savingShariah}
+                onClick={() => void chooseShariah(item.value)}
+                aria-pressed={active}
+                className={`rounded-lg border px-4 py-3 text-center transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : "border-border bg-surface hover:bg-muted"
+                }`}
+              >
+                <div className="text-[14px] font-semibold">{item.label}</div>
+                <div className="mt-0.5 text-[12px] text-muted-foreground">{item.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
+          أسهمك الحالية بتفضل متابَعة بالكامل في الحالتين. تحليل السوق اليومي المشترك بيتحدد بشكل
+          عام، فممكن يظهر فيه سهم غير متوافق حتى لو اخترت المتوافقة بس.
+        </p>
       </Panel>
 
       <Panel

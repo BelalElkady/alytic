@@ -5,6 +5,17 @@ import { toast } from "sonner";
 
 import { StockPicker } from "@/components/desk/stock-picker";
 import { EmptyState, Notice, Panel, Spinner, Stat } from "@/components/desk/state-blocks";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -267,6 +278,21 @@ function CashPage() {
     }
   };
 
+  // Sets the balance to zero. The server records the drop as money taken out,
+  // not a market loss, so the equity curve and daily change aren't distorted.
+  const clearCash = async () => {
+    setSavingCash(true);
+    try {
+      await post("/api/portfolio/cash", { cash: 0 });
+      await reloadPortfolio();
+      toast.success("تم حذف الكاش من المحفظة");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر حذف الكاش");
+    } finally {
+      setSavingCash(false);
+    }
+  };
+
   const addWatch = async () => {
     if (!watchCode) {
       setWatchError("اختار سهم من القائمة الأول.");
@@ -317,6 +343,31 @@ function CashPage() {
             {savingCash && <Spinner />}
             حلل الكاش
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="text-down hover:text-down"
+                disabled={savingCash || !((pf?.cash ?? 0) > 0)}
+              >
+                <Trash2 className="size-4" />
+                حذف الكاش
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>حذف الكاش من المحفظة؟</AlertDialogTitle>
+                <AlertDialogDescription>
+                  هيتصفّر رصيد الكاش ({int(pf?.cash ?? 0)} ج) وبيتسجّل كمبلغ اتسحب من المحفظة، مش
+                  كخسارة. أسهمك وصفقاتك مش هتتأثر. تقدر ترجّع أي مبلغ في أي وقت من خانة المبلغ.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void clearCash()}>حذف الكاش</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border bg-surface p-3 sm:grid-cols-4">

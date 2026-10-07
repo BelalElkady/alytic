@@ -634,6 +634,7 @@ const PORTFOLIO_READONLY_GATED_PATHS = [
   '/snapshot',
   '/log/note',
   '/settings/style',
+  '/settings/shariah',
 ];
 app.use('/api', async (req, res, next) => {
   if (!req.user || !PORTFOLIO_READONLY_GATED_PATHS.some((prefix) => req.path.startsWith(prefix))) return next();
@@ -1907,7 +1908,7 @@ app.get('/api/analyze/:code', wrap(async (req, res) => {
   // default/medium ruleset regardless of the account's chosen style, so its
   // stop/targets could disagree with the same stock's row elsewhere (scan,
   // alerts, position cards) which already passes ?style= — see /api/scan.
-  const rules = style ? rulesForStyle(RULES, style) : RULES;
+  const rules = rulesFor(portfolio, style);
   // Fetched first so an open position's P&L, stop distance and rule triggers
   // are priced at it (see analyzeTicker), not just the price shown beside them.
   // Same source as the desk ticker (oanor for subscribers during the session),
@@ -2119,6 +2120,18 @@ function styleStrength(r, style) {
   return +Object.entries(weights).reduce((sum, [key, weight]) => sum + scores[key] * weight, 0).toFixed(1);
 }
 
+/**
+ * The rules for one investor: their style's numbers, with the Shariah screen
+ * following their own setting. Shariah-only is the default (settings.shariahOnly
+ * unset); an investor who turned it off is offered non-compliant stocks as new
+ * buys too — the badge on each stock still says what it is.
+ */
+function rulesFor(portfolio, style) {
+  const rules = style ? rulesForStyle(RULES, style) : RULES;
+  if (portfolio?.settings?.shariahOnly !== false) return rules;
+  return { ...rules, shariah: { ...rules.shariah, excludeNonCompliant: false } };
+}
+
 /** How many next-ranked stocks the AI cash review judges beyond the engine's picks, as replacements for any it turns down. */
 const CASH_PLAN_ALTERNATES = 3;
 /** The AI cash review's actions (CASH_PICK_ACTIONS in agent/schemas.js) that keep a stock funded; `wait` and `skip` release its cash. */
@@ -2140,7 +2153,7 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
   // A style changes which rule numbers the engine sizes and gates setups
   // with — same deterministic engine, different risk/reward and sizing
   // inputs, exactly like every other `rules` param it already accepts.
-  const rules = style ? rulesForStyle(RULES, style) : RULES;
+  const rules = rulesFor(portfolio, style);
   const capital = capitalOf(portfolio) || 1_000_000;
   // Held positions are priced from the same source as this user's desk ticker
   // (oanor when subscribed), fetched here rather than inside analyzeMany so
@@ -2934,7 +2947,7 @@ async function snapshotForUser(userId, portfolioId = null, date = null) {
     // for the same day, rather than defaulting to a style the user never
     // asked for.
     const style = STYLE_KEYS.includes(portfolio.settings?.investStyle) ? portfolio.settings.investStyle : DEFAULT_STYLE;
-    const rules = rulesForStyle(RULES, style);
+    const rules = rulesFor(portfolio, style);
     const { results } = await analyzeMany(codes, {
       capital: capitalOf(portfolio),
       positions: portfolio.positions,
@@ -3350,6 +3363,19 @@ app.post('/api/settings/style', wrap(async (req, res) => {
     const { investStyle: _previous, ...settings } = portfolio.settings ?? {};
     return { ...portfolio, settings: style ? { ...settings, investStyle: style } : settings };
   });
+  res.json({ ok: true, settings: updated.settings });
+}));
+
+// Whether new-buy recommendations are limited to Shariah-compliant stocks
+// (the default) or cover every stock. Held positions are tracked either way.
+app.post('/api/settings/shariah', wrap(async (req, res) => {
+  const shariahOnly = req.body?.shariahOnly;
+  if (typeof shariahOnly !== 'boolean') return res.status(400).json({ error: 'اختيار غير صالح' });
+  const portfolioId = await portfolioIdFromRequest(req);
+  const updated = await withPortfolio(req.user.id, portfolioId, (portfolio) => ({
+    ...portfolio,
+    settings: { ...portfolio.settings, shariahOnly },
+  }));
   res.json({ ok: true, settings: updated.settings });
 }));
 
@@ -3835,7 +3861,7 @@ app.post('/api/review/stock', wrap(async (req, res) => {
 
   await startReviewJob(res, jobKey, async () => {
     const startedAt = Date.now();
-    const rules = pre.style ? rulesForStyle(RULES, pre.style) : RULES;
+    const rules = rulesFor(portfolio, pre.style);
     const capital = capitalOf(portfolio);
     let analyses = [];
     const { getOrGenerateStockReview } = await import('../agent/analyst.js');
@@ -3932,7 +3958,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       // between the picked style and actual behavior.
       styleAuto: req.body?.styleAuto === true,
       index,
-      rules: pre.style ? rulesForStyle(RULES, pre.style) : RULES,
+      rules: rulesFor(portfolio, pre.style),
       force: pre.force,
       runScan: async () => {
         const scan = await runScan(portfolio, { codes: indexCodes, style: pre.style, userId, portfolioId, focus: 'cash' });
