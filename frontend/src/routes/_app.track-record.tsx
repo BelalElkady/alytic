@@ -1041,6 +1041,23 @@ function StockMoveCell({ row }: { row: RecRow }) {
   );
 }
 
+/**
+ * A buy's target sits above the reference price; a sell or reduce's is a
+ * fall target — the nearest support below it, won by a drop to it — so it
+ * sits under the reference price on purpose. Marked ↓ so that doesn't read
+ * as a mistake.
+ */
+function TargetCell({ row }: { row: RecRow }) {
+  if (row.targetPrice == null) return <span className="text-muted-foreground">—</span>;
+  const isFallTarget = row.action === "sell" || row.action === "reduce";
+  return (
+    <span>
+      {fmt(row.targetPrice)}
+      {isFallTarget && <span className="text-[11px] text-muted-foreground"> هدف نزول ↓</span>}
+    </span>
+  );
+}
+
 function StatusBadge({ row }: { row: RecRow }) {
   return (
     <span className="inline-flex flex-col items-start gap-1">
@@ -1125,7 +1142,9 @@ function RecordTable({ rows, vs }: { rows: RecRow[]; vs: Vs }) {
               <TableCell className="font-semibold">{ACTION_LABEL[row.action]}</TableCell>
               <TableCell className="num text-muted-foreground">{row.issuedOn}</TableCell>
               <TableCell className="num">{fmt(row.refPrice)}</TableCell>
-              <TableCell className="num">{fmt(row.targetPrice)}</TableCell>
+              <TableCell className="num">
+                <TargetCell row={row} />
+              </TableCell>
               <TableCell className="num">{fmt(row.stopPrice)}</TableCell>
               <TableCell>
                 <StatusBadge row={row} />
@@ -1171,7 +1190,8 @@ function RecordCards({ rows }: { rows: RecRow[] }) {
           <div className="mt-2 flex items-center justify-between gap-2 text-[12px]">
             <span className="num text-muted-foreground">
               مرجع {fmt(row.refPrice)}
-              {row.targetPrice != null && ` ← هدف ${fmt(row.targetPrice)}`}
+              {row.targetPrice != null &&
+                ` ← هدف ${row.action === "sell" || row.action === "reduce" ? "نزول " : ""}${fmt(row.targetPrice)}`}
               {row.targetPrice == null && row.stopPrice != null && ` ← وقف ${fmt(row.stopPrice)}`}
             </span>
             <span className={cn("num font-semibold", tone(row.returnPct))}>{pct(row.returnPct)}</span>
