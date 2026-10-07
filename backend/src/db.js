@@ -1395,8 +1395,10 @@ export async function upsertRecommendationPrices(rows) {
 /**
  * Recommendations for the track-record page, newest first. `userId` narrows
  * to one User's calls; `from`/`to` are inclusive Cairo issue dates.
+ * `excludeTestRows` leaves out what the test suite logged (source 'test'):
+ * it writes to the same database, and the table refuses deletes.
  */
-export async function listRecommendations({ userId = null, from = null, to = null, limit = 5000 } = {}) {
+export async function listRecommendations({ userId = null, from = null, to = null, limit = 5000, excludeTestRows = false } = {}) {
   const columns = 'id, user_id, ticker, action, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, model_version, issued_at, issued_on, source, style, status, closed_at, exit_price, return_pct, excess_return_pct, sessions_elapsed, mark_price, mark_return_pct, mark_excess_return_pct, evaluated_at, benchmark, indices_at_issue, benchmark_excess_pct, index_excess, mark_benchmark_excess_pct, mark_index_excess, stock_move_price, stock_move_pct, stock_move_sessions, stock_move_final';
   // scoring_version arrived later than the rest; a project that hasn't applied
   // schema.sql yet doesn't have it, and the page must keep working there.
@@ -1408,6 +1410,7 @@ export async function listRecommendations({ userId = null, from = null, to = nul
       if (userId) query = query.eq('user_id', userId);
       if (from) query = query.gte('issued_on', from);
       if (to) query = query.lte('issued_on', to);
+      if (excludeTestRows) query = query.neq('source', 'test');
       const { data, error } = await query
         .order('issued_at', { ascending: false })
         .order('id', { ascending: false })

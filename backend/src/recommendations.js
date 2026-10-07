@@ -449,6 +449,7 @@ export async function trackRecord(userId, filters = {}) {
     userId: filters.scope === 'mine' ? userId : null,
     from: filters.from ?? null,
     to: filters.to ?? null,
+    excludeTestRows: true,
   });
   return buildTrackRecord(all, userId, filters);
 }
