@@ -325,9 +325,9 @@ export const CASH_PICK_ACTIONS = [
 
 /**
  * The AI's review of one user's engine-built cash plan (/api/scan?focus=cash).
- * Judgement only: which stocks, share counts, entries, stops and amounts are
- * all the engine's and are rendered from the scan payload, never from here.
- * See cashAnalysis.js.
+ * Judgement only: share counts, entries, stops and amounts are all the
+ * engine's, never from here. The action on each stock does decide which ones
+ * are funded — the engine rebuilds the plan from them. See cashAnalysis.js.
  */
 export const CashPlanReviewSchema = z.object({
   stance: z.enum(CASH_STANCES).describe('The overall call on deploying this cash today'),
@@ -355,13 +355,13 @@ export const CashPlanReviewSchema = z.object({
     .string()
     .describe(
       'In Egyptian Arabic — how to actually carry the plan out: which orders first, in how many tranches and over what period, ' +
-        'and what to wait for before each later tranche. 2-4 sentences, quoting only amounts and prices given to you.',
+        'and what to wait for before each later tranche. 2-4 sentences, quoting only prices given to you — never a share count or an order\'s cost.',
     ),
 
   picks: z
     .array(
       z.object({
-        code: z.string().describe('EGX ticker — exactly one of the codes in the engine plan, never any other'),
+        code: z.string().describe('EGX ticker — exactly one of the listed codes (funded picks and alternates), never any other'),
         action: z.enum(CASH_PICK_ACTIONS),
         conviction: z.enum(CONVICTION),
         comment: z
@@ -375,7 +375,7 @@ export const CashPlanReviewSchema = z.object({
           .describe('In Egyptian Arabic — one short sentence: the level or event that would change this call'),
       }),
     )
-    .describe('One entry per stock in the engine plan, in the same order — no more, no fewer'),
+    .describe('One entry per listed stock — the funded picks, then the alternates — in the same order, no more, no fewer'),
 
   reserveAdvice: z
     .string()

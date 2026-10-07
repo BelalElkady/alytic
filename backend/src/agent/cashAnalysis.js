@@ -3,9 +3,12 @@
  *
  * /api/scan?focus=cash builds the cash plan deterministically — which stocks,
  * share counts, limit prices, stops, the reserve. This module asks the model
- * to judge that exact plan for one user: deploy now, in tranches, or hold
- * cash, and a call on each pick. The model never touches a number; the
- * dialog keeps rendering every amount from the scan payload.
+ * to judge that plan for one user before it is shown as a recommendation:
+ * deploy now, in tranches, or hold cash, and a call on each stock of the
+ * engine's shortlist (its picks plus the next-ranked alternates). The engine
+ * then rebuilds the plan from those calls — a stock the model says to wait on
+ * or skip is dropped and its cash re-split across the ones it approved. The
+ * model never touches a number; every amount still comes from the engine.
  *
  * Deliberately cheap: no web search and no tool loop. The day's shared market
  * report (marketAnalysis.js), when it has already been generated, is handed
@@ -23,10 +26,6 @@ import { behaviorProfile, behaviorLines } from '../scoring/behavior.js';
 import { DEFAULT_STYLE } from '../config/styles.js';
 import { portfolioHash } from '../portfolio.js';
 import { getMarketReport, getPortfolioReview, putPortfolioReview } from '../db.js';
-
-// Actionable names the engine left out of the plan (count cap or sector
-// spread) — enough for the model to suggest a replacement for a pick it skips.
-const RUNNERS_UP = 3;
 
 const egp = (x) => Math.round(x ?? 0).toLocaleString('en-US');
 
@@ -112,6 +111,17 @@ function planLine(row, investableCash) {
   );
 }
 
+/** A shortlisted stock the engine didn't fund: it has no order yet, only the levels one would be built on. */
+function alternateLine(row) {
+  const target = row.midTarget?.price
+    ? `mid target ${row.midTarget.price} (+${row.midTarget.upsidePct}%, ${row.midTarget.horizon?.ar ?? 'n/a'})`
+    : 'no mid target';
+  return (
+    `- ${row.code} (${row.sector ?? '?'}): limit entry ${row.suggestedEntry} | stop ${row.stop} (risk ${row.riskPct}%) | ${target}` +
+    ` | reward/risk if bought now ${row.riskRewardNow ?? 'n/a'} | entry status ${row.entryStatus ?? 'n/a'} — ${row.entryNote ?? ''}`
+  );
+}
+
 function daysSince(date, asOf) {
   const ms = new Date(asOf ?? Date.now()).getTime() - new Date(date).getTime();
   return date && Number.isFinite(ms) ? Math.max(0, Math.round(ms / 86_400_000)) : null;
@@ -169,12 +179,13 @@ export async function reviewCashPlan(scan, analyses, {
 } = {}) {
   const plan = scan.cashPlan;
   const byCode = new Map(analyses.map((a) => [a.code, a]));
-  const picks = scan.results.filter((row) => row.cashPlanSelected && row.buyPlan?.shares > 0);
-  const pickCodes = picks.map((row) => row.code);
-  const runnersUp = scan.results
-    .filter((row) => !row.position && !row.cashPlanSelected && row.worthBuyingNow && (row.buyPlan?.riskLimitShares ?? 0) > 0)
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-    .slice(0, RUNNERS_UP);
+  // The shortlist, in the engine's order: the picks it funded, then the
+  // alternates that take over the cash of any pick turned down here.
+  const rowByCode = new Map(scan.results.map((row) => [row.code, row]));
+  const shortlist = (plan.shortlistCodes ?? plan.selectedCodes ?? []).map((code) => rowByCode.get(code)).filter(Boolean);
+  const picks = shortlist.filter((row) => row.cashPlanSelected && row.buyPlan?.shares > 0);
+  const alternates = shortlist.filter((row) => !picks.includes(row));
+  const pickCodes = shortlist.map((row) => row.code);
   const held = analyses.filter((a) => a.position);
   const { text: walletText } = portfolioContext(analyses, { cash: scan.cash, capital }, rules);
   const behavior = behaviorProfile(portfolio, { capital, today: scan.asOf ?? undefined });
@@ -199,33 +210,36 @@ ${behaviorLines(behavior, { style, styleAuto })}
 
 ${marketReportSection(marketReport, pickCodes)}
 
-## The engine's cash plan (${picks.length} picks — final numbers, judge them)
+## The engine's draft cash plan (${picks.length} funded picks, strongest first)
 ${picks.map((row) => planLine(row, plan.investableCash)).join('\n') || 'The engine found no pick worth funding today.'}
 
-## Full briefs for the plan's picks
-${picks.map((row) => (byCode.has(row.code) ? briefFor(byCode.get(row.code)) : `### ${row.code}\nBrief unavailable.`)).join('\n\n') || 'None.'}
+## Alternates (${alternates.length}, ranked next — funded only in place of a pick you turn down)
+${alternates.map(alternateLine).join('\n') || 'None.'}
 
-## Actionable but not selected by the engine (context only — never add these to picks)
-${runnersUp.map((row) => `- ${row.code} (${row.sector ?? '?'}): score ${row.score}, entry ${row.suggestedEntry}, stop ${row.stop}, reward/risk now ${row.riskRewardNow ?? 'n/a'}`).join('\n') || 'None.'}
+## What happens with your calls
+The investor sees the plan only after your review. Every stock you mark wait or skip is left out, and the engine re-splits the investable cash across the stocks you marked buy_now or buy_on_pullback, strongest first, up to ${plan.maxRecommendations ?? picks.length} stocks. So the share counts and order costs above are a draft and will change: never quote a share count, an order's cost or its share of the cash. Prices, stops and targets stay as given.
+
+## Full briefs (picks, then alternates)
+${shortlist.map((row) => (byCode.has(row.code) ? briefFor(byCode.get(row.code)) : `### ${row.code}\nBrief unavailable.`)).join('\n\n') || 'None.'}
 
 ---
-Give me the stance, your read of this portfolio and of this investor's behavior, how to deploy, a call on each of the ${picks.length} picks in order, what to do with the reserve and unallocated cash, the risks, and the top priority for next session.
-Remember: these numbers are final — judge them, do not recompute them.`;
+Give me the stance, your read of this portfolio and of this investor's behavior, how to deploy, a call on each of the ${shortlist.length} stocks above (picks, then alternates) in that order, what to do with the reserve and unallocated cash, the risks, and the top priority for next session.
+Remember: every number is the engine's — judge it, do not recompute it.`;
 
   const { data, raw } = await requestStructuredOR({
     model,
     schema: CashPlanReviewSchema,
     schemaName: 'cash_plan_review',
     // Arabic prose runs ~2 characters per token; a comment per pick plus the
-    // plan-level fields needs real room even for a six-stock plan.
-    maxTokens: Math.min(8000, 2500 + picks.length * 500),
+    // plan-level fields needs real room even for a nine-stock shortlist.
+    maxTokens: Math.min(8000, 2500 + shortlist.length * 500),
     system: cashReviewSystemPrompt(rules, style),
     messages: [{ role: 'user', content: userMessage }],
     feature: 'cash_review',
   });
 
   // The boundary holds on the way out too: a code the model adds that isn't
-  // in the plan is dropped rather than shown with no numbers behind it.
+  // on the shortlist is dropped rather than shown with no numbers behind it.
   const allowed = new Set(pickCodes);
   const seen = new Set();
   const reviewedPicks = (data.picks ?? []).filter((p) => allowed.has(p.code) && !seen.has(p.code) && seen.add(p.code));
@@ -247,16 +261,42 @@ Remember: these numbers are final — judge them, do not recompute them.`;
 }
 
 /**
- * Cache-or-generate, same contract as analyst.js's getOrGenerateReview.
+ * The cash plan as it stands after the review: the engine's plan rebuilt from
+ * the model's call on each shortlisted stock. Only the rows the review could
+ * have changed are sent — the draft's picks, the final picks and everything
+ * judged — for the dialog to lay over the scan it already has. Null when the
+ * scan can't be re-planned.
+ */
+function reviewedPlan(draft, replan, review) {
+  if (!replan) return null;
+  const final = replan(new Map((review.picks ?? []).map((pick) => [pick.code, pick.action])));
+  const touched = new Set([
+    ...(draft.cashPlan?.selectedCodes ?? []),
+    ...(draft.cashPlan?.shortlistCodes ?? []),
+    ...(final.cashPlan?.selectedCodes ?? []),
+    ...(final.cashPlan?.shortlistCodes ?? []),
+  ]);
+  return {
+    cashPlan: final.cashPlan,
+    rows: final.results
+      .filter((row) => touched.has(row.code))
+      .map(({ code, buyPlan, cashPlanSelected, cashPlanNote }) => ({ code, buyPlan, cashPlanSelected, cashPlanNote })),
+  };
+}
+
+/**
+ * Cache-or-generate, same contract as analyst.js's getOrGenerateReview, plus
+ * `plan` — the reviewed cash plan (see reviewedPlan), rebuilt on every call
+ * rather than stored, so it always matches the scan it lays over.
  * Stored in portfolio_reviews under a `cash:<style>:<index>` style key and
  * hashed on positions, cash, the trade log's length and where the style came
  * from, so reopening the dialog on an unchanged book the same day is free,
  * while a trade or a cash edit asks again.
  *
  * @param {object} portfolio
- * @param {() => Promise<{payload: object, results: object[], capital: number}>} runScan - the
- *   cash scan; only called on a cache miss's generation path, plus once to
- *   learn asOf for the lookup.
+ * @param {() => Promise<{payload: object, results: object[], capital: number, replan?: Function}>} runScan - the
+ *   cash scan, run once per call: its asOf keys the lookup and its replan
+ *   builds the reviewed plan, on a cache hit as well as a miss.
  */
 export async function getOrGenerateCashReview(portfolio, {
   portfolioId, style = DEFAULT_STYLE, styleAuto = false, index = 'ALL', rules = RULES, model = MODEL_CHAIN, force = false, runScan,
@@ -266,20 +306,20 @@ export async function getOrGenerateCashReview(portfolio, {
   // back when this was keyed by userId) must fail loudly here, not with an
   // opaque "invalid input syntax for type bigint" from inside getPortfolioReview.
   if (portfolioId == null) throw new Error('getOrGenerateCashReview: opts.portfolioId is required');
-  const { payload, results, capital } = await runScan();
+  const { payload, results, capital, replan } = await runScan();
   const asOf = payload.asOf ?? new Date().toISOString().slice(0, 10);
   const cacheStyle = `cash:${style}:${index}`;
   // The behavior half of the review changes with every logged trade, not
   // only with positions and cash, so the trade count is part of the key too.
-  // `v2`: bumped when the prompt's inputs change, so a review cached under the
+  // `v3`: bumped when the prompt's inputs change, so a review cached under the
   // old prompt isn't served for the rest of the day.
-  const hash = `v2:${portfolioHash({ positions: portfolio.positions, watchlist: {}, cash: portfolio.cash })}:${(portfolio.trades ?? []).length}:${styleAuto ? 'auto' : 'manual'}`;
+  const hash = `v3:${portfolioHash({ positions: portfolio.positions, watchlist: {}, cash: portfolio.cash })}:${(portfolio.trades ?? []).length}:${styleAuto ? 'auto' : 'manual'}`;
 
   if (!force) {
     const cached = await getPortfolioReview(portfolioId, asOf, cacheStyle);
     if (cached && cached.portfolioHash === hash) {
       const { portfolioHash: _hash, ...review } = cached;
-      return { review, source: 'cached' };
+      return { review, source: 'cached', plan: reviewedPlan(payload, replan, review) };
     }
   }
 
@@ -287,5 +327,5 @@ export async function getOrGenerateCashReview(portfolio, {
   const marketReport = await getMarketReport(asOf, style).catch(() => null);
   const review = await reviewCashPlan(payload, results, { model, rules, style, styleAuto, marketReport, portfolio, capital });
   await putPortfolioReview(portfolioId, asOf, cacheStyle, hash, review, review._meta.model, review._meta.usage);
-  return { review, source: 'ai' };
+  return { review, source: 'ai', plan: reviewedPlan(payload, replan, review) };
 }

@@ -2119,11 +2119,18 @@ function styleStrength(r, style) {
   return +Object.entries(weights).reduce((sum, [key, weight]) => sum + scores[key] * weight, 0).toFixed(1);
 }
 
+/** How many next-ranked stocks the AI cash review judges beyond the engine's picks, as replacements for any it turns down. */
+const CASH_PLAN_ALTERNATES = 3;
+/** The AI cash review's actions (CASH_PICK_ACTIONS in agent/schemas.js) that keep a stock funded; `wait` and `skip` release its cash. */
+const CASH_FUNDED_ACTIONS = new Set(['buy_now', 'buy_on_pullback']);
+
 /**
  * The scan itself — engine analysis, sector-aware sizing and the cash plan —
  * without the HTTP layer, so the AI cash review (/api/review/cash) judges
  * exactly the plan the dialog shows. Returns the response payload plus the
- * full analyses its compact rows were cut from.
+ * full analyses its compact rows were cut from, and `replan(verdicts)`: the
+ * same payload rebuilt once the AI has judged the shortlist, funding only
+ * what it approved (a Map of stock code → its action).
  */
 async function runScan(portfolio, { codes, style, userId, portfolioId = null, subscribed = false, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
   // A cash plan has to see the whole book, even holdings outside the index
@@ -2200,225 +2207,258 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
     );
   }
 
-  const actionable = results.filter((r) => r.plan.actionable && r.plan.buyingNow.worthIt && r.technical.score >= 58);
-  const cashReserve = Math.max(0, portfolio.cash * (rules.sizing.minCashBufferPct / 100));
-  const investableCash = Math.max(0, portfolio.cash - cashReserve);
-  // How many names the cash plan should spread across is a function of how
-  // much there actually is to deploy, not a fixed count: too few stocks for
-  // a large balance leaves most of it idle behind the per-position cap, and
-  // too many for a small balance slices each ticket down to nothing.
-  const MAX_RECOMMENDATIONS = 6;
-  // A cash plan never puts everything on one stock, even when the whole
-  // balance would fit under a single position's cap.
-  const MIN_RECOMMENDATIONS = 2;
-  const MIN_TICKET_EGP = 5000;
-  const maxPositionEgp = capital * (rules.sizing.maxPositionPct / 100);
-  const maxRecommendations = investableCash <= 0
-    // Nothing to deploy — still surface a few honest "no cash" reasons below
-    // instead of an empty screen.
-    ? 3
-    : Math.max(MIN_RECOMMENDATIONS, Math.min(
-      MAX_RECOMMENDATIONS,
-      maxPositionEgp > 0 ? Math.ceil(investableCash / maxPositionEgp) : MAX_RECOMMENDATIONS,
-      Math.max(1, Math.floor(investableCash / MIN_TICKET_EGP)),
-    ));
-  // A cash-plan pick has to stand on both legs: the setup (technical score)
-  // and the business behind it (the investment score, built from the
-  // company's own figures). A stock with no fundamental data can't be judged
-  // on the second, so it is never recommended. How the legs are weighed
-  // follows the wallet's style — see styleStrength.
-  const candidates = results
-    .filter((r) => !r.position && r.plan.actionable && r.plan.buyingNow.worthIt && r.plan.targets.mid?.price && (r.plan.sizing?.shares ?? 0) > 0)
-    .filter((r) => styleStrength(r, style) != null)
-    .map((r) => ({
-      code: r.code,
-      sector: r.sectorAr,
-      rankScore: styleStrength(r, style) + Math.min(r.plan.buyingNow.riskReward ?? 0, 5) * 4 - r.plan.stop.riskPct * 1.5,
-    }))
-    .sort((a, b) => b.rankScore - a.rankScore);
-  const selected = [];
-  const sectors = new Set();
-  for (const candidate of candidates) {
-    if (selected.length >= maxRecommendations) break;
-    if (candidate.sector && sectors.has(candidate.sector)) continue;
-    selected.push(candidate);
-    if (candidate.sector) sectors.add(candidate.sector);
-  }
-  for (const candidate of candidates) {
-    if (selected.length >= maxRecommendations || selected.some((item) => item.code === candidate.code)) continue;
-    selected.push(candidate);
-  }
-  const allocationPerStock = selected.length ? investableCash / selected.length : 0;
-  const selectedCodes = new Set(selected.map((candidate) => candidate.code));
+  // Everything from here on is the cash plan and the response built on it — no
+  // I/O, so the AI cash review can re-run it once it has judged the shortlist
+  // (see replan below). `verdicts` is that review's action per stock code:
+  // with it, only the stocks it approved can be funded, and the cash of the
+  // ones it turned down is re-split across the rest.
+  const buildPayload = (verdicts = null) => {
+    const actionable = results.filter((r) => r.plan.actionable && r.plan.buyingNow.worthIt && r.technical.score >= 58);
+    const cashReserve = Math.max(0, portfolio.cash * (rules.sizing.minCashBufferPct / 100));
+    const investableCash = Math.max(0, portfolio.cash - cashReserve);
+    // How many names the cash plan should spread across is a function of how
+    // much there actually is to deploy, not a fixed count: too few stocks for
+    // a large balance leaves most of it idle behind the per-position cap, and
+    // too many for a small balance slices each ticket down to nothing.
+    const MAX_RECOMMENDATIONS = 6;
+    // A cash plan never puts everything on one stock, even when the whole
+    // balance would fit under a single position's cap.
+    const MIN_RECOMMENDATIONS = 2;
+    const MIN_TICKET_EGP = 5000;
+    const maxPositionEgp = capital * (rules.sizing.maxPositionPct / 100);
+    const maxRecommendations = investableCash <= 0
+      // Nothing to deploy — still surface a few honest "no cash" reasons below
+      // instead of an empty screen.
+      ? 3
+      : Math.max(MIN_RECOMMENDATIONS, Math.min(
+        MAX_RECOMMENDATIONS,
+        maxPositionEgp > 0 ? Math.ceil(investableCash / maxPositionEgp) : MAX_RECOMMENDATIONS,
+        Math.max(1, Math.floor(investableCash / MIN_TICKET_EGP)),
+      ));
+    // A cash-plan pick has to stand on both legs: the setup (technical score)
+    // and the business behind it (the investment score, built from the
+    // company's own figures). A stock with no fundamental data can't be judged
+    // on the second, so it is never recommended. How the legs are weighed
+    // follows the wallet's style — see styleStrength.
+    const eligible = results
+      .filter((r) => !r.position && r.plan.actionable && r.plan.buyingNow.worthIt && r.plan.targets.mid?.price && (r.plan.sizing?.shares ?? 0) > 0)
+      .filter((r) => styleStrength(r, style) != null)
+      .map((r) => ({
+        code: r.code,
+        sector: r.sectorAr,
+        rankScore: styleStrength(r, style) + Math.min(r.plan.buyingNow.riskReward ?? 0, 5) * 4 - r.plan.stop.riskPct * 1.5,
+      }))
+      .sort((a, b) => b.rankScore - a.rankScore);
+    // Once the AI has judged the shortlist, only what it approved can be
+    // funded. A stock it never saw is not approved either: nothing reaches the
+    // plan unreviewed.
+    const candidates = verdicts
+      ? eligible.filter((candidate) => CASH_FUNDED_ACTIONS.has(verdicts.get(candidate.code)))
+      : eligible;
+    const selected = [];
+    const sectors = new Set();
+    for (const candidate of candidates) {
+      if (selected.length >= maxRecommendations) break;
+      if (candidate.sector && sectors.has(candidate.sector)) continue;
+      selected.push(candidate);
+      if (candidate.sector) sectors.add(candidate.sector);
+    }
+    for (const candidate of candidates) {
+      if (selected.length >= maxRecommendations || selected.some((item) => item.code === candidate.code)) continue;
+      selected.push(candidate);
+    }
+    const allocationPerStock = selected.length ? investableCash / selected.length : 0;
+    const selectedCodes = new Set(selected.map((candidate) => candidate.code));
+    // What the AI cash review is asked to judge: the engine's own picks, then
+    // the next-ranked stocks that take over the cash of any pick it turns down.
+    // After the review it is simply the stocks that were judged.
+    const shortlistCodes = verdicts
+      ? [...verdicts.keys()]
+      : [...selected, ...eligible.filter((candidate) => !selectedCodes.has(candidate.code))]
+        .slice(0, selected.length + CASH_PLAN_ALTERNATES)
+        .map((candidate) => candidate.code);
 
-  // Split the investable cash across the selected names by conviction and
-  // price, not evenly: a stronger setup (rankScore — the same technical
-  // score, risk/reward and stop-risk blend used to rank and pick candidates)
-  // gets proportionally more of the pool, and a name whose own price would
-  // turn its share into less than one share is dropped from this round
-  // rather than funded into a position too small to exist. Both checks
-  // water-fill: cash freed either way goes to the names still standing,
-  // weighted by their own score among what's left, instead of sitting
-  // unallocated.
-  const resultByCode = new Map(results.map((r) => [r.code, r]));
-  const allocationByCode = new Map();
-  {
-    let remainingCash = investableCash;
-    let pool = selected.map((candidate) => {
-      const r = resultByCode.get(candidate.code);
-      const entry = r?.plan.suggestedEntry ?? 0;
-      return {
-        code: candidate.code,
-        weight: Math.max(1, candidate.rankScore),
-        entry,
-        riskCapEgp: entry > 0 ? (r.plan.sizing?.shares ?? 0) * entry : Infinity,
-      };
-    });
-    while (pool.length) {
-      const totalWeight = pool.reduce((sum, c) => sum + c.weight, 0);
-      const withShares = pool.map((c) => ({ ...c, idealShare: totalWeight > 0 ? (remainingCash * c.weight) / totalWeight : 0 }));
-      const capped = withShares.filter((c) => c.riskCapEgp < c.idealShare);
-      const tooSmall = withShares.filter((c) => c.riskCapEgp >= c.idealShare && c.entry > 0 && c.idealShare < c.entry);
-      if (!capped.length && !tooSmall.length) {
-        for (const c of withShares) allocationByCode.set(c.code, c.idealShare);
-        break;
+    // Split the investable cash across the selected names by conviction and
+    // price, not evenly: a stronger setup (rankScore — the same technical
+    // score, risk/reward and stop-risk blend used to rank and pick candidates)
+    // gets proportionally more of the pool, and a name whose own price would
+    // turn its share into less than one share is dropped from this round
+    // rather than funded into a position too small to exist. Both checks
+    // water-fill: cash freed either way goes to the names still standing,
+    // weighted by their own score among what's left, instead of sitting
+    // unallocated.
+    const resultByCode = new Map(results.map((r) => [r.code, r]));
+    const allocationByCode = new Map();
+    {
+      let remainingCash = investableCash;
+      let pool = selected.map((candidate) => {
+        const r = resultByCode.get(candidate.code);
+        const entry = r?.plan.suggestedEntry ?? 0;
+        return {
+          code: candidate.code,
+          weight: Math.max(1, candidate.rankScore),
+          entry,
+          riskCapEgp: entry > 0 ? (r.plan.sizing?.shares ?? 0) * entry : Infinity,
+        };
+      });
+      while (pool.length) {
+        const totalWeight = pool.reduce((sum, c) => sum + c.weight, 0);
+        const withShares = pool.map((c) => ({ ...c, idealShare: totalWeight > 0 ? (remainingCash * c.weight) / totalWeight : 0 }));
+        const capped = withShares.filter((c) => c.riskCapEgp < c.idealShare);
+        const tooSmall = withShares.filter((c) => c.riskCapEgp >= c.idealShare && c.entry > 0 && c.idealShare < c.entry);
+        if (!capped.length && !tooSmall.length) {
+          for (const c of withShares) allocationByCode.set(c.code, c.idealShare);
+          break;
+        }
+        for (const c of capped) {
+          allocationByCode.set(c.code, c.riskCapEgp);
+          remainingCash -= c.riskCapEgp;
+        }
+        for (const c of tooSmall) allocationByCode.set(c.code, 0);
+        const settled = new Set([...capped, ...tooSmall].map((c) => c.code));
+        pool = pool.filter((c) => !settled.has(c.code));
       }
-      for (const c of capped) {
-        allocationByCode.set(c.code, c.riskCapEgp);
-        remainingCash -= c.riskCapEgp;
+    }
+    // Why a stock isn't in the cash plan, in the order the plan itself rules
+    // stocks out — so the strongest-stocks list can say why a strong stock
+    // still isn't a recommendation. Null for one that is in the plan.
+    const candidateCodes = new Set(candidates.map((candidate) => candidate.code));
+    const eligibleCodes = new Set(eligible.map((candidate) => candidate.code));
+    const notInCashPlan = (r) => {
+      if (selectedCodes.has(r.code)) return null;
+      if (r.position) return 'موجود في محفظتك بالفعل — خطة الكاش بتقترح مشتريات جديدة بس.';
+      if (verdicts?.has(r.code) && !CASH_FUNDED_ACTIONS.has(verdicts.get(r.code))) {
+        return 'مراجعة الذكاء الاصطناعي شايفة إن ده مش وقته، فاستبعدته من خطة الكاش دلوقتي.';
       }
-      for (const c of tooSmall) allocationByCode.set(c.code, 0);
-      const settled = new Set([...capped, ...tooSmall].map((c) => c.code));
-      pool = pool.filter((c) => !settled.has(c.code));
-    }
-  }
-  // Why a stock isn't in the cash plan, in the order the plan itself rules
-  // stocks out — so the strongest-stocks list can say why a strong stock
-  // still isn't a recommendation. Null for one that is in the plan.
-  const candidateCodes = new Set(candidates.map((candidate) => candidate.code));
-  const notInCashPlan = (r) => {
-    if (selectedCodes.has(r.code)) return null;
-    if (r.position) return 'موجود في محفظتك بالفعل — خطة الكاش بتقترح مشتريات جديدة بس.';
-    if (r.halted) return 'السهم موقوف عن التداول دلوقتي.';
-    if (r.plan.shariahExcluded) return 'السهم غير متوافق مع الشريعة، فمش بيترشّح للشراء.';
-    if (r.plan.entryStatus === 'too_extended') return 'السعر ممتد وبعيد عن أقرب دعم — استنى تصحيح بدل مطاردة السعر.';
-    const riskReward = r.plan.buyingNow.riskReward;
-    if (!r.plan.buyingNow.worthIt) {
-      return riskReward != null
-        ? `العائد للمخاطرة من السعر الحالي ${riskReward} وأقل من المطلوب لأسلوبك (${rules.entry.minRiskReward}).`
-        : 'مفيش عائد للمخاطرة محسوب من السعر الحالي.';
-    }
-    if (!r.plan.actionable) return 'مفيش نقطة دخول مناسبة دلوقتي.';
-    if (!r.plan.targets.mid?.price) return 'مفيش هدف متوسط المدى نقيس عليه الصفقة.';
-    if (!((r.plan.sizing?.shares ?? 0) > 0)) return r.plan.sizing?.reason ?? 'حجم المركز المسموح به صفر حسب قواعد المخاطرة.';
-    if (styleStrength(r, style) == null) return 'مفيش بيانات أساسية للشركة، فمش بيترشّح.';
-    if (candidateCodes.has(r.code)) {
-      return `فرصة صالحة، بس الخطة اكتفت بـ ${selected.length} أسهم أفضل كصفقة (عائد للمخاطرة أعلى أو قطاع مختلف).`;
-    }
-    return null;
-  };
+      if (r.halted) return 'السهم موقوف عن التداول دلوقتي.';
+      if (r.plan.shariahExcluded) return 'السهم غير متوافق مع الشريعة، فمش بيترشّح للشراء.';
+      if (r.plan.entryStatus === 'too_extended') return 'السعر ممتد وبعيد عن أقرب دعم — استنى تصحيح بدل مطاردة السعر.';
+      const riskReward = r.plan.buyingNow.riskReward;
+      if (!r.plan.buyingNow.worthIt) {
+        return riskReward != null
+          ? `العائد للمخاطرة من السعر الحالي ${riskReward} وأقل من المطلوب لأسلوبك (${rules.entry.minRiskReward}).`
+          : 'مفيش عائد للمخاطرة محسوب من السعر الحالي.';
+      }
+      if (!r.plan.actionable) return 'مفيش نقطة دخول مناسبة دلوقتي.';
+      if (!r.plan.targets.mid?.price) return 'مفيش هدف متوسط المدى نقيس عليه الصفقة.';
+      if (!((r.plan.sizing?.shares ?? 0) > 0)) return r.plan.sizing?.reason ?? 'حجم المركز المسموح به صفر حسب قواعد المخاطرة.';
+      if (styleStrength(r, style) == null) return 'مفيش بيانات أساسية للشركة، فمش بيترشّح.';
+      if (candidateCodes.has(r.code)) {
+        return `فرصة صالحة، بس الخطة اكتفت بـ ${selected.length} أسهم أفضل كصفقة (عائد للمخاطرة أعلى أو قطاع مختلف).`;
+      }
+      if (eligibleCodes.has(r.code)) {
+        return 'فرصة صالحة، بس ترتيبها أقل من الأسهم اللي راجعها الذكاء الاصطناعي للخطة النهارده.';
+      }
+      return null;
+    };
 
-  let investedTotal = 0;
-  const payload = {
-    asOf: results[0]?.asOf ?? null,
-    count: results.length,
-    cash: portfolio.cash,
-    // Only set for focus=cash — null means this wasn't a cash scan.
-    cashScansLeft: cashScansLeftNow,
-    cashScansPerMonth: tier ? (TIERS[tier] ?? TIERS.free).cashScans : null,
-    marketAnalysisLeft: marketAnalysisLeftNow,
-    marketAnalysisPerMonth: tier ? (TIERS[tier] ?? TIERS.free).marketAnalysis : null,
-    // A compact row per stock — the full analysis is one request away and far
-    // too large to send 43 of.
-    results: results.map((r) => {
-      const live = latestQuotes.get(r.code);
-      const livePrice = live?.price ?? r.snapshot.price.close;
-      const entry = r.plan.suggestedEntry;
-      const riskShares = r.plan.sizing?.shares ?? 0;
-      const cashShares = entry > 0 ? Math.floor(Math.max(0, portfolio.cash) / entry) : 0;
-      const cashPlanSelected = selectedCodes.has(r.code);
-      const stockAllocation = allocationByCode.get(r.code) ?? 0;
-      const allocationShares = entry > 0 ? Math.floor(stockAllocation / entry) : 0;
-      const recommendedShares = cashPlanSelected ? Math.min(riskShares, allocationShares, cashShares) : 0;
-      if (cashPlanSelected) investedTotal += recommendedShares * entry;
-      const buyPlan = entry > 0 ? {
-        entry,
+    let investedTotal = 0;
+    const payload = {
+      asOf: results[0]?.asOf ?? null,
+      count: results.length,
+      cash: portfolio.cash,
+      // Only set for focus=cash — null means this wasn't a cash scan.
+      cashScansLeft: cashScansLeftNow,
+      cashScansPerMonth: tier ? (TIERS[tier] ?? TIERS.free).cashScans : null,
+      marketAnalysisLeft: marketAnalysisLeftNow,
+      marketAnalysisPerMonth: tier ? (TIERS[tier] ?? TIERS.free).marketAnalysis : null,
+      // A compact row per stock — the full analysis is one request away and far
+      // too large to send 43 of.
+      results: results.map((r) => {
+        const live = latestQuotes.get(r.code);
+        const livePrice = live?.price ?? r.snapshot.price.close;
+        const entry = r.plan.suggestedEntry;
+        const riskShares = r.plan.sizing?.shares ?? 0;
+        const cashShares = entry > 0 ? Math.floor(Math.max(0, portfolio.cash) / entry) : 0;
+        const cashPlanSelected = selectedCodes.has(r.code);
+        const stockAllocation = allocationByCode.get(r.code) ?? 0;
+        const allocationShares = entry > 0 ? Math.floor(stockAllocation / entry) : 0;
+        const recommendedShares = cashPlanSelected ? Math.min(riskShares, allocationShares, cashShares) : 0;
+        if (cashPlanSelected) investedTotal += recommendedShares * entry;
+        const buyPlan = entry > 0 ? {
+          entry,
+          stop: r.plan.stop.stop,
+          target: r.plan.targets.mid?.price ?? null,
+          shares: recommendedShares,
+          cost: +(recommendedShares * entry).toFixed(2),
+          allocation: cashPlanSelected ? +stockAllocation.toFixed(2) : 0,
+          cashAfter: +(portfolio.cash - recommendedShares * entry).toFixed(2),
+          risk: +(recommendedShares * Math.max(0, entry - r.plan.stop.stop)).toFixed(2),
+          riskLimitShares: riskShares,
+          cashLimitShares: cashShares,
+          reason: recommendedShares === 0
+            ? (portfolio.cash <= 0 ? 'لا يوجد كاش متاح' : r.plan.sizing?.reason ?? 'لا يوجد حجم مناسب حسب قواعد المخاطرة')
+            : `شراء ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع مرجّح حسب قوة الفرصة بين أفضل ${selected.length} أسهم مع احتياطي كاش ${rules.sizing.minCashBufferPct}%`,
+        } : null;
+        const position = r.position && live
+          ? { ...r.position, marketValue: +(r.position.shares * livePrice).toFixed(2), unrealizedEgp: +(r.position.shares * (livePrice - r.position.avgCost)).toFixed(2) }
+          : r.position;
+        return ({
+        code: r.code,
+        name: r.name,
+        sector: r.sectorAr,
+        shariah: r.shariah,
+        asOf: r.asOf,
+        price: livePrice,
+        lastTradePrice: live?.price ?? null,
+        lastTradeTime: live?.time ?? null,
+        // Priced after the analysis ran, so judged again on this quote.
+        halted: live ? tradingHalted(live.time) : r.halted ?? null,
+        changePct: live?.changePct ?? r.snapshot.price.changePct,
+        score: r.technical.score,
+        signal: r.technical.signal,
+        trend: r.snapshot.trend,
+        rsi: r.snapshot.momentum.rsi14,
+        entryStatus: r.plan.entryStatus,
+        suggestedEntry: r.plan.suggestedEntry,
+        entryNote: r.plan.entryNote,
         stop: r.plan.stop.stop,
-        target: r.plan.targets.mid?.price ?? null,
-        shares: recommendedShares,
-        cost: +(recommendedShares * entry).toFixed(2),
-        allocation: cashPlanSelected ? +stockAllocation.toFixed(2) : 0,
-        cashAfter: +(portfolio.cash - recommendedShares * entry).toFixed(2),
-        risk: +(recommendedShares * Math.max(0, entry - r.plan.stop.stop)).toFixed(2),
-        riskLimitShares: riskShares,
-        cashLimitShares: cashShares,
-        reason: recommendedShares === 0
-          ? (portfolio.cash <= 0 ? 'لا يوجد كاش متاح' : r.plan.sizing?.reason ?? 'لا يوجد حجم مناسب حسب قواعد المخاطرة')
-          : `شراء ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع مرجّح حسب قوة الفرصة بين أفضل ${selected.length} أسهم مع احتياطي كاش ${rules.sizing.minCashBufferPct}%`,
-      } : null;
-      const position = r.position && live
-        ? { ...r.position, marketValue: +(r.position.shares * livePrice).toFixed(2), unrealizedEgp: +(r.position.shares * (livePrice - r.position.avgCost)).toFixed(2) }
-        : r.position;
-      return ({
-      code: r.code,
-      name: r.name,
-      sector: r.sectorAr,
-      shariah: r.shariah,
-      asOf: r.asOf,
-      price: livePrice,
-      lastTradePrice: live?.price ?? null,
-      lastTradeTime: live?.time ?? null,
-      // Priced after the analysis ran, so judged again on this quote.
-      halted: live ? tradingHalted(live.time) : r.halted ?? null,
-      changePct: live?.changePct ?? r.snapshot.price.changePct,
-      score: r.technical.score,
-      signal: r.technical.signal,
-      trend: r.snapshot.trend,
-      rsi: r.snapshot.momentum.rsi14,
-      entryStatus: r.plan.entryStatus,
-      suggestedEntry: r.plan.suggestedEntry,
-      entryNote: r.plan.entryNote,
-      stop: r.plan.stop.stop,
-      riskPct: r.plan.stop.riskPct,
-      midTarget: r.plan.targets.mid,
-      longTarget: r.plan.targets.long,
-      riskRewardNow: r.plan.buyingNow.riskReward,
-      worthBuyingNow: r.plan.buyingNow.worthIt,
-      buyPlan,
-      cashPlanSelected,
-      // Why not, when it isn't — see notInCashPlan above.
-      cashPlanNote: notInCashPlan(r),
-      // Compact form — the full breakdown and reasons are one /api/analyze/:code
-      // request away (see the DetailDialog), same tradeoff as the rest of this row.
-      classification: r.classification && {
-        type: r.classification.type,
-        investmentScore: r.classification.investmentScore,
-        speculationScore: r.classification.speculationScore,
-        confidence: r.classification.confidence,
-        // False when the screener has nothing on the company: investmentScore
-        // then rests on price behaviour alone and is no fundamental verdict.
-        hasFundamentals: Boolean(r.classification.dataQuality?.hasFundamentals),
+        riskPct: r.plan.stop.riskPct,
+        midTarget: r.plan.targets.mid,
+        longTarget: r.plan.targets.long,
+        riskRewardNow: r.plan.buyingNow.riskReward,
+        worthBuyingNow: r.plan.buyingNow.worthIt,
+        buyPlan,
+        cashPlanSelected,
+        // Why not, when it isn't — see notInCashPlan above.
+        cashPlanNote: notInCashPlan(r),
+        // Compact form — the full breakdown and reasons are one /api/analyze/:code
+        // request away (see the DetailDialog), same tradeoff as the rest of this row.
+        classification: r.classification && {
+          type: r.classification.type,
+          investmentScore: r.classification.investmentScore,
+          speculationScore: r.classification.speculationScore,
+          confidence: r.classification.confidence,
+          // False when the screener has nothing on the company: investmentScore
+          // then rests on price behaviour alone and is no fundamental verdict.
+          hasFundamentals: Boolean(r.classification.dataQuality?.hasFundamentals),
+        },
+        // How strong the stock is for this wallet's style (0-100) — what the
+        // cash plan and the strongest-stocks list both rank by. Null without
+        // fundamental data.
+        styleStrength: styleStrength(r, style),
+        position,
+      });
+      }),
+      actionableCodes: actionable.map((r) => r.code),
+      focus: focus ?? 'market',
+      style: style ?? 'medium',
+      cashPlan: {
+        selectedCodes: [...selectedCodes],
+        shortlistCodes,
+        // True once the AI's verdicts decided which stocks are funded.
+        reviewed: Boolean(verdicts),
+        maxRecommendations,
+        investableCash: +investableCash.toFixed(2),
+        reserveCash: +cashReserve.toFixed(2),
+        allocationPerStock: +allocationPerStock.toFixed(2),
+        unallocatedCash: +(investableCash - investedTotal).toFixed(2),
       },
-      // How strong the stock is for this wallet's style (0-100) — what the
-      // cash plan and the strongest-stocks list both rank by. Null without
-      // fundamental data.
-      styleStrength: styleStrength(r, style),
-      position,
-    });
-    }),
-    actionableCodes: actionable.map((r) => r.code),
-    focus: focus ?? 'market',
-    style: style ?? 'medium',
-    cashPlan: {
-      selectedCodes: [...selectedCodes],
-      investableCash: +investableCash.toFixed(2),
-      reserveCash: +cashReserve.toFixed(2),
-      allocationPerStock: +allocationPerStock.toFixed(2),
-      unallocatedCash: +(investableCash - investedTotal).toFixed(2),
-    },
-    errors,
+      errors,
+    };
+    return payload;
   };
-  return { payload, results, rules, capital };
+  return { payload: buildPayload(), results, rules, capital, replan: (verdicts) => buildPayload(verdicts) };
 }
 
 // ---- Portfolio -------------------------------------------------------------
@@ -3884,7 +3924,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
     const startedAt = Date.now();
     let scanRows = [];
     const { getOrGenerateCashReview } = await import('../agent/cashAnalysis.js');
-    const { review, source } = await getOrGenerateCashReview(portfolio, {
+    const { review, source, plan } = await getOrGenerateCashReview(portfolio, {
       portfolioId,
       style: pre.style ?? 'medium',
       // Whether that style came from the investor's own trade history or a
@@ -3912,7 +3952,9 @@ app.post('/api/review/cash', wrap(async (req, res) => {
         { source: 'cash_review', style: pre.style ?? 'medium', model: review._meta?.model },
       );
     }
-    return { review, source, index };
+    // `plan` is the cash plan after the review: what the dialog shows as the
+    // recommendation, in place of the engine's first draft from /api/scan.
+    return { review, source, index, plan };
   });
 }));
 

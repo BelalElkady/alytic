@@ -164,6 +164,43 @@ const PICK_ACTION: Record<string, { label: string; tone: string }> = {
   skip: { label: "سيبه", tone: "avoid" },
 };
 
+/**
+ * The cash plan after the AI review (reviewedPlan in backend/src/agent/cashAnalysis.js):
+ * the plan's summary, and the rows the review could have changed, to lay over
+ * the scan's own. A stock the review turned down is no longer funded here.
+ */
+type ReviewedPlan = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cashPlan: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rows: { code: string; buyPlan: any; cashPlanSelected: boolean; cashPlanNote: string | null }[];
+};
+
+/** The AI's call on one stock: its action, conviction and reasoning. */
+function PickVerdict({ pick, className }: { pick: CashPick; className?: string }) {
+  const pickAction = PICK_ACTION[pick.action];
+  if (!pickAction) return null;
+  return (
+    <div className={cn("rounded-md border bg-surface px-3 py-2 text-[12.5px] leading-relaxed", className)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Sparkles className="size-3.5 text-primary" aria-hidden />
+        <Badge variant="outline" className={toneClass[pickAction.tone]}>
+          {pickAction.label}
+        </Badge>
+        <span className="text-muted-foreground">ثقة {pick.conviction}</span>
+      </div>
+      <p className="mt-1.5">{pick.comment}</p>
+      {pick.portfolioFit && (
+        <p className="mt-1">
+          <span className="text-muted-foreground">مع محفظتك: </span>
+          {pick.portfolioFit}
+        </p>
+      )}
+      <p className="mt-1 text-muted-foreground">راقب: {pick.watchFor}</p>
+    </div>
+  );
+}
+
 // Same cadence as the per-stock review on the portfolio page: the status
 // endpoint already long-polls, so this is only the gap between requests.
 const CASH_REVIEW_POLL_MS = 1000;
@@ -196,7 +233,11 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
   const [search, setSearch] = useState("");
   const { style, auto } = useActiveInvestStyle(pf?.trades);
   const [review, setReview] = useState<CashReview | null>(null);
-  const [reviewLoading, setReviewLoading] = useState(false);
+  const [plan, setPlan] = useState<ReviewedPlan | null>(null);
+  const [reviewFailed, setReviewFailed] = useState(false);
+  // The scan whose review has come back (or failed). Until it matches the
+  // scan on screen, the cash plan is still being reviewed and isn't shown.
+  const [reviewSettledFor, setReviewSettledFor] = useState<ScanRow>(null);
 
   // The invest style can still change once the portfolio loads (a saved one is
   // adopted then), and every change re-runs the whole-universe scan — so on a
@@ -239,16 +280,19 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
   // is what opens (or joins) the trial's cash-scan use the review rides on.
   // Cached server-side per day, portfolio, style and index, so reopening the
   // dialog on an unchanged book doesn't ask the model again.
+  // The review comes first: the engine's picks are a draft, and a stock the
+  // AI says to wait on must never appear as a recommendation. So nothing of
+  // the plan is shown until the review answers with the plan rebuilt from its
+  // calls. Without AI, or if the review fails, the engine's plan is shown as is.
   const cashToReview =
     focus === "cash" && aiAvailable && Boolean(data) && (data.cash ?? 0) > 0;
+  const planPending = cashToReview && reviewSettledFor !== data;
   useEffect(() => {
     setReview(null);
-    if (!cashToReview) {
-      setReviewLoading(false);
-      return;
-    }
+    setPlan(null);
+    setReviewFailed(false);
+    if (!cashToReview) return;
     let cancelled = false;
-    setReviewLoading(true);
     (async () => {
       try {
         let res = await post("/api/review/cash", { style, styleAuto: auto, index });
@@ -264,18 +308,21 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
             `/api/review/cash/status?style=${style}&index=${encodeURIComponent(index)}`,
           );
         }
-        if (!cancelled) setReview(res?.review ?? null);
+        if (!cancelled) {
+          setReview(res?.review ?? null);
+          setPlan(res?.plan ?? null);
+        }
       } catch (caught) {
         if (cancelled) return;
         if (caught instanceof ApiError && caught.status === 402) {
           await refreshUser();
           return;
         }
-        // Only the per-stock pick badges depend on this — no dedicated error UI,
-        // they just stay absent, same as when aiAvailable is false.
+        // The engine's plan is shown instead, marked as not reviewed.
+        setReviewFailed(true);
         console.warn("cash review failed:", caught instanceof Error ? caught.message : caught);
       } finally {
-        if (!cancelled) setReviewLoading(false);
+        if (!cancelled) setReviewSettledFor(data);
       }
     })();
     return () => {
@@ -295,8 +342,20 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
 
   const isCash = focus === "cash";
   const pickByCode = new Map((review?.picks ?? []).map((pick) => [pick.code, pick]));
+  // The reviewed plan replaces the engine's draft, row by row. While the
+  // review is still out, no stock counts as part of the plan at all.
+  const planRowByCode = new Map((plan?.rows ?? []).map((row) => [row.code, row]));
+  const cashPlan = plan?.cashPlan ?? data?.cashPlan;
   const rows = (data?.results ?? [])
-    .map((row: ScanRow) => applyQuote(row, quotes[row.code]))
+    .map((row: ScanRow) => {
+      const reviewed = planRowByCode.get(row.code);
+      const planned = planPending
+        ? { ...row, cashPlanSelected: false, cashPlanNote: null }
+        : reviewed
+          ? { ...row, ...reviewed }
+          : row;
+      return applyQuote(planned, quotes[row.code]);
+    })
     .sort(
       (a: ScanRow, b: ScanRow) =>
         (b.worthBuyingNow ? 1 : 0) - (a.worthBuyingNow ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0),
@@ -333,6 +392,18 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
       : rows;
   const unscanned = searching ? hits.filter((stock) => !rowByCode.has(stock.code)) : [];
 
+  // Shortlisted stocks the review said to wait on or skip: listed under the
+  // plan with the AI's reason, and no buy proposal.
+  const turnedDown: { pick: CashPick; row: ScanRow }[] =
+    isCash && plan
+      ? (review?.picks ?? []).flatMap((pick) => {
+          const row = rowByCode.get(pick.code);
+          return row && !row.cashPlanSelected && (pick.action === "wait" || pick.action === "skip")
+            ? [{ pick, row }]
+            : [];
+        })
+      : [];
+
   // The market's strongest stocks, beside the cash plan and independent of it:
   // no cash, sector or sizing limit applies — only that both analyses exist
   // (the server leaves styleStrength null for a stock with no fundamental
@@ -366,7 +437,7 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
     <div className="space-y-4">
       <p className="text-[12.5px] leading-relaxed text-muted-foreground">
         {isCash
-          ? `${STYLE_BASIS[style]} — بتوزيع مرجّح حسب قوة كل فرصة واحتياطي ${fmt(data?.cashPlan?.reserveCash ?? 0)} ج.`
+          ? `${STYLE_BASIS[style]} — بتوزيع مرجّح حسب قوة كل فرصة واحتياطي ${fmt(cashPlan?.reserveCash ?? 0)} ج.`
           : `ترتيب الأسهم حسب التقييم والفرص القابلة للتنفيذ${index !== "ALL" ? ` — أسهم ${index} بس` : ""}.`}{" "}
         حسب أسلوبك: {INVEST_STYLES.find((s) => s.key === style)?.label ?? "متوسط المدى"}
         {auto ? " (مستنتج من سلوكك في التداول)" : ""}.
@@ -411,6 +482,12 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
             <Spinner />
             {isCash ? "جاري تحليل استخدام الكاش…" : "جاري تحليل السوق…"}
           </p>
+          {isCash && (
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              التحليل بياخد شوية وقت، لأننا بنحلل كل الفرص الممكنة في السوق وبنحسب أنسب توزيع
+              للكاش بتاعك.
+            </p>
+          )}
           <LoadingBlock rows={4} />
         </div>
       )}
@@ -426,12 +503,14 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                 <>
                   <span>
                     القابل للتوزيع:{" "}
-                    <b className="num">{int(data.cashPlan?.investableCash ?? 0)} ج</b>
+                    <b className="num">{int(cashPlan?.investableCash ?? 0)} ج</b>
                   </span>
-                  <span>
-                    متوسط لكل سهم:{" "}
-                    <b className="num">{int(data.cashPlan?.allocationPerStock ?? 0)} ج</b>
-                  </span>
+                  {!planPending && (
+                    <span>
+                      متوسط لكل سهم:{" "}
+                      <b className="num">{int(cashPlan?.allocationPerStock ?? 0)} ج</b>
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -454,14 +533,37 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
           )}
 
           <div className={cn(isCash ? "space-y-3" : "grid gap-3 md:grid-cols-2")}>
-            {isCash && data && shown.length === 0 && (
+            {isCash && planPending && (
+              <div className="space-y-3">
+                <div role="status" className="space-y-1 text-[13px]">
+                  <p className="flex items-center gap-2 font-medium">
+                    <Spinner />
+                    جاري مراجعة الفرص بالذكاء الاصطناعي قبل عرض الخطة…
+                  </p>
+                  <p className="leading-relaxed text-muted-foreground">
+                    التحليل بياخد شوية وقت، لأننا بنراجع كل الفرص الممكنة سهم سهم وبنعيد حساب توزيع
+                    الكاش على الأسهم اللي تستاهل بس. استنى لحظات والخطة هتظهر هنا.
+                  </p>
+                </div>
+                <LoadingBlock rows={3} />
+              </div>
+            )}
+            {isCash && reviewFailed && !planPending && (
+              <Notice tone="warn">
+                تعذّرت مراجعة الذكاء الاصطناعي دلوقتي — دي خطة المحرك من غير مراجعة. جرّب تفتح تحليل
+                الكاش تاني بعد شوية.
+              </Notice>
+            )}
+            {isCash && data && !planPending && shown.length === 0 && (
               <Notice tone="info">
-                مفيش سهم دلوقتي مستوفي شروط خطة الكاش: فرصة قابلة للتنفيذ فنيًا ومعاها بيانات أساسية
-                للشركة. جرّب مؤشر تاني أو ارجع بعد جلسة.
+                {plan && turnedDown.length > 0
+                  ? `مراجعة الذكاء الاصطناعي ما وافقتش على أي سهم من المرشحين النهارده، فالأفضل الكاش يفضل كاش.${review?.headline ? ` ${review.headline}` : ""}`
+                  : "مفيش سهم دلوقتي مستوفي شروط خطة الكاش: فرصة قابلة للتنفيذ فنيًا ومعاها بيانات أساسية للشركة. جرّب مؤشر تاني أو ارجع بعد جلسة."}
               </Notice>
             )}
             {shown.map((row: ScanRow) => {
               const state = action(row, style);
+              const pick = isCash ? pickByCode.get(row.code) : undefined;
               return (
                 <div
                   key={row.code}
@@ -496,9 +598,13 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                     السعر {fmt(row.price)} · وقف {fmt(row.position?.stop ?? row.stop)}
                   </div>
 
-                  <Badge variant="outline" className={cn("mt-2.5", toneClass[state.tone])}>
-                    {state.label}
-                  </Badge>
+                  {/* A reviewed pick carries the AI's own call below; the engine's
+                      "actionable now" beside "buy on a pullback" would contradict it. */}
+                  {!pick && (
+                    <Badge variant="outline" className={cn("mt-2.5", toneClass[state.tone])}>
+                      {state.label}
+                    </Badge>
+                  )}
 
                   {isCash && <StockFigures row={row} style={style} className="mt-3" />}
 
@@ -552,47 +658,46 @@ export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
                     </Notice>
                   )}
 
-                  {isCash &&
-                    (() => {
-                      const pick = pickByCode.get(row.code);
-                      const pickAction = pick && PICK_ACTION[pick.action];
-                      if (pick && pickAction) {
-                        return (
-                          <div className="mt-3 rounded-md border bg-surface px-3 py-2 text-[12.5px] leading-relaxed">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Sparkles className="size-3.5 text-primary" aria-hidden />
-                              <Badge variant="outline" className={toneClass[pickAction.tone]}>
-                                {pickAction.label}
-                              </Badge>
-                              <span className="text-muted-foreground">ثقة {pick.conviction}</span>
-                            </div>
-                            <p className="mt-1.5">{pick.comment}</p>
-                            {pick.portfolioFit && (
-                              <p className="mt-1">
-                                <span className="text-muted-foreground">مع محفظتك: </span>
-                                {pick.portfolioFit}
-                              </p>
-                            )}
-                            <p className="mt-1 text-muted-foreground">راقب: {pick.watchFor}</p>
-                          </div>
-                        );
-                      }
-                      if (reviewLoading) {
-                        return (
-                          <p
-                            role="status"
-                            className="mt-3 flex items-center gap-2 text-[12px] text-muted-foreground"
-                          >
-                            <Spinner />
-                            جاري تحليل الفرصة بالذكاء الاصطناعي…
-                          </p>
-                        );
-                      }
-                      return null;
-                    })()}
+                  {pick && <PickVerdict pick={pick} className="mt-3" />}
                 </div>
               );
             })}
+
+            {turnedDown.length > 0 && (
+              <section className="space-y-2.5 border-t pt-4" aria-label="أسهم استبعدتها المراجعة">
+                <div>
+                  <h3 className="text-[14px] font-semibold">مرشحين استبعدتهم المراجعة</h3>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                    أسهم رشّحها المحرك، بس مراجعة الذكاء الاصطناعي شايفة إن ده مش وقتها — فمفيش اقتراح
+                    شراء ليها
+                    {shown.length > 0 ? "، والكاش بتاعها اتوزّع على الأسهم اللي فوق." : "."}
+                  </p>
+                </div>
+                {turnedDown.map(({ pick, row }) => (
+                  <div
+                    key={row.code}
+                    {...openable(row.code)}
+                    className={cn("rounded-lg border bg-card p-3", openableClass)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold">{row.code}</div>
+                        <div className="truncate text-[12px] text-muted-foreground">
+                          {row.name} · {row.sector}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="num text-[12px] text-muted-foreground">
+                          السعر {fmt(row.price)}
+                        </span>
+                        <ChevronLeft className="size-4 text-muted-foreground" aria-hidden />
+                      </div>
+                    </div>
+                    <PickVerdict pick={pick} className="mt-2.5" />
+                  </div>
+                ))}
+              </section>
+            )}
 
             {unscanned.map((stock) => (
               <div
