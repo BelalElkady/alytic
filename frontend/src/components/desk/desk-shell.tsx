@@ -54,7 +54,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, post } from "@/lib/api";
+import { api, ApiError, post } from "@/lib/api";
 import { arDay, exact, int, signed, tone } from "@/lib/format";
 import {
   INVEST_STYLES,
@@ -616,9 +616,16 @@ function DeskHeader() {
         toast.success(`تم تحديث ${imported} سهم من ${files.length} صورة`, { description: scope });
       }
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "تعذر قراءة الصور");
+      // A dropped connection (status 0) says nothing about whether the server
+      // finished: reload to show what was actually saved.
+      const dropped = caught instanceof ApiError && caught.status === 0;
+      toast.error(caught instanceof Error ? caught.message : "تعذر قراءة الصور", {
+        description: dropped
+          ? "الاتصال اتقطع. لو الصورة اتحفظت هتلاقيها في محفظتك — اتأكد قبل ما ترفعها تاني."
+          : undefined,
+      });
       // Earlier images in the batch may already be saved (and counted).
-      if (imported) void reload();
+      if (imported || dropped) void reload();
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

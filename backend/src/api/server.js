@@ -2024,6 +2024,17 @@ function withinScanSession(usage, kind) {
 function withinCashScanSession(usage) {
   return withinScanSession(usage, 'cashScans');
 }
+// True once the browser has dropped the connection before we answered. The
+// server keeps working after that (Express doesn't abort), so a long call that
+// ends in a save-and-charge would spend a use on a result the user was told
+// failed ("تعذر الوصول إلى الخادم"). Callers check this right before charging.
+function watchClientGone(res) {
+  let gone = false;
+  res.on('close', () => { if (!res.writableEnded) gone = true; });
+  return () => gone;
+}
+const CLIENT_GONE_MESSAGE = 'الاتصال انقطع قبل ما الطلب يخلص — مفيش حاجة اتحفظت ولا اتخصم من رصيدك. جرّب تاني.';
+
 // Spends one use of `kind` for this scan session, or joins an already-open
 // one for free — see the block comment above. Returns the usage record to
 // read the resulting *Left value from, or throws (429-worthy) if the
@@ -2052,6 +2063,7 @@ app.get('/api/scan', wrap(async (req, res) => {
   let cashScansLeftNow = null;
   let marketAnalysisLeftNow = null;
   const focusKind = SCAN_FOCUS_KIND[req.query.focus];
+  const clientGone = watchClientGone(res);
   const tier = req.access?.tier;
   const limitResponse = (err) => res.status(429).json({
     error: err.message,
@@ -2094,6 +2106,7 @@ app.get('/api/scan', wrap(async (req, res) => {
     marketAnalysisLeftNow,
     tier: req.access?.tier,
   });
+  if (focusKind && clientGone()) return;
   if (focusKind) {
     // Spent only now that the scan produced results: an empty one (every
     // stock failed to analyse) is a failure, and costs the user nothing.
@@ -3500,6 +3513,7 @@ function screenshotImportsLeft(usage, tier) {
 app.post('/api/portfolio/import-screenshot', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }), wrap(async (req, res) => {
   if (!aiAvailable()) return res.status(503).json({ error: 'استيراد الصورة محتاج OPENROUTER_API_KEY في .env' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة لمحفظتك أولاً' });
+  const clientGone = watchClientGone(res);
   const portfolioId = await portfolioIdFromRequest(req);
   // Checked before the model call so an exhausted allowance costs nothing.
   if (screenshotImportsLeft(await getUserUsage(req.user.id), req.access.tier) <= 0) {
@@ -3641,6 +3655,7 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
       throw new Error('اتقرت أكواد الأسهم، لكن الصورة لا تحتوي كمية أو قيمة مركز قابلة للحساب');
     }
     const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, portfolioId, ({ usage, portfolio }) => {
+      if (clientGone()) throw new Error(CLIENT_GONE_MESSAGE);
       if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
       const watchlist = { ...portfolio.watchlist };
       for (const c of watchCodes) watchlist[c] ??= { addedAt: importedAt, note: null };
@@ -3675,6 +3690,7 @@ Distinguish carefully: "marketValue" (القيمة السوقية) is the TOTAL 
   const { usage: updatedUsage, portfolio: updated } = await withPortfolioAndUsage(req.user.id, portfolioId, ({ usage, portfolio }) => {
     // Re-checked under the lock: parallel requests all pass the early check
     // while none of them has been recorded yet.
+    if (clientGone()) throw new Error(CLIENT_GONE_MESSAGE);
     if (leftFor('screenshots', usage, req.access.tier) <= 0) throw new Error(SCREENSHOT_LIMIT_MESSAGE);
     const next = {
       ...portfolio,
