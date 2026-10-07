@@ -2052,25 +2052,26 @@ app.get('/api/scan', wrap(async (req, res) => {
   let cashScansLeftNow = null;
   let marketAnalysisLeftNow = null;
   const focusKind = SCAN_FOCUS_KIND[req.query.focus];
+  const tier = req.access?.tier;
+  const limitResponse = (err) => res.status(429).json({
+    error: err.message,
+    reason: focusKind === 'cashScans' ? 'cash_scan_limit' : 'market_analysis_limit',
+    [`${focusKind}Left`]: 0,
+  });
+  // What this scan will leave in the allowance once it succeeds — the use is
+  // only spent after the analysis has actually produced something (below), so
+  // a failed scan costs nothing. Read before the scan, so the payload built
+  // inside runScan can carry the figure.
+  let leftBefore = null;
   if (focusKind) {
-    const tier = req.access?.tier;
-    let updated;
-    try {
-      // Checked/charged before the (still non-trivial, whole-universe)
-      // analysis runs, so an exhausted allowance costs nothing.
-      updated = await chargeScanSession(req.user.id, focusKind, tier);
-    } catch (err) {
-      if (err.scanLimitKind) {
-        return res.status(429).json({
-          error: err.message,
-          reason: focusKind === 'cashScans' ? 'cash_scan_limit' : 'market_analysis_limit',
-          [`${focusKind}Left`]: 0,
-        });
-      }
-      throw err;
+    const usage = await getUserUsage(req.user.id);
+    leftBefore = leftFor(focusKind, usage, tier);
+    if (!withinScanSession(usage, focusKind) && leftBefore <= 0) {
+      return limitResponse(new Error(SCAN_LIMIT_MESSAGE[focusKind]));
     }
-    if (focusKind === 'cashScans') cashScansLeftNow = leftFor('cashScans', updated, tier);
-    else marketAnalysisLeftNow = leftFor('marketAnalysis', updated, tier);
+    const leftIfCharged = withinScanSession(usage, focusKind) ? leftBefore : leftBefore - 1;
+    if (focusKind === 'cashScans') cashScansLeftNow = leftIfCharged;
+    else marketAnalysisLeftNow = leftIfCharged;
   }
 
   const indexCodes = req.query.index ? await codesForIndex(req.query.index) : null;
@@ -2093,6 +2094,25 @@ app.get('/api/scan', wrap(async (req, res) => {
     marketAnalysisLeftNow,
     tier: req.access?.tier,
   });
+  if (focusKind) {
+    // Spent only now that the scan produced results: an empty one (every
+    // stock failed to analyse) is a failure, and costs the user nothing.
+    if (!(payload.results?.length > 0)) {
+      if (focusKind === 'cashScans') payload.cashScansLeft = leftBefore;
+      else payload.marketAnalysisLeft = leftBefore;
+    } else {
+      try {
+        const updated = await chargeScanSession(req.user.id, focusKind, tier);
+        const left = leftFor(focusKind, updated, tier);
+        if (focusKind === 'cashScans') payload.cashScansLeft = left;
+        else payload.marketAnalysisLeft = left;
+      } catch (err) {
+        // Another request used up the last use while this scan was running.
+        if (err.scanLimitKind) return limitResponse(err);
+        throw err;
+      }
+    }
+  }
   res.json(payload);
 }));
 
