@@ -498,10 +498,6 @@ function useMarketStatus() {
   return open;
 }
 
-// The "sm" button is 32px tall — under the ~44px a fingertip needs, so near-miss
-// taps on the header's main actions did nothing. Full height on a phone only.
-const MOBILE_TAP_TARGET = "h-11 sm:h-8";
-
 function DeskHeader() {
   const { name: brandName } = useTenant();
   const {
@@ -572,8 +568,6 @@ function DeskHeader() {
         ? "خلصت محاولات تحليل السوق المتاحة الشهر ده — تتجدد الشهر الجاي"
         : `باقي ${marketAnalysisLeft}${marketAnalysisPerMonth && !pf?.credits?.marketAnalysis ? ` من ${marketAnalysisPerMonth}` : ""} ${marketAnalysisLeft === 1 ? "محاولة" : "محاولات"} الشهر ده`;
 
-  // The count sits inline inside the button. It used to hang off the corner,
-  // and a tap on that overhang landed on the page behind and did nothing.
   const marketButtonLabel = (
     <>
       <Radar className="size-4" />
@@ -581,18 +575,6 @@ function DeskHeader() {
       {marketAnalysisHint && (
         <span id="market-analysis-left-hint" className="sr-only">
           {marketAnalysisHint}
-        </span>
-      )}
-      {marketAnalysisLeft !== null && (
-        <span
-          aria-hidden
-          className={cn(
-            "num flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10.5px] font-semibold leading-none",
-            // Inverted against the filled button so the count doesn't blend into it.
-            marketAnalysisExhausted ? "bg-down text-white" : "bg-primary-foreground text-primary",
-          )}
-        >
-          {marketAnalysisLeft}
         </span>
       )}
     </>
@@ -652,11 +634,11 @@ function DeskHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/75">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-3 py-3 sm:px-5">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-3 py-2 sm:gap-3 sm:px-5 sm:py-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <Link to="/" aria-label={brandName} className="shrink-0">
-              <LogoMark className="size-9" />
+              <LogoMark className="size-8 sm:size-9" />
             </Link>
             <div className="min-w-0">
               <h1 className="truncate text-[15px] font-semibold tracking-tight">
@@ -675,7 +657,9 @@ function DeskHeader() {
             </div>
           </div>
 
-          <div className="order-3 flex w-full flex-wrap items-center gap-1.5 sm:order-2 sm:w-auto">
+          {/* One scrollable line on a phone instead of a wrapping block that
+              stacks into extra header rows; back to a wrapping group on sm+. */}
+          <div className="order-3 -mx-3 flex w-[calc(100%+1.5rem)] flex-nowrap items-center gap-1.5 overflow-x-auto px-3 sm:order-2 sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-x-visible sm:px-0">
             {marketOpen !== null && (
               <Badge
                 variant="outline"
@@ -749,7 +733,9 @@ function DeskHeader() {
 
         <div
           className={cn(
-            "flex flex-wrap items-center gap-2",
+            // One scrollable line on a phone (the top padding leaves room for
+            // the buttons' corner badges inside the scroll box); wraps on sm+.
+            "-mx-3 -mt-2 flex flex-nowrap items-center gap-2 overflow-x-auto px-3 pt-2.5 sm:mx-0 sm:mt-0 sm:flex-wrap sm:overflow-x-visible sm:px-0 sm:pt-0",
             // Every action here hits an endpoint the paywall answers with 402.
             locked && "hidden",
           )}
@@ -757,21 +743,14 @@ function DeskHeader() {
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="inline-flex" data-tour="market">
-                  {/* A link to the page while attempts remain. Once they are
-                      gone it stays tappable and says why (a hover tooltip never
-                      shows on a phone, so a dead button looked broken). */}
+                <span className="relative inline-flex" data-tour="market">
+                  {/* A link to the page while attempts remain; a disabled
+                      button once they are gone, as it was before it was a page. */}
                   <Button
                     size="sm"
                     asChild={!marketAnalysisExhausted}
-                    aria-disabled={marketAnalysisExhausted || undefined}
-                    onClick={
-                      marketAnalysisExhausted
-                        ? () => toast.info(marketAnalysisHint ?? "خلصت محاولات تحليل السوق")
-                        : undefined
-                    }
+                    disabled={marketAnalysisExhausted}
                     aria-describedby={marketAnalysisHint ? "market-analysis-left-hint" : undefined}
-                    className={cn(MOBILE_TAP_TARGET, marketAnalysisExhausted && "opacity-50")}
                   >
                     {marketAnalysisExhausted ? (
                       marketButtonLabel
@@ -779,6 +758,20 @@ function DeskHeader() {
                       <Link to="/market">{marketButtonLabel}</Link>
                     )}
                   </Button>
+                  {marketAnalysisLeft !== null && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "num pointer-events-none absolute -top-2 -end-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10.5px] font-semibold leading-none ring-2 ring-background",
+                        // Inverted against the filled button so the count doesn't blend into it.
+                        marketAnalysisExhausted
+                          ? "bg-down text-white"
+                          : "border border-primary bg-background text-primary",
+                      )}
+                    >
+                      {marketAnalysisLeft}
+                    </span>
+                  )}
                 </span>
               </TooltipTrigger>
               {marketAnalysisHint && <TooltipContent>{marketAnalysisHint}</TooltipContent>}
@@ -792,7 +785,6 @@ function DeskHeader() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className={MOBILE_TAP_TARGET}
                     onClick={() => fileRef.current?.click()}
                     disabled={uploading || screenshotsExhausted}
                     aria-describedby={screenshotsHint ? "screenshots-left-hint" : undefined}
@@ -823,13 +815,7 @@ function DeskHeader() {
               {screenshotsHint && <TooltipContent>{screenshotsHint}</TooltipContent>}
             </Tooltip>
           </TooltipProvider>
-          <Button
-            size="sm"
-            variant="outline"
-            className={MOBILE_TAP_TARGET}
-            onClick={() => openManual()}
-            data-tour="manual"
-          >
+          <Button size="sm" variant="outline" onClick={() => openManual()} data-tour="manual">
             <PencilLine className="size-4" />
             إدخال يدوي
           </Button>
