@@ -3,7 +3,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 
 import { SiteShell } from "@/components/marketing/site-shell";
-import { WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
+import { useWhatsappNumber, WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -130,6 +130,7 @@ const ADDON_PACKS: Record<(typeof FEATURE_ROWS)[number]["key"], { label: string;
 
 function PricingPage() {
   const { name: brandName } = useTenant();
+  const whatsappNumber = useWhatsappNumber();
   // Yearly by default: it's the better deal, and it's the price quoted per month below.
   const [period, setPeriod] = useState<Period>("yearly");
 
@@ -304,7 +305,7 @@ function PricingPage() {
           </div>
           <Button asChild variant="outline" className="mt-4">
             <a
-              href={whatsappLink("أهلًا، عايز أطلب رصيد إضافي.")}
+              href={whatsappLink(whatsappNumber, "أهلًا، عايز أطلب رصيد إضافي.")}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -360,7 +361,7 @@ function PricingPage() {
               {"whatsapp" in faq && faq.whatsapp && (
                 <Button asChild size="sm" className="mt-3 bg-[#25D366] text-white hover:bg-[#1ebe5b]">
                   <a
-                    href={whatsappLink("أهلًا، حوّلت اشتراك ودي صورة الدفع.")}
+                    href={whatsappLink(whatsappNumber, "أهلًا، حوّلت اشتراك ودي صورة الدفع.")}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

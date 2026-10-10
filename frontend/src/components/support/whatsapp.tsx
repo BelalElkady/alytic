@@ -1,12 +1,38 @@
 // The support WhatsApp line, shared by the chat widget's floating button and
 // the subscribe/pricing pages' "send us the payment screenshot" button.
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
-// Digits only, country code first — the form wa.me links require.
-export const WHATSAPP_NUMBER = "201099284928";
+// Digits only, country code first — the form wa.me links require. Used only
+// until /api/support/contact answers, so the backend's WHATSAPP_NUMBER env
+// var can change the number without a frontend rebuild.
+const DEFAULT_WHATSAPP_NUMBER = "201014879158";
+
+let cached: string | null = null;
+let pending: Promise<string> | null = null;
+
+function fetchWhatsappNumber(): Promise<string> {
+  if (cached) return Promise.resolve(cached);
+  if (!pending) {
+    pending = api<{ whatsapp?: string }>("/support/contact")
+      .then((data) => (cached = data.whatsapp || DEFAULT_WHATSAPP_NUMBER))
+      .catch(() => DEFAULT_WHATSAPP_NUMBER);
+  }
+  return pending;
+}
+
+/** The support WhatsApp number, refreshed once from the backend after the first render. */
+export function useWhatsappNumber(): string {
+  const [number, setNumber] = useState(cached ?? DEFAULT_WHATSAPP_NUMBER);
+  useEffect(() => {
+    fetchWhatsappNumber().then(setNumber);
+  }, []);
+  return number;
+}
 
 /** A wa.me link that opens a chat with the support line, with `text` already typed in. */
-export const whatsappLink = (text?: string) =>
-  `https://wa.me/${WHATSAPP_NUMBER}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+export const whatsappLink = (number: string, text?: string) =>
+  `https://wa.me/${number}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
 
 // lucide-react ships no brand icons, so the WhatsApp glyph is inlined.
 export const WhatsAppIcon = ({ className }: { className?: string }) => (

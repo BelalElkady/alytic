@@ -116,6 +116,14 @@ export const planForTenant = (tenant, key) => plansFor(tenant)[String(key ?? '')
 export const instapayFor = (tenant) => tenant?.config?.instapay ?? INSTAPAY;
 
 /**
+ * The support WhatsApp line shown on the pricing page and the chat widget's
+ * floating button. Digits only, country code first — the form wa.me links
+ * require. Set WHATSAPP_NUMBER to change it without a frontend rebuild —
+ * /api/support/contact hands it to the browser at runtime.
+ */
+export const WHATSAPP_NUMBER = process.env.WHATSAPP_NUMBER ?? '201014879158';
+
+/**
  * Calendar-month arithmetic that never rolls over: adding a month to Jan 31
  * lands on Feb 28/29, not Mar 3, so a subscription bought on the 31st keeps
  * renewing near month-end instead of drifting a day forward every period.

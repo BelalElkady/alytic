@@ -22,7 +22,7 @@ import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
-import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor } from '../billing/plans.js';
+import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, WHATSAPP_NUMBER } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
@@ -763,6 +763,12 @@ async function notifySupportBurst({ user, existing, preview, wantsHuman }) {
 // reaches a signed-in account whose transfer we can later match.
 app.get('/api/support/subscribe-info', wrap(async (req, res) => {
   res.json({ plans: Object.values(plansFor(req.tenant)), instapay: instapayFor(req.tenant) });
+}));
+
+// Public — unlike subscribe-info above, the WhatsApp number isn't sensitive,
+// and signed-out visitors need it too (pricing page, chat widget teaser).
+app.get('/api/support/contact', wrap(async (req, res) => {
+  res.json({ whatsapp: req.tenant?.config?.whatsapp ?? WHATSAPP_NUMBER });
 }));
 
 // Only marks the admin's messages read when the caller says the panel is

@@ -3,7 +3,7 @@ import { Check, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
+import { useWhatsappNumber, WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -46,6 +46,7 @@ export function SubscribePanel({
   initialMonths?: 1 | 12;
 }) {
   const { user, refreshUser } = useDesk();
+  const whatsappNumber = useWhatsappNumber();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tiers, setTiers] = useState<Record<Tier, TierLimits> | null>(null);
   const [pickedTier, setPickedTier] = useState<Tier>("long");
@@ -216,7 +217,7 @@ export function SubscribePanel({
           أول ما نراجع التحويل بنفعّل حسابك على طول.
         </p>
         <Button asChild className="mt-3 bg-[#25D366] text-white hover:bg-[#1ebe5b]">
-          <a href={whatsappLink(paymentMessage)} target="_blank" rel="noopener noreferrer">
+          <a href={whatsappLink(whatsappNumber, paymentMessage)} target="_blank" rel="noopener noreferrer">
             <WhatsAppIcon className="size-4" />
             ابعت سكرين الدفع على واتساب
           </a>

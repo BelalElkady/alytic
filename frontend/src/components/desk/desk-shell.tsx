@@ -35,7 +35,7 @@ import { Spinner, Stat } from "@/components/desk/state-blocks";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { ChatWidget } from "@/components/support/chat-widget";
-import { WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
+import { useWhatsappNumber, WhatsAppIcon, whatsappLink } from "@/components/support/whatsapp";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -200,6 +200,7 @@ const DEFAULT_SUSPENSION_MESSAGE =
  */
 function SuspendedWall() {
   const { user } = useDesk();
+  const whatsappNumber = useWhatsappNumber();
   return (
     <section className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
       <h2 className="text-[17px] font-semibold">الحساب متوقف</h2>
@@ -207,7 +208,7 @@ function SuspendedWall() {
         {user?.suspensionMessage || DEFAULT_SUSPENSION_MESSAGE}
       </p>
       <Button asChild className="mt-5 gap-2 bg-[#25D366] text-white hover:bg-[#25D366]/90">
-        <a href={whatsappLink()} target="_blank" rel="noopener noreferrer">
+        <a href={whatsappLink(whatsappNumber)} target="_blank" rel="noopener noreferrer">
           <WhatsAppIcon className="size-4" />
           تواصل معانا على واتساب
         </a>

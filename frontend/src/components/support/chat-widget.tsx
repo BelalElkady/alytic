@@ -21,7 +21,7 @@ import { api, post, postRaw } from "@/lib/api";
 import { useDesk } from "@/lib/store";
 import { useTenant, withBrand } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
-import { WHATSAPP_NUMBER, WhatsAppIcon } from "@/components/support/whatsapp";
+import { useWhatsappNumber, WhatsAppIcon } from "@/components/support/whatsapp";
 
 export type SupportMessage = {
   id: string;
@@ -158,6 +158,7 @@ type Mode = "menu" | "topics" | "human";
 export function ChatWidget() {
   const { name: brandName } = useTenant();
   const { user } = useDesk();
+  const whatsappNumber = useWhatsappNumber();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [bot, setBot] = useState<BotBubble[]>([]);
@@ -438,7 +439,7 @@ export function ChatWidget() {
       {/* Stacked above the launcher; the nudge bubble and chat panel sit above
           this in turn. */}
       <a
-        href={`https://wa.me/${WHATSAPP_NUMBER}`}
+        href={`https://wa.me/${whatsappNumber}`}
         target="_blank"
         rel="noopener noreferrer"
         aria-label="تواصل معانا على واتساب"
