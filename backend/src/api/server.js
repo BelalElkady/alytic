@@ -1542,6 +1542,17 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
     grantedBy: req.user.id,
     note,
   });
+  // Activating a plan gives the account a fresh allowance under its new
+  // tier rather than carrying over whatever it already used this month
+  // under the old one (e.g. the free trial) — admin-granted credits are
+  // untouched, only the four usage_* counters zero out.
+  await withUserUsage(target.id, (usage) => ({
+    ...usage,
+    cashScans: 0,
+    recommendations: 0,
+    screenshots: 0,
+    marketAnalysis: 0,
+  }));
   await recordSubscriptionGrant({
     userId: target.id,
     plan: plan?.key ?? 'custom',
