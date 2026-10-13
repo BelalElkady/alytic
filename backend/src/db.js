@@ -965,6 +965,24 @@ export async function getAllIndexOverrides() {
   );
 }
 
+/** @returns {{sessionDate:string,groups:object[],sourceUrl:string,fetchedAt:string}|null} the investor flows saved for this EGX session (see investorFlows.js), or null if none passed its checks. */
+export async function getInvestorFlows(sessionDate) {
+  const { data, error } = await platformDb.from('investor_flows').select('*').eq('session_date', sessionDate).maybeSingle();
+  if (error) throw new Error(`getInvestorFlows: ${error.message}`);
+  if (!data) return null;
+  return { sessionDate: data.session_date, groups: data.groups_json, sourceUrl: data.source_url, fetchedAt: data.fetched_at };
+}
+
+export async function saveInvestorFlows({ sessionDate, groups, sourceUrl }) {
+  must(
+    await platformDb.from('investor_flows').upsert(
+      { session_date: sessionDate, groups_json: groups, source_url: sourceUrl, fetched_at: new Date().toISOString() },
+      { onConflict: 'session_date' },
+    ),
+    'saveInvestorFlows',
+  );
+}
+
 /** @returns {{code:string,name:string}[]} every admin-added stock not in the generated universe — see config/universe.js's registerCustomStocks. */
 export async function getAllCustomStocks() {
   const { data, error } = await platformDb.from('custom_stocks').select('code, name');

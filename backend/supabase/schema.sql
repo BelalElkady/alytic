@@ -395,6 +395,19 @@ create table if not exists index_overrides (
   updated_by text
 );
 
+-- One closed session's net buying/selling by investor group (Egyptians, Arabs,
+-- foreigners, individuals, institutions), researched from the day's market
+-- news after the close. Platform-held market data like index_overrides: one
+-- row per session serves every site. A row exists only if it passed the
+-- checks in src/investorFlows.js; the indices page shows the current
+-- session's row, or no panel at all.
+create table if not exists investor_flows (
+  session_date date primary key,
+  groups_json jsonb not null,
+  source_url text not null,
+  fetched_at timestamptz not null default now()
+);
+
 -- Stocks an admin's index CSV upload named that weren't already in the
 -- generated config/universe.js. See config/universe.js's registerCustomStocks
 -- — these get merged into the live UNIVERSE/ALL_CODES/lookup() in memory at

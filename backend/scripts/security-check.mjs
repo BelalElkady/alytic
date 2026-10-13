@@ -182,7 +182,7 @@ function checkConfig() {
   else if (secret.length < 32) bad(area, 'SESSION_SECRET is shorter than 32 characters', 'openssl rand -hex 32');
   else pass(area, 'SESSION_SECRET is set and long enough');
 
-  const cron = ['BLOG_CRON_SECRET', 'STOP_PLAN_CRON_SECRET', 'DAILY_CLOSE_CRON_SECRET'];
+  const cron = ['BLOG_CRON_SECRET', 'STOP_PLAN_CRON_SECRET', 'DAILY_CLOSE_CRON_SECRET', 'INVESTOR_FLOWS_CRON_SECRET'];
   const values = cron.map((n) => env[n]).filter(Boolean);
   for (const name of cron) {
     if (!env[name]) info(area, `${name} is not set`, 'the endpoint stays closed (always 403) — fine if you do not use it');
@@ -314,7 +314,7 @@ async function checkLive(base) {
   admin.length ? fail('Access control', 'admin endpoints answered an anonymous request', admin.join('\n        ')) : pass('Access control', 'admin endpoints refuse anonymous callers');
 
   const cron = [];
-  for (const p of ['/cron/daily-close', '/cron/blog-generate', '/cron/stop-plan-generate']) {
+  for (const p of ['/cron/daily-close', '/cron/blog-generate', '/cron/stop-plan-generate', '/cron/investor-flows']) {
     const r = await probe(`${api}${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     if (!r.error && ![403, 404].includes(r.status)) cron.push(`${p} → ${r.status}`);
   }

@@ -21,7 +21,8 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
+import { currentSession, fetchAndSaveInvestorFlows, fetchSlot } from '../investorFlows.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, WHATSAPP_NUMBER } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
@@ -474,6 +475,25 @@ app.post('/api/cron/stop-plan-generate', cronLimiter, wrap(async (req, res) => {
   res.json({ ok: true, ...result });
 }));
 
+// Manual/ops trigger for the investor-flows research (see investorFlows.js) —
+// the recurring job itself runs in-process via startInvestorFlowsScheduler()
+// below. `date` is for backfilling a past session; `force` replaces a row that
+// already exists. The table is platform-held, so unlike the per-site crons
+// this does not loop over tenants: one search serves every site.
+const INVESTOR_FLOWS_CRON_SECRET = process.env.INVESTOR_FLOWS_CRON_SECRET;
+const investorFlowsStore = { get: getInvestorFlows, save: saveInvestorFlows };
+app.post('/api/cron/investor-flows', cronLimiter, wrap(async (req, res) => {
+  if (!safeEqual(req.get('X-Cron-Secret'), INVESTOR_FLOWS_CRON_SECRET)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
+  const date = req.body?.date ?? currentSession();
+  if (!isIsoDate(date) || !isTradingDay(date) || date > cairoToday()) {
+    return res.status(400).json({ error: 'date must be a past or current EGX trading day (YYYY-MM-DD)' });
+  }
+  res.json(await fetchAndSaveInvestorFlows({ date, request: requestStructuredOR, store: investorFlowsStore, force: req.body?.force === true }));
+}));
+
 // The prices the "اشترك" screen quotes. Payment details are deliberately not
 // here: users ask on the support chat and an admin sends them privately, so
 // no account number is published to anyone who can curl this.
@@ -553,7 +573,8 @@ app.use('/api', async (req, res, next) => {
     req.path === '/tenant' ||
     req.path === '/cron/blog-generate' ||
     req.path === '/cron/daily-close' ||
-    req.path === '/cron/stop-plan-generate'
+    req.path === '/cron/stop-plan-generate' ||
+    req.path === '/cron/investor-flows'
   ) return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
@@ -959,6 +980,14 @@ app.get('/api/indices/performance', wrap(async (_req, res) => {
   });
 
   res.json({ asOf: new Date().toISOString(), indices });
+}));
+
+// Who bought and sold in the last closed session (see investorFlows.js). Only
+// the current session's row is ever served — never an older one — so between
+// the close and the research landing, the answer is null and the page shows
+// no panel at all rather than yesterday's figures as if they were current.
+app.get('/api/indices/investor-flows', wrap(async (_req, res) => {
+  res.json({ flows: await getInvestorFlows(currentSession()) });
 }));
 
 // The whole-market heatmap on the same page: every analysable stock's change
@@ -3290,6 +3319,35 @@ function startStopPlanScheduler() {
 }
 
 /**
+ * Researches who bought and sold each session (see investorFlows.js) once the
+ * close has been reported: hourly from 15:30 to 20:30 Cairo on trading days,
+ * stopping the moment a row is saved (later attempts find it and cost no AI
+ * call). Deliberately its own job rather than a step of the daily close — a
+ * slow web search must never delay portfolio snapshots. Like the stop-plan
+ * scheduler it checks the clock every 30s and fires once per hourly slot.
+ */
+let investorFlowsRanForSlot = null;
+function startInvestorFlowsScheduler() {
+  setInterval(async () => {
+    if (!aiAvailable()) return;
+    const due = fetchSlot();
+    if (!due) return;
+    const slot = `${due.date}:${due.slot}`;
+    if (investorFlowsRanForSlot === slot) return;
+    investorFlowsRanForSlot = slot;
+    try {
+      const result = await fetchAndSaveInvestorFlows({ date: due.date, request: requestStructuredOR, store: investorFlowsStore });
+      if (result.status !== 'exists') console.log('[investor-flows]', due.date, JSON.stringify(result));
+    } catch (err) {
+      // The guard stays set: a throw here comes from the database after the
+      // research has already been paid for, so retrying every 30s would spend
+      // a web search per tick. The next hourly slot tries again.
+      console.error('[investor-flows] failed:', err.message);
+    }
+  }, 30_000);
+}
+
+/**
  * Backfill the daily log from real historical closes.
  *
  * A fresh install has no history, so the calendar and the equity curve have
@@ -4176,6 +4234,7 @@ if (isDirectRun) {
   warnAboutWeakConfig();
   startDailyCloseScheduler();
   startStopPlanScheduler();
+  startInvestorFlowsScheduler();
   const PORT = process.env.PORT ?? 3000;
   app.listen(PORT, () => {
     console.log(`Alytic على http://localhost:${PORT}`);
