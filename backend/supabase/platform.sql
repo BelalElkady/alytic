@@ -8,7 +8,7 @@
 -- (and so only you) has.
 --
 -- The market data every client reads (market_reports, ai_stop_plans,
--- fundamentals_cache, index_overrides, custom_stocks) always lives in the
+-- fundamentals_cache, index_overrides, investor_flows, custom_stocks) always lives in the
 -- platform database, so the daily AI market work is paid for once and not
 -- once per client. The same tables exist but stay empty in client databases.
 --

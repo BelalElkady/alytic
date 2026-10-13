@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { InvestorFlows } from "@/components/desk/investor-flows";
 import { MarketHeatmap } from "@/components/desk/market-heatmap";
 import { ErrorState, LoadingBlock, Panel } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
@@ -101,6 +102,8 @@ function IndicesPage() {
           <IndexCard key={row.name} row={row} />
         ))}
       </div>
+
+      <InvestorFlows />
 
       <MarketHeatmap />
     </div>

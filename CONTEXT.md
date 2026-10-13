@@ -68,6 +68,10 @@ _Avoid_: Screenshot order, manual order, insertion order
 A buy, hold, sell or reduce call on one stock that the app handed a User, with its reference price, target, stop and horizon. Logged when it's issued and never edited afterwards. It ends as hit target, hit stop or expired. The model's wider vocabulary (accumulate, take profit, exit…) folds into these four, and "wait"/"avoid" aren't Recommendations.
 _Avoid_: Signal, tip, verdict (a verdict is the model's raw output, before it's logged)
 
+**Investor flows**:
+One closed session's net buying or selling per investor group (Egyptians, Arabs, foreigners, individuals, institutions), taken from the market-wrap news after the close and shown only if it passed the app's checks and belongs to the current session. Labelled "تعاملات المستثمرين".
+_Avoid_: Order flow, fund flows
+
 **Track record**:
 How Recommendations performed once resolved: hit rate, returns, and returns against EGX30. Labelled "سجل الأداء".
 _Avoid_: Backtest (it only covers calls that were actually issued, never simulated ones)
