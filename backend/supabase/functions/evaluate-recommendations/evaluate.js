@@ -4,16 +4,24 @@
  * code.
  *
  * A call is walked session by session, starting with the first session after
- * the day it was issued:
- *   - stop breached by a CLOSE (close ≤ stop for a buy) → hit_stop, filled at
- *     the next session's open. That is the rule the product gives its users
- *     ("a close under the stop is a full exit, sell at the open"), so an
- *     intraday dip that recovers by the close is not a loss. Until that next
- *     session is recorded the call stays open. A session that closes under
- *     the stop and also touched the target counts as the stop: daily bars
- *     can't say which came first, and the record should never flatter itself.
- *   - target touched (high ≥ target, or low ≤ target for sell/reduce)
- *     → hit_target.
+ * the day it was issued, and scored the way the app tells a User to manage it
+ * (R1 and R3 in src/agent/prompts/system.js), per its Investing style
+ * (STYLE_RULES):
+ *   - stop breached by CLOSES (close ≤ stop for a buy; two closes in a row
+ *     for the long style, one otherwise) → hit_stop, filled at the next
+ *     session's open. An intraday dip that recovers by the close is not a
+ *     loss. Until that next session is recorded the call stays open. A
+ *     session that closes under the stop never also banks the target: daily
+ *     bars can't say which came first, and the record should never flatter
+ *     itself.
+ *   - target touched (high ≥ target) on a buy → the style's share is sold
+ *     there (half, a third or a quarter) and the stop on the rest is raised
+ *     to 4, 8 or 12% under that price. The rest then runs to that stop or to
+ *     the horizon, and the call closes as hit_target with the two parts'
+ *     blended return (target_sessions: the session the target printed). The
+ *     new, higher target the app would set after is not followed, and
+ *     neither is the trailing stop or the fundamental-hold exception.
+ *   - target touched on a sell/reduce (low ≤ target) → hit_target, in full.
  *   - neither, and the session count reaches horizon_days → expired, at that
  *     session's close.
  * A session that opens beyond the target fills at the open, not at the target.
@@ -47,6 +55,22 @@ const LONG_ACTIONS = new Set(['buy', 'hold']);
 const INDICES = ['EGX30', 'EGX70', 'EGX33', 'EGX100'];
 
 export const directionOf = (action) => (LONG_ACTIONS.has(action) ? 1 : -1);
+
+/**
+ * How the app manages a bought Position, per Investing style: the closes in a
+ * row under the stop that make it an exit (stop.confirmCloses), the share sold
+ * when the target prints (takeProfit.atTargetFraction) and how far under that
+ * price the stop on the rest goes (takeProfit.raiseStopAfterTargetPct).
+ * Copied from src/config (rules.js + styles.js), not imported: the Edge
+ * Function only ships this folder. A unit test keeps the two in step.
+ */
+export const STYLE_RULES = {
+  trader: { confirmCloses: 1, atTargetFraction: 0.5, raiseStopAfterTargetPct: 4 },
+  medium: { confirmCloses: 1, atTargetFraction: 1 / 3, raiseStopAfterTargetPct: 8 },
+  long: { confirmCloses: 2, atTargetFraction: 0.25, raiseStopAfterTargetPct: 12 },
+};
+// A call logged without a style gets the default one (DEFAULT_STYLE in src/config/styles.js).
+const styleRules = (style) => STYLE_RULES[style] ?? STYLE_RULES.medium;
 
 const round = (x, digits) => {
   const f = 10 ** digits;
@@ -154,10 +178,18 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
   const ref = num(rec.ref_price);
   const levelled = rec.action !== 'hold';
   const baseTarget = levelled ? num(rec.target_price) : null;
-  const baseStop = levelled ? num(rec.stop_price) : null;
   const horizon = Number(rec.horizon_days);
+  const style = styleRules(rec.style);
+  // A buy is managed like the Position it opens: part sold at the target, the
+  // rest kept under a raised stop. Sell and reduce exit in full at theirs.
+  const scalesOut = rec.action === 'buy';
   // The call's prices on the basis each session trades on (see basisFactors).
   const factors = basisFactors(ref, bars);
+  // The stop on the call's own basis; raised once the target banks part.
+  let baseStop = levelled ? num(rec.stop_price) : null;
+  let closesUnder = 0;
+  // The part sold at the target: its fraction, return, excess and session count.
+  let banked = null;
 
   const returnAt = (price, factor) => round(dir * (price / (ref * factor) - 1) * 100, 2);
   const excessOver = (index, ret, date) => {
@@ -177,6 +209,29 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
     };
   };
 
+  // The whole call's return and excess when the rest is at `price` on `date`:
+  // the part banked at the target and the rest, each weighted by its size.
+  const blended = (price, factor, date) => {
+    const ret = returnAt(price, factor);
+    const excess = excessAt(ret, date);
+    if (!banked) return { ret, excess };
+    const f = banked.fraction;
+    const mix = (a, b) => (a == null || b == null ? null : round(f * a + (1 - f) * b, 2));
+    const byIndex = {};
+    for (const index of INDICES) {
+      const x = mix(banked.excess.byIndex?.[index], excess.byIndex?.[index]);
+      if (x != null) byIndex[index] = x;
+    }
+    return {
+      ret: mix(banked.ret, ret),
+      excess: {
+        egx30: mix(banked.excess.egx30, excess.egx30),
+        benchmark: mix(banked.excess.benchmark, excess.benchmark),
+        byIndex: Object.keys(byIndex).length ? byIndex : null,
+      },
+    };
+  };
+
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
     const open = num(bar.open);
@@ -184,18 +239,22 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
     const low = num(bar.low);
     const close = num(bar.close);
 
-    const target = baseTarget == null ? null : baseTarget * factors[i];
+    const target = baseTarget == null || banked ? null : baseTarget * factors[i];
     const stop = baseStop == null ? null : baseStop * factors[i];
-    const stopBreached = stop != null && (dir > 0 ? close <= stop : close >= stop);
-    const targetHit = target != null && (dir > 0 ? high >= target : low <= target);
+    const closedPastStop = stop != null && (dir > 0 ? close <= stop : close >= stop);
+    closesUnder = closedPastStop ? closesUnder + 1 : 0;
+    const stopFired = closedPastStop && closesUnder >= style.confirmCloses;
+    // A session that closes past the stop never banks the target: daily bars
+    // can't say which came first, and the record should never flatter itself.
+    const targetHit = !closedPastStop && target != null && (dir > 0 ? high >= target : low <= target);
 
-    // The session the call closes on, and the price it closes at.
+    // The session the call closes on, and the price the rest leaves at.
     let status = null;
     let exit = null;
     let at = bar;
     let atFactor = factors[i];
     let sessions = i + 1;
-    if (stopBreached) {
+    if (stopFired) {
       // Filled at the next session's open; not recorded yet → stay open.
       const next = bars[i + 1];
       if (!next) break;
@@ -205,26 +264,43 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
       sessions = i + 2;
       exit = num(next.open) ?? close;
     } else if (targetHit) {
-      status = 'hit_target';
-      exit = open == null ? target : dir > 0 ? Math.max(target, open) : Math.min(target, open);
+      const fill = open == null ? target : dir > 0 ? Math.max(target, open) : Math.min(target, open);
+      if (scalesOut) {
+        // Sell the style's share here; the rest runs under a stop raised under the fill.
+        const ret = returnAt(fill, factors[i]);
+        banked = { fraction: style.atTargetFraction, ret, excess: excessAt(ret, bar.date), sessions };
+        const raised = (fill * (1 - style.raiseStopAfterTargetPct / 100)) / factors[i];
+        baseStop = baseStop == null ? raised : Math.max(baseStop, raised);
+        closesUnder = 0;
+        if (sessions >= horizon) {
+          status = 'expired';
+          exit = close;
+        }
+      } else {
+        status = 'hit_target';
+        exit = fill;
+      }
     } else if (sessions >= horizon) {
       status = 'expired';
       exit = close;
     }
 
     if (status) {
-      const ret = returnAt(exit, atFactor);
-      const excess = excessAt(ret, at.date);
+      const { ret, excess } = blended(exit, atFactor, at.date);
+      // The price the whole call left at on average, on the closing session's basis.
+      const exitPrice = banked ? ref * atFactor * (1 + (dir * ret) / 100) : exit;
       return {
-        status,
+        // Reaching the target decides the label; whether it was a win is the blended return.
+        status: banked ? 'hit_target' : status,
         closed_at: sessionCloseAt(at.date),
-        exit_price: round(exit, 4),
+        exit_price: round(exitPrice, 4),
         return_pct: ret,
         excess_return_pct: excess.egx30,
         benchmark_excess_pct: excess.benchmark,
         index_excess: excess.byIndex,
         sessions_elapsed: sessions,
-        mark_price: round(exit, 4),
+        target_sessions: banked ? banked.sessions : status === 'hit_target' ? sessions : null,
+        mark_price: round(exitPrice, 4),
         mark_return_pct: ret,
         mark_excess_return_pct: excess.egx30,
         mark_benchmark_excess_pct: excess.benchmark,
@@ -234,15 +310,15 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
   }
 
   const last = bars[bars.length - 1];
-  const markRet = returnAt(num(last.close), factors[factors.length - 1]);
-  const markExcess = excessAt(markRet, last.date);
+  const mark = blended(num(last.close), factors[factors.length - 1], last.date);
   return {
     status: 'open',
     sessions_elapsed: bars.length,
+    target_sessions: banked ? banked.sessions : null,
     mark_price: round(num(last.close), 4),
-    mark_return_pct: markRet,
-    mark_excess_return_pct: markExcess.egx30,
-    mark_benchmark_excess_pct: markExcess.benchmark,
-    mark_index_excess: markExcess.byIndex,
+    mark_return_pct: mark.ret,
+    mark_excess_return_pct: mark.excess.egx30,
+    mark_benchmark_excess_pct: mark.excess.benchmark,
+    mark_index_excess: mark.excess.byIndex,
   };
 }

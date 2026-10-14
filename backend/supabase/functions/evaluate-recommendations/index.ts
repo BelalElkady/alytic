@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
     const open = await fetchAll((from, to) =>
       db
         .from('recommendations')
-        .select('id, status, ticker, action, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, benchmark, indices_at_issue, issued_on')
+        .select('id, status, ticker, action, style, ref_price, target_price, stop_price, horizon_days, egx30_at_issue, benchmark, indices_at_issue, issued_on')
         .or('status.eq.open,stock_move_final.eq.false')
         .order('id')
         .range(from, to),

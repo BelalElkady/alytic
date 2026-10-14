@@ -303,7 +303,9 @@ const r2 = (x) => (x == null ? null : round(x, 2));
 const n = (x) => (x == null ? null : Number(x));
 
 /**
- * Whether a closed call worked. Hitting the target is a win and the stop a
+ * Whether a closed call worked. A buy that hit its target sold only part
+ * there and kept the rest under a raised stop, so it wins if the two parts
+ * together made money (a sell/reduce at its target always has); the stop is a
  * loss; a call that ran out its horizon wins if it made money — except a
  * hold, which is judged against its own benchmark index then ("keep it" was
  * right if it didn't lag that index), falling back to EGX30 for calls logged
@@ -311,7 +313,7 @@ const n = (x) => (x == null ? null : Number(x));
  */
 export function isWin(row) {
   if (row.status === 'open') return null;
-  if (row.status === 'hit_target') return true;
+  if (row.status === 'hit_target') return n(row.return_pct) > 0;
   if (row.status === 'hit_stop') return false;
   if (row.action === 'hold') return n(row.benchmark_excess_pct ?? row.excess_return_pct ?? row.return_pct) >= 0;
   return n(row.return_pct) > 0;
@@ -378,7 +380,8 @@ function summarize(rows, vs) {
   const wins = returns.filter((x) => x > 0);
   const losses = returns.filter((x) => x < 0);
   const excess = closed.map((r) => excessOf(r, vs)).filter((x) => x != null);
-  const toTarget = closed.filter((r) => r.status === 'hit_target').map((r) => r.sessions_elapsed);
+  // The session the target printed, not the one the rest left on.
+  const toTarget = closed.filter((r) => r.status === 'hit_target').map((r) => r.target_sessions ?? r.sessions_elapsed);
   const won = closed.filter(isWin).length;
   const avgWin = mean(wins);
   const avgLoss = mean(losses);
@@ -430,11 +433,14 @@ const ROWS_SHOWN = 300;
 /**
  * The scoring rules a call was resolved under. 1 is the original rules (an
  * intraday touch of the stop closed a call, a hold carried a stop, and a split
- * could read as a crash); 2 is the current ones. The page's figures cover
- * calls scored under the current rules only — older ones stay listed, tagged,
- * but never feed the headline. A project without the column is all current.
+ * could read as a crash); 2 needed a close under the stop and judged a hold
+ * at its horizon; 3 is the current ones, which also follow the app's own
+ * management of a buy (two closes under the stop for the long style, part
+ * sold at the target — see evaluate.js). The page's figures cover calls
+ * scored under the current rules only — older ones stay listed, tagged, but
+ * never feed the headline. A project without the column is all current.
  */
-export const CURRENT_SCORING = 2;
+export const CURRENT_SCORING = 3;
 export const isLegacy = (row) => Number(row.scoring_version ?? CURRENT_SCORING) < CURRENT_SCORING;
 
 /** Closed calls under the current rules before the headline figures are shown: fewer say nothing. */
