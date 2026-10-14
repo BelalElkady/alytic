@@ -1,9 +1,17 @@
 import { Link } from "@tanstack/react-router";
-import { Moon, Sun } from "lucide-react";
+import { Menu, Moon, Sun } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { ChatWidget } from "@/components/support/chat-widget";
@@ -48,6 +56,33 @@ export function SiteShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="flex items-center gap-2">
+            {/* The inline nav above is md+ only; below that the same links
+                live in this sheet so mobile visitors can still reach them. */}
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="md:hidden" aria-label="القائمة">
+                  <Menu className="size-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-64">
+                <SheetHeader>
+                  <SheetTitle>القائمة</SheetTitle>
+                </SheetHeader>
+                <nav className="mt-4 flex flex-col gap-1" aria-label="روابط الموقع">
+                  {LINKS.map((link) => (
+                    <SheetClose asChild key={link.to}>
+                      <Link
+                        to={link.to}
+                        activeOptions={{ exact: link.to === "/" }}
+                        className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-accent data-[status=active]:text-foreground"
+                      >
+                        {link.label}
+                      </Link>
+                    </SheetClose>
+                  ))}
+                </nav>
+              </SheetContent>
+            </Sheet>
             <Button variant="ghost" size="icon" onClick={toggle} aria-label="تبديل الوضع الليلي">
               {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>
