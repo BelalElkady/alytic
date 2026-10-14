@@ -67,6 +67,17 @@ export function SiteFooter() {
             </Link>
           ))}
         </nav>
+        <p className="text-[13px] font-medium text-muted-foreground">
+          مدعوم من{" "}
+          <a
+            href="https://growpin.co/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-foreground underline-offset-4 hover:underline"
+          >
+            Growpin
+          </a>
+        </p>
       </div>
     </footer>
   );
