@@ -66,6 +66,13 @@ test('a marketer reads the users table and can do nothing else', async () => {
   assert.equal((await request(baseUrl, 'GET', '/api/admin/users', { cookie: marketer.cookie })).status, 200);
   assert.equal((await request(baseUrl, 'GET', '/api/admin/online', { cookie: marketer.cookie })).status, 200);
 
+  // The one write they have: ticking the WhatsApp / email follow-up boxes.
+  const tick = await request(baseUrl, 'POST', `/api/admin/users/${other.user.id}/follow-up`, {
+    cookie: marketer.cookie,
+    body: { channel: 'whatsapp', done: true },
+  });
+  assert.equal(tick.status, 200);
+
   assert.equal((await request(baseUrl, 'GET', '/api/admin/support', { cookie: marketer.cookie })).status, 403);
   assert.equal((await request(baseUrl, 'GET', '/api/admin/blog-drafts', { cookie: marketer.cookie })).status, 403);
   // Not even the role change: a marketer can't promote themselves or anyone.
