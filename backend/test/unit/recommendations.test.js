@@ -8,7 +8,7 @@ import { RULES } from '../../src/config/rules.js';
 import { rulesForStyle } from '../../src/config/styles.js';
 import {
   recommendationRow, isWin, benchmarkFor, wasRight, withoutOpenDuplicates, buildTrackRecord, isLegacy, MIN_CLOSED_FOR_HEADLINE,
-  fallTargetFrom, levelsFromAnalysis, MIN_FALL_TARGET_PCT,
+  fallTargetFrom, levelsFromAnalysis, levelsFromScanRow, MIN_FALL_TARGET_PCT,
 } from '../../src/recommendations.js';
 
 const rec = (over = {}) => ({
@@ -170,6 +170,9 @@ test('recommendationRow: maps verdict actions and drops calls with nothing to me
   assert.equal(row.ticker, 'COMI');
   assert.equal(row.horizon_days, 18);
   assert.equal(row.target_price, 120);
+  // The cash review's picks: buy_now is a buy; buy_on_pullback waits for a price, so it isn't logged.
+  assert.equal(recommendationRow({ userId: 'u1', code: 'COMI', action: 'buy_now', levels, style: 'medium', source: 'cash_review' }).action, 'buy');
+  assert.equal(recommendationRow({ userId: 'u1', code: 'COMI', action: 'buy_on_pullback', levels, style: 'medium', source: 'cash_review' }), null);
   assert.equal(recommendationRow({ userId: 'u1', code: 'COMI', action: 'wait', levels, style: 'medium', source: 's' }), null);
   assert.equal(recommendationRow({ userId: 'u1', code: 'COMI', action: 'buy', levels: { refPrice: 0 }, source: 's' }), null);
 });
@@ -402,6 +405,14 @@ test('recommendationRow: a sell or reduce carries its fall target but never a st
   assert.equal(hold.horizon_days, 60);
   assert.equal(hold.target_price, null);
   assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'buy', levels, style: 'long', source: 's' }).target_price, 130);
+});
+
+test('levelsFromScanRow: a long-style pick is judged by the long target, others by the mid one', () => {
+  const row = { price: 100, stop: 92, midTarget: { price: 112, horizon: { sessions: 20 } }, longTarget: { price: 130, horizon: { sessions: 90 } } };
+  assert.deepEqual(levelsFromScanRow(row, 'long'), { refPrice: 100, target: 130, stop: 92, horizonSessions: 90 });
+  assert.deepEqual(levelsFromScanRow(row, 'medium'), { refPrice: 100, target: 112, stop: 92, horizonSessions: 20 });
+  // No long target projected (e.g. a downtrend): the mid one stands in.
+  assert.equal(levelsFromScanRow({ ...row, longTarget: null }, 'long').target, 112);
 });
 
 test('levelsFromAnalysis: reads the fall target from the stock\'s mapped supports', () => {
