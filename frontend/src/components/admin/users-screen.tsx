@@ -235,7 +235,7 @@ function FollowUpBox({ row, channel, p }: { row: AdminUserRow; channel: FollowUp
     >
       <Checkbox
         checked={checked}
-        disabled={p.readOnly || pending !== null}
+        disabled={pending !== null}
         onCheckedChange={(value) => void toggle(value === true)}
         aria-label={`متابعة ${row.name || row.email} على ${CHANNEL_LABEL[channel]}`}
         className="size-5"

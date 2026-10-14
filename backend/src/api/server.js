@@ -1031,12 +1031,15 @@ app.get('/api/indices/heatmap', analysisLimiter, wrap(async (_req, res) => {
 // confirmation link (which only the real owner receives) has been used.
 //
 // A marketer is not an admin: they get exactly the two reads behind the users
-// table (the list, and the online-now counter above it) and nothing else — no
-// writes, no support inbox, no blog, no indices. It is an allowlist on purpose,
-// so a new /api/admin route is closed to marketers until someone adds it here.
+// table (the list, and the online-now counter above it) plus ticking the
+// WhatsApp / email follow-up boxes — that is their job — and nothing else: no
+// other writes, no support inbox, no blog, no indices. It is an allowlist on
+// purpose, so a new /api/admin route is closed to marketers until someone adds it here.
 const MARKETER_READS = new Set(['GET /users', 'GET /online']);
+const isMarketerAllowed = (req) =>
+  MARKETER_READS.has(`${req.method} ${req.path}`) || (req.method === 'POST' && /^\/users\/[^/]+\/follow-up$/.test(req.path));
 app.use('/api/admin', (req, res, next) => {
-  if (req.user?.isMarketer && req.user.emailVerified && MARKETER_READS.has(`${req.method} ${req.path}`)) return next();
+  if (req.user?.isMarketer && req.user.emailVerified && isMarketerAllowed(req)) return next();
   if (!req.user?.isAdmin || !req.user.emailVerified) return res.status(403).json({ error: 'للمشرفين فقط' });
   next();
 });
@@ -1635,8 +1638,7 @@ app.delete('/api/admin/users/:id', wrap(async (req, res) => {
 
 // Ticks or clears one box of the admin's follow-up checklist in the users
 // table — "reached on WhatsApp" / "reached by email". Body: { channel:
-// 'whatsapp' | 'email', done: boolean }. Admins only: it isn't in
-// MARKETER_READS, so a marketer sees the boxes but can't change them.
+// 'whatsapp' | 'email', done: boolean }. Admins and marketers (see isMarketerAllowed).
 app.post('/api/admin/users/:id/follow-up', wrap(async (req, res) => {
   const channel = String(req.body?.channel ?? '');
   if (!FOLLOW_UP_CHANNELS.includes(channel)) return res.status(400).json({ error: 'القناة لازم تكون واتساب أو إيميل' });
