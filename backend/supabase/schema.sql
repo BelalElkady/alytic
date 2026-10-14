@@ -645,16 +645,25 @@ end $$;
 
 -- The scoring rules a call was resolved under. 1 = the original rules (an
 -- intraday touch of the stop closed a call, a hold carried a stop, a split
--- could read as a crash); 2 = the current ones (a stop needs a close under it,
--- a hold is judged at its horizon, prices are rebased across corporate
--- actions). New calls are stamped 2 by the guard trigger below. The page's
--- figures cover version 2 only; version 1 calls stay listed, tagged.
+-- could read as a crash); 2 = a stop needs a close under it, a hold is judged
+-- at its horizon, prices are rebased across corporate actions; 3 = the
+-- current ones, which also follow the app's management of a buy (two closes
+-- under the stop for the long style; at the target part is sold and the rest
+-- runs under a raised stop — see evaluate.js). New calls are stamped 3 by the
+-- guard trigger below, and patch-rescore-v3.sql re-opened every older call to
+-- be scored again. The page's figures cover the current version only; any
+-- older call stays listed, tagged.
 -- Safe to re-run: only rows with no version yet are touched. Calls already
 -- closed when this first runs were resolved by the old rules; calls still open
 -- are scored by the current evaluator from here on.
 alter table recommendations add column if not exists scoring_version smallint;
 update recommendations set scoring_version = 1 where scoring_version is null and status <> 'open';
 update recommendations set scoring_version = 2 where scoring_version is null;
+
+-- For a buy that hit its target: the session the target printed (counted like
+-- sessions_elapsed). The call itself closes later, when the rest leaves, so
+-- sessions_elapsed alone can't say how long the target took. Null otherwise.
+alter table recommendations add column if not exists target_sessions integer;
 
 -- What actually happened to the stock, apart from how the call was scored:
 -- its close at the end of the call's horizon (the session numbered
@@ -711,7 +720,8 @@ begin
     new.stock_move_sessions := 0;
     new.stock_move_final := false;
     new.evaluated_at := null;
-    new.scoring_version := 2;
+    new.target_sessions := null;
+    new.scoring_version := 3;
     return new;
   end if;
 
@@ -736,11 +746,13 @@ begin
   if old.status <> 'open'
      and (new.status, new.closed_at, new.exit_price, new.return_pct, new.excess_return_pct, new.sessions_elapsed,
           new.mark_price, new.mark_return_pct, new.mark_excess_return_pct, new.evaluated_at,
-          new.benchmark_excess_pct, new.index_excess, new.mark_benchmark_excess_pct, new.mark_index_excess)
+          new.benchmark_excess_pct, new.index_excess, new.mark_benchmark_excess_pct, new.mark_index_excess,
+          new.target_sessions, new.scoring_version)
          is distinct from
          (old.status, old.closed_at, old.exit_price, old.return_pct, old.excess_return_pct, old.sessions_elapsed,
           old.mark_price, old.mark_return_pct, old.mark_excess_return_pct, old.evaluated_at,
-          old.benchmark_excess_pct, old.index_excess, old.mark_benchmark_excess_pct, old.mark_index_excess) then
+          old.benchmark_excess_pct, old.index_excess, old.mark_benchmark_excess_pct, old.mark_index_excess,
+          old.target_sessions, old.scoring_version) then
     raise exception 'recommendation % is already closed (%) and final', old.id, old.status;
   end if;
   if old.stock_move_final

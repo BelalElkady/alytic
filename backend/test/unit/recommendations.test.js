@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import { evaluateRecommendation, evaluateStockMove, basisFactors } from '../../supabase/functions/evaluate-recommendations/evaluate.js';
+import { evaluateRecommendation, evaluateStockMove, basisFactors, STYLE_RULES } from '../../supabase/functions/evaluate-recommendations/evaluate.js';
+import { RULES } from '../../src/config/rules.js';
+import { rulesForStyle } from '../../src/config/styles.js';
 import {
   recommendationRow, isWin, benchmarkFor, wasRight, withoutOpenDuplicates, buildTrackRecord, isLegacy, MIN_CLOSED_FOR_HEADLINE,
   fallTargetFrom, levelsFromAnalysis, MIN_FALL_TARGET_PCT,
@@ -15,14 +17,73 @@ const rec = (over = {}) => ({
 const bar = (date, open, high, low, close) => ({ date, open, high, low, close });
 const egx = new Map([['EGX30', new Map([['2026-09-02', 30300], ['2026-09-03', 30600], ['2026-09-06', 29700]])]]);
 
-test('evaluate: a buy that touches its target closes there, measured against EGX30', () => {
-  const out = evaluateRecommendation(rec(), [bar('2026-09-02', 101, 104, 99, 103), bar('2026-09-03', 104, 111, 103, 109)], egx);
+test('STYLE_RULES: the evaluator manages a buy with the same numbers as the app\'s config', () => {
+  for (const style of ['trader', 'medium', 'long']) {
+    const rules = rulesForStyle(RULES, style);
+    assert.deepEqual(STYLE_RULES[style], {
+      confirmCloses: rules.stop.confirmCloses ?? 1,
+      atTargetFraction: rules.takeProfit.atTargetFraction,
+      raiseStopAfterTargetPct: rules.takeProfit.raiseStopAfterTargetPct,
+    }, style);
+  }
+});
+
+// A medium-style buy at 100, target 110, stop 95: a third is sold at 110 on
+// 09-03 (+10%, EGX30 +2%) and the stop on the rest goes to 110 × 0.92 = 101.2.
+const toTarget = [bar('2026-09-02', 101, 104, 99, 103), bar('2026-09-03', 104, 111, 103, 109)];
+
+test('evaluate: a buy that touches its target sells part there and keeps the rest open', () => {
+  const out = evaluateRecommendation(rec(), toTarget, egx);
+  assert.equal(out.status, 'open');
+  assert.equal(out.target_sessions, 2);
+  assert.equal(out.mark_return_pct, 9.33); // ⅓ × 10 + ⅔ × 9 (the rest at the 109 close)
+  assert.equal(out.mark_excess_return_pct, 7.33); // ⅓ × 8 + ⅔ × 7
+});
+
+test('evaluate: the rest runs to the horizon and the call closes as hit target, blended', () => {
+  const out = evaluateRecommendation(rec({ horizon_days: 3 }), [...toTarget, bar('2026-09-06', 109, 110, 106, 108)], egx);
   assert.equal(out.status, 'hit_target');
-  assert.equal(out.exit_price, 110);
-  assert.equal(out.return_pct, 10);
-  assert.equal(out.excess_return_pct, 8); // EGX30 +2% over the same span
-  assert.equal(out.sessions_elapsed, 2);
-  assert.equal(out.closed_at.slice(0, 10), '2026-09-03');
+  assert.equal(out.return_pct, 8.67); // ⅓ × 10 + ⅔ × 8
+  assert.equal(out.excess_return_pct, 8.67); // ⅓ × 8 + ⅔ × 9 (EGX30 −1% by 09-06)
+  assert.equal(out.exit_price, 108.67);
+  assert.equal(out.sessions_elapsed, 3);
+  assert.equal(out.target_sessions, 2);
+  assert.equal(out.closed_at.slice(0, 10), '2026-09-06');
+});
+
+test('evaluate: after the target, a close under the raised stop exits the rest at the next open', () => {
+  const bars = [...toTarget, bar('2026-09-06', 105, 106, 100, 100.5), bar('2026-09-07', 99, 100, 98, 99)];
+  const out = evaluateRecommendation(rec({ horizon_days: 10 }), bars, egx);
+  assert.equal(out.status, 'hit_target');
+  assert.equal(out.return_pct, 2.67); // ⅓ × 10 + ⅔ × (−1)
+  assert.equal(out.sessions_elapsed, 4);
+  assert.equal(out.target_sessions, 2);
+  assert.equal(isWin(out), true);
+});
+
+test('evaluate: the share sold at the target follows the style', () => {
+  const bars = [bar('2026-09-02', 104, 111, 103, 108)];
+  // Rest at the 108 close on the horizon's only session: trader sells half, long a quarter.
+  assert.equal(evaluateRecommendation(rec({ style: 'trader', horizon_days: 1 }), bars, egx).return_pct, 9); // ½ × 10 + ½ × 8
+  assert.equal(evaluateRecommendation(rec({ style: 'long', horizon_days: 1 }), bars, egx).return_pct, 8.5); // ¼ × 10 + ¾ × 8
+});
+
+test('evaluate: the long style needs two closes in a row under the stop', () => {
+  const bars = [
+    bar('2026-09-02', 99, 100, 93, 94), // first close under 95
+    bar('2026-09-03', 94, 97, 93, 96), // back above: the count starts again
+    bar('2026-09-06', 96, 97, 93, 94),
+    bar('2026-09-07', 94, 95, 92, 93), // second in a row: the exit
+    bar('2026-09-08', 92, 93, 91, 92),
+  ];
+  const long = rec({ style: 'long', horizon_days: 10 });
+  assert.equal(evaluateRecommendation(long, bars.slice(0, 3), egx).status, 'open');
+  const out = evaluateRecommendation(long, bars, egx);
+  assert.equal(out.status, 'hit_stop');
+  assert.equal(out.exit_price, 92);
+  assert.equal(out.sessions_elapsed, 5);
+  // One close is enough for the medium style.
+  assert.equal(evaluateRecommendation(rec({ horizon_days: 10 }), bars, egx).exit_price, 94);
 });
 
 test('evaluate: a stop counts on a close and fills at the next session\'s open', () => {
@@ -56,7 +117,9 @@ test('evaluate: a session closing under the stop that also touched the target co
 });
 
 test('evaluate: a gap through the target fills at the open; a gap down after a stop close fills at the new open', () => {
-  assert.equal(evaluateRecommendation(rec(), [bar('2026-09-02', 115, 116, 114, 115)], egx).exit_price, 115);
+  const gapUp = evaluateRecommendation(rec({ horizon_days: 1 }), [bar('2026-09-02', 115, 116, 114, 115)], egx);
+  assert.equal(gapUp.status, 'hit_target');
+  assert.equal(gapUp.return_pct, 15); // the part sold at the 115 open and the rest at the 115 close
   const out = evaluateRecommendation(rec(), [bar('2026-09-02', 99, 100, 93, 94), bar('2026-09-03', 88, 90, 87, 89)], egx);
   assert.equal(out.exit_price, 88);
 });
@@ -133,6 +196,8 @@ test('recommendationRow: a hold carries no stop or target and the style horizon'
 
 test('isWin: holds are judged against the index', () => {
   assert.equal(isWin({ action: 'buy', status: 'hit_target', return_pct: 5 }), true);
+  // Part sold at the target, but the rest lost more: the Position lost money.
+  assert.equal(isWin({ action: 'buy', status: 'hit_target', return_pct: -0.5 }), false);
   assert.equal(isWin({ action: 'buy', status: 'expired', return_pct: -1 }), false);
   assert.equal(isWin({ action: 'hold', status: 'expired', return_pct: -1, excess_return_pct: 2 }), true);
   assert.equal(isWin({ action: 'buy', status: 'open' }), null);
@@ -256,12 +321,13 @@ test('withoutOpenDuplicates: a repeat of a call the user still has open is not l
 const closedRow = (id, over = {}) => ({
   id, user_id: 'u1', ticker: 'COMI', action: 'buy', ref_price: 100, target_price: 110, stop_price: 95, horizon_days: 10,
   issued_at: '2026-09-20T09:00:00Z', issued_on: '2026-09-20', status: 'hit_target', closed_at: '2026-09-22T12:30:00Z',
-  exit_price: 110, return_pct: 10, excess_return_pct: 4, benchmark_excess_pct: 4, sessions_elapsed: 2, scoring_version: 2, ...over,
+  exit_price: 110, return_pct: 10, excess_return_pct: 4, benchmark_excess_pct: 4, sessions_elapsed: 2, scoring_version: 3, ...over,
 });
 
 test('isLegacy: only a call stamped with an older scoring version; no stamp at all means current', () => {
   assert.equal(isLegacy({ scoring_version: 1 }), true);
-  assert.equal(isLegacy({ scoring_version: 2 }), false);
+  assert.equal(isLegacy({ scoring_version: 2 }), true);
+  assert.equal(isLegacy({ scoring_version: 3 }), false);
   assert.equal(isLegacy({}), false);
   assert.equal(isLegacy({ scoring_version: null }), false);
 });
