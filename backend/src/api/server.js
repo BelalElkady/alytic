@@ -4087,7 +4087,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
         portfolioId,
         (review.picks ?? [])
           .filter((p) => byCode.has(p.code))
-          .map((p) => ({ code: p.code, action: p.action, levels: levelsFromScanRow(byCode.get(p.code)) })),
+          .map((p) => ({ code: p.code, action: p.action, levels: levelsFromScanRow(byCode.get(p.code), pre.style ?? 'medium') })),
         { source: 'cash_review', style: pre.style ?? 'medium', model: review._meta?.model },
       );
     }

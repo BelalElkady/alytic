@@ -18,13 +18,16 @@ import { effectiveIndices } from './config/indices.js';
 
 /**
  * The model's verdict vocabulary (ACTIONS in agent/schemas.js, plus the cash
- * review's picks) folded into the four calls the record scores. `avoid`,
- * `wait`, `buy_on_pullback` and `skip` are left out on purpose: each says
- * "don't act now", so there is no position whose outcome could be measured.
+ * review's picks, CASH_PICK_ACTIONS) folded into the four calls the record
+ * scores. `avoid`, `wait`, `buy_on_pullback` and `skip` are left out on
+ * purpose: each says "don't act now", so there is no position whose outcome
+ * could be measured.
  */
 export const TRACKED_ACTIONS = {
   buy: 'buy',
   accumulate: 'buy',
+  // The cash review's "place the order now" — the only new-money buy the app hands out.
+  buy_now: 'buy',
   hold: 'hold',
   reduce: 'reduce',
   take_profit: 'reduce',
@@ -109,8 +112,9 @@ export function levelsFromOpportunity(op, style) {
 }
 
 /** Levels from a /api/scan row (the cash plan's picks). */
-export function levelsFromScanRow(row) {
-  return { refPrice: row.price, target: row.midTarget?.price ?? null, stop: row.stop, horizonSessions: row.midTarget?.horizon?.sessions ?? null };
+export function levelsFromScanRow(row, style) {
+  const target = style === 'long' && row.longTarget?.price ? row.longTarget : row.midTarget;
+  return { refPrice: row.price, target: target?.price ?? null, stop: row.stop, horizonSessions: target?.horizon?.sessions ?? null };
 }
 
 /**
