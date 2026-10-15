@@ -1786,6 +1786,27 @@ app.post('/api/admin/support/:userId', wrap(async (req, res) => {
   res.status(201).json({ message: publicMessage(message) });
 }));
 
+// An admin reply that is an image (a screenshot, a how-to) instead of text —
+// same raw-body shape as the customer's /api/support/messages/image. Stored
+// under the customer's folder so removeSupportImagesFor cleans it up with them.
+app.post('/api/admin/support/:userId/image', express.raw({ type: SUPPORT_IMAGE_TYPES, limit: '8mb' }), wrap(async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ارفع صورة الأول' });
+  const imageType = checkedImageType(req);
+  if (!imageType) return res.status(415).json({ error: NOT_AN_IMAGE_MESSAGE });
+  const target = await getUserById(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'المستخدم غير موجود' });
+
+  const imagePath = await uploadSupportImage({ userId: target.id, mediaType: imageType, buffer: req.body });
+  const message = await insertSupportMessage({
+    userId: target.id,
+    sender: 'admin',
+    body: '',
+    sentBy: req.user.id,
+    imagePath,
+  });
+  res.status(201).json({ message: await withImageUrl(message) });
+}));
+
 // Drafts (and everything else generated) waiting on human review before they
 // can reach /api/blog — see src/agent/blogGenerator.js for how they're
 // written and reviewBlogPost's notes for what the review model flagged.

@@ -1,4 +1,4 @@
-import { Send } from "lucide-react";
+import { Paperclip, Send } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useVisibleInterval } from "@/hooks/use-visible-interval";
-import { api, post } from "@/lib/api";
+import { api, post, postRaw } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Thread = {
@@ -22,6 +22,10 @@ type Thread = {
 };
 
 const POLL_MS = 20 * 1000;
+
+// Same limits as the customer widget and backend/src/supportAttachments.js.
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString("ar-EG", {
@@ -110,6 +114,7 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -143,6 +148,29 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
       toast.error(caught instanceof Error ? caught.message : "تعذر إرسال الرد");
     } finally {
       setSending(false);
+    }
+  };
+
+  const sendImage = async (file: File) => {
+    if (sending) return;
+    if (!IMAGE_TYPES.includes(file.type)) {
+      toast.error("لازم تكون صورة JPG أو PNG أو WEBP");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error("الصورة كبيرة أوي (الحد ٨ ميجا)");
+      return;
+    }
+    setSending(true);
+    try {
+      const { message } = await postRaw(`/api/admin/support/${userId}/image`, file, file.type);
+      setMessages((previous) => [...(previous ?? []), message]);
+      onSent();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر رفع الصورة");
+    } finally {
+      setSending(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
@@ -189,6 +217,25 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
       </div>
 
       <div className="flex items-end gap-2 border-t p-3">
+        <input
+          ref={fileRef}
+          type="file"
+          accept={IMAGE_TYPES.join(",")}
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void sendImage(file);
+          }}
+        />
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => fileRef.current?.click()}
+          disabled={sending}
+          aria-label="إرفاق صورة"
+        >
+          <Paperclip className="size-4" />
+        </Button>
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -198,7 +245,11 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
               void send();
             }
           }}
-          placeholder="اكتب ردك… (Enter للإرسال)"
+          onPaste={(event) => {
+            const file = [...event.clipboardData.files].find((f) => IMAGE_TYPES.includes(f.type));
+            if (file) void sendImage(file);
+          }}
+          placeholder="اكتب ردك… أو الصق/ارفق صورة (Enter للإرسال)"
           rows={2}
           className="min-h-0 resize-none text-[13px]"
         />
