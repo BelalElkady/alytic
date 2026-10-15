@@ -266,8 +266,21 @@ export async function analyzeTicker(code, opts = {}) {
   // number. When the nearest real support is that far below, the honest output
   // is "wait", flagged as such, so the reward ratio isn't quoted off a fill that
   // will never happen.
-  const price = snapshot.price.close;
-  const nearestSupport = snapshot.levels.supports.find((s) => s.strength >= 45);
+  //
+  // `planAtLive` (the market scan during the session, see scanCache.js) plans
+  // a fresh buy at the live quote instead of the last close: the levels still
+  // come from the completed bars, only which of them sit under the price, and
+  // how far, is judged against where the stock trades now. Never for a held
+  // stock — its position block below already prices itself live.
+  const close = snapshot.price.close;
+  const livePlanPrice = opts.planAtLive && !position && !halted && opts.live?.price > 0 ? opts.live.price : null;
+  const price = livePlanPrice ?? close;
+  const supports = livePlanPrice
+    ? snapshot.levels.supports
+      .filter((s) => s.price < price * 0.995)
+      .map((s) => ({ ...s, distancePct: r2(((s.price - price) / price) * 100) }))
+    : snapshot.levels.supports;
+  const nearestSupport = supports.find((s) => s.strength >= 45);
   const supportGapPct = nearestSupport ? Math.abs(nearestSupport.distancePct) : null;
 
   let entryStatus, suggestedEntry, entryNote;
@@ -297,6 +310,12 @@ export async function analyzeTicker(code, opts = {}) {
       : plan;
   const stopPlanAi = rebaseStop(await getOrGenerateStopPlan(code, meta.ar ?? code, snapshot, suggestedEntry, style, rules));
   const stopPlan = { stop: stopPlanAi.stop, riskPct: r2(((suggestedEntry - stopPlanAi.stop) / suggestedEntry) * 100), basis: stopPlanAi.basis };
+  // The day's stop plan was set off the close; a live price that has since
+  // fallen to it leaves no trade to plan until the next close re-sets it.
+  if (livePlanPrice && stopPlan.stop >= suggestedEntry) {
+    entryStatus = 'wait';
+    entryNote = `السعر نزل لحد وقف الخسارة المخطط (${stopPlan.stop}) — استنى إغلاق الجلسة قبل أي دخول جديد`;
+  }
   const targets = buildTargets(snapshot, bars, { entry: suggestedEntry, stop: stopPlan.stop }, rules);
 
   // What the trade looks like if you ignored the advice and bought at market —
@@ -377,7 +396,7 @@ export async function analyzeTicker(code, opts = {}) {
     // behind. When the caller has a live quote, everything about the open
     // position (P&L, distances, rule triggers, and the snapshot the AI brief
     // quotes) is priced at it instead; entry planning above stays on the close.
-    const closePrice = price;
+    const closePrice = close;
     const livePrice = opts.live?.price > 0 ? opts.live.price : null;
     const posPrice = livePrice ?? closePrice;
     const posSnapshot = livePrice
