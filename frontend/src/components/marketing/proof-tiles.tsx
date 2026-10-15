@@ -8,6 +8,8 @@ type Tile = {
   Icon: ComponentType<{ className?: string }>;
   title: string;
   value: string;
+  /** A word that follows the number (مليون, ألف), set apart so its position never depends on bidi. */
+  unit?: string;
   note?: string;
 };
 
@@ -18,11 +20,11 @@ type Tile = {
  * showing a placeholder, and the fixed facts about the product remain.
  */
 /** 12,400,000 → "12.4 مليون", 850,000 → "850 ألف": a headline reads better short. */
-function compactEgp(value: number) {
+function compactEgp(value: number): { value: string; unit?: string } {
   const trim = (n: number) => n.toFixed(1).replace(/\.0$/, "");
-  if (value >= 1_000_000) return `${trim(value / 1_000_000)} مليون`;
-  if (value >= 1_000) return `${Math.round(value / 1_000).toLocaleString("en-US")} ألف`;
-  return Math.round(value).toLocaleString("en-US");
+  if (value >= 1_000_000) return { value: trim(value / 1_000_000), unit: "مليون" };
+  if (value >= 1_000) return { value: Math.round(value / 1_000).toLocaleString("en-US"), unit: "ألف" };
+  return { value: Math.round(value).toLocaleString("en-US") };
 }
 
 export function ProofTiles() {
@@ -80,7 +82,7 @@ export function ProofTiles() {
           {
             Icon: Wallet,
             title: "إجمالي رأس المال",
-            value: compactEgp(capital),
+            ...compactEgp(capital),
             note: "جنيه في محافظ المشتركين",
           },
         ]
@@ -91,7 +93,7 @@ export function ProofTiles() {
   return (
     <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
       <div className="flex flex-wrap justify-center gap-4">
-        {tiles.map(({ Icon, title, value, note }) => (
+        {tiles.map(({ Icon, title, value, unit, note }) => (
           <div
             key={title}
             className="w-full rounded-xl border bg-card p-6 text-center sm:w-[calc(50%-0.5rem)] lg:w-[calc(25%-0.75rem)] shadow-sm transition-colors hover:border-primary/40"
@@ -100,9 +102,13 @@ export function ProofTiles() {
               <Icon className="size-5" />
             </span>
             <p className="mt-3 text-[15px] font-semibold">{title}</p>
-            {/* dir="ltr" keeps the unit word ("مليون") after the digits instead of the bidi algorithm putting it before. */}
-            <p dir="ltr" className="num mt-4 text-4xl font-bold tracking-tight text-primary">
-              {value}
+            {/* The number with its unit word (مليون, ألف) stacked underneath, centred. */}
+            <p
+              dir="ltr"
+              className="mt-4 flex flex-col items-center gap-0.5 text-4xl font-bold tracking-tight text-primary"
+            >
+              <span className="num">{value}</span>
+              {unit && <span className="text-lg font-semibold">{unit}</span>}
             </p>
             {note && <p className="mt-4 text-[12.5px] text-muted-foreground">{note}</p>}
           </div>
