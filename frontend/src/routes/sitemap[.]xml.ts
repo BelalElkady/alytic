@@ -16,7 +16,7 @@ import { DEFAULT_TENANT, type Tenant } from "@/lib/tenant";
 // components/marketing/site-shell.tsx — update both if a marketing page is
 // added or removed. The authenticated app routes (/portfolio, /cash, /admin,
 // ...) are deliberately absent: a search engine can't sign in to see them.
-const STATIC_PATHS = ["/", "/blog", "/how-to-use", "/pricing", "/about", "/contact", "/privacy"];
+const STATIC_PATHS = ["/", "/blog", "/how-to-use", "/pricing", "/free-tools", "/about", "/contact", "/privacy"];
 
 function escapeXml(value: string): string {
   const map: Record<string, string> = {

@@ -13,7 +13,6 @@ import {
 
 import { LogoMark } from "@/components/brand/logo";
 import { SiteShell } from "@/components/marketing/site-shell";
-import { AveragingCalculator } from "@/components/marketing/averaging-calculator";
 import { LatestPosts } from "@/components/marketing/latest-posts";
 import { ToolExplainer } from "@/components/marketing/tool-explainer";
 import { Badge } from "@/components/ui/badge";
@@ -198,8 +197,6 @@ function LandingPage() {
           <TeaserVideo id={TEASER_DESKTOP} className="aspect-video w-full" />
         </div>
       </section>
-
-      <AveragingCalculator />
 
       {/* CTA */}
       <section className="mx-auto w-full max-w-6xl px-4 py-16">

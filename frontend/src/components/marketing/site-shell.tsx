@@ -23,6 +23,7 @@ const LINKS = [
   { to: "/", label: "الرئيسية" },
   { to: "/blog", label: "تابع اخبار البورصة" },
   { to: "/how-to-use", label: "طريقة الاستخدام" },
+  { to: "/free-tools", label: "ادوات مجانية" },
   { to: "/pricing", label: "الأسعار" },
   { to: "/about", label: "من نحن" },
   { to: "/contact", label: "تواصل معنا" },
