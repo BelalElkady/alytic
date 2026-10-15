@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 type Period = "monthly" | "yearly";
 
 /** كل رقم شهري — يتجدد أول كل شهر ميلادي، بلا علاقة بمدة الاشتراك (شهري أو سنوي). الأسعار مطابقة لـ PLANS في backend/src/billing/plans.js. */
-const PLANS = [
+export const PLANS = [
   {
     key: "free",
     name: "الباقة المجانية",

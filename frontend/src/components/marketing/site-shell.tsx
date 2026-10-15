@@ -12,6 +12,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { PromoBanner } from "@/components/marketing/promo-banner";
 import { BlogTicker } from "@/components/marketing/blog-ticker";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { ChatWidget } from "@/components/support/chat-widget";
@@ -39,6 +40,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const { dark, toggle } = useTheme();
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <PromoBanner />
       <header className="sticky top-0 z-40 border-b bg-card/85 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3">
           <Link to="/" aria-label={brandName}>
