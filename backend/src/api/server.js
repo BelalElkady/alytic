@@ -399,21 +399,31 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
 }));
 
 // The landing page's headline figures — public, so it carries nothing but the
-// hit rate, how many closed calls it rests on, the registered-user count and the
-// running total of logged analyses; and
+// hit rate, how many closed calls it rests on, the registered-user count, the
+// running total of logged analyses and the capital across every Portfolio
+// (cash + positions at cost, the same "capital" the admin screen uses, never
+// the CLI account's); and
 // `hitRate` is null until there are enough closed calls (the same floor the
 // track-record page itself uses before it shows a headline).
 let publicHitRate = { at: 0, value: null };
 app.get('/api/track-record/summary', wrap(async (_req, res) => {
   if (Date.now() - publicHitRate.at > 10 * 60 * 1000) {
-    const [{ summary, scoring }, users, analyses] = await Promise.all([
+    const [{ summary, scoring }, users, analyses, portfolios] = await Promise.all([
       trackRecord(null, { scope: 'all' }),
       countUsers(),
       countRecommendations(),
+      getAllPortfolios(),
     ]);
+    const capital = portfolios
+      .filter((row) => row.user_id !== 'local')
+      .reduce((total, row) => {
+        const state = row.state_json ?? {};
+        const held = Object.values(state.positions ?? {}).reduce((sum, p) => sum + (p.shares ?? 0) * (p.avgCost ?? 0), 0);
+        return total + (state.cash ?? 0) + held;
+      }, 0);
     publicHitRate = {
       at: Date.now(),
-      value: { hitRate: scoring.tooEarly ? null : summary.hitRate, closed: summary.closed, users, analyses },
+      value: { hitRate: scoring.tooEarly ? null : summary.hitRate, closed: summary.closed, users, analyses, capital: Math.round(capital) },
     };
   }
   res.json(publicHitRate.value);

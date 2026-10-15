@@ -1,4 +1,4 @@
-import { BarChart3, Gift, LineChart, Users } from "lucide-react";
+import { BarChart3, Gift, LineChart, Users, Wallet } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 
@@ -17,16 +17,26 @@ type Tile = {
  * (or if the request fails) their tiles are simply left out rather than
  * showing a placeholder, and the fixed facts about the product remain.
  */
+/** 12,400,000 → "12.4 مليون", 850,000 → "850 ألف": a headline reads better short. */
+function compactEgp(value: number) {
+  const trim = (n: number) => n.toFixed(1).replace(/\.0$/, "");
+  if (value >= 1_000_000) return `${trim(value / 1_000_000)} مليون`;
+  if (value >= 1_000) return `${Math.round(value / 1_000).toLocaleString("en-US")} ألف`;
+  return Math.round(value).toLocaleString("en-US");
+}
+
 export function ProofTiles() {
   const [hit, setHit] = useState<{ hitRate: number; closed: number } | null>(null);
   const [users, setUsers] = useState<number | null>(null);
   const [analyses, setAnalyses] = useState<number | null>(null);
+  const [capital, setCapital] = useState<number | null>(null);
 
   useEffect(() => {
     api("/api/track-record/summary")
       .then((result) => {
         if (typeof result?.analyses === "number" && result.analyses > 0) setAnalyses(result.analyses);
         if (typeof result?.users === "number" && result.users > 0) setUsers(result.users);
+        if (typeof result?.capital === "number" && result.capital > 0) setCapital(result.capital);
         if (typeof result?.hitRate === "number") {
           setHit({ hitRate: result.hitRate, closed: Number(result.closed) || 0 });
         }
@@ -62,6 +72,16 @@ export function ProofTiles() {
             title: "تحليل تم تقديمه",
             value: analyses.toLocaleString("en-US"),
             note: "تحليل اتسجل على المنصة",
+          },
+        ]
+      : []),
+    ...(capital !== null
+      ? [
+          {
+            Icon: Wallet,
+            title: "إجمالي رأس المال",
+            value: compactEgp(capital),
+            note: "جنيه في محافظ المشتركين",
           },
         ]
       : []),
