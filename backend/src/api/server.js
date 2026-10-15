@@ -44,6 +44,7 @@ import { detectCorporateActions, applyCorporateActions, resolveCorporateAction, 
 import { latestEventFor, recordEvent } from '../data/corporateEvents.js';
 import { getPriceHistory, HISTORY_RANGES } from '../data/priceHistory.js';
 import { fetchLatestQuotes } from '../data/tv-history.js';
+import { sharedAnalyses, latestQuotesShared, refreshMarketScans, scanRules } from '../scanCache.js';
 import { fetchFundamentals, cachedScreener } from '../data/tradingview.js';
 import { buildHeatmap } from '../marketHeatmap.js';
 import { fetchLiveQuotes, liveQuoteStatus } from '../data/live-quotes.js';
@@ -2229,9 +2230,7 @@ function styleStrength(r, style) {
  * buys too — the badge on each stock still says what it is.
  */
 function rulesFor(portfolio, style) {
-  const rules = style ? rulesForStyle(RULES, style) : RULES;
-  if (portfolio?.settings?.shariahOnly !== false) return rules;
-  return { ...rules, shariah: { ...rules.shariah, excludeNonCompliant: false } };
+  return scanRules(style, portfolio?.settings?.shariahOnly !== false);
 }
 
 /** How many next-ranked stocks the AI cash review judges beyond the engine's picks, as replacements for any it turns down. */
@@ -2267,21 +2266,32 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
     heldCodes.length ? fetchLiveQuotes(heldCodes, { subscribed, userId }).catch(() => new Map()) : new Map(),
     fetchFundamentals(),
   ]);
-  const { results, errors } = await analyzeMany(codes, {
-    capital,
-    positions: portfolio.positions,
-    liveQuotes: heldQuotes,
-    fundamentals,
-    // AI-backed now (see agent/stopPlanner.js) — lowered from the old
-    // pure-math default (was 5) to match REVIEW_CONCURRENCY elsewhere, so a
-    // whole-universe scan on a cold cache doesn't fire dozens of simultaneous
-    // OpenRouter requests at once.
-    concurrency: 3,
-    force,
-    rules,
-    style,
-    portfolioId,
-  });
+  // A stock the User doesn't hold comes from the scheduled market scan every
+  // User shares (see scanCache.js); only the held ones — priced at this User's
+  // live quote, with their own trailing stops — are analysed per request.
+  const heldSet = new Set(heldCodes.map((code) => code.toUpperCase()));
+  const [shared, personal] = await Promise.all([
+    sharedAnalyses(codes.filter((code) => !heldSet.has(code.toUpperCase())), {
+      style,
+      shariahOnly: portfolio?.settings?.shariahOnly !== false,
+      force,
+    }),
+    heldCodes.length
+      ? analyzeMany(heldCodes, {
+          capital,
+          positions: portfolio.positions,
+          liveQuotes: heldQuotes,
+          fundamentals,
+          concurrency: 3,
+          force,
+          rules,
+          style,
+          portfolioId,
+        })
+      : { results: [], errors: [] },
+  ]);
+  const results = [...shared.results, ...personal.results].sort((a, b) => b.technical.score - a.technical.score);
+  const errors = [...shared.errors, ...personal.errors];
   // A holding whose analysis failed drops off the Portfolio page (it shows a
   // notice instead) — the reason is otherwise only in the response.
   for (const failure of errors) {
@@ -2295,7 +2305,7 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
   // Held codes reuse heldQuotes, so a position's P&L and the price shown
   // beside it never come from two different feeds.
   const otherCodes = results.map((result) => result.code).filter((code) => !heldQuotes.has(code));
-  const latestQuotes = new Map([...(await fetchLatestQuotes(otherCodes)), ...heldQuotes]);
+  const latestQuotes = new Map([...(await latestQuotesShared(otherCodes)), ...heldQuotes]);
 
   // analyzeTicker sizes each stock in isolation — it has no visibility into
   // sibling results, so it always sizes as if the sector were untouched. Once
@@ -3342,6 +3352,44 @@ function startStopPlanScheduler() {
 }
 
 /**
+ * Runs the shared market scan (see scanCache.js) on a trading day only:
+ * every 30 minutes while the session is open (10:00-14:30 Cairo, egxSessionOpen),
+ * each fresh buy planned at the live price; then, from MARKET_SCAN_CLOSE_AT,
+ * every 30 minutes until a run carries the day's final close — the bar cache
+ * only expects that close from 16:00 (expectedLastSession). Nothing on a
+ * weekend or holiday: the last run stands until the next session. Checks the
+ * clock every 30s like the other schedulers, firing once per 30-minute slot.
+ */
+const MARKET_SCAN_CLOSE_AT = '16:00';
+let marketScanRanForSlot = null;
+let marketScanFinalFor = null;
+let marketScanRunning = false;
+function startMarketScanScheduler() {
+  setInterval(async () => {
+    if (!aiAvailable() || marketScanRunning) return;
+    const today = cairoToday();
+    if (!isTradingDay(today)) return;
+    const cairoNow = cairoClock.format(new Date());
+    const live = egxSessionOpen();
+    if (!live && (cairoNow < MARKET_SCAN_CLOSE_AT || marketScanFinalFor === today)) return;
+    const slot = `${today}:${Math.floor(minutesOfDay(cairoNow) / 30)}`;
+    if (marketScanRanForSlot === slot) return;
+    marketScanRanForSlot = slot;
+    marketScanRunning = true;
+    try {
+      const result = await refreshMarketScans({ live });
+      if (!live && result.asOf === today && !result.failed) marketScanFinalFor = today;
+      console.log('[market-scan]', JSON.stringify(result));
+    } catch (err) {
+      marketScanRanForSlot = null; // retry within this same slot on the next check
+      console.error('[market-scan] failed:', err.message);
+    } finally {
+      marketScanRunning = false;
+    }
+  }, 30_000);
+}
+
+/**
  * Researches who bought and sold each session (see investorFlows.js) once the
  * close has been reported: hourly from 15:30 to 20:30 Cairo on trading days,
  * stopping the moment a row is saved (later attempts find it and cost no AI
@@ -4257,6 +4305,7 @@ if (isDirectRun) {
   warnAboutWeakConfig();
   startDailyCloseScheduler();
   startStopPlanScheduler();
+  startMarketScanScheduler();
   startInvestorFlowsScheduler();
   const PORT = process.env.PORT ?? 3000;
   app.listen(PORT, () => {
