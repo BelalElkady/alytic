@@ -12,10 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AboutRouteImport } from './routes/about'
-import { Route as FreeToolsRouteImport } from './routes/free-tools'
 import { Route as BlogRouteImport } from './routes/blog'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as FreeToolsRouteImport } from './routes/free-tools'
 import { Route as HowToUseRouteImport } from './routes/how-to-use'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -54,11 +54,6 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FreeToolsRoute = FreeToolsRouteImport.update({
-  id: '/free-tools',
-  path: '/free-tools',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BlogRoute = BlogRouteImport.update({
   id: '/blog',
   path: '/blog',
@@ -72,6 +67,11 @@ const ContactRoute = ContactRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FreeToolsRoute = FreeToolsRouteImport.update({
+  id: '/free-tools',
+  path: '/free-tools',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HowToUseRoute = HowToUseRouteImport.update({
@@ -193,10 +193,10 @@ const ApiPublicSplatRoute = ApiPublicSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/free-tools': typeof FreeToolsRoute
   '/blog': typeof BlogRouteWithChildren
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/free-tools': typeof FreeToolsRoute
   '/how-to-use': typeof HowToUseRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
@@ -224,9 +224,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/free-tools': typeof FreeToolsRoute
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/free-tools': typeof FreeToolsRoute
   '/how-to-use': typeof HowToUseRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
@@ -256,10 +256,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/about': typeof AboutRoute
-  '/free-tools': typeof FreeToolsRoute
   '/blog': typeof BlogRouteWithChildren
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/free-tools': typeof FreeToolsRoute
   '/how-to-use': typeof HowToUseRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
@@ -289,10 +289,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
-    | '/free-tools'
     | '/blog'
     | '/contact'
     | '/forgot-password'
+    | '/free-tools'
     | '/how-to-use'
     | '/login'
     | '/pricing'
@@ -320,9 +320,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
-    | '/free-tools'
     | '/contact'
     | '/forgot-password'
+    | '/free-tools'
     | '/how-to-use'
     | '/login'
     | '/pricing'
@@ -351,10 +351,10 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/about'
-    | '/free-tools'
     | '/blog'
     | '/contact'
     | '/forgot-password'
+    | '/free-tools'
     | '/how-to-use'
     | '/login'
     | '/pricing'
@@ -384,10 +384,10 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   AboutRoute: typeof AboutRoute
-  FreeToolsRoute: typeof FreeToolsRoute
   BlogRoute: typeof BlogRouteWithChildren
   ContactRoute: typeof ContactRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  FreeToolsRoute: typeof FreeToolsRoute
   HowToUseRoute: typeof HowToUseRoute
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
@@ -423,13 +423,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/free-tools': {
-      id: '/free-tools'
-      path: '/free-tools'
-      fullPath: '/free-tools'
-      preLoaderRoute: typeof FreeToolsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/blog': {
       id: '/blog'
       path: '/blog'
@@ -449,6 +442,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/free-tools': {
+      id: '/free-tools'
+      path: '/free-tools'
+      fullPath: '/free-tools'
+      preLoaderRoute: typeof FreeToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/how-to-use': {
@@ -661,10 +661,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   AboutRoute: AboutRoute,
-  FreeToolsRoute: FreeToolsRoute,
   BlogRoute: BlogRouteWithChildren,
   ContactRoute: ContactRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  FreeToolsRoute: FreeToolsRoute,
   HowToUseRoute: HowToUseRoute,
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,

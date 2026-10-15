@@ -17,7 +17,7 @@ const PLANS = [
     monthlyPrice: null,
     yearlyPrice: null,
     freeUnit: "لمدة 5 أيام تداول",
-    note: "بدون بطاقة، بكل المزايا بحدود التجربة.",
+    note: "بدون بطاقة، بكل المزايا بحدود التجربة. بتتحسب أيام التداول بس — العطلات والإجازات مش بتتحسب.",
     cta: "ابدأ التجربة المجانية",
     highlight: false,
     limits: { screenshots: 2, recommendations: 15, cashScans: 3, marketAnalysis: 3 },

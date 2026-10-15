@@ -21,7 +21,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
 import { currentSession, fetchAndSaveInvestorFlows, fetchSlot } from '../investorFlows.js';
 import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, WHATSAPP_NUMBER } from '../billing/plans.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
@@ -396,6 +396,27 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
       publishedAt: post.published_at,
     },
   });
+}));
+
+// The landing page's headline figures — public, so it carries nothing but the
+// hit rate, how many closed calls it rests on, the registered-user count and the
+// running total of logged analyses; and
+// `hitRate` is null until there are enough closed calls (the same floor the
+// track-record page itself uses before it shows a headline).
+let publicHitRate = { at: 0, value: null };
+app.get('/api/track-record/summary', wrap(async (_req, res) => {
+  if (Date.now() - publicHitRate.at > 10 * 60 * 1000) {
+    const [{ summary, scoring }, users, analyses] = await Promise.all([
+      trackRecord(null, { scope: 'all' }),
+      countUsers(),
+      countRecommendations(),
+    ]);
+    publicHitRate = {
+      at: Date.now(),
+      value: { hitRate: scoring.tooEarly ? null : summary.hitRate, closed: summary.closed, users, analyses },
+    };
+  }
+  res.json(publicHitRate.value);
 }));
 
 // Every published slug, no pagination — backs frontend/src/routes/sitemap[.]xml.ts,

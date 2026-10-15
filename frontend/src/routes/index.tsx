@@ -13,6 +13,7 @@ import {
 
 import { LogoMark } from "@/components/brand/logo";
 import { SiteShell } from "@/components/marketing/site-shell";
+import { ProofTiles } from "@/components/marketing/proof-tiles";
 import { PricingPlans } from "@/components/marketing/pricing-plans";
 import { LatestPosts } from "@/components/marketing/latest-posts";
 import { ToolExplainer } from "@/components/marketing/tool-explainer";
@@ -121,7 +122,9 @@ function LandingPage() {
                     ابدأ التجربة المجانية
                   </Link>
                 </Button>
-                <span className="text-[12.5px] text-muted-foreground">لمدة 5 أيام تداول</span>
+                <span className="text-[12.5px] text-muted-foreground">
+                  5 أيام تداول فعلية — العطلات والإجازات مش بتتحسب
+                </span>
               </div>
               <Button asChild size="lg" variant="outline">
                 <Link to="/pricing">شوف الأسعار</Link>
@@ -153,6 +156,8 @@ function LandingPage() {
           </Button>
         </div>
       </section>
+
+      <ProofTiles />
 
       {/* Features */}
       <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">

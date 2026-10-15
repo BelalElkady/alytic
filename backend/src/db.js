@@ -154,6 +154,13 @@ export async function countUsersSeenSince(sinceIso) {
   return count ?? 0;
 }
 
+/** Every registered account — the landing page's "المستخدمون" figure. */
+export async function countUsers() {
+  const { count, error } = await supabase.from('users').select('id', { count: 'exact', head: true });
+  if (error) throw new Error(`countUsers: ${error.message}`);
+  return count ?? 0;
+}
+
 export async function setVerificationToken(id, token, expiresAt) {
   must(
     await supabase.from('users').update({ verification_token: token, verification_token_expires: expiresAt }).eq('id', id),
@@ -1443,6 +1450,20 @@ export async function listRecommendations({ userId = null, from = null, to = nul
     }
     if (!missingColumn) return rows;
   }
+}
+
+/**
+ * How many recommendations have ever been logged — the landing page's running
+ * total of analyses. Counts every logged call (one per user, stock and day),
+ * skipping the admin's test rows.
+ */
+export async function countRecommendations() {
+  const { count, error } = await supabase
+    .from('recommendations')
+    .select('id', { count: 'exact', head: true })
+    .neq('source', 'test');
+  if (error) throw new Error(`countRecommendations: ${error.message}`);
+  return count ?? 0;
 }
 
 export { supabase };
