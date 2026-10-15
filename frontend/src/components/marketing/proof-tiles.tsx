@@ -100,7 +100,10 @@ export function ProofTiles() {
               <Icon className="size-5" />
             </span>
             <p className="mt-3 text-[15px] font-semibold">{title}</p>
-            <p className="num mt-4 text-4xl font-bold tracking-tight text-primary">{value}</p>
+            {/* dir="ltr" keeps the unit word ("مليون") after the digits instead of the bidi algorithm putting it before. */}
+            <p dir="ltr" className="num mt-4 text-4xl font-bold tracking-tight text-primary">
+              {value}
+            </p>
             {note && <p className="mt-4 text-[12.5px] text-muted-foreground">{note}</p>}
           </div>
         ))}
