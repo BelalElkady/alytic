@@ -13,6 +13,7 @@ import {
 
 import { LogoMark } from "@/components/brand/logo";
 import { SiteShell } from "@/components/marketing/site-shell";
+import { PricingPlans } from "@/components/marketing/pricing-plans";
 import { LatestPosts } from "@/components/marketing/latest-posts";
 import { ToolExplainer } from "@/components/marketing/tool-explainer";
 import { Badge } from "@/components/ui/badge";
@@ -133,6 +134,23 @@ function LandingPage() {
           </div>
 
           <PreviewCard />
+        </div>
+      </section>
+
+      {/* Pricing — right under the hero so the "شوف الأسعار" question is answered without a click. */}
+      <section id="pricing" className="border-b bg-surface">
+        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
+          <h2 className="text-2xl font-bold tracking-tight">أسعار واضحة لكل مستوى</h2>
+          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted-foreground">
+            نفس الأدوات في كل الباقات — الفرق في عدد مرات استخدام كل ميزة شهريًا. ابدأ بـ 5 أيام
+            تداول مجانًا وقرّر بعد كده.
+          </p>
+          <div className="mt-12">
+            <PricingPlans />
+          </div>
+          <Button asChild variant="outline" className="mt-6">
+            <Link to="/pricing">تفاصيل الأسعار والرصيد الإضافي</Link>
+          </Button>
         </div>
       </section>
 
