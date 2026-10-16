@@ -46,15 +46,8 @@ describe("InvestorFlows", () => {
     expect(screen.getByText("صافي بيع")).toHaveClass("text-down");
   });
 
-  it("links the source only for an http(s) url", async () => {
+  it("does not show a source link", async () => {
     apiMock.mockResolvedValue({ flows: flows() });
-    const { unmount } = render(<InvestorFlows />);
-    const link = await screen.findByRole("link", { name: "المصدر" });
-    expect(link).toHaveAttribute("href", "https://example.com/wrap");
-    expect(link.getAttribute("rel")).toContain("noopener");
-    unmount();
-
-    apiMock.mockResolvedValue({ flows: flows({ sourceUrl: "javascript:alert(1)" }) });
     render(<InvestorFlows />);
     expect(await screen.findByText("تعاملات المستثمرين")).toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();

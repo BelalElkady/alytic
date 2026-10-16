@@ -39,25 +39,24 @@ export function groupLabel(nationality: string, type: string): string {
   return nat ?? kind ?? "الكل";
 }
 
-/** The source URL comes from a web search, so it only becomes a link if it is plain http(s). */
-const isHttpUrl = (value: string) => {
-  try {
-    const { protocol } = new URL(value);
-    return protocol === "http:" || protocol === "https:";
-  } catch {
-    return false;
-  }
-};
+/** A net figure in EGP, signed and at a fixed two decimals so every row reads the same way. */
+export function flowAmount(value: number): { figure: string; unit: string } {
+  const abs = Math.abs(value);
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const [div, unit] = abs >= 1_000_000_000 ? [1_000_000_000, "مليار ج.م"] : [1_000_000, "مليون ج.م"];
+  return { figure: `${sign}${(abs / div).toFixed(2)}`, unit };
+}
 
 function FlowRow({ group }: { group: FlowGroup }) {
   const buying = group.netEgp > 0;
   const hasGross = group.buyEgp !== null && group.sellEgp !== null;
+  const amount = flowAmount(group.netEgp);
   return (
-    <div className="flex items-center justify-between gap-3 py-2">
+    <div className="flex items-center justify-between gap-3 py-2.5">
       <div className="min-w-0">
-        <div className="text-[13px] font-medium">{groupLabel(group.nationality, group.type)}</div>
+        <div className="text-[15px] font-medium">{groupLabel(group.nationality, group.type)}</div>
         {(group.sharePct !== null || hasGross) && (
-          <div className="num text-[11.5px] text-muted-foreground">
+          <div className="num text-[13px] text-muted-foreground">
             {group.sharePct !== null && <>حصته {pct(group.sharePct).replace("+", "")}</>}
             {group.sharePct !== null && hasGross && " · "}
             {hasGross && (
@@ -68,11 +67,14 @@ function FlowRow({ group }: { group: FlowGroup }) {
           </div>
         )}
       </div>
-      <div className="shrink-0 text-right">
-        <div className={cn("num text-[14px] font-semibold tabular-nums", tone(group.netEgp))}>
-          {compact(group.netEgp)}
+      <div className="shrink-0 text-left">
+        <div className={cn("flex items-baseline gap-1.5", tone(group.netEgp))}>
+          <span dir="ltr" className="num text-[19px] font-bold tabular-nums">
+            {amount.figure}
+          </span>
+          <span className="text-[12px] font-medium">{amount.unit}</span>
         </div>
-        <div className={cn("text-[11.5px] font-medium", tone(group.netEgp))}>
+        <div className={cn("text-[13px] font-medium", tone(group.netEgp))}>
           {buying ? "صافي شراء" : group.netEgp < 0 ? "صافي بيع" : "متعادل"}
         </div>
       </div>
@@ -84,7 +86,7 @@ function FlowSection({ title, groups }: { title: string; groups: FlowGroup[] }) 
   if (!groups.length) return null;
   return (
     <div>
-      <div className="mb-1 text-[11.5px] font-semibold text-muted-foreground">{title}</div>
+      <div className="mb-1 text-[13px] font-semibold text-muted-foreground">{title}</div>
       <div className="divide-y">
         {groups.map((group) => (
           <FlowRow key={`${group.nationality}/${group.type}`} group={group} />
@@ -145,24 +147,7 @@ export function InvestorFlows() {
   return (
     <Panel
       title="تعاملات المستثمرين"
-      description={
-        <>
-          جلسة {date} — الأرقام من أخبار السوق بعد الإغلاق
-          {isHttpUrl(flows.sourceUrl) && (
-            <>
-              {" · "}
-              <a
-                href={flows.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline underline-offset-2"
-              >
-                المصدر
-              </a>
-            </>
-          )}
-        </>
-      }
+      description={`جلسة ${date} — الأرقام من أخبار السوق بعد الإغلاق`}
     >
       <div className="space-y-4">
         <FlowSection title="حسب الجنسية" groups={byNationality} />
