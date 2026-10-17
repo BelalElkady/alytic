@@ -140,25 +140,6 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing — right under the hero so the "شوف الأسعار" question is answered without a click. */}
-      <section id="pricing" className="border-b bg-surface">
-        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
-          <h2 className="text-2xl font-bold tracking-tight">أسعار واضحة لكل مستوى</h2>
-          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted-foreground">
-            نفس الأدوات في كل الباقات — الفرق في عدد مرات استخدام كل ميزة شهريًا. ابدأ بـ 5 أيام
-            تداول مجانًا وقرّر بعد كده.
-          </p>
-          <div className="mt-12">
-            <PricingPlans />
-          </div>
-          <Button asChild variant="outline" className="mt-6">
-            <Link to="/pricing">تفاصيل الأسعار والرصيد الإضافي</Link>
-          </Button>
-        </div>
-      </section>
-
-      <ProofTiles />
-
       {/* Features */}
       <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
         <h2 className="text-2xl font-bold tracking-tight">إيه اللي بتعمله الأداة بالظبط؟</h2>
@@ -207,6 +188,25 @@ function LandingPage() {
         </div>
       </section>
 
+      <ProofTiles />
+
+      {/* Pricing — sits right before the teaser video. */}
+      <section id="pricing" className="border-y bg-surface">
+        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
+          <h2 className="text-2xl font-bold tracking-tight">أسعار واضحة لكل مستوى</h2>
+          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted-foreground">
+            نفس الأدوات في كل الباقات — الفرق في عدد مرات استخدام كل ميزة شهريًا. ابدأ بـ 5 أيام
+            تداول مجانًا وقرّر بعد كده.
+          </p>
+          <div className="mt-12">
+            <PricingPlans />
+          </div>
+          <Button asChild variant="outline" className="mt-6">
+            <Link to="/pricing">تفاصيل الأسعار والرصيد الإضافي</Link>
+          </Button>
+        </div>
+      </section>
+
       {/* Teaser video: the vertical Short on phones, the wide cut from md up. */}
       <section className="mx-auto w-full max-w-6xl px-4 py-14">
         <h2 className="text-2xl font-bold tracking-tight">شوف الأداة وهي شغالة</h2>
@@ -220,6 +220,10 @@ function LandingPage() {
           <TeaserVideo id={TEASER_DESKTOP} className="aspect-video w-full" />
         </div>
       </section>
+
+      {/* Reference detail, read by someone who has already decided the pitch
+          above is worth a closer look — then the newest articles last. */}
+      <ToolExplainer />
 
       {/* CTA */}
       <section className="mx-auto w-full max-w-6xl px-4 py-16">
@@ -238,9 +242,6 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* Reference detail, read by someone who has already decided the pitch
-          above is worth a closer look — then the newest articles last. */}
-      <ToolExplainer />
       <LatestPosts />
     </SiteShell>
   );

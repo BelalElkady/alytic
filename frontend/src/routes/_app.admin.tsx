@@ -170,8 +170,9 @@ function AdminPage() {
 
   return (
     <Tabs defaultValue={canEditIndices ? "indices" : "users"} className="space-y-4">
-      {/* mt-3: room for the unread badge that sits on top of the "الدعم" tab. */}
-      <TabsList className="mt-3">
+      {/* The tabs outgrow a phone's width, so they scroll sideways. pt-4: room for the unread badge that sits on top of the "الدعم" tab, which the scroll area would otherwise clip. */}
+      <div className="scrollbar-slim -mx-1 overflow-x-auto px-1 pb-1 pt-4">
+      <TabsList className="w-max">
         {canEditIndices && <TabsTrigger value="indices">المؤشرات</TabsTrigger>}
         <TabsTrigger value="users">المستخدمين</TabsTrigger>
         <TabsTrigger value="support" className="relative">
@@ -201,6 +202,7 @@ function AdminPage() {
           </TabsTrigger>
         )}
       </TabsList>
+      </div>
       {canEditIndices && (
         <TabsContent value="indices" className="space-y-4">
           {isPlatformAdmin && <DailyClosePanel />}
