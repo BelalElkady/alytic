@@ -19,6 +19,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { PricingPlans } from "@/components/marketing/pricing-plans";
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -434,6 +435,23 @@ function HowToUsePage() {
               </span>
             </button>
           ))}
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section className="mt-14 border-y bg-surface sm:mt-16">
+        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
+          <h2 className="text-2xl font-bold tracking-tight">أسعار واضحة لكل مستوى</h2>
+          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted-foreground">
+            نفس الأدوات في كل الباقات — الفرق في عدد مرات استخدام كل ميزة شهريًا. ابدأ بـ 5 أيام
+            تداول مجانًا وقرّر بعد كده.
+          </p>
+          <div className="mt-12">
+            <PricingPlans />
+          </div>
+          <Button asChild variant="outline" className="mt-6">
+            <Link to="/pricing">تفاصيل الأسعار والرصيد الإضافي</Link>
+          </Button>
         </div>
       </section>
 

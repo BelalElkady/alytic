@@ -1,6 +1,7 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 
 import { ErrorState } from "@/components/desk/state-blocks";
+import { RelatedPosts } from "@/components/marketing/related-posts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getBlogPost, type BlogContentBlock, type BlogImage, type BlogPost } from "@/lib/blog";
@@ -218,6 +219,7 @@ function BlogPostPage() {
               </Link>
             </Button>
           </div>
+          <RelatedPosts currentSlug={post.slug} />
         </>
       )}
     </article>
