@@ -160,6 +160,8 @@
   --color-surface-2: var(--surface-2);
   --font-sans: "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
   --font-num: "IBM Plex Sans Arabic", ui-monospace, monospace;
+  /* Long-form reading (blog articles). */
+  --font-article: "Tajawal", "IBM Plex Sans Arabic", ui-sans-serif, sans-serif;
 }
 
 :root {
@@ -261,23 +263,23 @@
 
 /* Rich blog article body: written in the admin editor, shown on /blog/$slug and in the admin previews. */
 .blog-html {
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 17px;
+  line-height: 1.85;
 }
 .blog-html > * + * {
   margin-top: 1rem;
 }
 .blog-html h2 {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .blog-html h3 {
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 600;
 }
 .blog-html h4 {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
 }
 .blog-html ul,
