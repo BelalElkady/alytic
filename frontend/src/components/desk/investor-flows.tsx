@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { LockedPanel } from "@/components/desk/locked-feature";
 import { Panel } from "@/components/desk/state-blocks";
+import { useFeatureLock } from "@/lib/feature-lock";
 import { api } from "@/lib/api";
 import { compact, pct, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -104,7 +106,7 @@ const byOrder = (order: string[], key: "nationality" | "type") => (a: FlowGroup,
  * not a placeholder, not an error, not an older session — unless the server
  * has figures for the current session that passed its checks.
  */
-export function InvestorFlows() {
+function InvestorFlowsBody() {
   const [flows, setFlows] = useState<InvestorFlowsData | null>(null);
 
   useEffect(() => {
@@ -156,4 +158,10 @@ export function InvestorFlows() {
       </div>
     </Panel>
   );
+}
+
+/** The panel, or an upgrade placeholder when the account's tier is locked out of it. */
+export function InvestorFlows() {
+  const lock = useFeatureLock("panel", "investorFlows");
+  return lock ? <LockedPanel title="تعاملات المستثمرين" lock={lock} /> : <InvestorFlowsBody />;
 }

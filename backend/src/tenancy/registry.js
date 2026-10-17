@@ -1,5 +1,5 @@
 import { createServiceClient, platformDb } from '../supabaseClient.js';
-import { INSTAPAY } from '../billing/plans.js';
+import { INSTAPAY, resolveTiers } from '../billing/plans.js';
 import { decryptSecret } from './secrets.js';
 
 /**
@@ -87,7 +87,7 @@ function defaultConfigFromEnv() {
  * config are merged over the defaults field by field, so a tenant row only
  * has to hold what differs.
  */
-function buildTenant(row, { isDefault, domains, db }) {
+function buildTenant(row, { isDefault, domains, db, globalTiers }) {
   const brandIn = row?.brand_json ?? {};
   const configIn = row?.config_json ?? {};
   const base = isDefault ? defaultConfigFromEnv() : {
@@ -132,6 +132,9 @@ function buildTenant(row, { isDefault, domains, db }) {
     appUrl: String(config.appUrl ?? PLATFORM_APP_URL).replace(/\/+$/, ''),
     brand,
     config,
+    // Defaults, then the platform-wide tier settings, then this site's own
+    // overrides (config.tiers) — resolved once here so a request never merges.
+    tiers: resolveTiers(globalTiers, config.tiers),
     db,
   };
 }
@@ -149,11 +152,13 @@ function clientFor(row) {
 
 const defaultDomains = () => [...new Set([PLATFORM_APP_URL, process.env.FRONTEND_URL].map(normalizeHost).filter(Boolean))];
 
-let snapshot = buildSnapshot([], []);
+let snapshot = buildSnapshot([], [], null);
+// The platform-wide tier settings (platform_settings, key 'tiers'). Kept apart from the snapshot so a failed read keeps the last good value.
+let globalTiers = null;
 let registryMissingLogged = false;
 let refreshing = null;
 
-function buildSnapshot(rows, domainRows) {
+function buildSnapshot(rows, domainRows, globalTiers) {
   const domainsByTenant = new Map();
   for (const { domain, tenant_id: tenantId } of domainRows) {
     const host = normalizeHost(domain);
@@ -166,6 +171,7 @@ function buildSnapshot(rows, domainRows) {
     isDefault: true,
     domains: [...new Set([...defaultDomains(), ...(domainsByTenant.get(DEFAULT_TENANT_ID) ?? [])])],
     db: platformDb,
+    globalTiers,
   })];
   for (const row of rows) {
     if (row.id === DEFAULT_TENANT_ID) continue;
@@ -175,7 +181,7 @@ function buildSnapshot(rows, domainRows) {
       continue;
     }
     try {
-      tenants.push(buildTenant(row, { isDefault: false, domains, db: clientFor(row) }));
+      tenants.push(buildTenant(row, { isDefault: false, domains, db: clientFor(row), globalTiers }));
     } catch (err) {
       console.error(`[tenancy] tenant ${row.id} could not be loaded: ${err.message}`);
     }
@@ -192,21 +198,28 @@ const isMissingTable = (error) => error && (error.code === '42P01' || error.code
 export function refreshTenants() {
   refreshing ??= (async () => {
     try {
-      const [tenants, domains] = await Promise.all([
+      const [tenants, domains, settings] = await Promise.all([
         platformDb.from('tenants').select('*'),
         platformDb.from('tenant_domains').select('domain, tenant_id'),
+        platformDb.from('platform_settings').select('value').eq('key', 'tiers').maybeSingle(),
       ]);
+      // A missing platform_settings table just means no platform-wide edits yet;
+      // any other failure keeps the last good value instead of reverting every
+      // site to the built-in caps.
+      if (!settings.error) globalTiers = settings.data?.value ?? null;
+      else if (!isMissingTable(settings.error)) console.error('[tenancy] platform_settings read failed:', settings.error.message);
+      else globalTiers = null;
       const error = tenants.error ?? domains.error;
       if (error) {
         if (isMissingTable(error)) {
           if (!registryMissingLogged) console.log('[tenancy] supabase/platform.sql not applied — serving the default site only');
           registryMissingLogged = true;
-          snapshot = buildSnapshot([], []);
+          snapshot = buildSnapshot([], [], globalTiers);
           return;
         }
         throw new Error(error.message);
       }
-      snapshot = buildSnapshot(tenants.data, domains.data);
+      snapshot = buildSnapshot(tenants.data, domains.data, globalTiers);
     } catch (err) {
       // Keep serving the last good snapshot rather than dropping every client
       // because one refresh hit a network blip.
@@ -225,6 +238,9 @@ export async function startTenantRegistry() {
   timer ??= setInterval(refreshTenants, REFRESH_MS);
   timer.unref?.();
 }
+
+/** The platform-wide tier settings as stored (partial), for the platform panel. */
+export const globalTierSettings = () => globalTiers ?? {};
 
 export const defaultTenant = () => snapshot.byId.get(DEFAULT_TENANT_ID);
 export const tenantById = (id) => snapshot.byId.get(id) ?? null;

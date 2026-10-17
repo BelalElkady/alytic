@@ -8,10 +8,12 @@ import {
   Notice,
   Spinner,
 } from "@/components/desk/state-blocks";
+import { LockedPanel } from "@/components/desk/locked-feature";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiError, api, post } from "@/lib/api";
+import { useFeatureLock } from "@/lib/feature-lock";
 import { fmt, int, pct } from "@/lib/format";
 import {
   INVEST_STYLES,
@@ -216,7 +218,7 @@ const MAX_SEARCH_RESULTS = 30;
  * body only — the market page and the cash dialog each supply their own frame,
  * and mount this on open, so every visit starts from a fresh scan and search.
  */
-export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
+function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
   const {
     openDetail,
     universe,
@@ -829,5 +831,19 @@ function TargetBox({
       <div className="num text-[15px] font-semibold">{price ? fmt(price) : "—"}</div>
       <div className="num text-[11.5px] text-muted-foreground">{hint}</div>
     </div>
+  );
+}
+
+/**
+ * The scan body, or an upgrade placeholder when the account's tier is locked
+ * out of it: the market tab is the "marketAnalysis" panel, the cash tab is the
+ * "cash" page (the same scan, so locking either also stops its API calls).
+ */
+export function MarketAnalysis({ focus }: { focus: "market" | "cash" }) {
+  const lock = useFeatureLock(focus === "cash" ? "page" : "panel", focus === "cash" ? "cash" : "marketAnalysis");
+  return lock ? (
+    <LockedPanel title={focus === "cash" ? "تحليل الكاش" : "تحليل السوق"} lock={lock} />
+  ) : (
+    <MarketAnalysisBody focus={focus} />
   );
 }

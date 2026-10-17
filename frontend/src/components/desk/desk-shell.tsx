@@ -63,21 +63,28 @@ import {
   useActiveInvestStyle,
   type StyleKey,
 } from "@/lib/invest-style";
+import { LockedPage } from "@/components/desk/locked-feature";
+import { PAGE_LABELS, lockFor, pageKeyForPath } from "@/lib/feature-lock";
 import { useDesk } from "@/lib/store";
 import { useTenant } from "@/lib/tenant";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
-type NavUser = { isAdmin?: boolean; isMarketer?: boolean } | null | undefined;
+type NavUser =
+  | { isAdmin?: boolean; isMarketer?: boolean; locked?: { pages: string[]; panels: string[] } }
+  | null
+  | undefined;
 
 /**
  * Who sees a tab: "all" — everyone; "staff" — admins and marketers (the admin
  * panel shows a marketer its read-only users table); "admin" — admins only.
  */
-const canSee = (item: { access: "all" | "staff" | "admin" }, user: NavUser) =>
-  item.access === "all" ||
-  Boolean(user?.isAdmin) ||
-  (item.access === "staff" && Boolean(user?.isMarketer));
+const canSee = (item: { access: "all" | "staff" | "admin"; to: string }, user: NavUser) =>
+  // A page the tier is locked out of (platform panel → الباقات) is hidden, not greyed out.
+  !lockFor(user, "page", pageKeyForPath(item.to)) &&
+  (item.access === "all" ||
+    Boolean(user?.isAdmin) ||
+    (item.access === "staff" && Boolean(user?.isMarketer)));
 
 const NAV = [
   { to: "/portfolio", label: "الأسهم", icon: Wallet, access: "all" },
@@ -96,6 +103,7 @@ export function DeskShell({ children }: { children: ReactNode }) {
   const { user, authChecked } = useDesk();
   const navigate = useNavigate();
   const router = useRouter();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => {
     if (authChecked && !user)
@@ -117,6 +125,9 @@ export function DeskShell({ children }: { children: ReactNode }) {
   // over an API that would answer 402 anyway. The header stays so the user can
   // still see their status and sign out.
   const locked = user.hasAccess === false;
+  // Opened by URL a page the tier is locked out of: the nav hides it, this is the backstop.
+  const pageKey = pageKeyForPath(pathname);
+  const pageLock = lockFor(user, "page", pageKey);
 
   return (
     <div className="min-h-screen bg-surface pb-20 md:pb-0">
@@ -135,7 +146,17 @@ export function DeskShell({ children }: { children: ReactNode }) {
       )}
       {!locked && <HeroBar />}
       <main className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
-        {locked ? (user.suspended ? <SuspendedWall /> : <SubscriptionWall />) : children}
+        {locked ? (
+          user.suspended ? (
+            <SuspendedWall />
+          ) : (
+            <SubscriptionWall />
+          )
+        ) : pageLock && pageKey ? (
+          <LockedPage title={PAGE_LABELS[pageKey]} lock={pageLock} />
+        ) : (
+          children
+        )}
       </main>
       <SiteFooter />
       <MobileNav />

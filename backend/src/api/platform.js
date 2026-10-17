@@ -24,7 +24,9 @@ import {
 import { createServiceClient, platformDb } from '../supabaseClient.js';
 import { encryptSecret } from '../tenancy/secrets.js';
 import { runWithTenant } from '../tenancy/context.js';
-import { DEFAULT_TENANT_ID, allTenants, normalizeHost, refreshTenants, tenantById } from '../tenancy/registry.js';
+import { DEFAULT_TENANT_ID, allTenants, globalTierSettings, normalizeHost, refreshTenants, tenantById } from '../tenancy/registry.js';
+import { DEFAULT_TIER_SETTINGS, TIER_LIMITS, sanitizeTierSettings } from '../billing/plans.js';
+import { lockableForAdmin } from '../billing/features.js';
 import { mediaTypeOf, safeHttpsUrl } from '../security.js';
 
 const TENANT_ID = /^[a-z0-9][a-z0-9-]{1,30}$/;
@@ -177,6 +179,7 @@ export function sanitizeConfig(input) {
       config.prices[key] = price;
     }
   }
+  if (input.tiers != null) config.tiers = sanitizeTierSettings(input.tiers);
   if (input.features != null) {
     if (!isPlainObject(input.features)) throw new BadRequest('config.features لازم يكون object');
     config.features = {};
@@ -351,6 +354,9 @@ export function mountPlatformRoutes(app, { wrap }) {
     }
     if ('config' in body) {
       patch.config_json = sanitizeConfig(body.config);
+      // Tier overrides have their own editor and route; a tenant form that never
+      // heard of them must not wipe them by saving everything else.
+      if (!('tiers' in (body.config ?? {})) && existing?.config_json?.tiers) patch.config_json.tiers = existing.config_json.tiers;
       checkSize(patch.config_json, 'config');
     }
     if ('notes' in body) patch.notes = optionalString(body.notes, 2000, 'notes');
@@ -381,6 +387,60 @@ export function mountPlatformRoutes(app, { wrap }) {
     await refreshTenants();
     const { data: row } = await platformDb.from('tenants').select('*').eq('id', id).maybeSingle();
     res.json({ tenant: describe(tenantById(id), row) });
+  }));
+
+  // ---- Tier settings -------------------------------------------------------
+  // The caps, Portfolio cap, page/panel locks and pricing-card text of each
+  // tier. One platform-wide set every site inherits, plus each site's own
+  // overrides (config_json.tiers). Both are partial: a field that is absent
+  // is inherited. See resolveTiers() in src/billing/plans.js.
+  app.get('/api/platform/tiers', wrap(async (_req, res) => {
+    res.json({
+      defaults: DEFAULT_TIER_SETTINGS,
+      global: globalTierSettings(),
+      sites: allTenants().map((tenant) => ({ id: tenant.id, name: tenant.name, isDefault: tenant.isDefault, overrides: tenant.config.tiers ?? {} })),
+      lockable: lockableForAdmin(),
+      limits: TIER_LIMITS,
+    });
+  }));
+
+  app.put('/api/platform/tiers', wrap(async (req, res) => {
+    const tiers = sanitizeTierSettings(req.body?.tiers);
+    checkSize(tiers, 'tiers');
+    const saved = await platformDb.from('platform_settings').upsert({ key: 'tiers', value: tiers, updated_at: new Date().toISOString() });
+    if (saved.error) {
+      console.error('[platform] platform_settings:', saved.error.message);
+      throw new Error('مش قادر أحفظ إعدادات الباقات — طبّق platform.sql على قاعدة البيانات الأساسية الأول');
+    }
+    await refreshTenants();
+    console.log(`[audit] platform tier settings saved by ${req.user.email}`);
+    res.json({ global: globalTierSettings() });
+  }));
+
+  app.put('/api/platform/tenants/:id/tiers', wrap(async (req, res) => {
+    const id = req.params.id;
+    if (!tenantById(id)) return res.status(404).json({ error: 'العميل ده مش موجود أو مش متحمّل' });
+    const tiers = sanitizeTierSettings(req.body?.tiers);
+    checkSize(tiers, 'tiers');
+    const { data: existing, error } = await platformDb.from('tenants').select('*').eq('id', id).maybeSingle();
+    if (error) throw new Error(error.message);
+    const config = { ...(existing?.config_json ?? {}) };
+    if (Object.keys(tiers).length) config.tiers = tiers;
+    else delete config.tiers;
+    const patch = { config_json: config, updated_at: new Date().toISOString() };
+    if (existing) {
+      const updated = await platformDb.from('tenants').update(patch).eq('id', id);
+      if (updated.error) throw new Error(updated.error.message);
+    } else if (id === DEFAULT_TENANT_ID) {
+      // First customisation of the default site: its row holds only overrides.
+      const inserted = await platformDb.from('tenants').insert({ id, name: 'EGXpert', ...patch });
+      if (inserted.error) throw new Error(inserted.error.message);
+    } else {
+      return res.status(404).json({ error: 'العميل ده مش موجود' });
+    }
+    await refreshTenants();
+    console.log(`[audit] tier overrides for ${id} saved by ${req.user.email}`);
+    res.json({ id, overrides: tenantById(id)?.config.tiers ?? {} });
   }));
 
   // Removes a client from the platform: its registry row and its domains, so
