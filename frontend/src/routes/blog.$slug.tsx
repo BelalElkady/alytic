@@ -111,7 +111,7 @@ function BlogHeroImage({ image, alt }: { image: BlogImage; alt: string }) {
 
 function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-article">
       {blocks.map((block, index) => {
         if (block.type === "heading") {
           const Heading = block.level === 3 ? "h3" : "h2";
@@ -120,8 +120,8 @@ function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
               key={index}
               className={
                 block.level === 3
-                  ? "text-[16px] font-semibold tracking-tight"
-                  : "text-[18px] font-semibold tracking-tight"
+                  ? "text-[19px] font-bold tracking-tight"
+                  : "text-[22px] font-bold tracking-tight"
               }
             >
               {block.text}
@@ -134,7 +134,7 @@ function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
         }
         if (block.type === "list") {
           return (
-            <ul key={index} className="list-disc space-y-1.5 ps-5 text-[14px] leading-relaxed">
+            <ul key={index} className="list-disc space-y-1.5 ps-5 text-[17px] leading-[1.85]">
               {block.items.map((item, itemIndex) => (
                 <li key={itemIndex}>{item}</li>
               ))}
@@ -142,7 +142,7 @@ function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
           );
         }
         return (
-          <p key={index} className="text-[14px] leading-relaxed text-foreground">
+          <p key={index} className="text-[17px] leading-[1.85] text-foreground">
             {block.text}
           </p>
         );
