@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-ro
 
 import { ErrorState } from "@/components/desk/state-blocks";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { getBlogPost, type BlogContentBlock, type BlogImage, type BlogPost } from "@/lib/blog";
 import { arPublishedDate } from "@/lib/format";
 import { canonical, ogLogoUrl, siteUrl, siteName } from "@/lib/seo";
@@ -204,6 +205,18 @@ function BlogPostPage() {
           </p>
           <div className="mt-8">
             <BlogContent blocks={post.content} />
+          </div>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-3 border-t pt-8">
+            <Button asChild size="lg">
+              <Link to="/login" search={{ mode: "register" }}>
+                ابدأ التجربة المجانية
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link to="/login" search={{ mode: "register" }}>
+                احصل على شهرين مجانا
+              </Link>
+            </Button>
           </div>
         </>
       )}

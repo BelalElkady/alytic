@@ -140,6 +140,8 @@ function LandingPage() {
         </div>
       </section>
 
+      <ProofTiles />
+
       {/* Features */}
       <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
         <h2 className="text-2xl font-bold tracking-tight">إيه اللي بتعمله الأداة بالظبط؟</h2>
@@ -187,8 +189,6 @@ function LandingPage() {
           </Link>
         </div>
       </section>
-
-      <ProofTiles />
 
       {/* Pricing — sits right before the teaser video. */}
       <section id="pricing" className="border-y bg-surface">
