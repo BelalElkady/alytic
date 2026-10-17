@@ -48,7 +48,7 @@ export function PromoBanner() {
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4 pe-12">
         <div className="min-w-0 flex-1">
           <p className="text-[17px] font-bold leading-snug sm:text-xl">
-            اشترك الآن في الباقة السنوية واحصل على شهرين مجانًا
+            اشترك الآن في الباقة السنوية واحصل على <span className="text-amber-300">شهرين مجانًا</span>
           </p>
         </div>
         <Button
