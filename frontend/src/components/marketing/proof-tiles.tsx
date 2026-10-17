@@ -70,21 +70,28 @@ export function ProofTiles() {
   ];
 
   return (
-    <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:py-16">
-      <div className="flex flex-wrap justify-center gap-4">
+    <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:py-16">
+      <div className="flex flex-wrap justify-center gap-2.5 sm:gap-4">
         {tiles.map(({ Icon, title, value, note }) => (
           <div
             key={title}
-            className="w-full rounded-xl border bg-card p-6 text-center sm:w-[calc(50%-0.5rem)] lg:w-[calc(25%-0.75rem)] shadow-sm transition-colors hover:border-primary/40"
+            className="w-[calc(50%-0.3125rem)] rounded-xl border bg-card p-3 text-center sm:w-[calc(50%-0.5rem)] sm:p-6 lg:w-[calc(25%-0.75rem)] shadow-sm transition-colors hover:border-primary/40"
           >
-            <span className="mx-auto grid size-11 place-items-center rounded-lg bg-secondary text-foreground">
-              <Icon className="size-5" />
+            <span className="mx-auto grid size-8 place-items-center rounded-lg bg-secondary text-foreground sm:size-11">
+              <Icon className="size-4 sm:size-5" />
             </span>
-            <p className="mt-3 text-[15px] font-semibold">{title}</p>
-            <p dir="ltr" className="mt-4 text-4xl font-bold tracking-tight text-primary">
+            <p className="mt-2 text-[13px] font-semibold sm:mt-3 sm:text-[15px]">{title}</p>
+            <p
+              dir="ltr"
+              className="mt-2 text-2xl font-bold tracking-tight text-primary sm:mt-4 sm:text-4xl"
+            >
               <span className="num">{value}</span>
             </p>
-            {note && <p className="mt-4 text-[12.5px] text-muted-foreground">{note}</p>}
+            {note && (
+              <p className="mt-2 text-[11px] text-muted-foreground sm:mt-4 sm:text-[12.5px]">
+                {note}
+              </p>
+            )}
           </div>
         ))}
       </div>

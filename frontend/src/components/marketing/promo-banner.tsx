@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 import { PLANS } from "@/components/marketing/pricing-plans";
 import { Button } from "@/components/ui/button";
-import { fmt } from "@/lib/format";
 
 const DISMISSED_KEY = "promo-trader-yearly-dismissed";
 
@@ -28,9 +27,9 @@ export function PromoBanner() {
   const trader = PLANS.find((plan) => plan.key === "trader");
   if (dismissed || !trader || trader.monthlyPrice === null || trader.yearlyPrice === null) return null;
 
-  // Rounded down to a whole percent, the same way the pricing page labels it, so it never overstates.
-  const savingPct = Math.floor((1 - trader.yearlyPrice / (trader.monthlyPrice * 12)) * 100);
-  if (savingPct <= 0) return null;
+  // The headline promises exactly two free months, so the banner hides if the prices stop saying that.
+  const freeMonths = Math.floor((trader.monthlyPrice * 12 - trader.yearlyPrice) / trader.monthlyPrice);
+  if (freeMonths !== 2) return null;
 
   const dismiss = () => {
     setDismissed(true);
@@ -49,12 +48,7 @@ export function PromoBanner() {
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4 pe-12">
         <div className="min-w-0 flex-1">
           <p className="text-[17px] font-bold leading-snug sm:text-xl">
-            اشترك في باقة الحريفة سنويًا ووفّر <span className="num">{fmt(savingPct)}%</span>
-          </p>
-          <p className="mt-1 text-[13px] opacity-80">
-            <span className="num">{fmt(trader.yearlyPrice)}</span> جنيه في السنة بدل{" "}
-            <s className="num">{fmt(trader.monthlyPrice * 12)}</s> — لكل مضارب نشط عايز محافظ متعددة
-            وحدود أعلى.
+            اشترك الآن في الباقة السنوية واحصل على شهرين مجانًا
           </p>
         </div>
         <Button
@@ -63,8 +57,8 @@ export function PromoBanner() {
           variant="secondary"
           className="shrink-0 bg-primary-foreground text-primary hover:bg-primary-foreground/90"
         >
-          <Link to="/subscribe" search={{ tier: "trader", period: "yearly" }}>
-            اشترك في الحريفة
+          <Link to="/pricing">
+            شوف الأسعار
           </Link>
         </Button>
       </div>
