@@ -23,7 +23,8 @@ import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../c
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
 import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
 import { currentSession, fetchAndSaveInvestorFlows, fetchSlot } from '../investorFlows.js';
-import { TIERS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, WHATSAPP_NUMBER } from '../billing/plans.js';
+import { TIER_KEYS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, tiersFor, isLocked, WHATSAPP_NUMBER } from '../billing/plans.js';
+import { lockableFeatureFor } from '../billing/features.js';
 import { STYLE_KEYS, DEFAULT_STYLE, rulesForStyle } from '../config/styles.js';
 import RULES from '../config/rules.js';
 import { behaviorProfile } from '../scoring/behavior.js';
@@ -104,6 +105,46 @@ function trialInfo(user) {
  * break local development, and a marketer is staff whose whole job is the
  * admin page, which the subscription wall would otherwise replace.
  */
+// ---- Tier settings the browser needs ------------------------------------
+// What a tier locks (pages and panels the platform panel switched off), as the
+// browser should apply it to this account. Staff and the CLI are never locked
+// out — they would otherwise lose the screens they use to undo it. A lapsed
+// account (tier null) is held back by the paywall instead.
+const isStaff = (user) => Boolean(user.isAdmin) || Boolean(user.isMarketer) || user.id === 'local';
+function lockedFor(user, tier, tenant) {
+  const none = { pages: [], panels: [] };
+  if (!tier || isStaff(user)) return none;
+  return tiersFor(tenant)[tier]?.locked ?? none;
+}
+
+// For a locked page or panel, the cheapest tier that doesn't lock it — what
+// the upgrade prompt names. Tiers run free < long < trader.
+function unlockWith(tenant) {
+  const tiers = tiersFor(tenant);
+  const out = { pages: {}, panels: {} };
+  for (const [group, kind] of [['pages', 'page'], ['panels', 'panel']]) {
+    const keys = new Set(TIER_KEYS.flatMap((t) => tiers[t].locked[group]));
+    for (const key of keys) {
+      const tier = TIER_KEYS.find((t) => !isLocked(t, kind, key, tenant));
+      out[group][key] = tier ? { tier, name: tiers[tier].card.name } : null;
+    }
+  }
+  return out;
+}
+
+// The tier settings the public pricing and subscribe screens render: the
+// effective caps, Portfolio cap and card text — never the lock lists, which
+// are nobody's business until you hit a locked screen.
+function publicTiers(tenant) {
+  return Object.fromEntries(Object.entries(tiersFor(tenant)).map(([key, t]) => [key, {
+    key,
+    label: t.card.name,
+    ...t.caps,
+    portfolios: t.portfolios,
+    card: t.card,
+  }]));
+}
+
 async function accessInfo(user) {
   const trial = trialInfo(user);
   const subscription = await getSubscription(user.id);
@@ -329,7 +370,8 @@ app.post('/api/auth/logout', (_req, res) => {
 app.get('/api/auth/me', wrap(async (req, res) => {
   const user = await userFromRequest(req);
   if (!user) return res.json({ user: null });
-  res.json({ user: { ...user, ...(await accessInfo(user)), isPlatformAdmin: isPlatformAdmin(user, req.tenant), canEditIndices: canEditIndices(user, req.tenant) } });
+  const access = await accessInfo(user);
+  res.json({ user: { ...user, ...access, locked: lockedFor(user, access.tier, req.tenant), unlockWith: unlockWith(req.tenant), isPlatformAdmin: isPlatformAdmin(user, req.tenant), canEditIndices: canEditIndices(user, req.tenant) } });
 }));
 
 // Public "تواصل معنا" form — no login required, and never blocked by a
@@ -538,7 +580,7 @@ app.get('/api/billing/plans', (req, res) => {
   // the same one the subscribe page's QR encodes, so it is public by design.
   const address = instapayFor(req.tenant)?.address;
   const payLink = typeof address === 'string' && /^https?:\/\//i.test(address) ? address : null;
-  res.json({ plans: Object.values(plansFor(req.tenant)), tiers: TIERS, addons: addonsFor(req.tenant), payLink });
+  res.json({ plans: Object.values(plansFor(req.tenant)), tiers: publicTiers(req.tenant), addons: addonsFor(req.tenant), payLink });
 });
 
 // What the frontend needs to render this site as itself: name, logo, colors,
@@ -664,6 +706,33 @@ app.use('/api', async (req, res, next) => {
       : 'انتهت تجربتك المجانية. حوّل قيمة الاشتراك على InstaPay وهنفعّل حسابك.',
     reason: expired ? 'subscription_expired' : 'trial_ended',
     requiresSubscription: true,
+  });
+});
+
+// ---- Feature locks ---------------------------------------------------
+// The pages and desk panels the platform panel can switch off per tier (see
+// src/billing/features.js). Only calls that exist to serve one locked feature
+// are refused, so a tier that loses the investor-flows panel still has every
+// other screen. Staff are exempt, and a lapsed account is left to the paywall.
+app.use('/api', async (req, res, next) => {
+  if (!req.user || isStaff(req.user)) return next();
+  const feature = lockableFeatureFor(req.path, req.query);
+  if (!feature) return next();
+  let tier;
+  try {
+    tier = req.access?.tier !== undefined ? req.access.tier : (await accessInfo(req.user)).tier;
+  } catch (err) {
+    console.error('feature lock check failed:', err);
+    return res.status(503).json({ error: 'تعذر التحقق من باقتك دلوقتي — جرّب تاني بعد شوية.' });
+  }
+  if (!tier || !isLocked(tier, feature.kind, feature.key, req.tenant)) return next();
+  const unlock = unlockWith(req.tenant)[feature.kind === 'page' ? 'pages' : 'panels'][feature.key];
+  res.status(403).json({
+    error: unlock
+      ? `${feature.label} مش متاحة في باقتك الحالية — رقّي لـ${unlock.name} عشان تفتحها.`
+      : `${feature.label} مش متاحة في باقتك الحالية.`,
+    reason: 'feature_locked',
+    feature: feature.key,
   });
 });
 
@@ -934,7 +1003,8 @@ function bumpUsage(usage, kind) {
 // callers use this to decide whether a charged use should still count
 // against the base allowance or has to draw from credits instead.
 function baseLeftFor(kind, usage, tier) {
-  const limit = (TIERS[tier] ?? TIERS.free)[kind];
+  const tiers = tiersFor();
+  const limit = (tiers[tier] ?? tiers.free)[kind];
   const used = usage[kind];
   return Math.max(0, limit - used);
 }
@@ -1588,7 +1658,7 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
     // goodwill extension, a correction) must say explicitly which tier's
     // feature caps the account should get.
     tier = String(req.body?.tier ?? '');
-    if (!TIERS[tier] || tier === 'free') return res.status(400).json({ error: 'اختر باقة (نفس طويل أو حريفة) للاشتراك المخصص' });
+    if (!TIER_KEYS.includes(tier) || tier === 'free') return res.status(400).json({ error: 'اختر باقة (نفس طويل أو حريفة) للاشتراك المخصص' });
   } else {
     return res.status(400).json({ error: 'اختر باقة صحيحة' });
   }
@@ -2515,9 +2585,9 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
       cash: portfolio.cash,
       // Only set for focus=cash — null means this wasn't a cash scan.
       cashScansLeft: cashScansLeftNow,
-      cashScansPerMonth: tier ? (TIERS[tier] ?? TIERS.free).cashScans : null,
+      cashScansPerMonth: tier ? (tiersFor()[tier] ?? tiersFor().free).cashScans : null,
       marketAnalysisLeft: marketAnalysisLeftNow,
-      marketAnalysisPerMonth: tier ? (TIERS[tier] ?? TIERS.free).marketAnalysis : null,
+      marketAnalysisPerMonth: tier ? (tiersFor()[tier] ?? tiersFor().free).marketAnalysis : null,
       // A compact row per stock — the full analysis is one request away and far
       // too large to send 43 of.
       results: results.map((r) => {
@@ -2778,7 +2848,7 @@ app.get('/api/portfolio', wrap(async (req, res) => {
   // its own data), so req.access isn't guaranteed to be set the way it is on
   // /api/scan — compute it directly rather than assume.
   const tier = req.access?.tier ?? (await accessInfo(req.user)).tier;
-  const limits = TIERS[tier] ?? TIERS.free;
+  const limits = tiersFor()[tier] ?? tiersFor().free;
   res.json({
     ...p,
     capital: capitalOf(p),

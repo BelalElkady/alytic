@@ -50,6 +50,7 @@ import { NewArticleTab } from "@/components/admin/blog-new-article-tab";
 import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { LivePricesTab, useLivePricesAlert } from "@/components/admin/live-prices-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
+import { TiersTab } from "@/components/admin/tiers-tab";
 import { UniverseChangesPanel } from "@/components/admin/universe-changes";
 import { RENEWAL_LABEL, UsersScreen, renewalStatus, type FollowUpChannel } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
@@ -186,6 +187,7 @@ function AdminPage() {
         </TabsTrigger>
         <TabsTrigger value="blog">المدونة</TabsTrigger>
         {isPlatformAdmin && <TabsTrigger value="platform">العملاء</TabsTrigger>}
+        {isPlatformAdmin && <TabsTrigger value="tiers">الباقات</TabsTrigger>}
         {isPlatformAdmin && <TabsTrigger value="announcements">تنبيهات الميزات</TabsTrigger>}
         {isPlatformAdmin && (
           <TabsTrigger value="live-prices" className="relative">
@@ -209,6 +211,11 @@ function AdminPage() {
       {isPlatformAdmin && (
         <TabsContent value="platform">
           <PlatformTab />
+        </TabsContent>
+      )}
+      {isPlatformAdmin && (
+        <TabsContent value="tiers">
+          <TiersTab />
         </TabsContent>
       )}
       {isPlatformAdmin && (

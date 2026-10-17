@@ -47,21 +47,33 @@ create table if not exists tenant_domains (
 );
 create index if not exists idx_tenant_domains_tenant on tenant_domains (tenant_id);
 
+-- Platform-wide settings, one JSON document per key. Today only 'tiers': the
+-- default caps, Portfolio cap, page/panel locks and pricing-card text for each
+-- tier, which every site inherits unless its own config_json.tiers overrides
+-- a field. Edited from the platform panel; see resolveTiers() in
+-- src/billing/plans.js. No row means the built-in defaults apply.
+create table if not exists platform_settings (
+  key text primary key,
+  value jsonb not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
 -- Which tenant spent each AI call, so each client's AI cost can be billed.
 -- Rows from before this column existed stay null (all of them are the
 -- default site's).
 alter table ai_spend add column if not exists tenant_id text;
 create index if not exists ai_spend_tenant_created_idx on ai_spend (tenant_id, created_at);
 
--- Same lock-down as the end of schema.sql, for the two new tables.
+-- Same lock-down as the end of schema.sql, for the new tables.
 alter table tenants enable row level security;
 alter table tenant_domains enable row level security;
+alter table platform_settings enable row level security;
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
-    revoke all on tenants, tenant_domains from anon;
+    revoke all on tenants, tenant_domains, platform_settings from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    revoke all on tenants, tenant_domains from authenticated;
+    revoke all on tenants, tenant_domains, platform_settings from authenticated;
   end if;
 end $$;

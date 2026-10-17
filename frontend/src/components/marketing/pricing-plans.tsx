@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { api } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -72,7 +74,40 @@ export const FEATURE_ROWS = [
 ] as const;
 
 
+/** One tier as GET /api/billing/plans returns it: the caps, Portfolio cap and card text the platform panel sets (see publicTiers in backend/src/api/server.js). */
+type LiveTier = {
+  screenshots: number;
+  recommendations: number;
+  cashScans: number;
+  marketAnalysis: number;
+  portfolios: number;
+  card: { name: string; note: string; bullets: string[] };
+};
+
+/**
+ * The live tier settings, or null until they load (or if the request fails) — the
+ * cards then show the built-in values above, so the page is never empty.
+ */
+function useLiveTiers(): Record<string, LiveTier> | null {
+  const [tiers, setTiers] = useState<Record<string, LiveTier> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api("/api/billing/plans")
+      .then((result) => {
+        if (!cancelled) setTiers(result?.tiers ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setTiers(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return tiers;
+}
+
 export function PricingPlans() {
+  const liveTiers = useLiveTiers();
   // Yearly by default: it's the better deal, and it's the price quoted per month below.
   const [period, setPeriod] = useState<Period>("yearly");
 
@@ -93,6 +128,12 @@ export function PricingPlans() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         {PLANS.map((plan) => {
+          const live = liveTiers?.[plan.key];
+          const name = live?.card.name ?? plan.name;
+          const note = live?.card.note ?? plan.note;
+          const portfolios = live?.portfolios ?? plan.portfolios;
+          const bullets = live?.card.bullets ?? [];
+          const limits: Record<(typeof FEATURE_ROWS)[number]["key"], number> = live ?? plan.limits;
           // The yearly tab quotes the yearly price as a per-month figure, rounded to whole pounds
           // (2,990 → 249 on screen), with the real one-time total and the saving spelled out beneath it.
           let price: number | null = plan.monthlyPrice;
@@ -112,7 +153,7 @@ export function PricingPlans() {
               plan.highlight && "border-primary/60 ring-1 ring-primary/20",
             )}
           >
-            <h2 className="text-[16px] font-semibold">{plan.name}</h2>
+            <h2 className="text-[16px] font-semibold">{name}</h2>
             <p className="mt-5 flex items-end gap-2">
               {price === null ? (
                 <>
@@ -162,7 +203,7 @@ export function PricingPlans() {
                   : "w-fit rounded-md border border-primary/30 bg-secondary px-2 py-1 font-semibold text-foreground",
               )}
             >
-              {plan.note}
+              {note}
             </p>
 
             <ul className="mb-6 mt-5 space-y-2 border-t pt-4">
@@ -170,7 +211,7 @@ export function PricingPlans() {
               <li className="flex items-center justify-between text-[13px]">
                 <span className="text-muted-foreground">عدد المحافظ</span>
                 <span className="font-semibold">
-                  <span className="num">{plan.portfolios}</span> محفظة
+                  <span className="num">{portfolios}</span> محفظة
                 </span>
               </li>
               {FEATURE_ROWS.map((row) => (
@@ -178,9 +219,22 @@ export function PricingPlans() {
                   <span className="text-muted-foreground">{row.label}</span>
                   {/* Only the digits are isolated LTR — the row itself stays RTL so the number sits on the right of its unit word. */}
                   <span className="font-semibold">
-                    <span className="num">{plan.limits[row.key]}</span> {row.unit}
-                    {plan.limits[row.key] === 1 ? "" : plan.key === "free" ? "" : "/شهر"}
+                    {limits[row.key] === 0 ? (
+                      "غير متاحة"
+                    ) : (
+                      <>
+                        <span className="num">{limits[row.key]}</span> {row.unit}
+                        {limits[row.key] === 1 ? "" : plan.key === "free" ? "" : "/شهر"}
+                      </>
+                    )}
                   </span>
+                </li>
+              ))}
+              {/* Extra lines the platform panel adds to this tier's card. */}
+              {bullets.map((line) => (
+                <li key={line} className="flex items-start gap-2 text-[13px]">
+                  <Check className="mt-0.5 size-3.5 shrink-0 text-up" />
+                  <span>{line}</span>
                 </li>
               ))}
             </ul>

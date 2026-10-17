@@ -1,3 +1,4 @@
+import { FeatureLockContext } from "@/lib/feature-lock";
 import {
   createContext,
   useCallback,
@@ -123,6 +124,13 @@ export type User = {
   /** Blocked by an admin regardless of trial/subscription — see suspensionMessage and SuspendedWall in desk-shell.tsx. */
   suspended?: boolean;
   suspensionMessage?: string | null;
+  /** Pages and desk panels this account's tier is locked out of (see backend/src/billing/features.js). Empty for staff. */
+  locked?: { pages: string[]; panels: string[] };
+  /** For each locked page/panel, the cheapest tier that unlocks it — what the upgrade prompt names. */
+  unlockWith?: {
+    pages: Record<string, { tier: string; name: string } | null>;
+    panels: Record<string, { tier: string; name: string } | null>;
+  };
   [key: string]: any;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -849,5 +857,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     deletePortfolio,
   };
 
-  return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;
+  return (
+    <FeatureLockContext.Provider value={user}>
+      <DeskContext.Provider value={value}>{children}</DeskContext.Provider>
+    </FeatureLockContext.Provider>
+  );
 }

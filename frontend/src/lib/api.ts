@@ -89,4 +89,11 @@ export const patch = <T = any>(path: string, body?: unknown) =>
     body: JSON.stringify(body ?? {}),
   });
 
+export const put = <T = any>(path: string, body?: unknown) =>
+  request<T>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+
 export const del = <T = any>(path: string) => request<T>(path, { method: "DELETE" });

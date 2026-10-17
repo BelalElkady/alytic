@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ResponsiveContainer, Tooltip, Treemap } from "recharts";
 
+import { LockedPanel } from "@/components/desk/locked-feature";
 import { ErrorState, LoadingBlock, Panel } from "@/components/desk/state-blocks";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "@/lib/api";
+import { useFeatureLock } from "@/lib/feature-lock";
 import { fmt, pct } from "@/lib/format";
 import { useDesk } from "@/lib/store";
 
@@ -277,7 +279,7 @@ function Legend() {
  * traded value, coloured by today's change, grouped by sector. Clicking a tile
  * opens the stock's detail popup.
  */
-export function MarketHeatmap() {
+function MarketHeatmapBody() {
   const { openDetail } = useDesk();
   const [data, setData] = useState<HeatmapResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -404,4 +406,10 @@ export function MarketHeatmap() {
       )}
     </Panel>
   );
+}
+
+/** The heatmap, or an upgrade placeholder when the account's tier is locked out of it. */
+export function MarketHeatmap() {
+  const lock = useFeatureLock("panel", "heatmap");
+  return lock ? <LockedPanel title="خريطة السوق" lock={lock} /> : <MarketHeatmapBody />;
 }
