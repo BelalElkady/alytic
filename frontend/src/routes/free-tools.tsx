@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { AveragingCalculator } from "@/components/marketing/averaging-calculator";
+import { PricingFaq } from "@/components/marketing/pricing-faq";
 import { SiteShell } from "@/components/marketing/site-shell";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { canonical, siteUrl, siteName } from "@/lib/seo";
 import { withBrand } from "@/lib/tenant";
 
@@ -40,6 +42,22 @@ function FreeToolsPage() {
       </section>
 
       <AveragingCalculator />
+
+      <section className="mx-auto w-full max-w-6xl px-4 pb-14 sm:pb-16">
+        <div className="flex flex-wrap items-center justify-center gap-3 border-t pt-8">
+          <Button asChild size="lg">
+            <Link to="/login" search={{ mode: "register" }}>
+              ابدأ التجربة المجانية
+            </Link>
+          </Button>
+          <Button asChild size="lg" variant="outline">
+            <Link to="/login" search={{ mode: "register" }}>
+              احصل على شهرين مجانا
+            </Link>
+          </Button>
+        </div>
+        <PricingFaq className="mt-10" />
+      </section>
     </SiteShell>
   );
 }
