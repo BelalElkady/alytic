@@ -21,7 +21,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listRelatedBlogPosts, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
 import { currentSession, fetchAndSaveInvestorFlows, fetchSlot } from '../investorFlows.js';
 import { TIER_KEYS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, tiersFor, isLocked, WHATSAPP_NUMBER } from '../billing/plans.js';
 import { lockableFeatureFor } from '../billing/features.js';
@@ -416,7 +416,9 @@ app.get('/api/blog', wrap(async (req, res) => {
 app.get('/api/blog/:slug', wrap(async (req, res) => {
   const post = await getPublishedBlogPostBySlug(req.params.slug);
   if (!post) return res.status(404).json({ error: 'المقالة غير موجودة' });
+  const related = await listRelatedBlogPosts(post.slug, post.tags ?? [], 3);
   res.json({
+    related: related.map((p) => ({ slug: p.slug, title: p.title, dek: p.dek || p.meta_description || null, tags: p.tags, imageUrl: safeHttpsUrl(p.image_thumb_url), publishedAt: p.published_at })),
     post: {
       slug: post.slug,
       title: post.title,

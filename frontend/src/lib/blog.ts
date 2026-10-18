@@ -68,10 +68,10 @@ export const getBlogPosts = createServerFn({ method: "GET" })
 export const getBlogPost = createServerFn({ method: "GET" })
   .inputValidator((slug: string) => slug)
   .handler(async ({ data: slug }) => {
-    const { data, error, status } = await fromBackend<{ post: BlogPost }>(
+    const { data, error, status } = await fromBackend<{ post: BlogPost; related?: BlogPostSummary[] }>(
       `/api/blog/${encodeURIComponent(slug)}`,
       "تعذر تحميل المقالة",
     );
     // Told apart from a backend outage so the route can answer a real 404.
-    return { post: data?.post ?? null, error, notFound: status === 404 };
+    return { post: data?.post ?? null, related: data?.related ?? [], error, notFound: status === 404 };
   });

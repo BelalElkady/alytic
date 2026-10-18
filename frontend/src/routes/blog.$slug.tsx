@@ -176,7 +176,7 @@ function BlogPostNotFound() {
 }
 
 function BlogPostPage() {
-  const { post, error } = Route.useLoaderData();
+  const { post, related, error } = Route.useLoaderData();
   const navigate = useNavigate();
 
   return (
@@ -247,7 +247,7 @@ function BlogPostPage() {
               </Link>
             </Button>
           </div>
-          <RelatedPosts currentSlug={post.slug} />
+          <RelatedPosts posts={related} />
         </>
       )}
     </article>

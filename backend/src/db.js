@@ -1210,6 +1210,29 @@ async function countPublishedBlogPosts() {
   return count ?? 0;
 }
 
+/**
+ * Up to `count` other published posts for the "related" strip under an article:
+ * the ones sharing the most tags first, newest first among equals — so with no
+ * shared tag at all it is simply the newest posts.
+ */
+export async function listRelatedBlogPosts(slug, tags = [], count = 3) {
+  const { data, error } = await supabase
+    .from('blog_posts')
+    .select('slug, title, dek, meta_description, tags, image_thumb_url, published_at')
+    .eq('status', 'published')
+    .neq('slug', slug)
+    .order('published_at', { ascending: false })
+    .limit(100);
+  if (error) throw new Error(`listRelatedBlogPosts: ${error.message}`);
+  const wanted = new Set(tags);
+  const shared = (p) => (p.tags ?? []).filter((t) => wanted.has(t)).length;
+  return data
+    .map((p, i) => ({ p, i, score: shared(p) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, count)
+    .map(({ p }) => p);
+}
+
 /** Every published slug, for /sitemap.xml — unlike listPublishedBlogPosts above, no cap. */
 export async function listAllPublishedBlogSlugs() {
   const { data, error } = await supabase
