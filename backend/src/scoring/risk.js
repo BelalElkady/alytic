@@ -150,9 +150,11 @@ export function computeLongTermStop(snapshot, tacticalStop = null, rules = RULES
 
 /**
  * Position size from risk budget, then clipped by concentration and liquidity.
- * Returns whole shares — EGX trades in whole lots.
+ * Returns whole shares — EGX trades in whole lots. `positionExposureEgp` is
+ * what is already held of this same stock, for sizing an add to it: the
+ * single-position cap then only has the headroom left above that.
  */
-export function positionSize({ capital, entry, stop, avgTurnoverEgp, sectorExposureEgp = 0 }, rules = RULES) {
+export function positionSize({ capital, entry, stop, avgTurnoverEgp, sectorExposureEgp = 0, positionExposureEgp = 0 }, rules = RULES) {
   const cfg = rules.sizing;
   const riskPerShare = entry - stop;
   if (!(riskPerShare > 0)) {
@@ -161,7 +163,7 @@ export function positionSize({ capital, entry, stop, avgTurnoverEgp, sectorExpos
 
   const riskBudget = capital * (cfg.riskPerTradePct / 100);
   const byRisk = riskBudget / riskPerShare;
-  const byConcentration = (capital * (cfg.maxPositionPct / 100)) / entry;
+  const byConcentration = Math.max(0, capital * (cfg.maxPositionPct / 100) - positionExposureEgp) / entry;
 
   const byLiquidity =
     avgTurnoverEgp && rules.liquidity.maxPositionVsDailyTurnover

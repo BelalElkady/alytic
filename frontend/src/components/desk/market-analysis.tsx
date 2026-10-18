@@ -73,6 +73,24 @@ const potentialMove = (row: ScanRow): { pct: number; horizon: string } | null =>
 
 const STRONGEST_COUNT = 5;
 
+/**
+ * Which stocks the cash plan spreads the cash across — mirrors CASH_POOLS in
+ * backend/src/api/server.js. The last choice is remembered on this device.
+ */
+type CashPool = "new" | "held";
+const CASH_POOL_OPTIONS: { value: CashPool; label: string }[] = [
+  { value: "new", label: "أسهم جديدة من السوق" },
+  { value: "held", label: "أسهم محفظتي بس" },
+];
+const CASH_POOL_KEY = "alytic.cashPool";
+const readCashPool = (): CashPool => {
+  try {
+    return localStorage.getItem(CASH_POOL_KEY) === "held" ? "held" : "new";
+  } catch {
+    return "new";
+  }
+};
+
 /** What each style ranks stocks by — mirrors STYLE_STRENGTH_WEIGHTS in backend/src/api/server.js. */
 const STYLE_BASIS: Record<StyleKey, string> = {
   trader: "أسهم المضاربة: قوة الحركة الفنية مع السيولة والزخم وحجم التداول",
@@ -232,6 +250,18 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
   const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState("ALL");
+  const [chosenPool, setChosenPool] = useState<CashPool>(readCashPool);
+  // Nothing to add to without holdings, so the plan falls back to new stocks.
+  const hasHoldings = Object.keys(pf?.positions ?? {}).length > 0;
+  const pool: CashPool = focus === "cash" && hasHoldings ? chosenPool : "new";
+  const choosePool = (value: CashPool) => {
+    setChosenPool(value);
+    try {
+      localStorage.setItem(CASH_POOL_KEY, value);
+    } catch {
+      // Not remembered on this device — the choice still applies now.
+    }
+  };
   const [search, setSearch] = useState("");
   const { style, auto } = useActiveInvestStyle(pf?.trades);
   const [review, setReview] = useState<CashReview | null>(null);
@@ -256,7 +286,9 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
     // opening either tab against that account's monthly tier allowance (see
     // TIERS in backend/src/billing/plans.js), keyed off this exact value.
     params.set("focus", focus);
-    if (index !== "ALL") params.set("index", index);
+    // A plan limited to the holdings scans just them, whatever the index tab.
+    if (pool === "held") params.set("pool", pool);
+    else if (index !== "ALL") params.set("index", index);
     // Same rules the position-level recommendation already uses per style —
     // which setups clear the risk/reward bar, and how big a position sizes
     // to, both shift with it. See backend/src/config/styles.js.
@@ -276,7 +308,7 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus, index, style, portfolioReady]);
+  }, [focus, index, pool, style, portfolioReady]);
 
   // The AI read on the plan, asked only once this scan has loaded — the scan
   // is what opens (or joins) the trial's cash-scan use the review rides on.
@@ -297,7 +329,9 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
     let cancelled = false;
     (async () => {
       try {
-        let res = await post("/api/review/cash", { style, styleAuto: auto, index });
+        // The index the scan above actually used: none for a holdings-only plan.
+        const reviewIndex = pool === "held" ? "ALL" : index;
+        let res = await post("/api/review/cash", { style, styleAuto: auto, index: reviewIndex, pool });
         const giveUpAt = Date.now() + CASH_REVIEW_MAX_WAIT_MS;
         while (!cancelled && res?.status === "running") {
           if (Date.now() > giveUpAt)
@@ -307,7 +341,7 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
           await new Promise((resolve) => setTimeout(resolve, CASH_REVIEW_POLL_MS));
           if (cancelled) return;
           res = await api(
-            `/api/review/cash/status?style=${style}&index=${encodeURIComponent(index)}`,
+            `/api/review/cash/status?style=${style}&index=${encodeURIComponent(reviewIndex)}&pool=${pool}`,
           );
         }
         if (!cancelled) {
@@ -411,7 +445,9 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
   // (the server leaves styleStrength null for a stock with no fundamental
   // data) and that it is trading. Ranked by the same style-weighted strength
   // the cash plan picks by — see styleStrength in backend/src/api/server.js.
-  const strongest: ScanRow[] = isCash
+  // Not for a holdings-only plan: that scan covers only the holdings, so it
+  // can't say what the market's strongest stocks are.
+  const strongest: ScanRow[] = isCash && pool === "new"
     ? rows
         .filter((row: ScanRow) => !row.halted && row.styleStrength != null)
         .sort((a: ScanRow, b: ScanRow) => b.styleStrength - a.styleStrength)
@@ -445,18 +481,52 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
         {auto ? " (مستنتج من سلوكك في التداول)" : ""}.
       </p>
 
-      <ToggleGroup
-        type="single"
-        value={index}
-        onValueChange={(value) => value && setIndex(value)}
-        className="flex-wrap justify-start"
-      >
-        {INDEX_OPTIONS.map((opt) => (
-          <ToggleGroupItem key={opt.value} value={opt.value} size="sm" className="text-[12.5px]">
-            {opt.label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      {isCash && (
+        <div className="space-y-1.5">
+          <div className="text-[12.5px] font-medium">وزّع الكاش على:</div>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={pool}
+            onValueChange={(value) => value && choosePool(value as CashPool)}
+            className="flex-wrap justify-start"
+          >
+            {CASH_POOL_OPTIONS.map((opt) => (
+              <ToggleGroupItem
+                key={opt.value}
+                value={opt.value}
+                size="sm"
+                className="text-[12.5px]"
+                disabled={opt.value === "held" && !hasHoldings}
+              >
+                {opt.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+            {pool === "held"
+              ? "بيقترح تزوّد على أسهم موجودة عندك بالفعل، بنفس حدود المخاطرة — واللي في المحفظة من كل سهم بيتحسب من حد المركز الواحد."
+              : hasHoldings
+                ? "بيقترح أسهم جديدة مش موجودة في محفظتك."
+                : "بيقترح أسهم جديدة — اختيار «أسهم محفظتي» بيتفتح لما يبقى عندك أسهم."}
+          </p>
+        </div>
+      )}
+
+      {pool === "new" && (
+        <ToggleGroup
+          type="single"
+          value={index}
+          onValueChange={(value) => value && setIndex(value)}
+          className="flex-wrap justify-start"
+        >
+          {INDEX_OPTIONS.map((opt) => (
+            <ToggleGroupItem key={opt.value} value={opt.value} size="sm" className="text-[12.5px]">
+              {opt.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
 
       {!isCash && (
         <div className="relative">
@@ -560,7 +630,9 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
               <Notice tone="info">
                 {plan && turnedDown.length > 0
                   ? `مراجعة الذكاء الاصطناعي ما وافقتش على أي سهم من المرشحين النهارده، فالأفضل الكاش يفضل كاش.${review?.headline ? ` ${review.headline}` : ""}`
-                  : "مفيش سهم دلوقتي مستوفي شروط خطة الكاش: فرصة قابلة للتنفيذ فنيًا ومعاها بيانات أساسية للشركة. جرّب مؤشر تاني أو ارجع بعد جلسة."}
+                  : pool === "held"
+                    ? "مفيش سهم في محفظتك دلوقتي ينفع تزوّد عليه: فرصة قابلة للتنفيذ فنيًا، ومعاها بيانات أساسية، ولسه فيه مساحة تحت حد المركز والقطاع. جرّب «أسهم جديدة من السوق» أو ارجع بعد جلسة."
+                    : "مفيش سهم دلوقتي مستوفي شروط خطة الكاش: فرصة قابلة للتنفيذ فنيًا ومعاها بيانات أساسية للشركة. جرّب مؤشر تاني أو ارجع بعد جلسة."}
               </Notice>
             )}
             {shown.map((row: ScanRow) => {
@@ -644,11 +716,12 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
                     );
                   })()}
 
-                  {isCash && !row.position && row.buyPlan && (
+                  {isCash && (pool === "held" ? Boolean(row.position) : !row.position) && row.buyPlan && (
                     <Notice tone="info" className="mt-3">
                       {row.buyPlan.shares > 0 ? (
                         <>
-                          الاقتراح: <b className="num">{int(row.buyPlan.shares)} سهم</b> عند{" "}
+                          {pool === "held" ? "زوّد" : "الاقتراح"}:{" "}
+                          <b className="num">{int(row.buyPlan.shares)} سهم</b> عند{" "}
                           <b className="num">{fmt(row.buyPlan.entry)}</b> · التكلفة{" "}
                           <b className="num">{int(row.buyPlan.cost)} ج</b> · المتبقي{" "}
                           <b className="num">{int(row.buyPlan.cashAfter)} ج</b>

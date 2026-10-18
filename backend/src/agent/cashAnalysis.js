@@ -190,9 +190,14 @@ export async function reviewCashPlan(scan, analyses, {
   const { text: walletText } = portfolioContext(analyses, { cash: scan.cash, capital }, rules);
   const behavior = behaviorProfile(portfolio, { capital, today: scan.asOf ?? undefined });
   const investedTotal = picks.reduce((sum, row) => sum + row.buyPlan.cost, 0);
+  // The investor chose to spread the cash only across what they already hold
+  // (see CASH_POOLS in server.js): every pick is an add to an open position.
+  const heldOnly = scan.pool === 'held';
 
   const userMessage = `# Cash deployment review — close of ${scan.asOf ?? 'today'}
-
+${heldOnly ? `
+**The investor chose to put this cash only into stocks they already hold.** Every pick and alternate below is an ADD to an open position, never a new name — judge each as averaging up/down into that holding, weighing its current P&L, its stop and how big it already is. Don't suggest new stocks instead.
+` : ''}
 ## Cash
 - Cash available: ${egp(scan.cash)} EGP
 - Reserve kept aside by the rules: ${egp(plan.reserveCash)} EGP (min ${rules.sizing.minCashBufferPct}%)
@@ -288,7 +293,8 @@ function reviewedPlan(draft, replan, review) {
  * Cache-or-generate, same contract as analyst.js's getOrGenerateReview, plus
  * `plan` — the reviewed cash plan (see reviewedPlan), rebuilt on every call
  * rather than stored, so it always matches the scan it lays over.
- * Stored in portfolio_reviews under a `cash:<style>:<index>` style key and
+ * Stored in portfolio_reviews under a `cash:<style>:<index>` style key (plus
+ * `:held` for a plan limited to the holdings) and
  * hashed on positions, cash, the trade log's length and where the style came
  * from, so reopening the dialog on an unchanged book the same day is free,
  * while a trade or a cash edit asks again.
@@ -299,7 +305,7 @@ function reviewedPlan(draft, replan, review) {
  *   builds the reviewed plan, on a cache hit as well as a miss.
  */
 export async function getOrGenerateCashReview(portfolio, {
-  portfolioId, style = DEFAULT_STYLE, styleAuto = false, index = 'ALL', rules = RULES, model = MODEL_CHAIN, force = false, runScan,
+  portfolioId, style = DEFAULT_STYLE, styleAuto = false, index = 'ALL', pool = 'new', rules = RULES, model = MODEL_CHAIN, force = false, runScan,
 }) {
   // portfolio_reviews.portfolio_id is a bigint column — a caller that forgot
   // to pass this (the old opts.userId default was the string 'local', valid
@@ -308,7 +314,9 @@ export async function getOrGenerateCashReview(portfolio, {
   if (portfolioId == null) throw new Error('getOrGenerateCashReview: opts.portfolioId is required');
   const { payload, results, capital, replan } = await runScan();
   const asOf = payload.asOf ?? new Date().toISOString().slice(0, 10);
-  const cacheStyle = `cash:${style}:${index}`;
+  // A plan limited to the holdings is a different plan; the `new` one keeps
+  // its original key so reviews cached before the choice existed still match.
+  const cacheStyle = pool === 'held' ? `cash:${style}:${index}:held` : `cash:${style}:${index}`;
   // The behavior half of the review changes with every logged trade, not
   // only with positions and cash, so the trade count is part of the key too.
   // `v3`: bumped when the prompt's inputs change, so a review cached under the
