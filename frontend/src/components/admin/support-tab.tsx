@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { EmptyState, ErrorState, LoadingBlock, Spinner } from "@/components/desk/state-blocks";
 import type { SupportMessage } from "@/components/support/chat-widget";
+import { Linkified } from "@/components/support/linkified";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -199,7 +200,9 @@ function ThreadPanel({ userId, onSent }: { userId: string; onSent: () => void })
                   />
                 </a>
               )}
-              <p className="whitespace-pre-wrap break-words">{message.body}</p>
+              <p className="whitespace-pre-wrap break-words">
+                <Linkified text={message.body} onPrimary={message.sender === "admin"} />
+              </p>
               <p
                 className={cn(
                   "num mt-1 text-[10.5px]",
