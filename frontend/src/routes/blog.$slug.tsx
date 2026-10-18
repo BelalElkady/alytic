@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, redirect, useNavigate } from "@tanstack/react-router";
 
 import { ErrorState } from "@/components/desk/state-blocks";
 import { RelatedPosts } from "@/components/marketing/related-posts";
@@ -10,6 +10,8 @@ import { canonical, ogLogoUrl, siteUrl, siteName } from "@/lib/seo";
 
 export const Route = createFileRoute("/blog/$slug")({
   loader: async ({ params }) => {
+    // Old articles linked to the bare domain, which resolved to /blog/egxpert.com.
+    if (params.slug === "egxpert.com") throw redirect({ to: "/", statusCode: 301 });
     const result = await getBlogPost({ data: params.slug });
     // A deleted or unpublished post must answer HTTP 404, not a 200 page that
     // says "not found" — search engines keep those indexed as empty pages.
@@ -48,7 +50,7 @@ export const Route = createFileRoute("/blog/$slug")({
   component: BlogPostPage,
 });
 
-/** schema.org NewsArticle, so Google can read the headline, date and image without guessing. */
+/** schema.org Article, so Google can read the headline, date and image without guessing. */
 function articleJsonLd(
   post: BlogPost,
   url: string,
@@ -58,8 +60,10 @@ function articleJsonLd(
 ) {
   const data = {
     "@context": "https://schema.org",
-    "@type": "NewsArticle",
+    "@type": "Article",
     headline: post.title,
+    author: { "@type": "Organization", name: "EGXpert", url: new URL("/about", url).href },
+    dateModified: post.publishedAt,
     ...(description ? { description } : {}),
     ...(post.image ? { image: [post.image.url] } : {}),
     datePublished: post.publishedAt,
@@ -130,7 +134,13 @@ function BlogContent({ blocks }: { blocks: BlogContentBlock[] }) {
         }
         if (block.type === "html") {
           // Sanitized by the backend (backend/src/blogHtml.js) before it is stored.
-          return <div key={index} className="blog-html" dangerouslySetInnerHTML={{ __html: block.html }} />;
+          // Older stored posts have href="egxpert.com" (no protocol), which the
+          // browser resolves under /blog/ — make any bare-domain href absolute.
+          const html = block.html.replace(
+            /href=(["'])(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:[/?#][^"']*)?)\1/gi,
+            (_m, quote: string, rest: string) => `href=${quote}https://${rest}${quote}`,
+          );
+          return <div key={index} className="blog-html" dangerouslySetInnerHTML={{ __html: html }} />;
         }
         if (block.type === "list") {
           return (
@@ -202,11 +212,29 @@ function BlogPostPage() {
             <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{post.dek}</p>
           )}
           <p className="mt-2 text-[11.5px] text-muted-foreground">
+            <Link to="/about" className="underline-offset-2 hover:underline">
+              فريق EGXpert التحريري
+            </Link>
+            {" · "}
             {arPublishedDate(post.publishedAt)}
           </p>
           <div className="mt-8">
             <BlogContent blocks={post.content} />
           </div>
+          {post.sources && post.sources.length > 0 && (
+            <section className="mt-8 border-t pt-6">
+              <h2 className="text-[17px] font-bold tracking-tight">المصادر</h2>
+              <ul className="mt-2 list-disc space-y-1 ps-5 text-[14px]">
+                {post.sources.map((source) => (
+                  <li key={source.url}>
+                    <a href={source.url} target="_blank" rel="noopener noreferrer nofollow" className="underline">
+                      {source.name}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3 border-t pt-8">
             <Button asChild size="lg">
               <Link to="/login" search={{ mode: "register" }}>

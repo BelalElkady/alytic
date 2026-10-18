@@ -27,6 +27,7 @@ export type BlogPost = {
   tags: string[];
   image: BlogImage | null;
   publishedAt: string;
+  sources?: { name: string; url: string }[];
 };
 
 // The blog pages load through these server functions from their route

@@ -436,6 +436,10 @@ app.get('/api/blog/:slug', wrap(async (req, res) => {
           }
         : null,
       publishedAt: post.published_at,
+      // Optional list of {title, url}; only https links with a title survive.
+      sources: (Array.isArray(post.sources_json) ? post.sources_json : [])
+        .map((s) => ({ name: String(s?.title ?? s?.name ?? '').trim(), url: safeHttpsUrl(s?.url) }))
+        .filter((s) => s.name && s.url),
     },
   });
 }));

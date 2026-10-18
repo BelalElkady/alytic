@@ -16,6 +16,12 @@ const STYLES = {
   'min-width': SIZE,
 };
 
+/** A href that starts with a bare domain ("egxpert.com", "www.egxpert.com/x") becomes an absolute https link. */
+export function withHttps(href) {
+  const value = String(href).trim();
+  return /^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:[/?#]|$)/i.test(value) ? `https://${value}` : value;
+}
+
 const OPTIONS = {
   allowedTags: [
     'p', 'h2', 'h3', 'h4', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 's', 'span', 'mark', 'code', 'pre',
@@ -40,7 +46,7 @@ const OPTIONS = {
   transformTags: {
     a: (tagName, attribs) => ({
       tagName,
-      attribs: { ...attribs, rel: 'noopener noreferrer nofollow', ...(attribs.target ? { target: '_blank' } : {}) },
+      attribs: { ...attribs, ...(attribs.href ? { href: withHttps(attribs.href) } : {}), rel: 'noopener noreferrer nofollow', ...(attribs.target ? { target: '_blank' } : {}) },
     }),
   },
 };
