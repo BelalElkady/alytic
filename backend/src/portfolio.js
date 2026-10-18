@@ -288,22 +288,21 @@ function feesOf(fees) {
  * this backwards is the classic way a book quietly stops reflecting reality.
  *
  * A dividend (`shares` entitled × `price` paid per share) is cash received:
- * it adds to cash and realised P&L, pays no commission, and leaves the
- * position alone — the shares may since have been sold, since a dividend is
- * paid to whoever held on the record date.
+ * it adds to cash and realised P&L (net of any fee taken off it), and leaves
+ * the position alone — the shares may since have been sold, since a dividend
+ * is paid to whoever held on the record date.
  *
  * A rights sale (`shares` rights sold × `price` per right) is the same kind
  * of event — cash in, position untouched — but for a subscription right
- * sold on the market instead of exercised, so unlike a dividend it does pay
- * a broker commission.
+ * sold on the market instead of exercised.
  *
- * `fees` is what the broker actually charged for the trade, as the user
- * entered it; it's optional and a trade without it pays none.
+ * `fees` is what the broker (or the payer) actually charged for the trade, as
+ * the user entered it; it's optional and a trade without it pays none.
  */
 export async function recordTrade(portfolio, { code, side, shares, price, fees = 0, date = null, note = null }) {
   const c = code.toUpperCase();
   const p = { ...portfolio, positions: { ...portfolio.positions }, trades: [...portfolio.trades] };
-  const commission = side === 'dividend' ? 0 : feesOf(fees);
+  const commission = feesOf(fees);
   const when = date ?? new Date().toISOString().slice(0, 10);
 
   if (!(shares > 0) || !(price > 0)) throw new Error('عدد الأسهم والسعر لازم يكونوا أكبر من صفر');
@@ -341,10 +340,7 @@ export async function recordTrade(portfolio, { code, side, shares, price, fees =
     // sell part" rule fire once per position instead of every day after.
     else p.positions[c] = { ...existing, shares: left, partialTakenAt: when };
     p.cash = +(p.cash + shares * price - commission).toFixed(2);
-  } else if (side === 'dividend') {
-    p.realizedPnl = +((p.realizedPnl ?? 0) + shares * price).toFixed(2);
-    p.cash = +(p.cash + shares * price).toFixed(2);
-  } else if (side === 'rights_sale') {
+  } else if (side === 'dividend' || side === 'rights_sale') {
     p.realizedPnl = +((p.realizedPnl ?? 0) + shares * price - commission).toFixed(2);
     p.cash = +(p.cash + shares * price - commission).toFixed(2);
   } else {
@@ -360,8 +356,7 @@ export async function recordTrade(portfolio, { code, side, shares, price, fees =
     commission: +commission.toFixed(2),
     note,
     ...(side === 'sell' ? { realized: +(shares * (price - existing.avgCost) - commission).toFixed(2) } : {}),
-    ...(side === 'dividend' ? { realized: +(shares * price).toFixed(2) } : {}),
-    ...(side === 'rights_sale' ? { realized: +(shares * price - commission).toFixed(2) } : {}),
+    ...(side === 'dividend' || side === 'rights_sale' ? { realized: +(shares * price - commission).toFixed(2) } : {}),
   });
 
   return p;
@@ -372,7 +367,7 @@ export async function recordTrade(portfolio, { code, side, shares, price, fees =
  * shares and average cost it ends on, the cash it moved, the P&L it realised
  * (and each sell's share of it), and whether any sell exceeded what was held.
  * Same arithmetic as recordTrade, minus the rounding; a dividend or rights
- * sale only adds cash and realised P&L (the rights sale net of commission).
+ * sale only adds cash and realised P&L (net of commission).
  */
 function replayCode(trades, start) {
   let shares = start.shares;
@@ -388,10 +383,7 @@ function replayCode(trades, start) {
       avgCost = shares + t.shares > 0 ? (Math.max(shares, 0) * avgCost + value) / (Math.max(shares, 0) + t.shares) : 0;
       shares += t.shares;
       cash -= value + commission;
-    } else if (t.side === 'dividend') {
-      cash += value;
-      realized += value;
-    } else if (t.side === 'rights_sale') {
+    } else if (t.side === 'dividend' || t.side === 'rights_sale') {
       cash += value - commission;
       realized += value - commission;
     } else {
@@ -437,7 +429,7 @@ export function editTrade(portfolio, index, next) {
     }
     const { realized: _realized, ...kept } = old;
     // Fees left out of the edit keep what the trade was logged with.
-    const commission = next.side === 'dividend' ? 0 : +feesOf(next.fees ?? old.commission ?? 0).toFixed(2);
+    const commission = +feesOf(next.fees ?? old.commission ?? 0).toFixed(2);
     replacement = {
       ...kept,
       date: next.date || old.date,
@@ -447,8 +439,7 @@ export function editTrade(portfolio, index, next) {
       price,
       commission,
       note: next.note !== undefined ? next.note : old.note ?? null,
-      ...(next.side === 'dividend' ? { realized: +(shares * price).toFixed(2) } : {}),
-      ...(next.side === 'rights_sale' ? { realized: +(shares * price - commission).toFixed(2) } : {}),
+      ...(next.side === 'dividend' || next.side === 'rights_sale' ? { realized: +(shares * price - commission).toFixed(2) } : {}),
     };
   }
 
