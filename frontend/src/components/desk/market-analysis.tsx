@@ -75,21 +75,14 @@ const STRONGEST_COUNT = 5;
 
 /**
  * Which stocks the cash plan spreads the cash across — mirrors CASH_POOLS in
- * backend/src/api/server.js. The last choice is remembered on this device.
+ * backend/src/api/server.js. Asked every time the dialog opens, before any
+ * scan runs.
  */
 type CashPool = "new" | "held";
 const CASH_POOL_OPTIONS: { value: CashPool; label: string }[] = [
   { value: "new", label: "أسهم جديدة من السوق" },
   { value: "held", label: "أسهم محفظتي بس" },
 ];
-const CASH_POOL_KEY = "alytic.cashPool";
-const readCashPool = (): CashPool => {
-  try {
-    return localStorage.getItem(CASH_POOL_KEY) === "held" ? "held" : "new";
-  } catch {
-    return "new";
-  }
-};
 
 /** What each style ranks stocks by — mirrors STYLE_STRENGTH_WEIGHTS in backend/src/api/server.js. */
 const STYLE_BASIS: Record<StyleKey, string> = {
@@ -250,18 +243,13 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
   const [data, setData] = useState<ScanRow>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState("ALL");
-  const [chosenPool, setChosenPool] = useState<CashPool>(readCashPool);
-  // Nothing to add to without holdings, so the plan falls back to new stocks.
+  const [chosenPool, setChosenPool] = useState<CashPool | null>(null);
+  // Nothing to add to without holdings, so there is nothing to ask: the plan
+  // is for new stocks. Otherwise no scan runs (and no use is spent) until the
+  // investor has chosen.
   const hasHoldings = Object.keys(pf?.positions ?? {}).length > 0;
-  const pool: CashPool = focus === "cash" && hasHoldings ? chosenPool : "new";
-  const choosePool = (value: CashPool) => {
-    setChosenPool(value);
-    try {
-      localStorage.setItem(CASH_POOL_KEY, value);
-    } catch {
-      // Not remembered on this device — the choice still applies now.
-    }
-  };
+  const pool: CashPool = focus === "cash" && hasHoldings ? (chosenPool ?? "new") : "new";
+  const poolPending = focus === "cash" && Boolean(pf) && hasHoldings && chosenPool === null;
   const [search, setSearch] = useState("");
   const { style, auto } = useActiveInvestStyle(pf?.trades);
   const [review, setReview] = useState<CashReview | null>(null);
@@ -277,7 +265,7 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
   const portfolioReady = Boolean(pf);
 
   useEffect(() => {
-    if (!portfolioReady) return;
+    if (!portfolioReady || poolPending) return;
     let cancelled = false;
     setData(null);
     setError(null);
@@ -308,7 +296,7 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus, index, pool, style, portfolioReady]);
+  }, [focus, index, pool, style, portfolioReady, poolPending]);
 
   // The AI read on the plan, asked only once this scan has loaded — the scan
   // is what opens (or joins) the trial's cash-scan use the review rides on.
@@ -473,7 +461,7 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+      <p className={cn("text-[12.5px] leading-relaxed text-muted-foreground", poolPending && "hidden")}>
         {isCash
           ? `${STYLE_BASIS[style]} — بتوزيع مرجّح حسب قوة كل فرصة واحتياطي ${fmt(cashPlan?.reserveCash ?? 0)} ج.`
           : `ترتيب الأسهم حسب التقييم والفرص القابلة للتنفيذ${index !== "ALL" ? ` — أسهم ${index} بس` : ""}.`}{" "}
@@ -487,8 +475,8 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
           <ToggleGroup
             type="single"
             variant="outline"
-            value={pool}
-            onValueChange={(value) => value && choosePool(value as CashPool)}
+            value={chosenPool ?? ""}
+            onValueChange={(value) => value && setChosenPool(value as CashPool)}
             className="flex-wrap justify-start"
           >
             {CASH_POOL_OPTIONS.map((opt) => (
@@ -504,7 +492,9 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
             ))}
           </ToggleGroup>
           <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-            {pool === "held"
+            {poolPending
+              ? "اختار الأول، وبعدها التحليل يبدأ."
+              : pool === "held"
               ? "بيقترح تزوّد على أسهم موجودة عندك بالفعل، بنفس حدود المخاطرة — واللي في المحفظة من كل سهم بيتحسب من حد المركز الواحد."
               : hasHoldings
                 ? "بيقترح أسهم جديدة مش موجودة في محفظتك."
@@ -513,7 +503,7 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
         </div>
       )}
 
-      {pool === "new" && (
+      {pool === "new" && !poolPending && (
         <ToggleGroup
           type="single"
           value={index}
@@ -548,7 +538,7 @@ function MarketAnalysisBody({ focus }: { focus: "market" | "cash" }) {
       )}
 
       {error && <ErrorState message={error} />}
-      {!data && !error && (
+      {!data && !error && !poolPending && (
         <div className="space-y-3">
           <p role="status" className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <Spinner />
