@@ -118,7 +118,7 @@ export function TradeForm({
         shares: +form.shares,
         price: +form.price,
         // Optional: left blank, the trade pays no fees.
-        fees: dividend || form.fees === "" ? 0 : +form.fees,
+        fees: form.fees === "" ? 0 : +form.fees,
         date: form.date || undefined,
       };
       if (trade) await post(`/api/portfolio/trades/${trade.index}`, { ...body, original });
@@ -215,38 +215,45 @@ export function TradeForm({
             }
           />
         </div>
-        {!dividend && (
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor={`${id}-fees`}>
-              العمولة (ج) <span className="text-muted-foreground">— اختياري</span>
-            </Label>
-            <Input
-              id={`${id}-fees`}
-              className="num"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="0"
-              value={form.fees}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, fees: event.target.value }))
-              }
-            />
-            <p className="text-[12px] text-muted-foreground">
-              عمولة السمسرة اللي دفعتها على الصفقة. لو سبتها فاضية هتتحسب صفر.
-            </p>
-          </div>
-        )}
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor={`${id}-fees`}>
+            العمولة (ج) <span className="text-muted-foreground">— اختياري</span>
+          </Label>
+          <Input
+            id={`${id}-fees`}
+            className="num"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="0"
+            value={form.fees}
+            onChange={(event) => setForm((previous) => ({ ...previous, fees: event.target.value }))}
+          />
+          <p className="text-[12px] text-muted-foreground">
+            {dividend
+              ? "أي عمولة أو مصاريف اتخصمت من التوزيع. لو سبتها فاضية هتتحسب صفر."
+              : "عمولة السمسرة اللي دفعتها على الصفقة. لو سبتها فاضية هتتحسب صفر."}
+          </p>
+        </div>
       </div>
 
       {dividend && (
         <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-          صافي التوزيع النقدي اللي وصلك. بيتضاف للكاش والربح المحقق من غير ما يغيّر عدد الأسهم أو
-          المتوسط.
+          التوزيع النقدي اللي وصلك. بيتضاف للكاش والربح المحقق (بعد خصم العمولة لو دخلتها) من غير
+          ما يغيّر عدد الأسهم أو المتوسط.
           {dividendTotal > 0 && (
             <span className="mt-1 block">
               الإجمالي:{" "}
               <span className="num font-medium text-foreground">{fmt(dividendTotal)} ج</span>
+              {+form.fees > 0 && (
+                <>
+                  {" "}
+                  · الصافي:{" "}
+                  <span className="num font-medium text-foreground">
+                    {fmt(dividendTotal - +form.fees)} ج
+                  </span>
+                </>
+              )}
             </span>
           )}
         </p>
