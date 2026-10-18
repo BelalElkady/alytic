@@ -2257,6 +2257,8 @@ app.get('/api/scan', wrap(async (req, res) => {
     else marketAnalysisLeftNow = leftIfCharged;
   }
 
+  const pool = cashPoolFrom(req.query.pool);
+  if (!pool) return res.status(400).json({ error: `اختيار توزيع غير معروف: ${req.query.pool}` });
   const indexCodes = req.query.index ? await codesForIndex(req.query.index) : null;
   if (req.query.index && !indexCodes) return res.status(400).json({ error: `مؤشر غير معروف: ${req.query.index}` });
   const codes = req.query.codes
@@ -2267,6 +2269,7 @@ app.get('/api/scan', wrap(async (req, res) => {
 
   const { payload } = await runScan(portfolio, {
     codes,
+    pool,
     style,
     userId: req.user.id,
     portfolioId,
@@ -2334,6 +2337,17 @@ function rulesFor(portfolio, style) {
   return scanRules(style, portfolio?.settings?.shariahOnly !== false);
 }
 
+/**
+ * Which stocks a cash plan may spread the cash across: `new` — stocks from the
+ * market the investor doesn't hold yet (the default) — or `held` — only adding
+ * to the investor's own holdings. Null for a value that is neither.
+ */
+const CASH_POOLS = ['new', 'held'];
+function cashPoolFrom(raw) {
+  const pool = raw == null || raw === '' ? 'new' : String(raw);
+  return CASH_POOLS.includes(pool) ? pool : null;
+}
+
 /** How many next-ranked stocks the AI cash review judges beyond the engine's picks, as replacements for any it turns down. */
 const CASH_PLAN_ALTERNATES = 3;
 /** The AI cash review's actions (CASH_PICK_ACTIONS in agent/schemas.js) that keep a stock funded; `wait` and `skip` release its cash. */
@@ -2347,11 +2361,15 @@ const CASH_FUNDED_ACTIONS = new Set(['buy_now', 'buy_on_pullback']);
  * same payload rebuilt once the AI has judged the shortlist, funding only
  * what it approved (a Map of stock code → its action).
  */
-async function runScan(portfolio, { codes, style, userId, portfolioId = null, subscribed = false, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
+async function runScan(portfolio, { codes, pool = 'new', style, userId, portfolioId = null, subscribed = false, force = false, focus = null, cashScansLeftNow = null, marketAnalysisLeftNow = null, tier = null }) {
+  // Only a cash scan spreads cash, so only it can be limited to the holdings.
+  const heldOnly = focus === 'cash' && pool === 'held';
   // A cash plan has to see the whole book, even holdings outside the index
   // being browsed: the sector limits it sizes against and the AI cash review
-  // both depend on every position, not just the ones in that index.
-  if (focus === 'cash') codes = [...new Set([...codes, ...Object.keys(portfolio.positions)])];
+  // both depend on every position, not just the ones in that index. One
+  // limited to the holdings needs nothing else.
+  if (heldOnly) codes = Object.keys(portfolio.positions);
+  else if (focus === 'cash') codes = [...new Set([...codes, ...Object.keys(portfolio.positions)])];
   // A style changes which rule numbers the engine sizes and gates setups
   // with — same deterministic engine, different risk/reward and sizing
   // inputs, exactly like every other `rules` param it already accepts.
@@ -2419,8 +2437,11 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
     if (!r.position || !r.sectorAr) continue;
     sectorExposureEgp[r.sectorAr] = (sectorExposureEgp[r.sectorAr] ?? 0) + (r.position.marketValue ?? 0);
   }
+  // A plan limited to the holdings sizes an add to each one instead: same
+  // limits, with what is already held of that stock counted against the
+  // single-position cap (its sector exposure already includes it).
   for (const r of results) {
-    if (r.position || !r.plan.stop.stop || !r.plan.suggestedEntry) continue;
+    if (Boolean(r.position) !== heldOnly || !r.plan.stop.stop || !r.plan.suggestedEntry) continue;
     r.plan.sizing = positionSize(
       {
         capital,
@@ -2428,6 +2449,7 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
         stop: r.plan.stop.stop,
         avgTurnoverEgp: r.snapshot.volume.avgTurnoverEgp,
         sectorExposureEgp: sectorExposureEgp[r.sectorAr] ?? 0,
+        positionExposureEgp: r.position?.marketValue ?? 0,
       },
       rules,
     );
@@ -2465,9 +2487,15 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
     // and the business behind it (the investment score, built from the
     // company's own figures). A stock with no fundamental data can't be judged
     // on the second, so it is never recommended. How the legs are weighed
-    // follows the wallet's style — see styleStrength.
+    // follows the wallet's style — see styleStrength. A plan limited to the
+    // holdings only ever adds to one, and never to one whose stop is broken
+    // or, on a Shariah-only wallet, that isn't compliant (the engine's own
+    // Shariah gate only covers fresh buys).
+    const addable = (r) => heldOnly
+      ? Boolean(r.position) && !r.position.stopBreached && !(rules.shariah?.excludeNonCompliant && r.shariah === 'non_compliant')
+      : !r.position;
     const eligible = results
-      .filter((r) => !r.position && r.plan.actionable && r.plan.buyingNow.worthIt && r.plan.targets.mid?.price && (r.plan.sizing?.shares ?? 0) > 0)
+      .filter((r) => addable(r) && r.plan.actionable && r.plan.buyingNow.worthIt && r.plan.targets.mid?.price && (r.plan.sizing?.shares ?? 0) > 0)
       .filter((r) => styleStrength(r, style) != null)
       .map((r) => ({
         code: r.code,
@@ -2552,7 +2580,9 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
     const eligibleCodes = new Set(eligible.map((candidate) => candidate.code));
     const notInCashPlan = (r) => {
       if (selectedCodes.has(r.code)) return null;
-      if (r.position) return 'موجود في محفظتك بالفعل — خطة الكاش بتقترح مشتريات جديدة بس.';
+      if (!heldOnly && r.position) return 'موجود في محفظتك بالفعل — خطة الكاش دي بتقترح مشتريات جديدة بس. اختار «أسهم محفظتي» عشان تزوّد عليه.';
+      if (heldOnly && r.position?.stopBreached) return 'السهم كسر وقف الخسارة — مش وقت تزوّد عليه.';
+      if (heldOnly && rules.shariah?.excludeNonCompliant && r.shariah === 'non_compliant') return 'السهم غير متوافق مع الشريعة، فمش بنزوّد عليه.';
       if (verdicts?.has(r.code) && !CASH_FUNDED_ACTIONS.has(verdicts.get(r.code))) {
         return 'مراجعة الذكاء الاصطناعي شايفة إن ده مش وقته، فاستبعدته من خطة الكاش دلوقتي.';
       }
@@ -2614,7 +2644,7 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
           cashLimitShares: cashShares,
           reason: recommendedShares === 0
             ? (portfolio.cash <= 0 ? 'لا يوجد كاش متاح' : r.plan.sizing?.reason ?? 'لا يوجد حجم مناسب حسب قواعد المخاطرة')
-            : `شراء ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع مرجّح حسب قوة الفرصة بين أفضل ${selected.length} أسهم مع احتياطي كاش ${rules.sizing.minCashBufferPct}%`,
+            : `${heldOnly ? 'زيادة' : 'شراء'} ${recommendedShares} سهم عند ${entry} بأمر محدد؛ توزيع مرجّح حسب قوة الفرصة بين أفضل ${selected.length} أسهم مع احتياطي كاش ${rules.sizing.minCashBufferPct}%`,
         } : null;
         const position = r.position && live
           ? { ...r.position, marketValue: +(r.position.shares * livePrice).toFixed(2), unrealizedEgp: +(r.position.shares * (livePrice - r.position.avgCost)).toFixed(2) }
@@ -2669,6 +2699,8 @@ async function runScan(portfolio, { codes, style, userId, portfolioId = null, su
       actionableCodes: actionable.map((r) => r.code),
       focus: focus ?? 'market',
       style: style ?? 'medium',
+      // Which stocks the cash plan spread the cash across — see CASH_POOLS.
+      pool: heldOnly ? 'held' : 'new',
       cashPlan: {
         selectedCodes: [...selectedCodes],
         shortlistCodes,
@@ -4202,11 +4234,13 @@ app.post('/api/review/stock', wrap(async (req, res) => {
 // asks for it right after its own focus=cash scan loads, for the same index
 // and style. Its job key has its own `cash:` namespace so it never collides
 // with a stock review's.
-function cashReviewJobKey(userId, portfolioId, style, index) {
-  return `${userId}:cash:${portfolioId}:${style ?? 'medium'}:${index}`;
+function cashReviewJobKey(userId, portfolioId, style, index, pool) {
+  return `${userId}:cash:${portfolioId}:${style ?? 'medium'}:${index}:${pool}`;
 }
 
 app.post('/api/review/cash', wrap(async (req, res) => {
+  const pool = cashPoolFrom(req.body?.pool);
+  if (!pool) return res.status(400).json({ error: `اختيار توزيع غير معروف: ${req.body?.pool}` });
   const pre = reviewPreflight(req, res);
   if (!pre) return;
   const index = String(req.body?.index ?? 'ALL').toUpperCase();
@@ -4229,7 +4263,7 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       : res.status(409).json({ error: 'افتح تحليل الكاش الأول وبعدين اطلب مراجعة الخطة.' });
   }
 
-  await startReviewJob(res, cashReviewJobKey(userId, portfolioId, pre.style, index), async () => {
+  await startReviewJob(res, cashReviewJobKey(userId, portfolioId, pre.style, index, pool), async () => {
     const startedAt = Date.now();
     let scanRows = [];
     const { getOrGenerateCashReview } = await import('../agent/cashAnalysis.js');
@@ -4241,15 +4275,16 @@ app.post('/api/review/cash', wrap(async (req, res) => {
       // between the picked style and actual behavior.
       styleAuto: req.body?.styleAuto === true,
       index,
+      pool,
       rules: rulesFor(portfolio, pre.style),
       force: pre.force,
       runScan: async () => {
-        const scan = await runScan(portfolio, { codes: indexCodes, style: pre.style, userId, portfolioId, focus: 'cash' });
+        const scan = await runScan(portfolio, { codes: indexCodes, pool, style: pre.style, userId, portfolioId, focus: 'cash' });
         scanRows = scan.payload.results ?? [];
         return scan;
       },
     });
-    console.log(`[review] cash ${index} ${source} in ${Date.now() - startedAt}ms`);
+    console.log(`[review] cash ${index} ${pool} ${source} in ${Date.now() - startedAt}ms`);
     if (source === 'ai') {
       const byCode = new Map(scanRows.map((row) => [row.code, row]));
       void logRecommendations(
@@ -4269,8 +4304,10 @@ app.post('/api/review/cash', wrap(async (req, res) => {
 
 app.get('/api/review/cash/status', wrap(async (req, res) => {
   const index = String(req.query.index ?? 'ALL').toUpperCase();
+  const pool = cashPoolFrom(req.query.pool);
+  if (!pool) return res.status(400).json({ error: `اختيار توزيع غير معروف: ${req.query.pool}` });
   const portfolioId = await portfolioIdFromRequest(req);
-  await sendJobStatus(res, cashReviewJobKey(req.user.id, portfolioId, req.query.style, index));
+  await sendJobStatus(res, cashReviewJobKey(req.user.id, portfolioId, req.query.style, index, pool));
 }));
 
 /**
