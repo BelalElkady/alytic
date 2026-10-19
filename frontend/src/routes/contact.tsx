@@ -31,8 +31,25 @@ export const Route = createFileRoute("/contact")({
   component: ContactPage,
 });
 
+const TOPICS = [
+  "مشاكل الدخول والاشتراك والدفع.",
+  "أسئلة عن استخدام الأداة.",
+  "تصحيح خطأ في مقال: اكتب رابط المقال، والمعلومة اللي شايف إنها غلط، ومصدر التصحيح.",
+  "اقتراحات.",
+] as const;
+
+// Each site's own accounts (brand.social), same as the footer.
+const SOCIALS = [
+  { key: "instagram", label: "إنستجرام" },
+  { key: "facebook", label: "فيسبوك" },
+] as const;
+
 function ContactPage() {
-  const { name: brandName } = useTenant();
+  const { name: brandName, contactEmail, brand } = useTenant();
+  const socials = SOCIALS.flatMap(({ key, label }) => {
+    const href = brand.social?.[key];
+    return href ? [{ href, label }] : [];
+  });
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -57,7 +74,57 @@ function ContactPage() {
   return (
     <SiteShell>
       <section className="mx-auto w-full max-w-lg px-4 py-14 sm:py-16">
-        <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
+        <h1 className="text-2xl font-bold tracking-tight">تواصل معنا</h1>
+        <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+          عندك سؤال عن الأداة، أو ملاحظة، أو مشكلة في الاستخدام، أو لاحظت خطأ في مقال؟ ابعتلنا ونرد
+          عليك في أقرب وقت.
+        </p>
+
+        <h2 className="mt-8 text-[16px] font-bold tracking-tight">وسائل التواصل</h2>
+        <ul className="mt-2 space-y-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
+          {contactEmail && (
+            <li>
+              <strong className="text-foreground">الإيميل:</strong>{" "}
+              <a href={`mailto:${contactEmail}`} dir="ltr" className="font-medium text-foreground underline underline-offset-4">
+                {contactEmail}
+              </a>
+            </li>
+          )}
+          <li>
+            <strong className="text-foreground">النموذج:</strong> املأ الاسم والإيميل والرسالة تحت.
+          </li>
+          {socials.length > 0 && (
+            <li>
+              <strong className="text-foreground">السوشيال ميديا:</strong>{" "}
+              {socials.map(({ href, label }, index) => (
+                <span key={href}>
+                  {index > 0 && " | "}
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
+                    {label}
+                  </a>
+                </span>
+              ))}
+            </li>
+          )}
+          <li>
+            <strong className="text-foreground">المقر:</strong> القاهرة، مصر.
+          </li>
+        </ul>
+
+        <h2 className="mt-8 text-[16px] font-bold tracking-tight">بنتواصل في إيه</h2>
+        <ul className="mt-2 list-disc space-y-1.5 ps-5 text-[13.5px] leading-relaxed text-muted-foreground">
+          {TOPICS.map((topic) => (
+            <li key={topic}>{topic}</li>
+          ))}
+        </ul>
+
+        <h2 className="mt-8 text-[16px] font-bold tracking-tight">قبل ما تبعت</h2>
+        <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+          ما بنقدرش نرد على أسئلة من نوع "اشتري أو بيع سهم كذا"، لأن {brandName} أداة تحليل وليست
+          جهة استشارات مالية مرخّصة.
+        </p>
+
+        <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
           {sent ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <MailCheck className="size-8 text-up" />
@@ -68,13 +135,9 @@ function ContactPage() {
             </div>
           ) : (
             <>
-              <h1 className="text-2xl font-bold tracking-tight">تواصل معنا</h1>
-              <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
-                عندك سؤال، ملاحظة، أو مشكلة في استخدام {brandName}؟ اكتبلنا وهنرد عليك بأسرع ما
-                يمكن.
-              </p>
+              <h2 className="text-lg font-bold tracking-tight">ابعتلنا رسالة</h2>
 
-              <form onSubmit={submit} className="mt-6 space-y-4">
+              <form onSubmit={submit} className="mt-5 space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="contact-name">الاسم</Label>
                   <Input

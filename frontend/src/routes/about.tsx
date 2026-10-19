@@ -9,7 +9,7 @@ import { canonical, siteUrl, siteName } from "@/lib/seo";
 import { useTenant, withBrand } from "@/lib/tenant";
 
 const DESCRIPTION =
-  "EGXpert منصة ذكية لتحليل محافظ الأسهم في البورصة المصرية: متابعة المحفظة، وقف الخسارة والأهداف، توصيات يومية، وتحليل السوق والسيولة.";
+  "EGXpert منصة لتحليل محافظ الأسهم في البورصة المصرية: متابعة المحفظة، مستويات وقف الخسارة والأهداف، مؤشرات تحليلية يومية، وتحليل السوق والسيولة.";
 
 export const Route = createFileRoute("/about")({
   head: ({ match }) => ({
@@ -28,23 +28,23 @@ export const Route = createFileRoute("/about")({
 const OFFERINGS = [
   {
     Icon: LineChart,
-    title: "متابعة كاملة لمحفظتك",
-    body: "سجّل مراكزك وتابع أداءها أول بأول.",
+    title: "متابعة المحفظة",
+    body: "تسجّل مراكزك وتتابع أداءها.",
   },
   {
     Icon: ShieldCheck,
-    title: "حساب وقف الخسارة والأهداف",
-    body: "مستويات دقيقة لكل سهم بناءً على بياناتك.",
+    title: "وقف الخسارة والأهداف",
+    body: "مستويات لكل سهم، محسوبة من بياناتك.",
   },
   {
     Icon: CalendarCheck,
-    title: "توصيات يومية",
-    body: "تحليل يومي لكل سهم في محفظتك يساعدك تقرر تمسك، تزيد، ولا تخرج.",
+    title: "مؤشرات تحليلية يومية",
+    body: "على مراكزك (احتفاظ، زيادة، تقليل)، مبنية على قواعد تحليل معلنة، مش نصيحة شخصية.",
   },
   {
     Icon: BarChart3,
     title: "تحليل السوق والسيولة",
-    body: "قراءة مبسطة للسوق تكمّل قرارك على مستوى السهم.",
+    body: "تحليل مبسّط للسوق والسيولة بيدعم قرارك على مستوى السهم.",
   },
 ] as const;
 
@@ -60,32 +60,40 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function AboutPage() {
-  const { name: brandName } = useTenant();
+  const { name: brandName, contactEmail, features } = useTenant();
+  const mail = contactEmail ? (
+    <a href={`mailto:${contactEmail}`} dir="ltr" className="font-medium text-foreground underline underline-offset-4">
+      {contactEmail}
+    </a>
+  ) : null;
+
   return (
     <SiteShell>
       <section className="border-b bg-card">
         <div className="mx-auto w-full max-w-3xl px-4 py-14 sm:py-16">
           <Badge variant="outline">من نحن</Badge>
           <h1 className="mt-4 text-3xl font-bold leading-[1.25] tracking-tight sm:text-4xl">
-            {brandName} – خبير البورصة المصرية بين يديك
+            عن {brandName}
           </h1>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-            في سوق الأوراق المالية المصري، القرار الصح محتاج معلومة دقيقة وتوقيت سليم. من هنا جت
-            فكرة {brandName}.
+            {brandName} منصة لتحليل محافظ الأسهم في البورصة المصرية. بتساعد المستثمر الفرد يتابع
+            مراكزه، ويشوف مستويات وقف الخسارة والأهداف المحسوبة من بياناته، ويقرأ تحليل مبسّط للسوق
+            والسيولة عشان يقرر بوعي بدل ما يعتمد على الحدس بس.
           </p>
         </div>
       </section>
 
       <article className="mx-auto w-full max-w-3xl px-4 pb-16 pt-4">
-        <Section title="مين إحنا">
+        <Section title={`مين وراء ${brandName}`}>
           <p>
-            {brandName} منصة ذكية لتحليل محافظ الأسهم في البورصة المصرية، اتبنت عشان تحل مشكلة
-            بيواجهها كل مستثمر مصري: إزاي تتابع محفظتك، تعرف نقاط الدخول والخروج، وتاخد قرارك من غير
-            ما تضيع ساعات في التحليل اليدوي أو تعتمد على حدسك بس.
+            {brandName} اتبنت في القاهرة، من واقع خبرة تزيد عن 14 سنة في الاستراتيجية التجارية
+            والتسويق في أسواق مصر والخليج، عشان تحوّل بيانات السوق المعقدة لقرارات عملية بسيطة
+            للمستثمر العادي.
           </p>
+          <p>{brandName} بالتعاون مع Growpin.</p>
         </Section>
 
-        <Section title="اللي بنقدمه">
+        <Section title="بنقدّم إيه">
           <div className="grid gap-3 sm:grid-cols-2">
             {OFFERINGS.map(({ Icon, title, body }) => (
               <div key={title} className="rounded-xl border bg-card p-4">
@@ -97,36 +105,58 @@ function AboutPage() {
           </div>
         </Section>
 
-        <Section title={`ليه ${brandName}`}>
-          <p>
-            إحنا مش شركة استثمار ومش بديل عن قرارك، إحنا أداة بتنظّم لك المعلومة وتوفّر لك وقتك،
-            وتخليك تاخد قرارك وانت شايف الصورة كاملة.
-          </p>
-          <p>
-            المنصة اتبنت من واقع خبرة تزيد عن 14 سنة في السوق المصري ومنطقة الخليج، في مجالات
-            الاستراتيجية التجارية والتسويق، وترجمة البيانات المعقدة لقرارات بسيطة وعملية — وده
-            بالظبط اللي بنقدمه هنا لمستثمر البورصة المصرية.
-          </p>
-        </Section>
+        {features.blog && (
+          <Section title="إزاي بنجهّز المحتوى">
+            <p>
+              مقالات مدونة {brandName} بيكتبها فريق {brandName} التحريري، وبنراجع كل رقم فيها قبل
+              النشر:
+            </p>
+            <ul className="list-disc space-y-1.5 ps-5">
+              <li>
+                الأرقام والقرارات بناخدها من مصادر رسمية: إفصاحات البورصة المصرية، والهيئة العامة
+                للرقابة المالية، والبنك المركزي المصري، وبيانات الشركات نفسها.
+              </li>
+              <li>كل مقال بيتنشر معاه قسم "المصادر" بروابطه.</li>
+              <li>مبننشرش توصيات شراء أو بيع لأسهم بعينها، ولا توقعات لأسعار الأسهم.</li>
+              <li>
+                لو لقينا خطأ، بنصلّحه وبنحدّث تاريخ المقال. ولو لاحظت خطأ، ابعتلنا
+                {mail ? <> على {mail}</> : null}.
+              </li>
+            </ul>
+          </Section>
+        )}
 
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border bg-card p-5">
             <h2 className="text-lg font-bold tracking-tight">رسالتنا</h2>
             <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-              نبسّط تحليل الأسهم لكل مستثمر في البورصة المصرية، من خلال أدوات بتحوّل بيانات السوق
-              المعقدة لتوصيات واضحة وقابلة للتنفيذ، كل يوم وعلى كل سهم في محفظتك.
+              نسهّل تحليل الأسهم لكل مستثمر في البورصة المصرية بمعلومات واضحة وقابلة للتطبيق.
             </p>
           </div>
           <div className="rounded-2xl border bg-card p-5">
             <h2 className="text-lg font-bold tracking-tight">رؤيتنا</h2>
             <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-              نكون الأداة اليومية اللي يعتمد عليها كل مستثمر في البورصة المصرية، صغير كان أو محترف،
-              عشان يدير محفظته بثقة وبيانات مش بتخمين.
+              نكون الأداة اليومية اللي المستثمر بيدير بيها محفظته بالبيانات.
             </p>
           </div>
         </div>
 
-        <div className="mt-10 flex flex-wrap gap-3">
+        <p className="mt-10 rounded-xl border border-warn/40 bg-warn-soft p-4 text-[12.5px] leading-relaxed">
+          <strong>تنويه مهم:</strong> {brandName} أداة تحليل ومساعدة في اتخاذ القرار، وليست جهة
+          استشارات مالية مرخّصة. المستويات والمؤشرات اللي بتظهر في الأداة نتيجة حسابات وقواعد على
+          بيانات المحفظة، ومش توصية شخصية. القرار الاستثماري النهائي ومسؤوليته على المستخدم.
+        </p>
+
+        <Section title="تواصل معنا">
+          <p>
+            {mail && <>{mail} | </>}
+            <Link to="/contact" className="font-medium text-foreground underline underline-offset-4">
+              صفحة تواصل معنا
+            </Link>
+          </p>
+        </Section>
+
+        <div className="mt-8 flex flex-wrap gap-3">
           <Button asChild>
             <Link to="/pricing">ابدأ مجانًا</Link>
           </Button>
@@ -134,11 +164,6 @@ function AboutPage() {
             <Link to="/contact">تواصل معنا</Link>
           </Button>
         </div>
-
-        <p className="mt-12 rounded-xl border border-warn/40 bg-warn-soft p-4 text-[12.5px] leading-relaxed">
-          <strong>تنويه:</strong> {brandName} أداة تحليل ومساعدة في اتخاذ القرار الاستثماري، وليست
-          جهة استشارية مالية مرخّصة. القرار الاستثماري النهائي ومسؤوليته بالكامل على المستخدم.
-        </p>
       </article>
     </SiteShell>
   );
