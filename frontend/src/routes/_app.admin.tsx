@@ -958,7 +958,9 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
       readOnly={readOnly}
       onChanged={load}
       onFollowUp={setFollowUp}
+      onExport={downloadUsersCsv}
       editors={{
+        BulkDelete: BulkDeleteUsersButton,
         Subscription: SubscriptionCell,
         Credits: CreditsCell,
         History: GrantHistoryCell,
@@ -1235,6 +1237,67 @@ function SuspendUserButton({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Deletes the ticked users one by one through the single-user endpoint, so every backend guard still applies; reports failures. */
+function BulkDeleteUsersButton({ rows, onDone }: { rows: AdminUserRow[]; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    const failed: string[] = [];
+    for (const row of rows) {
+      try {
+        await del(`/api/admin/users/${row.id}`);
+      } catch {
+        failed.push(row.email);
+      }
+    }
+    setDeleting(false);
+    setOpen(false);
+    if (failed.length === 0) toast.success(`تم حذف ${rows.length} مستخدم`);
+    else toast.error(`تم حذف ${rows.length - failed.length} وتعذر حذف ${failed.length}: ${failed.join("، ")}`);
+    onDone();
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button size="sm" variant="outline" className="border-down text-down">
+          <Trash2 className="size-4" />
+          حذف المحدد ({rows.length})
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader className="text-start">
+          <AlertDialogTitle>حذف {rows.length} مستخدم؟</AlertDialogTitle>
+          <AlertDialogDescription className="leading-relaxed">
+            هيتم مسح الحسابات دي نهائيًا مع المحافظ والصفقات وسجل الاشتراك ورسائل الدعم. مش هينفع التراجع بعد الحذف.
+          </AlertDialogDescription>
+          <ul className="max-h-40 overflow-y-auto text-[13px] text-muted-foreground" dir="ltr">
+            {rows.map((row) => (
+              <li key={row.id} className="truncate">{row.email}</li>
+            ))}
+          </ul>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2 sm:justify-start">
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              void handleDelete();
+            }}
+            disabled={deleting}
+            className="bg-down text-white hover:bg-down/90"
+          >
+            {deleting ? <Spinner /> : <Trash2 className="size-4" />}
+            نعم، احذف الكل
+          </AlertDialogAction>
+          <AlertDialogCancel disabled={deleting}>إلغاء</AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
