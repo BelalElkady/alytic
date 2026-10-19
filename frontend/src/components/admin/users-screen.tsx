@@ -3,7 +3,7 @@
 // sheet on phone) with everything else, including every editor. The two follow-up boxes (WhatsApp, email) are
 // the admin's own checklist and get their own filter chips. Designed on map #26 (decisions in #27, #28, #29, #40).
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Download } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,8 @@ export type UsersScreenEditors = {
   Role: (p: EditorProps) => ReactNode;
   Suspend: (p: EditorProps) => ReactNode;
   Delete: (p: { row: AdminUserRow; onDeleted: () => void }) => ReactNode;
+  /** Confirms and deletes every row it is given (already limited to deletable accounts); `onDone` clears the selection and reloads. */
+  BulkDelete: (p: { rows: AdminUserRow[]; onDone: () => void }) => ReactNode;
   Behavior: (p: { behavior: AdminUserBehavior }) => ReactNode;
 };
 
@@ -46,6 +48,8 @@ type Props = {
   onChanged: () => void;
   /** Ticks or clears one follow-up box; resolves once saved (or once the failure has been shown). */
   onFollowUp: (row: AdminUserRow, channel: FollowUpChannel, done: boolean) => Promise<void>;
+  /** Downloads the given rows (the Admin's ticked selection) as a file. */
+  onExport: (rows: AdminUserRow[]) => void;
   editors: UsersScreenEditors;
   systemUserId: string;
 };
@@ -541,16 +545,37 @@ const ROW_TINT: Record<RenewalStatus, string> = {
  * Activating a user while the "تجربة" chip is selected) must not make the
  * row — and the drawer confirming it worked — vanish out from under the Admin.
  */
-function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
+function UsersTable({
+  p,
+  allRows,
+  checked,
+  onCheck,
+  onCheckAll,
+}: {
+  p: Props;
+  allRows: AdminUserRow[];
+  checked: Set<string>;
+  onCheck: (id: string, on: boolean) => void;
+  onCheckAll: (on: boolean) => void;
+}) {
   const phone = useIsPhone();
+  const checkedVisible = p.rows.filter((r) => checked.has(r.id)).length;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = allRows.find((r) => r.id === selectedId) ?? null;
   return (
     <>
       <div className="scrollbar-slim overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[800px] text-sm">
           <thead className="bg-muted/40 text-[12px] text-muted-foreground">
             <tr>
+              <th className="w-10 p-3">
+                <Checkbox
+                  checked={checkedVisible === 0 ? false : checkedVisible === p.rows.length ? true : "indeterminate"}
+                  onCheckedChange={(value) => onCheckAll(value === true)}
+                  aria-label="تحديد كل المستخدمين المعروضين"
+                  className="size-5"
+                />
+              </th>
               <th className="p-3 text-start font-medium">المستخدم</th>
               <th className="hidden p-3 text-start font-medium sm:table-cell">الهاتف</th>
               <th className="p-3 text-start font-medium">الاشتراك</th>
@@ -573,6 +598,14 @@ function UsersTable({ p, allRows }: { p: Props; allRows: AdminUserRow[] }) {
                   selectedId === row.id && "bg-muted/60",
                 )}
               >
+                <td className="p-3" onClick={(event) => event.stopPropagation()}>
+                  <Checkbox
+                    checked={checked.has(row.id)}
+                    onCheckedChange={(value) => onCheck(row.id, value === true)}
+                    aria-label={`تحديد ${row.name || row.email}`}
+                    className="size-5"
+                  />
+                </td>
                 <td className="max-w-[260px] p-3">
                   <Identity row={row} systemUserId={p.systemUserId} phoneClassName="sm:hidden" />
                 </td>
@@ -625,6 +658,7 @@ export function UsersScreen(props: Props) {
   const [chip, setChip] = useState<"all" | RenewalStatus>("all");
   const [followUp, setFollowUp] = useState<FollowUpFilter>("all");
   const [sameNetworkOnly, setSameNetworkOnly] = useState(false);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const counts = { all: props.rows.length, active: 0, expired: 0, trial: 0, never: 0 };
   for (const row of props.rows) counts[renewalStatus(row)] += 1;
   // The follow-up chips count within the selected Renewal status, so "ناقص واتساب" under
@@ -636,6 +670,26 @@ export function UsersScreen(props: Props) {
     ...props,
     rows: byRenewal.filter((row) => followUpMatch(row) && (!sameNetworkOnly || row.sameNetworkAccounts.length > 0)),
   };
+  // Only ticked users still in the list count (a deleted or reloaded-away row drops out); ticks survive filtering.
+  const selectedRows = props.rows.filter((row) => checked.has(row.id));
+  // Same guard as the drawer's delete button and the backend: never an Admin or the system account.
+  const deletableRows = selectedRows.filter((row) => !row.isAdmin && row.id !== props.systemUserId);
+  const onCheck = (id: string, on: boolean) =>
+    setChecked((cur) => {
+      const next = new Set(cur);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const onCheckAll = (on: boolean) =>
+    setChecked((cur) => {
+      const next = new Set(cur);
+      for (const row of p.rows) {
+        if (on) next.add(row.id);
+        else next.delete(row.id);
+      }
+      return next;
+    });
   return (
     <div className="space-y-4">
       <StatsStrip p={p} counts={counts} chip={chip} onChip={setChip} />
@@ -656,12 +710,32 @@ export function UsersScreen(props: Props) {
           </Button>
         )}
       </div>
+      {selectedRows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-[13px]">
+          <span className="tabular-nums font-medium">تم تحديد {int(selectedRows.length)}</span>
+          <Button size="sm" variant="outline" onClick={() => props.onExport(selectedRows)}>
+            <Download className="size-4" />
+            تصدير المحدد
+          </Button>
+          {!props.readOnly && deletableRows.length > 0 && (
+            <props.editors.BulkDelete rows={deletableRows} onDone={() => { setChecked(new Set()); props.onChanged(); }} />
+          )}
+          {!props.readOnly && deletableRows.length < selectedRows.length && (
+            <span className="text-[12px] text-muted-foreground">
+              ({int(selectedRows.length - deletableRows.length)} حساب مشرف/نظام مش هيتحذف)
+            </span>
+          )}
+          <Button size="sm" variant="ghost" className="ms-auto" onClick={() => setChecked(new Set())}>
+            إلغاء التحديد
+          </Button>
+        </div>
+      )}
       {p.rows.length === 0 ? (
         <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
           لا يوجد مستخدمون مطابقون — جرّب كلمة بحث أو فلتر مختلف.
         </div>
       ) : (
-        <UsersTable p={p} allRows={props.rows} />
+        <UsersTable p={p} allRows={props.rows} checked={checked} onCheck={onCheck} onCheckAll={onCheckAll} />
       )}
     </div>
   );
