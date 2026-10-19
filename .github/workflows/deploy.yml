@@ -46,10 +46,13 @@ jobs:
         working-directory: frontend
         run: bun install --frozen-lockfile
 
+      # Lint only reports (continue-on-error), so a hung ESLint must not hold
+      # the deploy forever — the merge of #149 sat on this step for hours.
       - name: Report frontend lint issues
         working-directory: frontend
         run: bun run lint
         continue-on-error: true
+        timeout-minutes: 5
 
       - name: Build frontend
         working-directory: frontend
