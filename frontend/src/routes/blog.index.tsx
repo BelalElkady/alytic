@@ -22,12 +22,14 @@ export const Route = createFileRoute("/blog/")({
     const result = await getBlogPosts({ data: deps.page });
     const lastPage = Math.max(1, Math.ceil(result.total / BLOG_PAGE_SIZE));
     // A stale bookmark or hand-typed ?page=99 after posts were removed: land on
-    // the real last page instead of an empty one.
+    // the real last page instead of an empty one. Permanent (301), so search
+    // engines drop the old ?page=N URL instead of keeping its stale copy.
     if (!result.error && deps.page > lastPage) {
       throw redirect({
         to: "/blog",
         search: { page: lastPage > 1 ? lastPage : undefined },
         replace: true,
+        statusCode: 301,
       });
     }
     return { ...result, page: deps.page, lastPage };
