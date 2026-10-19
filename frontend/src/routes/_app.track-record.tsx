@@ -743,6 +743,10 @@ function Kpis({ data }: { data: TrackRecord }) {
               كسبانين. <b>بتفشل</b> لو قفلت تحت الوقف، أو خلص أفقها وهي خسرانة.
             </p>
             <p>الاحتفاظ اللي يخلص أفقه بينجح لو سهمه ماتأخرش عن مؤشره. وهو مالوش وقف ولا مستهدف.</p>
+            <p>
+              النسبة دي خليط من أنواع قرار مختلفة، وكل نوع بيتحسم في وقت مختلف: البيع والتخفيف بيتحسموا بدري (بيوصلوا للمستهدف)،
+              والاحتفاظ بيستنى لحد آخر أفقه. عشان كده النسبة الإجمالية ممكن تتحرك من غير ما الأداء يتغير — شوف «النجاح حسب نوع التوصية» تحت.
+            </p>
           </>
         }
       />
@@ -999,7 +1003,9 @@ function ByAction({ byAction }: { byAction: TrackRecord["byAction"] }) {
           <div className="flex items-center justify-between text-[12.5px]">
             <span>
               <span className="font-semibold">{ACTION_LABEL[row.action]}</span>{" "}
-              <span className="num text-muted-foreground">({fmt(row.total)})</span>
+              <span className="num text-muted-foreground">
+                ({fmt(row.closed)} محسومة من {fmt(row.total)})
+              </span>
             </span>
             <span className="num font-semibold">
               {row.hitRate == null ? (
