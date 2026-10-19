@@ -9,9 +9,10 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { ConsentBanner } from "@/components/consent-banner";
 import { PresenceBeacon } from "@/components/presence-beacon";
 import { Toaster } from "@/components/ui/sonner";
-import { ogLogoUrl, siteUrl } from "@/lib/seo";
+import { ogImageUrl, siteUrl } from "@/lib/seo";
 import { DEFAULT_TENANT, brandCss, tenantOf, type Tenant } from "@/lib/tenant";
 import { getTenant } from "@/lib/tenant-server";
 import { DeskProvider } from "@/lib/store";
@@ -24,16 +25,16 @@ function NotFoundComponent() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
+        <h2 className="mt-4 text-xl font-semibold text-foreground">الصفحة مش موجودة</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+          الصفحة اللي بتدوّر عليها مش موجودة أو اتنقلت لمكان تاني.
         </p>
         <div className="mt-6">
           <Link
             to="/"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Go home
+            الرئيسية
           </Link>
         </div>
       </div>
@@ -51,11 +52,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
-        </h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">الصفحة مفتحتش</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+          حصلت مشكلة من عندنا. جرّب تحدّث الصفحة أو ارجع للرئيسية.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
@@ -65,13 +64,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Try again
+            جرّب تاني
           </button>
           <a
             href="/"
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Go home
+            الرئيسية
           </a>
         </div>
       </div>
@@ -83,8 +82,6 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 // client it is kept for the rest of the visit. Never cached like this on the
 // server, where one process renders every site.
 let browserTenant: Tenant | null = null;
-
-const META_PIXEL_ID = "1612671676275288";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   // Which white-label site this is (see lib/tenant.ts). Put in the route
@@ -102,8 +99,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     const description = brand.description ?? DEFAULT_TENANT.brand.description ?? "";
     const title = brand.tagline ? `${tenant.name} — ${brand.tagline}` : tenant.name;
     const css = brandCss(brand);
-    // Re-checked here as well as on save: gaId is written into an inline script.
-    const gaId = /^G-[A-Z0-9]{4,20}$/.test(brand.analytics?.gaId ?? "") ? brand.analytics?.gaId : undefined;
     const adsClient = /^ca-pub-\d{10,20}$/.test(brand.analytics?.adsClient ?? "")
       ? brand.analytics?.adsClient
       : undefined;
@@ -118,8 +113,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         { property: "og:description", content: description },
         { property: "og:type", content: "website" },
         { property: "og:url", content: siteUrl(match) },
-        { property: "og:image", content: ogLogoUrl(match) },
+        { property: "og:image", content: ogImageUrl(match) },
         { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: ogImageUrl(match) },
       ],
       links: [
         {
@@ -138,57 +134,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         ...(tenant.id === DEFAULT_TENANT.id
           ? [{ rel: "icon", href: "/favicon.ico", type: "image/x-icon" }]
           : []),
-        { rel: "preconnect", href: "https://fonts.googleapis.com" },
-        { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-        {
-          rel: "stylesheet",
-          href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap",
-        },
       ],
       styles: css ? [{ children: css }] : [],
-      // Each site reports to its own AdSense / Analytics account, or to none:
-      // a client's traffic must never land in someone else's reports. The
-      // IDs are format-checked by the backend before they are saved.
-      scripts: [
-        ...(adsClient
-          ? [
-              {
-                src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsClient}`,
-                async: true,
-                crossOrigin: "anonymous" as const,
-              },
-            ]
-          : []),
-        ...(gaId
-          ? [
-              { src: `https://www.googletagmanager.com/gtag/js?id=${gaId}`, async: true },
-              {
-                children: `window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', '${gaId}');`,
-              },
-            ]
-          : []),
-        // Meta Pixel: our own site only, same rule as above — a client's
-        // visitors must not land in our Meta reports.
-        ...(tenant.id === DEFAULT_TENANT.id
-          ? [
-              {
-                children: `!function(f,b,e,v,n,t,s)
-{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-n.queue=[];t=b.createElement(e);t.async=!0;
-t.src=v;s=b.getElementsByTagName(e)[0];
-s.parentNode.insertBefore(t,s)}(window, document,'script',
-'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '${META_PIXEL_ID}');
-fbq('track', 'PageView');`,
-              },
-            ]
-          : []),
-      ],
+      // AdSense stays in the head (Google verifies the site by this tag).
+      // Analytics and the Meta Pixel load only after the visitor agrees; see
+      // lib/consent.ts. Each site reports to its own AdSense account or none.
+      scripts: adsClient
+        ? [
+            {
+              src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsClient}`,
+              async: true,
+              crossOrigin: "anonymous" as const,
+            },
+          ]
+        : [],
     };
   },
   shellComponent: RootShell,
@@ -198,24 +157,12 @@ fbq('track', 'PageView');`,
 });
 
 function RootShell({ children }: { children: ReactNode }) {
-  const { tenant } = Route.useRouteContext();
   return (
     <html lang="ar" dir="rtl">
       <head>
         <HeadContent />
       </head>
       <body>
-        {tenant.id === DEFAULT_TENANT.id && (
-          <noscript>
-            <img
-              height="1"
-              width="1"
-              style={{ display: "none" }}
-              alt=""
-              src={`https://www.facebook.com/tr?id=${META_PIXEL_ID}&ev=PageView&noscript=1`}
-            />
-          </noscript>
-        )}
         {children}
         <Scripts />
       </body>
@@ -233,6 +180,7 @@ function RootComponent() {
         <Outlet />
       </DeskProvider>
       <PresenceBeacon />
+      <ConsentBanner />
       <Toaster position="top-center" richColors />
     </QueryClientProvider>
   );
