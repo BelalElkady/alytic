@@ -761,6 +761,9 @@ const PORTFOLIO_READONLY_GATED_PATHS = [
   '/log/note',
   '/settings/style',
   '/settings/shariah',
+  // Both rewrite history, so a view-only Portfolio must refuse them too.
+  '/log/backfill',
+  '/reset',
 ];
 app.use('/api', async (req, res, next) => {
   if (!req.user || !PORTFOLIO_READONLY_GATED_PATHS.some((prefix) => req.path.startsWith(prefix))) return next();
@@ -4414,10 +4417,11 @@ app.use((err, _req, res, next) => {
 function warnAboutWeakConfig() {
   if (process.env.NODE_ENV !== 'production') return;
   const problems = [];
-  for (const name of ['BLOG_CRON_SECRET', 'STOP_PLAN_CRON_SECRET', 'DAILY_CLOSE_CRON_SECRET']) {
+  for (const name of ['BLOG_CRON_SECRET', 'STOP_PLAN_CRON_SECRET', 'DAILY_CLOSE_CRON_SECRET', 'INVESTOR_FLOWS_CRON_SECRET']) {
     const value = process.env[name];
     if (value && value.length < 24) problems.push(`${name} قصير — استخدم 32 حرف عشوائي على الأقل`);
   }
+  if (!process.env.HOST) problems.push('HOST مش مضبوط — الخادم بيسمع على كل الواجهات؛ ضبط HOST=127.0.0.1 بيقفله ورا nginx');
   if (!process.env.ADMIN_EMAILS) problems.push('ADMIN_EMAILS مش مضبوط — بيستخدم الإيميل الافتراضي المكتوب في الكود');
   if (!process.env.FRONTEND_URL && !process.env.APP_URL) problems.push('FRONTEND_URL / APP_URL مش مضبوطين');
   if (!process.env.RESEND_API_KEY) problems.push('RESEND_API_KEY مش مضبوط — إيميلات التفعيل وإعادة التعيين مش هتتبعت');
@@ -4450,8 +4454,12 @@ if (isDirectRun) {
   startMarketScanScheduler();
   startInvestorFlowsScheduler();
   const PORT = process.env.PORT ?? 3000;
-  app.listen(PORT, () => {
-    console.log(`Alytic على http://localhost:${PORT}`);
+  // Behind nginx the API only needs loopback. Opt-in (HOST=127.0.0.1) rather than
+  // default, because the frontend reaches it as "localhost", which some setups
+  // resolve to ::1 — set ALYTIC_API_URL=http://127.0.0.1:PORT before binding.
+  const HOST = process.env.HOST || undefined;
+  app.listen(PORT, HOST, () => {
+    console.log(`Alytic على http://${HOST ?? 'localhost'}:${PORT}`);
     console.log(aiAvailable() ? '  الذكاء الاصطناعي: مفعّل' : '  الذكاء الاصطناعي: متوقف (مفيش OPENROUTER_API_KEY)');
   });
 }
