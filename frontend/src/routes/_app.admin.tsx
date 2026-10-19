@@ -896,6 +896,7 @@ function UsersTab({ readOnly = false }: { readOnly?: boolean }) {
     <UsersScreen
       rows={searched}
       totalCount={rows.length}
+      everyRow={rows}
       stats={stats}
       online={online}
       controls={

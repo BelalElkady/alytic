@@ -41,6 +41,8 @@ type Props = {
   /** Searched and sorted, but not filtered by Renewal status: this screen owns that filter. */
   rows: AdminUserRow[];
   totalCount: number;
+  /** Every loaded user, ignoring search: ticked rows are looked up here so a selection survives a new search. */
+  everyRow: AdminUserRow[];
   stats: UsersScreenStats;
   online: { signedIn: number; visitors: number; windowSeconds: number; asOf: string } | null;
   controls: ReactNode;
@@ -670,8 +672,8 @@ export function UsersScreen(props: Props) {
     ...props,
     rows: byRenewal.filter((row) => followUpMatch(row) && (!sameNetworkOnly || row.sameNetworkAccounts.length > 0)),
   };
-  // Only ticked users still in the list count (a deleted or reloaded-away row drops out); ticks survive filtering.
-  const selectedRows = props.rows.filter((row) => checked.has(row.id));
+  // Only ticked users still in the list count (a deleted or reloaded-away row drops out); ticks survive searching and filtering.
+  const selectedRows = props.everyRow.filter((row) => checked.has(row.id));
   // Same guard as the drawer's delete button and the backend: never an Admin or the system account.
   const deletableRows = selectedRows.filter((row) => !row.isAdmin && row.id !== props.systemUserId);
   const onCheck = (id: string, on: boolean) =>
