@@ -22,7 +22,7 @@ const SOCIALS = [
 
 /** The one footer for the whole site — marketing pages and the signed-in desk both render it. */
 export function SiteFooter() {
-  const { name: brandName, brand } = useTenant();
+  const { name: brandName, brand, contactEmail } = useTenant();
   const socials = SOCIALS.flatMap(({ key, label, Icon }) => {
     const href = brand.social?.[key];
     return href ? [{ href, label, Icon }] : [];
@@ -68,6 +68,18 @@ export function SiteFooter() {
             </Link>
           ))}
         </nav>
+        {contactEmail && (
+          <p className="text-[13px] font-medium text-muted-foreground">
+            راسلنا:{" "}
+            <a
+              href={`mailto:${contactEmail}`}
+              dir="ltr"
+              className="text-foreground underline-offset-4 hover:underline"
+            >
+              {contactEmail}
+            </a>
+          </p>
+        )}
         <p dir="ltr" className="text-center text-[12px] font-medium text-muted-foreground">
           Powered by{" "}
           <a
