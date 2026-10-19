@@ -119,6 +119,9 @@ function withSecurityHeaders(request: Request, response: Response): Response {
   setDefault("X-Frame-Options", "SAMEORIGIN");
   setDefault("Content-Security-Policy", ENFORCED_CSP);
   if (!isApi) setDefault("Content-Security-Policy-Report-Only", REPORT_ONLY_CSP);
+  // Blog pages change whenever a post is published or hidden; without this a
+  // browser or proxy could replay an old /blog?page=N listing hidden posts.
+  if (pathname === "/blog" || pathname.startsWith("/blog/")) setDefault("Cache-Control", "no-cache");
 
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

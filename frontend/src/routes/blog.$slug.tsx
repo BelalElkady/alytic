@@ -8,10 +8,20 @@ import { getBlogPost, type BlogContentBlock, type BlogImage, type BlogPost } fro
 import { arPublishedDate } from "@/lib/format";
 import { canonical, ogLogoUrl, siteUrl, siteName } from "@/lib/seo";
 
+// Posts whose slug was corrected after publishing: the old URL is already
+// indexed and linked, so it answers a permanent redirect to the new one.
+const RENAMED_SLUGS: Record<string, string> = {
+  // The slug said "sixth"; 24 Sep 2026 was the sixth MPC meeting but the fifth hold in a row.
+  "egypt-central-bank-holds-interest-rates-sixth-time-2026":
+    "egypt-central-bank-holds-interest-rates-fifth-time-2026",
+};
+
 export const Route = createFileRoute("/blog/$slug")({
   loader: async ({ params }) => {
     // Old articles linked to the bare domain, which resolved to /blog/egxpert.com.
     if (params.slug === "egxpert.com") throw redirect({ to: "/", statusCode: 301 });
+    const renamed = RENAMED_SLUGS[params.slug];
+    if (renamed) throw redirect({ to: "/blog/$slug", params: { slug: renamed }, statusCode: 301 });
     const result = await getBlogPost({ data: params.slug });
     // A deleted or unpublished post must answer HTTP 404, not a 200 page that
     // says "not found" — search engines keep those indexed as empty pages.
