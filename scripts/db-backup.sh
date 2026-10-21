@@ -20,6 +20,30 @@ fi
 
 count() { psql "$1" -X -At -v ON_ERROR_STOP=1 -c "$2"; }
 
+# Prints "user@host" of a connection string, never the password.
+who() { printf '%s' "$1" | sed -nE 's#^[a-z]+://([^:@/]+)(:.*)?@([^@/:?]+)(:[0-9]+)?(/.*)?$#\1@\3#p'; }
+
+# Fail early, saying which of the two connections is the broken one.
+preflight() {
+  local label=$1 url=$2 target
+  target=$(who "$url")
+  target=${target:-unparseable-string}
+  if ! psql "$url" -X -At -v ON_ERROR_STOP=1 -c 'select 1' > /dev/null; then
+    echo "::error::$label connection failed (login: $target)."
+    case "$target" in
+      postgres@*pooler.supabase.com)
+        echo "::error::$label uses the pooler but the username is plain 'postgres'; it must be 'postgres.<project-ref>'." ;;
+      *.supabase.co)
+        echo "::error::$label uses the direct host, which is IPv6-only; use the Session pooler string." ;;
+    esac
+    exit 1
+  fi
+  echo "$label connection ok ($target)"
+}
+
+preflight PROD_DATABASE_URL "$PROD_DATABASE_URL"
+preflight BACKUP_DATABASE_URL "$BACKUP_DATABASE_URL"
+
 prod_users=$(count "$PROD_DATABASE_URL" 'select count(*) from public.users')
 prev_users=$(count "$BACKUP_DATABASE_URL" "select case when to_regclass('backup.users') is null then 0 else (select count(*) from backup.users) end")
 echo "production users: $prod_users · previous backup users: $prev_users"
