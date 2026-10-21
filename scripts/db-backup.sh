@@ -72,7 +72,7 @@ pg_dump "$PROD_DATABASE_URL" --schema=public --no-owner --no-privileges --no-com
   echo 'CREATE SCHEMA backup;'
   perl -ne '
     if ($c) { print; $c = 0 if /^\\\.\r?$/; next }
-    if (/^COPY .* FROM stdin;\r?$/) { $c = 1; print; next }
+    if (/^COPY .* FROM stdin;\r?$/) { $c = 1; s/(?<![A-Za-z0-9_])public\./backup./; print; next }
     next if /^(CREATE SCHEMA public;|ALTER SCHEMA public )/;
     s/(?<![A-Za-z0-9_])public\./backup./g;
     print;
