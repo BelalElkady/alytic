@@ -78,9 +78,18 @@ their own ephemeral port).
 
 Because those seeded users are real rows in the shared test project, `npm test`
 and `npm run test:api` run through `scripts/run-tests.mjs`, which always
-deletes every `@test.local` user afterwards via `scripts/cleanup-test-data.js`
-(`portfolios` cascades on delete) — pass or fail, and regardless of the test
-run's own exit code. Run it by hand with `npm run cleanup:test-data`.
+cleans up afterwards via `scripts/cleanup-test-data.js` (`portfolios`
+cascades on delete) — pass or fail, and regardless of the test run's own exit
+code.
+
+Two runs can share the project at the same moment (a pull request and a merge
+to `main`), so cleanup never deletes another run's accounts. Each run gets a
+`TEST_RUN_ID` (set by `run-tests.mjs`, and by `playwright.config.ts` for E2E)
+that every test email carries (`testEmail()` in `helpers/test-database.js`);
+cleanup removes that run's accounts plus any `@test.local` account older than
+a day, and empties the storage buckets. Run by hand, `npm run cleanup:test-data`
+removes every `@test.local` account. Rows that no account owns, such as
+recommendations (append-only), are only removed by the CI step below.
 
 ## Frontend — Vitest
 
@@ -143,14 +152,27 @@ Two things worth knowing:
 `.github/workflows/test.yml` runs on every pull request, by hand, and as the
 first job of `deploy.yml`: the deploy only starts when it passes.
 
-1. **schema** applies `backend/supabase/schema.sql` and `platform.sql` to the
-   test project (both idempotent), so it always matches the commit under test.
-2. **backend** and **frontend** run in parallel, then **e2e**, which uploads
-   the Playwright report on failure.
+- **frontend** (vitest) needs no database and runs in parallel.
+- **database** does everything that touches the test project, in order:
+  apply `backend/supabase/schema.sql` and `platform.sql` (both idempotent, so
+  the project always matches the commit under test), the backend suite, then
+  E2E, uploading the Playwright report on failure. Only one such job runs at a
+  time across all branches and the deploy (concurrency group
+  `test-database`): re-applying the schema locks tables, and a second run's
+  queries would time out behind it. GitHub keeps one run waiting per group and
+  cancels it if a third arrives; rerun it if that happens.
+- The **database** job's last step, **Delete all test data**, runs even after a
+  failure or a cancel: it empties every storage bucket and every table in the
+  test project's `public` schema (`scripts/wipe-test-database.sql`, which
+  briefly lifts the append-only guard on `recommendations`), re-applies the
+  schema files to restore the seeded `local` account, and fails if any test
+  user, recommendation or file is left. It refuses any connection string that
+  is not the test project's.
 
-For now the deploy gate is backend and frontend only: `deploy.yml` passes
-`e2e: false` until the Playwright specs are brought up to date with the
-current UI (#182). Pull requests still run E2E.
+The deploy gate runs all three: backend, frontend and E2E. One E2E spec,
+"the manual-entry dialog corrects a holding", is skipped: the تعديل tab lists
+only holdings `/api/scan` could analyse, which needs an AI stop, and tests
+never have an AI key.
 
 No AI or email secret is passed to it. It needs these repository secrets:
 `BACKUP_DATABASE_URL` (session pooler string of the test project, shared with

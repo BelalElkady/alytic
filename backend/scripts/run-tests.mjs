@@ -8,9 +8,14 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { newTestRunId } from '../test/helpers/test-database.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const patterns = process.argv.slice(2);
+
+// One tag for every account this run registers; the test processes and the
+// cleanup below inherit it, so cleanup only removes this run's accounts.
+process.env.TEST_RUN_ID ??= newTestRunId();
 
 const testRun = spawnSync('node', ['--test', ...patterns], { stdio: 'inherit', shell: process.platform === 'win32' });
 

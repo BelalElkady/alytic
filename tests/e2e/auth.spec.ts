@@ -75,8 +75,9 @@ test.describe("authentication", () => {
   });
 
   test("signing in reaches the desk, and signing out ends the session", async ({ page }) => {
-    const email = await newDeskUser(page);
-    await expect(page.getByText(email)).toBeVisible();
+    await newDeskUser(page);
+    await expect(page).toHaveURL(/\/portfolio/);
+    await expect(page.getByRole("button", { name: "خروج" })).toBeVisible();
 
     await signOutViaUi(page);
     await expect(page.getByRole("heading", { name: "تسجيل الدخول" })).toBeVisible();

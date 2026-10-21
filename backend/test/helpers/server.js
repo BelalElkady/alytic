@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 
 import './env.js';
+import { testEmail } from './test-database.js';
 
 let appModulePromise = null;
 function loadApp() {
@@ -72,7 +73,7 @@ export function sessionFrom(setCookies) {
   return header.split(';')[0];
 }
 
-export const uniqueEmail = () => `t-${crypto.randomUUID()}@test.local`;
+export const uniqueEmail = () => testEmail('t');
 
 /**
  * A random valid Egyptian mobile number. Phones are unique per account (see

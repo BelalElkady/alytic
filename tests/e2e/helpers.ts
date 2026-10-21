@@ -1,7 +1,8 @@
 import { expect, type Page } from "@playwright/test";
-import { resolveTestDatabase } from "../../backend/test/helpers/test-database.js";
+import { resolveTestDatabase, testRunId } from "../../backend/test/helpers/test-database.js";
 
-export const uniqueEmail = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
+// Carries the run tag (TEST_RUN_ID, set in playwright.config.ts) so teardown only deletes this run's accounts.
+export const uniqueEmail = () => `e2e-${testRunId()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
 
 export const PASSWORD = "E2ePassword!123";
 // Fine for forms that are rejected before anything is stored. Anything that
@@ -64,7 +65,11 @@ export async function registerViaUi(page: Page, email = uniqueEmail(), name = "�
  *
  * A successful sign-in navigates to the marketing home ("/") — the desk
  * itself lives under /portfolio, so the helper hops there and waits for the
- * header to prove the session.
+ * desk to prove the session: the header's sign-out button, or, for a new
+ * confirmed account, the mandatory style dialog (a modal, so it hides the
+ * header from the accessibility tree until it is answered). Not the email:
+ * the header shows the account's name when it has one, and an unconfirmed
+ * account's banners repeat the email, so it is neither present nor unique.
  */
 export async function loginViaUi(page: Page, email: string, password = PASSWORD) {
   await goto(page, "/login");
@@ -72,8 +77,10 @@ export async function loginViaUi(page: Page, email: string, password = PASSWORD)
   await page.getByLabel("كلمة السر", { exact: true }).fill(password);
   await page.getByRole("button", { name: "دخول", exact: true }).click();
   await expect(page).toHaveURL(/\/(\?|$)/);
+  await skipWelcomeTour(page);
   await goto(page, "/portfolio");
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(page).toHaveURL(/\/portfolio/);
+  await expect(page.getByRole("button", { name: "خروج" }).or(page.getByRole("alertdialog"))).toBeVisible();
   return email;
 }
 
@@ -114,8 +121,21 @@ export async function signOutViaUi(page: Page) {
   await page.waitForLoadState("networkidle");
 }
 
-export async function expectToast(page: Page, text: string | RegExp) {
-  await expect(page.locator("[data-sonner-toast]").filter({ hasText: text }).first()).toBeVisible();
+export async function expectToast(page: Page, text: string | RegExp, timeout?: number) {
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: text }).first()).toBeVisible({ timeout });
+}
+
+/**
+ * Marks the welcome tour as seen for the signed-in account, the way closing
+ * it does (MainTour in frontend/src/components/tour/main-tour.tsx). Left to
+ * itself it opens over /portfolio at a moment that depends on timing and
+ * swallows whatever click lands then. Must run before /portfolio loads: the
+ * tour reads this key once, when it arms its timer.
+ */
+async function skipWelcomeTour(page: Page) {
+  const me = await (await page.request.get("/api/public/api/auth/me")).json();
+  const id = me?.user?.id;
+  if (id) await page.evaluate((key) => localStorage.setItem(key, new Date().toISOString()), `alytic-tour-main-seen:${id}`);
 }
 
 /** Pick a stock in a StockPicker combobox by searching its code. */
@@ -132,20 +152,24 @@ export async function pickStock(page: Page, code: string) {
   await page.locator("[cmdk-item]").filter({ hasText: code }).first().click();
 }
 
+/** The إدخال يدوي dialog: tabs تعديل (correct holdings), صفقة جديدة, سجل الصفقات. */
+export const manualEntryDialog = (page: Page) => page.getByRole("dialog", { name: "إدخال يدوي" });
+
 /**
- * Record an executed trade through إدخال يدوي → إدخال صفقة جديدة. Leaves the
- * manual-entry dialog open (the trade popup closes on success).
+ * Record an executed trade through إدخال يدوي → the صفقة جديدة tab. Leaves the
+ * manual-entry dialog open on that tab (the form resets after a trade).
  */
 export async function recordTrade(page: Page, code: string, shares: string, price: string) {
   await goto(page, "/portfolio");
   await page.getByRole("button", { name: "إدخال يدوي" }).click();
-  await page.getByRole("button", { name: "إدخال صفقة جديدة" }).click();
-  const dialog = page.getByRole("dialog", { name: "إدخال صفقة جديدة" });
+  const dialog = manualEntryDialog(page);
   await expect(dialog).toBeVisible();
+  await dialog.getByRole("tab", { name: "صفقة جديدة" }).click();
   await pickStock(page, code);
   await dialog.getByLabel("العدد").fill(shares);
   await dialog.getByLabel("سعر التنفيذ").fill(price);
   await dialog.getByRole("button", { name: "تسجيل الصفقة" }).click();
-  await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
-  await expect(dialog).toBeHidden();
+  // The toast only shows once the whole desk has reloaded, which in CI (price
+  // feeds unreachable) takes well past the default 15 s.
+  await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة", 60_000);
 }

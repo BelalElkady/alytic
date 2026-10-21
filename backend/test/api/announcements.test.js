@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 
 import '../helpers/env.js';
+import { testEmail } from '../helpers/test-database.js';
 
 // Must be set before helpers/server.js's startServer() does its first
 // (lazily deferred) import of src/api/server.js, which is what reads this
 // into the tenancy registry's PLATFORM_ADMIN_EMAILS set.
-const platformAdminEmail = `platform-admin-${crypto.randomUUID()}@test.local`;
+const platformAdminEmail = testEmail('platform-admin');
 process.env.ADMIN_EMAILS = platformAdminEmail;
 
 import { startServer, request, registerUser, sessionFrom } from '../helpers/server.js';

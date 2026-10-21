@@ -8,9 +8,24 @@
  * Dependency-free on purpose, because the E2E files outside backend/ import
  * it too and can't resolve backend's packages.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Tags the accounts one test run registers. The test project is shared, so
+ * two runs can overlap (a pull request and a merge to main); cleanup deletes
+ * only its own run's accounts (see scripts/cleanup-test-data.js), never the
+ * ones another run is still using. scripts/run-tests.mjs and
+ * playwright.config.ts set TEST_RUN_ID once per run, and every process they
+ * start inherits it. Hex only, so it is safe inside an ILIKE pattern.
+ */
+export const testRunId = () => process.env.TEST_RUN_ID || 'local';
+export const newTestRunId = () => crypto.randomBytes(4).toString('hex');
+
+/** A fresh `@test.local` address carrying this run's tag. */
+export const testEmail = (prefix) => `${prefix}-${testRunId()}-${crypto.randomUUID()}@test.local`;
 
 const PRODUCTION_PROJECT_REF = 'xssjwnevhbpcdmtbatiy';
 const ENV_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env');

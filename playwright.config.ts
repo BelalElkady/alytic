@@ -9,6 +9,12 @@
  */
 import { defineConfig } from "@playwright/test";
 
+import { newTestRunId } from "./backend/test/helpers/test-database.js";
+
+// Set once in the main process before any worker, web server or teardown
+// starts; they all inherit it, so cleanup only removes this run's accounts.
+process.env.TEST_RUN_ID ??= newTestRunId();
+
 const BACKEND_PORT = process.env.E2E_BACKEND_PORT ?? 3111;
 const FRONTEND_PORT = process.env.E2E_FRONTEND_PORT ?? 8181;
 
