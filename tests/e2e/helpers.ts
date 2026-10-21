@@ -1,6 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
 import { expect, type Page } from "@playwright/test";
+import { resolveTestDatabase } from "../../backend/test/helpers/test-database.js";
 
 export const uniqueEmail = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
 
@@ -19,19 +18,8 @@ export const uniquePhone = () =>
  * API with the same service-role credentials the backend uses.
  */
 async function markEmailVerifiedInDb(email: string) {
-  const env: Record<string, string | undefined> = { ...process.env };
-  try {
-    const envText = fs.readFileSync(path.join(process.cwd(), "backend", ".env"), "utf8");
-    for (const line of envText.split(/\r?\n/)) {
-      const match = /^\s*(SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY)\s*=\s*(.*)\s*$/.exec(line);
-      if (match) env[match[1]] ??= match[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* no backend/.env — the SUPABASE_* env vars must already be set another way */
-  }
-  const url = env.SUPABASE_URL;
-  const key = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are needed to verify e2e users");
+  // The same test project the E2E backend runs against, never production.
+  const { url, key } = resolveTestDatabase();
   const res = await fetch(`${url}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
     method: "PATCH",
     headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },

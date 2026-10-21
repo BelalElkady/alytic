@@ -1,95 +1,145 @@
-# name: Tests
+name: Tests
 
-# on:
-#   pull_request:
-#   push:
-#     branches: [main]
-#   workflow_dispatch:
+# Every suite runs against the test Supabase project (qfxuejkbnrdszycqxvdx,
+# `public` schema), never production, and with no AI or email key: the
+# shared helper backend/test/helpers/test-database.js refuses production and
+# blanks OPENROUTER_API_KEY / ANTHROPIC_API_KEY / RESEND_API_KEY, and this
+# workflow never passes those secrets in the first place.
+on:
+  pull_request:
+  workflow_dispatch:
+  # deploy.yml calls this and only deploys when it passes.
+  workflow_call:
+    inputs:
+      e2e:
+        description: Also run the Playwright suite
+        type: boolean
+        default: true
 
-# permissions:
-#   contents: read
+permissions:
+  contents: read
 
-# jobs:
-#   backend:
-#     name: Backend (node:test)
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
+env:
+  NODE_VERSION: 22
+  TEST_SUPABASE_URL: https://qfxuejkbnrdszycqxvdx.supabase.co
+  OPENROUTER_API_KEY: ''
+  ANTHROPIC_API_KEY: ''
+  RESEND_API_KEY: ''
 
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: 22
-#           cache: npm
-#           cache-dependency-path: backend/package-lock.json
+jobs:
+  schema:
+    name: Apply the repo schema to the test database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
 
-#       - name: Install backend dependencies
-#         working-directory: backend
-#         run: npm ci
+      # Both files are idempotent (`if not exists`, guarded alters), so
+      # re-applying them every run keeps the test database on exactly the
+      # schema this commit expects, and proves the files still apply cleanly.
+      - name: Apply schema.sql and platform.sql
+        env:
+          TEST_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -eu
+          if [ -z "$TEST_DATABASE_URL" ]; then echo "::error::GitHub secret BACKUP_DATABASE_URL is missing"; exit 1; fi
+          psql "$TEST_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction \
+            -f backend/supabase/schema.sql -f backend/supabase/platform.sql
+          # Make the API see new tables and columns straight away.
+          psql "$TEST_DATABASE_URL" -X -q -c "notify pgrst, 'reload schema'"
 
-#       - name: Run backend tests
-#         working-directory: backend
-#         run: npm test
+  backend:
+    name: Backend (node:test)
+    needs: schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
 
-#   frontend:
-#     name: Frontend (vitest)
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: 22
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
 
-#       - uses: oven-sh/setup-bun@v2
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
 
-#       - name: Install frontend dependencies
-#         working-directory: frontend
-#         run: bun install --frozen-lockfile
+  frontend:
+    name: Frontend (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
 
-#       - name: Run frontend tests
-#         working-directory: frontend
-#         run: bun run test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
-#   e2e:
-#     name: E2E (Playwright)
-#     runs-on: ubuntu-latest
-#     needs: [backend, frontend]
-#     steps:
-#       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
 
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: 22
-#           cache: npm
-#           cache-dependency-path: |
-#             backend/package-lock.json
-#             package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
 
-#       - uses: oven-sh/setup-bun@v2
+      - name: Run frontend tests
+        working-directory: frontend
+        run: bun run test
 
-#       - name: Install backend dependencies
-#         working-directory: backend
-#         run: npm ci
+  e2e:
+    name: E2E (Playwright)
+    needs: [backend, frontend]
+    # deploy.yml passes e2e: false for now: the specs predate the current UI
+    # and fail on copy and layout, not on bugs (issue #182).
+    # Pull requests and manual runs have no input, so they still run it.
+    if: ${{ inputs.e2e != false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
 
-#       - name: Install frontend dependencies
-#         working-directory: frontend
-#         run: bun install --frozen-lockfile
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            package-lock.json
 
-#       - name: Install root dependencies
-#         run: npm ci
+      - uses: oven-sh/setup-bun@v2
 
-#       - name: Install Playwright browsers
-#         run: npx playwright install --with-deps chromium
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
 
-#       - name: Run E2E tests
-#         run: npx playwright test
-#         env:
-#           CI: "true"
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
 
-#       - name: Upload Playwright report
-#         if: failure()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: playwright-report
-#           path: tests/e2e/report
-#           retention-days: 7
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npx playwright test
+        env:
+          CI: 'true'
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/report
+          retention-days: 7

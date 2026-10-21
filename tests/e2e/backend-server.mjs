@@ -1,8 +1,8 @@
 /**
  * Standalone backend for the E2E suite.
  *
- * Boots the real Express app against the real Supabase project (see
- * backend/.env — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) with a bar-cache
+ * Boots the real Express app against the test Supabase project (see
+ * backend/test/helpers/test-database.js) with a bar-cache
  * directory pre-seeded with deterministic fixtures, so desk flows that
  * analyze held positions run entirely offline. Unlike the old SQLite setup,
  * the database itself is NOT reset per run — Supabase is a shared cloud
@@ -20,23 +20,15 @@ const BARS_DIR = path.join(TMP, "bars");
 
 fs.mkdirSync(BARS_DIR, { recursive: true });
 
-// This script lives outside backend/, so it can't resolve backend's `dotenv`
-// package — a minimal inline parser reads just the Supabase credentials
-// (never overriding an already-set env var, same as dotenv's own default).
-// Must run BEFORE importing anything from the backend: supabaseClient.js
-// resolves its config from the environment at module load.
-try {
-  const envText = fs.readFileSync(path.join(ROOT, "backend", ".env"), "utf8");
-  for (const line of envText.split(/\r?\n/)) {
-    const match = /^\s*(SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY)\s*=\s*(.*)\s*$/.exec(line);
-    if (match) process.env[match[1]] ??= match[2].replace(/^["']|["']$/g, "");
-  }
-} catch {
-  /* no backend/.env — the SUPABASE_* env vars must already be set another way */
-}
+// Points the backend at the test Supabase project (never production) and
+// blanks the AI and email keys. Must run BEFORE importing anything from the
+// backend: supabaseClient.js resolves its config from the environment at
+// module load.
+const { useTestDatabase } = await import(
+  pathToFileURL(path.join(ROOT, "backend", "test", "helpers", "test-database.js")).href
+);
+useTestDatabase();
 process.env.ALYTIC_BARS_DIR = BARS_DIR;
-process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
-process.env.RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
 process.env.SESSION_SECRET = process.env.SESSION_SECRET ?? "alytic-e2e-session-secret";
 process.env.FRONTEND_URL = `http://127.0.0.1:${process.env.E2E_FRONTEND_PORT ?? 8181}`;
 process.env.PORT = String(PORT);

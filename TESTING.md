@@ -49,9 +49,12 @@ The suite is split the way the codebase is split:
 
 Every test file runs in its own process and gets:
 
-- the **real Supabase project** — `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
-  are loaded from `backend/.env` by `helpers/env.js` (must be the first import
-  in every test file, same as before). Unlike the old SQLite setup this is
+- the **test Supabase project** (`qfxuejkbnrdszycqxvdx`, `public` schema),
+  never production — `helpers/env.js` (must be the first import in every test
+  file) calls `helpers/test-database.js`, which takes `TEST_SUPABASE_URL` and
+  `TEST_SUPABASE_SERVICE_ROLE_KEY` from the environment or `backend/.env`,
+  refuses to start if either points at production (`xssjwnevhbpcdmtbatiy`),
+  and overrides `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` with them. It is
   *not* a throwaway database — it's a shared cloud Postgres — so isolation
   instead comes from every test registering its own randomly generated user
   (`uniqueEmail()` in `helpers/server.js`) rather than from a fresh database
@@ -60,8 +63,10 @@ Every test file runs in its own process and gets:
   and `helpers/bars.js` writes deterministic seeded OHLCV series (plus the
   corrupt variants the quality gate rejects: frozen, stale, thin, dead
   volume) dated on real EGX trading days;
-- **no AI key** — `OPENROUTER_API_KEY` is blanked before `dotenv` loads, so
-  `aiAvailable()` is false and the AI endpoints take their 503 path;
+- **no AI or email key** — `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` and
+  `RESEND_API_KEY` are set to empty (not `??=`, so neither the shell nor
+  `backend/.env` can supply a real one), so `aiAvailable()` is false, the AI
+  endpoints take their 503 path, and no test spends AI credits or sends mail;
 - a live quote feed that degrades gracefully — fundamentals/quotes return
   empty when TradingView is unreachable, which the app already treats as
   normal.
@@ -71,7 +76,7 @@ unchanged): `ALYTIC_BARS_DIR` in `src/data/cache.js`, and `src/api/server.js`
 only binding port 3000 when executed directly (imported modules can listen on
 their own ephemeral port).
 
-Because those seeded users are real rows in the shared project, `npm test`
+Because those seeded users are real rows in the shared test project, `npm test`
 and `npm run test:api` run through `scripts/run-tests.mjs`, which always
 deletes every `@test.local` user afterwards via `scripts/cleanup-test-data.js`
 (`portfolios` cascades on delete) — pass or fail, and regardless of the test
@@ -109,9 +114,9 @@ npx playwright show-report tests/e2e/report
 
 `playwright.config.ts` boots the **real stack**:
 
-- backend on `:3111` via `tests/e2e/backend-server.mjs` — the real Supabase
-  project (from `backend/.env`), fixture bars pre-seeded for `ABUK`/`SWDY`,
-  no AI key;
+- backend on `:3111` via `tests/e2e/backend-server.mjs` — the test Supabase
+  project (same `helpers/test-database.js`), fixture bars pre-seeded for
+  `ABUK`/`SWDY`, no AI or email key;
 - frontend on `:8181` (`bun run dev`) with `ALYTIC_API_URL` pointing at that
   backend, so the `/api/public` proxy is exercised exactly as in production.
 
@@ -129,12 +134,38 @@ Two things worth knowing:
 2. **Ports** — `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` override the defaults
    (3111/8181) if those are taken.
 3. **Cleanup** — like the backend suite, specs register real `@test.local`
-   users in the shared Supabase project. `playwright.config.ts`'s
+   users in the shared test project. `playwright.config.ts`'s
    `globalTeardown` (`tests/e2e/global-teardown.mjs`) deletes them after every
    run by shelling out to the backend's `cleanup-test-data.js`.
 
 ## CI
 
-`.github/workflows/test.yml` runs backend and frontend in parallel on every
-push/PR, then the E2E job (which needs both installs) and uploads the
-Playwright report on failure. The deploy workflow is unchanged.
+`.github/workflows/test.yml` runs on every pull request, by hand, and as the
+first job of `deploy.yml`: the deploy only starts when it passes.
+
+1. **schema** applies `backend/supabase/schema.sql` and `platform.sql` to the
+   test project (both idempotent), so it always matches the commit under test.
+2. **backend** and **frontend** run in parallel, then **e2e**, which uploads
+   the Playwright report on failure.
+
+For now the deploy gate is backend and frontend only: `deploy.yml` passes
+`e2e: false` until the Playwright specs are brought up to date with the
+current UI (#182). Pull requests still run E2E.
+
+No AI or email secret is passed to it. It needs these repository secrets:
+`BACKUP_DATABASE_URL` (session pooler string of the test project, shared with
+the backup job) and `TEST_SUPABASE_SERVICE_ROLE_KEY`.
+
+### Running locally
+
+Add to `backend/.env` (Supabase dashboard of the test project, Project
+Settings, API keys):
+
+```
+TEST_SUPABASE_URL=https://qfxuejkbnrdszycqxvdx.supabase.co
+TEST_SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+The existing `SUPABASE_URL` in that file (production) is ignored by the tests.
+The first CI run creates the tables; to do it by hand, run `schema.sql` then
+`platform.sql` in the test project's SQL editor.

@@ -154,7 +154,8 @@ test('the whole portfolio lifecycle over HTTP', async () => {
   // bad trade payloads → 400
   res = await request(baseUrl, 'POST', '/api/portfolio/trade', { body: { code: 'ABUK' }, cookie });
   assert.equal(res.status, 400);
-  assert.ok(res.body.error.includes('code'));
+  // Names the missing fields in Arabic (missingTradeFields in server.js).
+  for (const field of ['النوع', 'العدد', 'السعر']) assert.ok(res.body.error.includes(field), res.body.error);
 
   // a code outside the universe is refused loudly, not silently booked
   res = await request(baseUrl, 'POST', '/api/portfolio/trade', {
