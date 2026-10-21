@@ -69,7 +69,7 @@ function needsDecision(analysis) {
   // excluded: it is a standing permission ("the rules would allow adding"),
   // true on every quiet day a position sits at a small loss inside an uptrend,
   // so treating it as news sends most of the book to the model for nothing.
-  if (p.triggers?.exitOnStop || p.triggers?.takePartial || p.triggers?.atTarget) return true;
+  if (p.triggers?.exitOnStop || p.triggers?.takePartial || p.triggers?.atTarget || p.triggers?.trimOnWeakness) return true;
   if (p.stopBreached || p.stopWarning) return true;
   if ((p.distanceToStopPct ?? 99) <= NEAR_STOP_PCT) return true;
   if (p.trailing?.moved) return true;
@@ -184,6 +184,17 @@ function ruleBookLines(ps, price) {
       ` | if fired: sell ${pp.fractionPct}% = ${pp.qty} of ${ps.shares} shares, limit ${pp.limitPrice} (+${pp.limitAbovePricePct}% above ${price}), ` +
       `≈ ${pp.proceedsEgp} EGP, keep ${pp.remainingShares} shares, trailing ${stopNote(pp.remainingStop)}`,
   );
+  const rw = rb.relativeWeakness;
+  if (rw) {
+    out.push(
+      `  R7 Lagging the market (${rw.lookbackSessions} sessions vs ${rw.benchmark ?? 'its index'}, at least ${rw.minLagPts} pts behind AND close under the ${rw.maPeriod}-day average): ` +
+        (!rw.available
+          ? `not evaluated (${rw.reason}) → not fired`
+          : `stock ${rw.stockPct}% vs index ${rw.indexPct}% = ${rw.lagPts} pts, close ${rw.close} vs ${rw.maPeriod}-day average ${rw.ma} → ` +
+            (rw.alreadyTrimmed ? 'position already trimmed — does not fire again' : mark(rw.fired)) +
+            ` | if fired: sell ${rw.fractionPct}% = ${rw.qty} of ${ps.shares} shares at market next open, keep ${rw.remainingShares} under the current stop ${rb.stop.level}`),
+    );
+  }
   out.push(
     `  R5 Averaging down (leaders only: loss, trend score > ${ad.trendScoreMin}, above SMA200, max ${ad.maxAdds} add): ` +
       `trend score ${ad.trendScore}, vs SMA200 ${ad.priceVsSma200Pct ?? 'n/a'}% → ${ad.allowed ? mark(ad.fired) : 'disabled'}`,

@@ -94,6 +94,18 @@ export const RULES = {
     maxPositionVsDailyTurnover: 0.10,
   },
 
+  relativeWeakness: {
+    // R7 (scoring/relativeStrength.js): a held stock that trailed its own index
+    // by at least minLagPts percentage points over lookbackSessions, and closed
+    // under its maPeriod-day average, sells sellFraction of the position
+    // instead of holding. Once per position.
+    enabled: true,
+    lookbackSessions: 10,
+    maPeriod: 10,
+    minLagPts: 5,      // medium: only a clear lag — the trader style acts sooner
+    sellFraction: 0.3,
+  },
+
   averagingDown: {
     // Only ever add to a leader with real fundamentals, never to rescue a laggard.
     allowed: true,

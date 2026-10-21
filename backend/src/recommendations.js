@@ -128,11 +128,12 @@ export function recommendationRow({ userId, portfolioId, code, action, levels, s
   const ref = positive(levels?.refPrice);
   if (!tracked || !ref || !code) return null;
 
-  // Only a buy is a call to enter at a price, so only a buy carries a target
-  // and stop. A hold tells someone who already owns the stock to keep it —
-  // its stop is the position's own, often a few percent away, and scoring it
-  // as a fresh entry would stop it out on ordinary noise. It is judged at the
-  // horizon against its benchmark instead (see isWin).
+  // Only a buy is a call to enter at a price, so only a buy carries a target.
+  // A hold tells someone who already owns the stock to keep it, judged at the
+  // horizon against its benchmark (see isWin) — but it is always given with
+  // the position's stop ("a close under X is a full exit"), so it carries
+  // that stop too: a holder following the advice was out there, not at the
+  // horizon. The evaluator honors it from scoring version 4 (evaluate.js).
   //
   // A sell or reduce is right if the stock falls, so it may carry the support
   // it would have to reach as its target (a win the moment it is touched,
@@ -140,7 +141,7 @@ export function recommendationRow({ userId, portfolioId, code, action, levels, s
   const levelled = tracked === 'buy';
   const exiting = tracked === 'sell' || tracked === 'reduce';
   const target = levelled ? positive(levels.target) : exiting ? positive(levels.fallTarget) : null;
-  const stop = levelled ? positive(levels.stop) : null;
+  const stop = levelled || tracked === 'hold' ? positive(levels.stop) : null;
   const horizons = exiting ? EXIT_HORIZON_SESSIONS : DEFAULT_HORIZON_SESSIONS;
   const fallback = horizons[style] ?? horizons.medium;
   const sessions = levelled && positive(levels.horizonSessions) ? Math.round(levels.horizonSessions) : fallback;
@@ -440,9 +441,11 @@ const ROWS_SHOWN = 300;
  * could read as a crash); 2 needed a close under the stop and judged a hold
  * at its horizon; 3 is the current ones, which also follow the app's own
  * management of a buy (two closes under the stop for the long style, part
- * sold at the target — see evaluate.js). The page's figures cover calls
- * scored under the current rules only — older ones stay listed, tagged, but
- * never feed the headline. A project without the column is all current.
+ * sold at the target — see evaluate.js). 4 is the same rules, plus a hold
+ * closed by its own stop (new calls only; nothing was rescored), so it counts
+ * as current too. The page's figures cover calls scored under the current
+ * rules only — older ones stay listed, tagged, but never feed the headline.
+ * A project without the column is all current.
  */
 export const CURRENT_SCORING = 3;
 export const isLegacy = (row) => Number(row.scoring_version ?? CURRENT_SCORING) < CURRENT_SCORING;

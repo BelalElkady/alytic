@@ -208,7 +208,7 @@ export function riskReward(entry, stop, target) {
  * because the one discipline that must never be negotiated is the stop. The AI
  * analyst may add colour on top of this, but it cannot contradict it.
  */
-export function positionRecommendation({ snapshot, position, trailing, midTarget, nextTarget = null, partialTaken = false, stopBreached, stopWarning = null }, rules = RULES) {
+export function positionRecommendation({ snapshot, position, trailing, midTarget, nextTarget = null, partialTaken = false, stopBreached, stopWarning = null, weakness = null }, rules = RULES) {
   const price = snapshot.price.close;
   const { avgCost, shares } = position;
   const stop = trailing.stop;
@@ -248,6 +248,21 @@ export function positionRecommendation({ snapshot, position, trailing, midTarget
       label: 'بيع جزئي',
       text: `مربح ${r2(profitPct)}% — أمّن جزء. بيع ${qty} سهم بأمر محدد عند ${r2(limit)} (صلاحية أسبوع). الباقي بوقف متحرك.`,
       order: { side: 'sell', qty, price: r2(limit) },
+    };
+  }
+
+  // 3b. R7 — trailing its own index and under its short average: trim, once
+  // per position (scoring/relativeStrength.js). Ahead of the near-stop hold
+  // below: a weak stock close to its stop is the case to trim most.
+  if (weakness?.fired) {
+    return {
+      action: 'trim_weak',
+      label: 'تخفيف — أضعف من السوق',
+      text:
+        `آخر ${weakness.lookbackSessions} جلسات السهم ${r2(weakness.stockPct)}% و${weakness.benchmark} ${r2(weakness.indexPct)}% — ` +
+        `متأخر عن مؤشره ${r2(Math.abs(weakness.lagPts))} نقطة وقفل تحت متوسط ${weakness.maPeriod} يوم (${r2(weakness.ma)}). ` +
+        `بيع ${weakness.qty} سهم بسعر السوق مع الافتتاح، والباقي ${weakness.remainingShares} سهم بنفس الوقف ${r2(stop)}.`,
+      order: { side: 'sell', qty: weakness.qty, price: r2(price) },
     };
   }
 

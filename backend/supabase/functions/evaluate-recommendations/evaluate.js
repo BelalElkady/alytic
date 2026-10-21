@@ -36,10 +36,14 @@
  * then measured from that session's close: the move across the action itself
  * is left out, not guessed.
  *
- * A hold carries no stop or target: it tells an existing holder to keep the
- * position, not to enter one, so it is only ever judged at the horizon
- * against its benchmark (isWin in src/recommendations.js). Holds logged
- * before that rule may still carry levels; they are ignored here.
+ * A hold carries no target: it tells an existing holder to keep the
+ * position, not to enter one, so it is judged at the horizon against its
+ * benchmark (isWin in src/recommendations.js). From scoring_version 4 it
+ * carries the position's own stop, the "close under X = full exit" the app
+ * gives with it, and closes there as hit_stop the way a buy does — the record
+ * then books what a holder following the advice lost, not the whole fall to
+ * the horizon. Holds logged before version 4 may still carry levels from an
+ * older rule; they are ignored here.
  *
  * Sell and reduce are scored as short calls: their return is the fall in
  * price. They may carry a fall target (a support below the price) and are
@@ -52,6 +56,8 @@
  */
 
 const LONG_ACTIONS = new Set(['buy', 'hold']);
+/** The scoring_version from which a hold is closed by its stop (see the header). */
+export const HOLD_STOP_SCORING = 4;
 const INDICES = ['EGX30', 'EGX70', 'EGX33', 'EGX100'];
 
 export const directionOf = (action) => (LONG_ACTIONS.has(action) ? 1 : -1);
@@ -186,7 +192,8 @@ export function evaluateRecommendation(rec, bars, indexCloses) {
   // The call's prices on the basis each session trades on (see basisFactors).
   const factors = basisFactors(ref, bars);
   // The stop on the call's own basis; raised once the target banks part.
-  let baseStop = levelled ? num(rec.stop_price) : null;
+  const holdStop = rec.action === 'hold' && Number(rec.scoring_version) >= HOLD_STOP_SCORING;
+  let baseStop = levelled || holdStop ? num(rec.stop_price) : null;
   let closesUnder = 0;
   // The part sold at the target: its fraction, return, excess and session count.
   let banked = null;
