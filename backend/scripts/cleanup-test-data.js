@@ -33,6 +33,21 @@ async function remove(describe, query) {
   console.log(`[cleanup-test-data] deleted ${data.length} ${describe}`);
 }
 
+// Uploaded files (announcement, blog and support images, brand assets) have
+// no owner row to cascade from. The test project holds nothing but test
+// data, so every bucket is emptied.
+async function emptyStorage() {
+  const { data: buckets, error } = await supabase.storage.listBuckets();
+  if (error) throw new Error(`cleanup-test-data (list buckets): ${error.message}`);
+  for (const bucket of buckets) {
+    const { error: emptyError } = await supabase.storage.emptyBucket(bucket.id);
+    if (emptyError) throw new Error(`cleanup-test-data (empty ${bucket.id}): ${emptyError.message}`);
+  }
+  console.log(`[cleanup-test-data] emptied ${buckets.length} storage bucket(s)`);
+}
+
+await emptyStorage();
+
 if (!runId) {
   await remove('test user(s)', supabase.from('users').delete().ilike('email', '%@test.local'));
 } else {

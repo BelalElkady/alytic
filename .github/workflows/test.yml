@@ -126,3 +126,31 @@ jobs:
           name: playwright-report
           path: tests/e2e/report
           retention-days: 7
+
+      # Nothing a test wrote outlives the run: every table in the test
+      # project's public schema and every storage bucket is emptied, then the
+      # schema files restore the seeded 'local' dev account. always() runs it
+      # after a failure or a cancelled run too. Only one database job runs at
+      # a time (concurrency above), so no other run is using the data.
+      - name: Delete all test data
+        if: always()
+        env:
+          TEST_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -eu
+          case "$TEST_DATABASE_URL" in
+            *xssjwnevhbpcdmtbatiy*) echo "::error::refusing to wipe: this is the production project"; exit 1 ;;
+            *qfxuejkbnrdszycqxvdx*) ;;
+            *) echo "::error::refusing to wipe: not the test project"; exit 1 ;;
+          esac
+          if [ -d backend/node_modules ]; then
+            # No TEST_RUN_ID here: removes every @test.local account and empties storage.
+            (cd backend && TEST_RUN_ID= node scripts/cleanup-test-data.js)
+          else
+            echo "::warning::backend dependencies were never installed, so storage was not emptied"
+          fi
+          psql "$TEST_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f scripts/wipe-test-database.sql -f backend/supabase/schema.sql -f backend/supabase/platform.sql
+          psql "$TEST_DATABASE_URL" -X -q -c "notify pgrst, 'reload schema'"
+          left=$(psql "$TEST_DATABASE_URL" -X -At -c "select (select count(*) from public.users where id <> 'local') + (select count(*) from public.recommendations) + (select count(*) from storage.objects)")
+          echo "rows and files left after cleanup: $left"
+          if [ "$left" != "0" ]; then echo "::error::test data is still in the test project"; exit 1; fi

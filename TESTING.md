@@ -87,8 +87,9 @@ to `main`), so cleanup never deletes another run's accounts. Each run gets a
 `TEST_RUN_ID` (set by `run-tests.mjs`, and by `playwright.config.ts` for E2E)
 that every test email carries (`testEmail()` in `helpers/test-database.js`);
 cleanup removes that run's accounts plus any `@test.local` account older than
-a day. Run by hand, `npm run cleanup:test-data` removes every `@test.local`
-account.
+a day, and empties the storage buckets. Run by hand, `npm run cleanup:test-data`
+removes every `@test.local` account. Rows that no account owns, such as
+recommendations (append-only), are only removed by the CI step below.
 
 ## Frontend — Vitest
 
@@ -160,6 +161,13 @@ first job of `deploy.yml`: the deploy only starts when it passes.
   `test-database`): re-applying the schema locks tables, and a second run's
   queries would time out behind it. GitHub keeps one run waiting per group and
   cancels it if a third arrives; rerun it if that happens.
+- The **database** job's last step, **Delete all test data**, runs even after a
+  failure or a cancel: it empties every storage bucket and every table in the
+  test project's `public` schema (`scripts/wipe-test-database.sql`, which
+  briefly lifts the append-only guard on `recommendations`), re-applies the
+  schema files to restore the seeded `local` account, and fails if any test
+  user, recommendation or file is left. It refuses any connection string that
+  is not the test project's.
 
 For now the deploy gate is backend and frontend only: `deploy.yml` passes
 `e2e: false` until the Playwright specs are brought up to date with the
