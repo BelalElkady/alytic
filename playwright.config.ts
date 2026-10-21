@@ -35,6 +35,10 @@ export default defineConfig({
     locale: "ar-EG",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // The browser never reaches the internet. AdSense (__root.tsx) and the
+    // landing's YouTube embed keep polling Google, so goto()'s "networkidle"
+    // wait would time out at random.
+    launchOptions: { args: ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1"] },
   },
   webServer: [
     {
