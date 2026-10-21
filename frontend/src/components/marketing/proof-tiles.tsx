@@ -1,4 +1,4 @@
-import { BarChart3, Gift, LineChart, Users } from "lucide-react";
+import { Gift, LineChart, Users } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 
@@ -12,13 +12,13 @@ type Tile = {
 };
 
 /**
- * Headline figures for the landing page. The hit rate and the user count
- * and the total analysis count are the real ones from the API; until there are enough closed calls to quote
- * (or if the request fails) their tiles are simply left out rather than
- * showing a placeholder, and the fixed facts about the product remain.
+ * Headline figures for the landing page. The user count and the total
+ * analysis count are the real ones from the API; if the request fails their
+ * tiles are simply left out rather than showing a placeholder, and the fixed
+ * facts about the product remain. The hit rate is deliberately not shown
+ * here — it lives on the track-record page with its full context.
  */
 export function ProofTiles() {
-  const [hit, setHit] = useState<{ hitRate: number; closed: number } | null>(null);
   const [users, setUsers] = useState<number | null>(null);
   const [analyses, setAnalyses] = useState<number | null>(null);
 
@@ -28,24 +28,11 @@ export function ProofTiles() {
         if (typeof result?.analyses === "number" && result.analyses > 0)
           setAnalyses(result.analyses);
         if (typeof result?.users === "number" && result.users > 0) setUsers(result.users);
-        if (typeof result?.hitRate === "number") {
-          setHit({ hitRate: result.hitRate, closed: Number(result.closed) || 0 });
-        }
       })
       .catch(() => {});
   }, []);
 
   const tiles: Tile[] = [
-    ...(hit
-      ? [
-          {
-            Icon: BarChart3,
-            title: "نسبة نجاح التوصيات",
-            value: `${Math.round(hit.hitRate)}%`,
-            note: `من ${hit.closed.toLocaleString("en-US")} توصية مغلقة فعليًا`,
-          },
-        ]
-      : []),
     ...(users !== null
       ? [
           {
