@@ -60,6 +60,11 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        # Uploads source maps to Sentry (alytic-frontend) and tags the release
+        # with this commit. Without the secret the build still succeeds; it
+        # only skips the upload.
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: bun run build
 
       - name: Package release

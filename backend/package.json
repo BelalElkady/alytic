@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "serve": "node src/api/server.js",
+    "serve": "node --import ./src/instrument.js src/api/server.js",
     "sync": "node src/cli.js sync",
     "analyze": "node src/cli.js analyze",
     "scan": "node src/cli.js scan",
@@ -24,6 +24,7 @@
     "security:audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
+    "@sentry/node": "^11.8.0",
     "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
