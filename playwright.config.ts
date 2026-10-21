@@ -33,6 +33,9 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${FRONTEND_PORT}`,
     locale: "ar-EG",
+    // Snapshots are keyed by the Cairo day; on CI's UTC clock the calendar
+    // opened on yesterday between 22:00 and 24:00 UTC.
+    timezoneId: "Africa/Cairo",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     // The browser never reaches the internet. AdSense (__root.tsx) and the
