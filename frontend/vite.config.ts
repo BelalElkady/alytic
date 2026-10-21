@@ -5,8 +5,21 @@
 //     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { sentryTanstackStart } from "@sentry/tanstackstart-react/vite";
 
 export default defineConfig({
+  // Production builds upload hidden source maps to the alytic-frontend Sentry
+  // project (when SENTRY_AUTH_TOKEN is set — in CI) so stack traces stay readable,
+  // and tag the bundle with the release (GITHUB_SHA in CI).
+  vite: {
+    plugins: [
+      sentryTanstackStart({
+        org: "egxpert",
+        project: "alytic-frontend",
+        telemetry: false,
+      }),
+    ],
+  },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

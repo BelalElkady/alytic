@@ -10,8 +10,9 @@
  * /api/fundamentals need one, and they say so plainly when it is missing.
  */
 
-import '../loadEnv.js';
+import '../instrument.js';
 import { normalizeBlogContent } from '../blogHtml.js';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import * as XLSX from 'xlsx';
@@ -58,7 +59,7 @@ import { uploadBlogImage, BLOG_IMAGE_TYPES } from '../blogImages.js';
 import { uploadAnnouncementImage } from '../announcementImages.js';
 import { normalizeAnnouncementVideoUrl } from '../announcementVideo.js';
 import { audienceSegmentsOf, normalizeAudiences, normalizeCtaUrl } from '../announcementAudience.js';
-import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, isIsoDate } from '../security.js';
+import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, safeHttpsUrl, publicError, GENERIC_ERROR, isIsoDate } from '../security.js';
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
 import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
 import { mountPlatformRoutes } from './platform.js';
@@ -300,8 +301,11 @@ app.use('/api', apiFloodLimiter);
 // body parser (express.raw for uploads) resumes on a stream event outside it.
 const wrap = (fn) => (req, res) => runWithTenant(req.tenant ?? currentTenant() ?? defaultTenant(), () => fn(req, res)).catch((err) => {
   console.error(err);
-  if (res.headersSent) return;
   const { status, message } = publicError(err);
+  // Only real faults: Arabic messages the app wrote for users (validation,
+  // "not found", ...) are expected control flow even when they answer 500.
+  if (message === GENERIC_ERROR) Sentry.captureException(err);
+  if (res.headersSent) return;
   res.status(status).json({ error: message });
 });
 
@@ -4404,6 +4408,9 @@ app.get('/api/health', (_req, res) => {
 
 // Unknown API paths answer in JSON like every other API response.
 app.use('/api', (_req, res) => res.status(404).json({ error: 'المسار مش موجود' }));
+
+// Reports 5xx errors to Sentry, then hands them on to the handler below.
+Sentry.setupExpressErrorHandler(app);
 
 // Last resort for anything that reaches Express's own error path — malformed
 // JSON, an oversized body, an unreadable encoding. Without this those get the
