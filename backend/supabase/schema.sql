@@ -464,7 +464,7 @@ create index if not exists idx_blog_posts_status on blog_posts (status, publishe
 -- its final shape.
 do $$
 begin
-  if exists (select 1 from information_schema.columns where table_name = 'blog_posts' and column_name = 'slot') then
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'blog_posts' and column_name = 'slot') then
     execute 'alter table blog_posts add column if not exists batch_index int';
     execute $sql$update blog_posts set batch_index = case slot when 'morning' then 1 when 'evening' then 2 end where batch_index is null$sql$;
     execute 'alter table blog_posts alter column batch_index set not null';
@@ -502,7 +502,7 @@ alter table blog_posts add column if not exists image_credit_url text;
 
 do $$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'blog_posts_post_date_batch_index_key') then
+  if not exists (select 1 from pg_constraint where conname = 'blog_posts_post_date_batch_index_key' and connamespace = 'public'::regnamespace) then
     alter table blog_posts add constraint blog_posts_post_date_batch_index_key unique (post_date, batch_index);
   end if;
 end $$;
@@ -546,10 +546,10 @@ create table if not exists blog_daily_topics (
 -- target horizons are in sessions, and so is the evaluator's clock.
 do $$
 begin
-  if not exists (select 1 from pg_type where typname = 'recommendation_action') then
+  if not exists (select 1 from pg_type where typname = 'recommendation_action' and typnamespace = 'public'::regnamespace) then
     create type recommendation_action as enum ('buy', 'hold', 'sell', 'reduce');
   end if;
-  if not exists (select 1 from pg_type where typname = 'recommendation_status') then
+  if not exists (select 1 from pg_type where typname = 'recommendation_status' and typnamespace = 'public'::regnamespace) then
     create type recommendation_status as enum ('open', 'hit_target', 'hit_stop', 'expired');
   end if;
 end $$;
@@ -637,7 +637,7 @@ alter table recommendations drop column if exists egx33_excess_pct;
 alter table recommendations drop column if exists mark_egx33_excess_pct;
 do $$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'recommendations_benchmark_check') then
+  if not exists (select 1 from pg_constraint where conname = 'recommendations_benchmark_check' and connamespace = 'public'::regnamespace) then
     alter table recommendations add constraint recommendations_benchmark_check
       check (benchmark is null or benchmark in ('EGX30', 'EGX70', 'EGX100'));
   end if;
