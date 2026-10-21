@@ -45,7 +45,12 @@ preflight PROD_DATABASE_URL "$PROD_DATABASE_URL"
 preflight BACKUP_DATABASE_URL "$BACKUP_DATABASE_URL"
 
 prod_users=$(count "$PROD_DATABASE_URL" 'select count(*) from public.users')
-prev_users=$(count "$BACKUP_DATABASE_URL" "select case when to_regclass('backup.users') is null then 0 else (select count(*) from backup.users) end")
+# Separate queries: one statement naming backup.users fails to plan on the
+# very first run, when that table does not exist yet.
+prev_users=0
+if [ -n "$(count "$BACKUP_DATABASE_URL" "select to_regclass('backup.users')")" ]; then
+  prev_users=$(count "$BACKUP_DATABASE_URL" 'select count(*) from backup.users')
+fi
 echo "production users: $prod_users · previous backup users: $prev_users"
 
 # A wiped or emptied production database must never replace a good backup.
