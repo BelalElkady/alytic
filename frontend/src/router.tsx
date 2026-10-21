@@ -22,7 +22,8 @@ export const getRouter = () => {
   if (!router.isServer && !Sentry.getClient()) {
     Sentry.init({
       dsn: SENTRY_DSN,
-      enabled: import.meta.env.MODE !== "test",
+      // Off under vitest, and for the Playwright E2E dev server.
+      enabled: import.meta.env.MODE !== "test" && !import.meta.env["VITE_SENTRY_DISABLED"],
       environment: import.meta.env.PROD ? "production" : "development",
       // Portfolios and form input stay out of Sentry; replays mask all text too.
       dataCollection: {

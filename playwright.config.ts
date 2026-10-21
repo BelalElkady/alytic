@@ -39,7 +39,8 @@ export default defineConfig({
   webServer: [
     {
       command: `node tests/e2e/backend-server.mjs`,
-      env: { PORT: String(BACKEND_PORT), E2E_SKIP_RATE_LIMITS: "1" },
+      // SENTRY_DSN="" keeps test traffic out of Sentry (see backend/src/instrument.js).
+      env: { PORT: String(BACKEND_PORT), E2E_SKIP_RATE_LIMITS: "1", SENTRY_DSN: "" },
       url: `http://127.0.0.1:${BACKEND_PORT}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
@@ -47,7 +48,8 @@ export default defineConfig({
     {
       command: `bun run dev -- --port ${FRONTEND_PORT} --strictPort`,
       cwd: "frontend",
-      env: { ALYTIC_API_URL: `http://127.0.0.1:${BACKEND_PORT}` },
+      // Same for the SSR server (SENTRY_DSN) and the browser bundle (VITE_SENTRY_DISABLED).
+      env: { ALYTIC_API_URL: `http://127.0.0.1:${BACKEND_PORT}`, SENTRY_DSN: "", VITE_SENTRY_DISABLED: "1" },
       url: `http://127.0.0.1:${FRONTEND_PORT}/`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
