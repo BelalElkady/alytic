@@ -99,7 +99,9 @@ jobs:
     # deploy.yml passes e2e: false for now: the specs predate the current UI
     # and fail on copy and layout, not on bugs (issue #182).
     # Pull requests and manual runs have no input, so they still run it.
-    if: ${{ inputs.e2e != false }}
+    # Compared as text: in expressions null == false, so `inputs.e2e != false`
+    # would skip E2E whenever the input is absent.
+    if: ${{ format('{0}', inputs.e2e) != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
