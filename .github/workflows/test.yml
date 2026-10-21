@@ -27,51 +27,6 @@ env:
   RESEND_API_KEY: ''
 
 jobs:
-  schema:
-    name: Apply the repo schema to the test database
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      # Both files are idempotent (`if not exists`, guarded alters), so
-      # re-applying them every run keeps the test database on exactly the
-      # schema this commit expects, and proves the files still apply cleanly.
-      - name: Apply schema.sql and platform.sql
-        env:
-          TEST_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
-        run: |
-          set -eu
-          if [ -z "$TEST_DATABASE_URL" ]; then echo "::error::GitHub secret BACKUP_DATABASE_URL is missing"; exit 1; fi
-          psql "$TEST_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction \
-            -f backend/supabase/schema.sql -f backend/supabase/platform.sql
-          # Make the API see new tables and columns straight away.
-          psql "$TEST_DATABASE_URL" -X -q -c "notify pgrst, 'reload schema'"
-
-  backend:
-    name: Backend (node:test)
-    needs: schema
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Run backend tests
-        working-directory: backend
-        run: npm test
-
   frontend:
     name: Frontend (vitest)
     runs-on: ubuntu-latest
@@ -93,21 +48,41 @@ jobs:
         working-directory: frontend
         run: bun run test
 
-  e2e:
-    name: E2E (Playwright)
-    needs: [backend, frontend]
-    # deploy.yml passes e2e: false for now: the specs predate the current UI
-    # and fail on copy and layout, not on bugs (issue #182).
-    # Pull requests and manual runs have no input, so they still run it.
-    # Compared as text: in expressions null == false, so `inputs.e2e != false`
-    # would skip E2E whenever the input is absent.
-    if: ${{ format('{0}', inputs.e2e) != 'false' }}
+  # Everything that touches the shared test database runs in this one job,
+  # and only one such job runs at a time across every branch and the deploy:
+  # re-applying the schema locks tables, so a second run's tests would time
+  # out waiting on it. (Accounts are already per run, see TEST_RUN_ID in
+  # backend/test/helpers/test-database.js.) GitHub keeps one run waiting per
+  # group; if a third arrives the waiting one is cancelled, so rerun it.
+  database:
+    name: Database suites (schema, backend, E2E)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    concurrency:
+      group: test-database
+      cancel-in-progress: false
     env:
       TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
+      # deploy.yml passes e2e: false until the specs match the current UI
+      # (#182). Pull requests and manual runs have no input, so they run it.
+      # Compared as text: in expressions null == false, so `inputs.e2e != false`
+      # would skip E2E whenever the input is absent.
+      RUN_E2E: ${{ format('{0}', inputs.e2e) != 'false' }}
     steps:
       - uses: actions/checkout@v4
+
+      # Both files are idempotent (`if not exists`, guarded alters), so
+      # re-applying them every run keeps the test database on exactly the
+      # schema this commit expects, and proves the files still apply cleanly.
+      - name: Apply schema.sql and platform.sql
+        env:
+          TEST_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -eu
+          if [ -z "$TEST_DATABASE_URL" ]; then echo "::error::GitHub secret BACKUP_DATABASE_URL is missing"; exit 1; fi
+          psql "$TEST_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f backend/supabase/schema.sql -f backend/supabase/platform.sql
+          # Make the API see new tables and columns straight away.
+          psql "$TEST_DATABASE_URL" -X -q -c "notify pgrst, 'reload schema'"
 
       - uses: actions/setup-node@v4
         with:
@@ -117,29 +92,35 @@ jobs:
             backend/package-lock.json
             package-lock.json
 
-      - uses: oven-sh/setup-bun@v2
-
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: bun install --frozen-lockfile
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
 
-      - name: Install root dependencies
-        run: npm ci
+      - uses: oven-sh/setup-bun@v2
+        if: env.RUN_E2E == 'true'
+
+      - name: Install frontend and root dependencies
+        if: env.RUN_E2E == 'true'
+        run: |
+          (cd frontend && bun install --frozen-lockfile)
+          npm ci
 
       - name: Install Playwright browsers
+        if: env.RUN_E2E == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        if: env.RUN_E2E == 'true'
         run: npx playwright test
         env:
           CI: 'true'
 
       - name: Upload Playwright report
-        if: failure()
+        if: failure() && env.RUN_E2E == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

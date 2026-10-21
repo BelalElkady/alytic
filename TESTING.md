@@ -151,10 +151,15 @@ Two things worth knowing:
 `.github/workflows/test.yml` runs on every pull request, by hand, and as the
 first job of `deploy.yml`: the deploy only starts when it passes.
 
-1. **schema** applies `backend/supabase/schema.sql` and `platform.sql` to the
-   test project (both idempotent), so it always matches the commit under test.
-2. **backend** and **frontend** run in parallel, then **e2e**, which uploads
-   the Playwright report on failure.
+- **frontend** (vitest) needs no database and runs in parallel.
+- **database** does everything that touches the test project, in order:
+  apply `backend/supabase/schema.sql` and `platform.sql` (both idempotent, so
+  the project always matches the commit under test), the backend suite, then
+  E2E, uploading the Playwright report on failure. Only one such job runs at a
+  time across all branches and the deploy (concurrency group
+  `test-database`): re-applying the schema locks tables, and a second run's
+  queries would time out behind it. GitHub keeps one run waiting per group and
+  cancels it if a third arrives; rerun it if that happens.
 
 For now the deploy gate is backend and frontend only: `deploy.yml` passes
 `e2e: false` until the Playwright specs are brought up to date with the
