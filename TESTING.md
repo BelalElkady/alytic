@@ -169,9 +169,10 @@ first job of `deploy.yml`: the deploy only starts when it passes.
   user, recommendation or file is left. It refuses any connection string that
   is not the test project's.
 
-For now the deploy gate is backend and frontend only: `deploy.yml` passes
-`e2e: false` until the Playwright specs are brought up to date with the
-current UI (#182). Pull requests still run E2E.
+The deploy gate runs all three: backend, frontend and E2E. One E2E spec,
+"the manual-entry dialog corrects a holding", is skipped: the تعديل tab lists
+only holdings `/api/scan` could analyse, which needs an AI stop, and tests
+never have an AI key.
 
 No AI or email secret is passed to it. It needs these repository secrets:
 `BACKUP_DATABASE_URL` (session pooler string of the test project, shared with

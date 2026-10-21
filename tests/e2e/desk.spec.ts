@@ -70,7 +70,11 @@ test.describe("desk flows", () => {
     await expect(page.getByText("قيمة الأسهم")).toBeVisible();
   });
 
+  // The تعديل tab lists holdings from /api/scan, and scanning a holding needs
+  // its AI stop (getOrGenerateStopPlan). Tests never have an AI key, so the
+  // tab is empty here, same limit as the skipped backend analysis tests.
   test("the manual-entry dialog corrects a holding", async ({ page }) => {
+    test.skip(true, "needs a real OPENROUTER_API_KEY: the تعديل tab lists only holdings /api/scan could analyse");
     await newDeskUser(page);
     await recordTrade(page, "ABUK", "100", "45");
 

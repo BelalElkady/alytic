@@ -63,8 +63,7 @@ jobs:
       cancel-in-progress: false
     env:
       TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
-      # deploy.yml passes e2e: false until the specs match the current UI
-      # (#182). Pull requests and manual runs have no input, so they run it.
+      # On by default; a caller can pass e2e: false to skip it.
       # Compared as text: in expressions null == false, so `inputs.e2e != false`
       # would skip E2E whenever the input is absent.
       RUN_E2E: ${{ format('{0}', inputs.e2e) != 'false' }}
