@@ -77,6 +77,7 @@ export async function loginViaUi(page: Page, email: string, password = PASSWORD)
   await page.getByLabel("كلمة السر", { exact: true }).fill(password);
   await page.getByRole("button", { name: "دخول", exact: true }).click();
   await expect(page).toHaveURL(/\/(\?|$)/);
+  await skipWelcomeTour(page);
   await goto(page, "/portfolio");
   await expect(page).toHaveURL(/\/portfolio/);
   await expect(page.getByRole("button", { name: "خروج" }).or(page.getByRole("alertdialog"))).toBeVisible();
@@ -120,8 +121,21 @@ export async function signOutViaUi(page: Page) {
   await page.waitForLoadState("networkidle");
 }
 
-export async function expectToast(page: Page, text: string | RegExp) {
-  await expect(page.locator("[data-sonner-toast]").filter({ hasText: text }).first()).toBeVisible();
+export async function expectToast(page: Page, text: string | RegExp, timeout?: number) {
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: text }).first()).toBeVisible({ timeout });
+}
+
+/**
+ * Marks the welcome tour as seen for the signed-in account, the way closing
+ * it does (MainTour in frontend/src/components/tour/main-tour.tsx). Left to
+ * itself it opens over /portfolio at a moment that depends on timing and
+ * swallows whatever click lands then. Must run before /portfolio loads: the
+ * tour reads this key once, when it arms its timer.
+ */
+async function skipWelcomeTour(page: Page) {
+  const me = await (await page.request.get("/api/public/api/auth/me")).json();
+  const id = me?.user?.id;
+  if (id) await page.evaluate((key) => localStorage.setItem(key, new Date().toISOString()), `alytic-tour-main-seen:${id}`);
 }
 
 /** Pick a stock in a StockPicker combobox by searching its code. */
@@ -155,5 +169,7 @@ export async function recordTrade(page: Page, code: string, shares: string, pric
   await dialog.getByLabel("العدد").fill(shares);
   await dialog.getByLabel("سعر التنفيذ").fill(price);
   await dialog.getByRole("button", { name: "تسجيل الصفقة" }).click();
-  await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
+  // The toast only shows once the whole desk has reloaded, which in CI (price
+  // feeds unreachable) takes well past the default 15 s.
+  await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة", 60_000);
 }

@@ -92,6 +92,9 @@ test.describe("desk flows", () => {
   test("state survives a logout and a fresh login", async ({ page }) => {
     const email = await newDeskUser(page);
     await recordTrade(page, "SWDY", "10", "20");
+    // The manual-entry dialog is modal and stays open; close it to reach the header.
+    await page.keyboard.press("Escape");
+    await expect(manualEntryDialog(page)).toBeHidden();
 
     await signOutViaUi(page);
     await loginViaUi(page, email);
