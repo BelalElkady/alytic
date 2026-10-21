@@ -1,0 +1,56 @@
+name: Database backup
+
+on:
+  # 02:30 Cairo in winter (UTC+2), 03:30 in summer (UTC+3): far from the EGX
+  # session and the 14:30 daily close. GitHub may delay scheduled runs.
+  schedule:
+    - cron: '30 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Two backups racing each other would fight over the same schema.
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Copy production into the backup project
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate secrets
+        shell: bash
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -eu
+          missing=0
+          for name in PROD_DATABASE_URL BACKUP_DATABASE_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::GitHub secret $name is empty or missing"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # pg_dump must be at least as new as the server it reads from, and the
+      # runner image ships an older client.
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Back up production
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: bash scripts/db-backup.sh
