@@ -4,6 +4,7 @@ import {
   goto,
   expectToast,
   loginViaUi,
+  manualEntryDialog,
   newDeskUser,
   pickStock,
   recordTrade,
@@ -17,7 +18,7 @@ test.describe("desk flows", () => {
     await recordTrade(page, "ABUK", "100", "45");
 
     // The trade log is its own tab of the manual-entry dialog.
-    const manual = page.getByRole("dialog");
+    const manual = manualEntryDialog(page);
     await manual.getByRole("tab", { name: "سجل الصفقات" }).click();
     await expect(manual.getByText("ربح محقق")).toBeVisible();
     await expect(manual.getByRole("row").filter({ hasText: "ABUK" }).first()).toBeVisible();
@@ -30,10 +31,16 @@ test.describe("desk flows", () => {
   test("cash management and the favorites round-trip", async ({ page }) => {
     await newDeskUser(page);
 
+    // حلل الكاش saves the balance, then opens the cash analysis (which has
+    // no AI key in tests, so it never spends credits). There is no toast for
+    // the save itself, so the balance is checked through the API.
     await goto(page, "/cash");
     await page.locator("#cash-in").fill("75000");
-    await page.getByRole("button", { name: "حفظ", exact: true }).click();
-    await expectToast(page, "تم تحديث الكاش");
+    await page.getByRole("button", { name: "حلل الكاش" }).click();
+    await expect
+      .poll(async () => (await (await page.request.get("/api/public/api/portfolio")).json()).cash)
+      .toBe(75000);
+    await goto(page, "/cash");
 
     // favorites add + remove — just a code and an optional note, no order plan.
     await pickStock(page, "SWDY");
@@ -67,9 +74,10 @@ test.describe("desk flows", () => {
     await newDeskUser(page);
     await recordTrade(page, "ABUK", "100", "45");
 
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("ABUK")).toBeVisible();
+    // Holdings are corrected on the تعديل tab of the same dialog.
+    const dialog = manualEntryDialog(page);
+    await dialog.getByRole("tab", { name: "تعديل" }).click();
+    await expect(dialog.getByText("ABUK").first()).toBeVisible();
 
     const sharesField = dialog.getByLabel("عدد الأسهم");
     await sharesField.fill("120");

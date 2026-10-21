@@ -138,20 +138,22 @@ export async function pickStock(page: Page, code: string) {
   await page.locator("[cmdk-item]").filter({ hasText: code }).first().click();
 }
 
+/** The إدخال يدوي dialog: tabs تعديل (correct holdings), صفقة جديدة, سجل الصفقات. */
+export const manualEntryDialog = (page: Page) => page.getByRole("dialog", { name: "إدخال يدوي" });
+
 /**
- * Record an executed trade through إدخال يدوي → إدخال صفقة جديدة. Leaves the
- * manual-entry dialog open (the trade popup closes on success).
+ * Record an executed trade through إدخال يدوي → the صفقة جديدة tab. Leaves the
+ * manual-entry dialog open on that tab (the form resets after a trade).
  */
 export async function recordTrade(page: Page, code: string, shares: string, price: string) {
   await goto(page, "/portfolio");
   await page.getByRole("button", { name: "إدخال يدوي" }).click();
-  await page.getByRole("button", { name: "إدخال صفقة جديدة" }).click();
-  const dialog = page.getByRole("dialog", { name: "إدخال صفقة جديدة" });
+  const dialog = manualEntryDialog(page);
   await expect(dialog).toBeVisible();
+  await dialog.getByRole("tab", { name: "صفقة جديدة" }).click();
   await pickStock(page, code);
   await dialog.getByLabel("العدد").fill(shares);
   await dialog.getByLabel("سعر التنفيذ").fill(price);
   await dialog.getByRole("button", { name: "تسجيل الصفقة" }).click();
   await expectToast(page, "تم تسجيل الصفقة وتحديث المحفظة");
-  await expect(dialog).toBeHidden();
 }
