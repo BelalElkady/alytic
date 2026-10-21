@@ -76,8 +76,8 @@ export const Route = createFileRoute("/sitemap.xml")({
         return new Response(xml, {
           headers: {
             "Content-Type": "application/xml; charset=utf-8",
-            // New posts land at most every 2h (blog-cron.yml), so a cached
-            // copy is never stale by more than that.
+            // An hour-old copy can miss a post published in the meantime;
+            // posts are rare, so that is fine.
             "Cache-Control": "public, max-age=3600",
           },
         });
