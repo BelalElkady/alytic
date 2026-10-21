@@ -39,22 +39,92 @@ jobs:
           done
           exit "$missing"
 
-      # pg_dump must be at least as new as the server it reads from, and the
-      # runner image ships an older client.
-      - name: Install PostgreSQL 17 client
-        run: |
-          sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-17
-          # The runner also has an older client, and the /usr/bin wrappers can
-          # pick it. Put 17 first so pg_dump and psql are the ones just installed.
-          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
-          /usr/lib/postgresql/17/bin/pg_dump --version
+      - uses: ./.github/actions/setup-pg17
 
       - name: Back up production
         env:
           PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          DUMP_OUT: ${{ runner.temp }}/db.sql.gz
         run: bash scripts/db-backup.sh
+
+      # The schema copy above only ever holds last night's state. These dated,
+      # encrypted dumps are what lets you go back further. The dump holds real
+      # emails and password hashes, so it is never uploaded unencrypted.
+      - name: Encrypt the dump
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -eu
+          if [ -z "$BACKUP_ENCRYPTION_KEY" ]; then
+            echo "::error::GitHub secret BACKUP_ENCRYPTION_KEY is missing; the schema copy succeeded, but no dated dump was kept."
+            exit 1
+          fi
+          printf '%s' "$BACKUP_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 -o "$RUNNER_TEMP/db.sql.gz.gpg" "$RUNNER_TEMP/db.sql.gz"
+          rm -f "$RUNNER_TEMP/db.sql.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-dump
+          path: ${{ runner.temp }}/db.sql.gz.gpg
+          retention-days: 7
+          if-no-files-found: error
+
+  vps-config:
+    name: Back up VPS config and .env
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Fetch config from the server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY; do
+            if [ -z "${!name}" ]; then echo "::error::GitHub secret $name is missing"; exit 1; fi
+          done
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Everything on the box that is not in git and would be needed to
+          # rebuild it. Missing paths are skipped, not fatal; the listing
+          # below shows what was actually captured (names only).
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'cd / && tar czf - --ignore-failed-read \
+               opt/alytic/backend/.env opt/alytic/frontend/.env opt/alytic/COMMIT \
+               etc/nginx/sites-available etc/nginx/conf.d/egxpert-limits.conf etc/nginx/snippets/egxpert-security.conf \
+               etc/systemd/system/alytic-backend.service etc/systemd/system/alytic-frontend.service \
+               2>/dev/null || true' > "$RUNNER_TEMP/vps-config.tar.gz"
+          rm -f ~/.ssh/deploy_key
+          echo "Captured:"
+          tar tzf "$RUNNER_TEMP/vps-config.tar.gz"
+          if ! tar tzf "$RUNNER_TEMP/vps-config.tar.gz" | grep -qx 'opt/alytic/backend/.env'; then
+            echo "::error::backend .env was not captured (missing, or not readable by $DEPLOY_USER)."
+            exit 1
+          fi
+
+      - name: Encrypt
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -eu
+          if [ -z "$BACKUP_ENCRYPTION_KEY" ]; then
+            echo "::error::GitHub secret BACKUP_ENCRYPTION_KEY is missing"
+            exit 1
+          fi
+          printf '%s' "$BACKUP_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 -o "$RUNNER_TEMP/vps-config.tar.gz.gpg" "$RUNNER_TEMP/vps-config.tar.gz"
+          rm -f "$RUNNER_TEMP/vps-config.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vps-config
+          path: ${{ runner.temp }}/vps-config.tar.gz.gpg
+          retention-days: 30
+          if-no-files-found: error
