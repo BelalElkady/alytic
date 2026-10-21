@@ -65,9 +65,11 @@ export async function registerViaUi(page: Page, email = uniqueEmail(), name = "�
  *
  * A successful sign-in navigates to the marketing home ("/") — the desk
  * itself lives under /portfolio, so the helper hops there and waits for the
- * header's sign-out button to prove the session. (Not the email: the header
- * shows the account's name when it has one, and an unconfirmed account's
- * banners repeat the email, so it is neither present nor unique.)
+ * desk to prove the session: the header's sign-out button, or, for a new
+ * confirmed account, the mandatory style dialog (a modal, so it hides the
+ * header from the accessibility tree until it is answered). Not the email:
+ * the header shows the account's name when it has one, and an unconfirmed
+ * account's banners repeat the email, so it is neither present nor unique.
  */
 export async function loginViaUi(page: Page, email: string, password = PASSWORD) {
   await goto(page, "/login");
@@ -77,7 +79,7 @@ export async function loginViaUi(page: Page, email: string, password = PASSWORD)
   await expect(page).toHaveURL(/\/(\?|$)/);
   await goto(page, "/portfolio");
   await expect(page).toHaveURL(/\/portfolio/);
-  await expect(page.getByRole("button", { name: "خروج" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "خروج" }).or(page.getByRole("alertdialog"))).toBeVisible();
   return email;
 }
 
