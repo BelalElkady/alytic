@@ -1,0 +1,99 @@
+name: Database restore drill
+
+# Proves the dated dumps can actually be restored: takes the newest encrypted
+# dump from the backup workflow, decrypts it, restores it into a scratch
+# `restore_drill` schema in the backup project, and checks every table has
+# exactly the rows of the `backup` schema written by that same run. The
+# scratch schema is dropped afterwards. Production is never touched.
+on:
+  # First of every month, 05:00 UTC (after the nightly backup).
+  schedule:
+    - cron: '0 5 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# Never overlap a backup writing the schema this compares against.
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    name: Restore the latest dump and compare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-pg17
+
+      - name: Download the newest dump
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow db-backup.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -z "$run_id" ]; then echo "::error::no successful backup run found"; exit 1; fi
+          echo "Using backup run $run_id: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id"
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name db-dump --dir "$RUNNER_TEMP/dump"
+
+      - name: Decrypt
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -eu
+          printf '%s' "$BACKUP_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            -o "$RUNNER_TEMP/db.sql.gz" -d "$RUNNER_TEMP/dump/db.sql.gz.gpg"
+          echo "dump size: $(du -h "$RUNNER_TEMP/db.sql.gz" | cut -f1)"
+
+      - name: Restore into restore_drill
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          start=$(date +%s)
+          bash scripts/db-restore.sh "$RUNNER_TEMP/db.sql.gz" restore_drill
+          echo "restored in $(( $(date +%s) - start ))s"
+
+      - name: Compare with the backup schema
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -P pager=off <<'SQL'
+          \set QUIET on
+          create temp view drill_counts as
+            select n.nspname as schema, c.relname as table_name,
+                   (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', n.nspname, c.relname), false, true, '')))[1]::text::bigint as row_count
+            from pg_class c join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname in ('backup', 'restore_drill') and c.relkind = 'r';
+          \set QUIET off
+          select coalesce(b.table_name, d.table_name) as table_name,
+                 b.row_count as backup_rows, d.row_count as restored_rows,
+                 case when b.row_count is not distinct from d.row_count then 'ok' else 'MISMATCH' end as status
+          from (select * from drill_counts where schema = 'backup') b
+          full join (select * from drill_counts where schema = 'restore_drill') d using (table_name)
+          order by 1;
+          select case when count(*) = 0 then 'DRILL PASSED' else 'DRILL FAILED' end as result
+          from (select * from drill_counts where schema = 'backup') b
+          full join (select * from drill_counts where schema = 'restore_drill') d using (table_name)
+          where b.row_count is distinct from d.row_count;
+          do $$
+          begin
+            if exists (
+              select 1 from (select * from drill_counts where schema = 'backup') b
+              full join (select * from drill_counts where schema = 'restore_drill') d using (table_name)
+              where b.row_count is distinct from d.row_count
+            ) then
+              raise exception 'restored dump does not match the backup schema';
+            end if;
+          end $$;
+          SQL
+
+      - name: Drop the scratch schema
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: psql "$DATABASE_URL" -X -q -c 'drop schema if exists restore_drill cascade'

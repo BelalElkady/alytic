@@ -64,36 +64,14 @@ trap 'rm -f "$dump"' EXIT
 
 pg_dump "$PROD_DATABASE_URL" --schema=public --no-owner --no-privileges --no-comments > "$dump"
 
-# Rewrite `public.` to `backup.` in statements only, never inside COPY data
-# (a blog post that mentions "public." must come through untouched).
-{
-  echo 'BEGIN;'
-  echo 'DROP SCHEMA IF EXISTS backup CASCADE;'
-  echo 'CREATE SCHEMA backup;'
-  perl -ne '
-    if ($c) { print; $c = 0 if /^\\\.\r?$/; next }
-    if (/^COPY .* FROM stdin;\r?$/) { $c = 1; s/(?<![A-Za-z0-9_])public\./backup./; print; next }
-    next if /^(CREATE SCHEMA public;|ALTER SCHEMA public )/;
-    s/(?<![A-Za-z0-9_])public\./backup./g;
-    print;
-  ' "$dump"
-  # Keep the copy out of reach of the API roles; it holds real user data.
-  cat <<'SQL'
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    REVOKE ALL ON SCHEMA backup FROM anon;
-    REVOKE ALL ON ALL TABLES IN SCHEMA backup FROM anon;
-  END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-    REVOKE ALL ON SCHEMA backup FROM authenticated;
-    REVOKE ALL ON ALL TABLES IN SCHEMA backup FROM authenticated;
-  END IF;
-END $$;
-COMMENT ON SCHEMA backup IS 'Nightly copy of production public schema (scripts/db-backup.sh)';
-COMMIT;
-SQL
-} | psql "$BACKUP_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 > /dev/null
+# The workflow keeps an encrypted copy of this exact dump as an artifact, so
+# a backup older than last night's can still be restored.
+if [ -n "${DUMP_OUT:-}" ]; then
+  gzip -c "$dump" > "$DUMP_OUT"
+  echo "dump saved: $(du -h "$DUMP_OUT" | cut -f1)"
+fi
+
+DATABASE_URL="$BACKUP_DATABASE_URL" bash "$(dirname "$0")/db-restore.sh" "$dump" backup
 
 new_users=$(count "$BACKUP_DATABASE_URL" 'select count(*) from backup.users')
 echo "backup users: $new_users"
