@@ -24,6 +24,8 @@ jobs:
   tests:
     uses: ./.github/workflows/test.yml
     secrets: inherit
+    with:
+      e2e: false
 
   build:
     name: Build and validate

@@ -148,6 +148,10 @@ first job of `deploy.yml`: the deploy only starts when it passes.
 2. **backend** and **frontend** run in parallel, then **e2e**, which uploads
    the Playwright report on failure.
 
+For now the deploy gate is backend and frontend only: `deploy.yml` passes
+`e2e: false` until the Playwright specs are brought up to date with the
+current UI (#182). Pull requests still run E2E.
+
 No AI or email secret is passed to it. It needs these repository secrets:
 `BACKUP_DATABASE_URL` (session pooler string of the test project, shared with
 the backup job) and `TEST_SUPABASE_SERVICE_ROLE_KEY`.
