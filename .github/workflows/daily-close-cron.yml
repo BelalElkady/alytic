@@ -66,8 +66,7 @@ jobs:
           done
           if [ "$missing" -ne 0 ]; then exit 1; fi
 
-      # Calls the backend over the VPS's own loopback interface, the same way
-      # blog-cron.yml does — the cron endpoint is never exposed on the public
+      # Calls the backend over the VPS's own loopback interface — the cron endpoint is never exposed on the public
       # internet, so this SSH hop is the trigger rather than a public HTTPS URL.
       - name: Request daily close snapshot over SSH
         uses: appleboy/ssh-action@v1.2.2

@@ -490,10 +490,10 @@ app.get('/api/sitemap-urls', wrap(async (req, res) => {
   res.json({ posts: posts.map((p) => ({ slug: p.slug, publishedAt: p.published_at })) });
 }));
 
-// Triggered twice a day by .github/workflows/blog-cron.yml over the VPS's
-// loopback interface (never exposed publicly) — see that workflow for why a
-// shared secret rather than a session cookie gates this instead of
-// /api/admin. Each trigger generates exactly one article (the next missing
+// Nothing schedules this any more (the blog-cron workflow was removed); it is
+// called by hand over the VPS's loopback interface (never exposed publicly),
+// gated by a shared secret rather than a session cookie, like the other
+// /api/cron routes. Each trigger generates exactly one article (the next missing
 // slot in today's 2-article plan) so the day's batch lands spread out
 // rather than all at once; once 2 exist for the day this is a fast no-op.
 const BLOG_CRON_SECRET = process.env.BLOG_CRON_SECRET;
@@ -503,8 +503,7 @@ app.post('/api/cron/blog-generate', cronLimiter, wrap(async (req, res) => {
   }
   if (!aiAvailable()) return res.status(503).json({ error: 'مفيش مفتاح API', aiAvailable: false });
   const postDate = typeof req.body?.postDate === 'string' ? req.body.postDate : undefined;
-  // The cron fires all 7 days a week (blog-cron.yml has no day-of-week filter
-  // of its own), but there is no EGX news to research on a day the exchange
+  // A caller may fire this any day of the week, but there is no EGX news to research on a day the exchange
   // never opened — Friday/Saturday. Skip rather than spend a discovery +
   // article generation pass researching nothing. `force: true` bypasses this
   // for deliberate backfill/testing against a specific past postDate.

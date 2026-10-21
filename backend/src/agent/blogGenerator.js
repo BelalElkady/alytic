@@ -1,8 +1,8 @@
 /**
  * Auto-generated blog posts: two Arabic articles about the Egyptian Exchange
  * (EGX) written one at a time, spaced across the trading day (see
- * /api/cron/blog-generate in server.js, triggered by
- * .github/workflows/blog-cron.yml). Published immediately on generation, no
+ * /api/cron/blog-generate in server.js, now only triggered by hand).
+ * Published immediately on generation, no
  * admin click required — the review model's verdict/notes still land on the
  * row either way, so a flagged post is still visible for an admin to
  * unpublish (see /api/admin/blog-drafts).
@@ -382,7 +382,7 @@ const inFlight = new Map();
  * generated: null — once ARTICLES_PER_DAY is already reached.
  *
  * Deliberately one article per call rather than the whole day's batch: this
- * is meant to be triggered a couple of times a day (see blog-cron.yml)
+ * is meant to be triggered a couple of times a day
  * instead of all at once, so the ARTICLES_PER_DAY articles land spread
  * across the day. Topic discovery still runs only once a day — see
  * getOrCreateTopicsForDay.
