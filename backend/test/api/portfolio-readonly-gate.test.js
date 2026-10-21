@@ -73,14 +73,16 @@ test('reads stay open on a read-only Portfolio', async () => {
   }
 });
 
-test('log/backfill and reset are not in #103\'s named list, so they stay writable on a read-only Portfolio', async () => {
+// #103's list left these two out; #147 added them because both rewrite
+// history, so a view-only Portfolio could otherwise still be wiped.
+test('log/backfill and reset are refused on a read-only Portfolio too', async () => {
   const { cookie, user } = await registerUser(baseUrl);
   const secondId = await readOnlySecondPortfolio(user);
   const headers = { 'x-portfolio-id': String(secondId) };
   const resetRes = await request(baseUrl, 'POST', '/api/reset', { cookie, headers, body: { scope: 'log' } });
-  assert.notEqual(resetRes.status, 403, resetRes.text);
+  assert.equal(resetRes.status, 403, resetRes.text);
   const backfillRes = await request(baseUrl, 'POST', '/api/log/backfill', { cookie, headers, body: {} });
-  assert.notEqual(backfillRes.status, 403, backfillRes.text);
+  assert.equal(backfillRes.status, 403, backfillRes.text);
 });
 
 test('creating a Portfolio is unaffected by this new middleware', async () => {
