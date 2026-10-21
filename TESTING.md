@@ -78,9 +78,17 @@ their own ephemeral port).
 
 Because those seeded users are real rows in the shared test project, `npm test`
 and `npm run test:api` run through `scripts/run-tests.mjs`, which always
-deletes every `@test.local` user afterwards via `scripts/cleanup-test-data.js`
-(`portfolios` cascades on delete) — pass or fail, and regardless of the test
-run's own exit code. Run it by hand with `npm run cleanup:test-data`.
+cleans up afterwards via `scripts/cleanup-test-data.js` (`portfolios`
+cascades on delete) — pass or fail, and regardless of the test run's own exit
+code.
+
+Two runs can share the project at the same moment (a pull request and a merge
+to `main`), so cleanup never deletes another run's accounts. Each run gets a
+`TEST_RUN_ID` (set by `run-tests.mjs`, and by `playwright.config.ts` for E2E)
+that every test email carries (`testEmail()` in `helpers/test-database.js`);
+cleanup removes that run's accounts plus any `@test.local` account older than
+a day. Run by hand, `npm run cleanup:test-data` removes every `@test.local`
+account.
 
 ## Frontend — Vitest
 

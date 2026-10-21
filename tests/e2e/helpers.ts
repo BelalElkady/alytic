@@ -1,7 +1,8 @@
 import { expect, type Page } from "@playwright/test";
-import { resolveTestDatabase } from "../../backend/test/helpers/test-database.js";
+import { resolveTestDatabase, testRunId } from "../../backend/test/helpers/test-database.js";
 
-export const uniqueEmail = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
+// Carries the run tag (TEST_RUN_ID, set in playwright.config.ts) so teardown only deletes this run's accounts.
+export const uniqueEmail = () => `e2e-${testRunId()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
 
 export const PASSWORD = "E2ePassword!123";
 // Fine for forms that are rejected before anything is stored. Anything that

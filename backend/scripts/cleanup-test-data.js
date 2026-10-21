@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 /**
- * Deletes every user (and, via `on delete cascade`, their portfolio) that a
- * test suite seeded into the test Supabase project.
+ * Deletes the users (and, via `on delete cascade`, their portfolios) that a
+ * test run seeded into the test Supabase project.
  *
  * The test project is shared, not reset per run — see TESTING.md's
  * "Isolation model" — so `uniqueEmail()` (backend/test/helpers/server.js) and
- * the E2E fixtures (tests/e2e/*.ts) both register real rows there, keyed by
- * an email ending in `@test.local`. Nothing else in the schema uses that
- * domain, so it's a safe, exact match for "seeded by a test run".
+ * the E2E fixtures (tests/e2e/*.ts) both register real rows there, with an
+ * email ending in `@test.local` that carries the run's TEST_RUN_ID.
+ *
+ * With TEST_RUN_ID set (scripts/run-tests.mjs and playwright.config.ts set
+ * it) this removes only that run's accounts, so a run that is still going
+ * keeps its own, plus any `@test.local` account older than a day, which a
+ * crashed run left behind. Run by hand without TEST_RUN_ID, it removes every
+ * `@test.local` account.
  *
  * Always targets the test project (TEST_SUPABASE_*), never production.
  *
@@ -19,7 +24,22 @@ import { useTestDatabase } from '../test/helpers/test-database.js';
 useTestDatabase();
 const { supabase } = await import('../src/supabaseClient.js');
 
-const { data, error } = await supabase.from('users').delete().ilike('email', '%@test.local').select('id');
-if (error) throw new Error(`cleanup-test-data: ${error.message}`);
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+const runId = process.env.TEST_RUN_ID;
 
-console.log(`[cleanup-test-data] deleted ${data.length} test user(s)`);
+async function remove(describe, query) {
+  const { data, error } = await query.select('id');
+  if (error) throw new Error(`cleanup-test-data (${describe}): ${error.message}`);
+  console.log(`[cleanup-test-data] deleted ${data.length} ${describe}`);
+}
+
+if (!runId) {
+  await remove('test user(s)', supabase.from('users').delete().ilike('email', '%@test.local'));
+} else {
+  if (!/^[a-z0-9]+$/i.test(runId)) throw new Error(`cleanup-test-data: unexpected TEST_RUN_ID "${runId}"`);
+  await remove(`test user(s) from run ${runId}`, supabase.from('users').delete().ilike('email', `%-${runId}-%@test.local`));
+  await remove(
+    'stale test user(s) older than a day',
+    supabase.from('users').delete().ilike('email', '%@test.local').lt('created_at', new Date(Date.now() - STALE_AFTER_MS).toISOString()),
+  );
+}
