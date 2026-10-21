@@ -28,6 +28,7 @@ import { computeLongTermStop, positionSize, liquidityCheck, riskReward, position
 import { getOrGenerateStopPlan, getOrGenerateTrailingStop, getLiveTrailingStop } from './agent/stopPlanner.js';
 import { buildTargets, targetEstimate } from './scoring/targets.js';
 import { classifyStock } from './scoring/classification.js';
+import { relativeWeakness, benchmarkHistory } from './scoring/relativeStrength.js';
 import RULES from './config/rules.js';
 import { DEFAULT_STYLE } from './config/styles.js';
 
@@ -97,7 +98,7 @@ export function fundamentalHoldOption({ shares, price, stopFired, classification
  * each evaluated against one open position with the exact quantities and
  * prices its order would use. The analyst quotes these; it never derives them.
  */
-function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, stopWarning = null, governingTarget, nextTarget = null, partialTaken, classification = null, longTermStop = null, liquidityOk = true, sessionsUnder = 0 }, rules) {
+function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveStop, stopFired, stopWarning = null, governingTarget, nextTarget = null, partialTaken, classification = null, longTermStop = null, liquidityOk = true, sessionsUnder = 0, weakness = null }, rules) {
   const { shares } = position;
   const tp = rules.takeProfit;
   const trailFromPrice = price * (1 - rules.trailing.trailPct / 100);
@@ -158,6 +159,8 @@ function buildRuleBook({ snapshot, position, price, plPct, trailing, effectiveSt
       raiseStopPct: tp.raiseStopAfterTargetPct,
       raisedStop: r2(Math.max(effectiveStop, price * (1 - tp.raiseStopAfterTargetPct / 100))),
     },
+    // R7 — null when this style has the rule off (see scoring/relativeStrength.js).
+    relativeWeakness: weakness,
     averagingDown: {
       allowed: rules.averagingDown.allowed,
       trendScore,
@@ -506,11 +509,15 @@ export async function analyzeTicker(code, opts = {}) {
     const reachedTarget = passed(originalGoverning) ? originalGoverning : null;
     const nextTarget = reachedTarget && governingTarget !== reachedTarget ? governingTarget : null;
     const partialTaken = Boolean(position.partialTakenAt);
+    // R7: judged on the completed closes, against the stock's own index.
+    const weakness = rules.relativeWeakness?.enabled
+      ? relativeWeakness({ bars, index: await benchmarkHistory(meta.code ?? code), shares: position.shares, partialTaken }, rules)
+      : null;
     const ruleBook = buildRuleBook(
       {
         snapshot: posSnapshot, position, price: posPrice, plPct, trailing, effectiveStop, stopFired, stopWarning,
         governingTarget: reachedTarget ?? governingTarget, nextTarget, partialTaken,
-        classification, longTermStop, liquidityOk: liquidity.ok, sessionsUnder: closesUnder,
+        classification, longTermStop, liquidityOk: liquidity.ok, sessionsUnder: closesUnder, weakness,
       },
       rules,
     );
@@ -578,6 +585,7 @@ export async function analyzeTicker(code, opts = {}) {
           partialTaken,
           stopBreached: stopFired,
           stopWarning,
+          weakness,
         },
         rules,
       ),
@@ -586,6 +594,7 @@ export async function analyzeTicker(code, opts = {}) {
         exitOnStop: !halted && ruleBook.stop.fired,
         takePartial: !halted && ruleBook.partialProfit.fired,
         atTarget: !halted && ruleBook.target.fired,
+        trimOnWeakness: !halted && Boolean(ruleBook.relativeWeakness?.fired),
         canAverageDown: !halted && ruleBook.averagingDown.fired,
       },
       // Each rule from the settings panel, evaluated with the exact order

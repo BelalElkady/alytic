@@ -75,6 +75,7 @@ const REC_TONE: Record<string, string> = {
   hold: "border-border bg-surface-2 text-foreground",
   sell: "border-down/40 bg-down-soft text-down",
   sell_part: "border-warn/40 bg-warn-soft text-foreground",
+  trim_weak: "border-warn/40 bg-warn-soft text-foreground",
   halted: "border-warn/40 bg-warn-soft text-foreground",
 };
 

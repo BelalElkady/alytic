@@ -649,10 +649,12 @@ end $$;
 -- at its horizon, prices are rebased across corporate actions; 3 = the
 -- current ones, which also follow the app's management of a buy (two closes
 -- under the stop for the long style; at the target part is sold and the rest
--- runs under a raised stop — see evaluate.js). New calls are stamped 3 by the
--- guard trigger below, and patch-rescore-v3.sql re-opened every older call to
--- be scored again. The page's figures cover the current version only; any
--- older call stays listed, tagged.
+-- runs under a raised stop — see evaluate.js); 4 = the same, plus a hold
+-- carries the position's own stop and is closed by it on a session close,
+-- as the app tells the holder to (patch-hold-stop-v4.sql). New calls are
+-- stamped 4 by the guard trigger below; patch-rescore-v3.sql re-opened every
+-- call older than 3 to be scored again. The page's figures cover versions 3
+-- and 4; any older call stays listed, tagged.
 -- Safe to re-run: only rows with no version yet are touched. Calls already
 -- closed when this first runs were resolved by the old rules; calls still open
 -- are scored by the current evaluator from here on.
@@ -721,7 +723,7 @@ begin
     new.stock_move_final := false;
     new.evaluated_at := null;
     new.target_sessions := null;
-    new.scoring_version := 3;
+    new.scoring_version := 4;
     return new;
   end if;
 

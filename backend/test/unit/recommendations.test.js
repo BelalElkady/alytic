@@ -124,7 +124,19 @@ test('evaluate: a gap through the target fills at the open; a gap down after a s
   assert.equal(out.exit_price, 88);
 });
 
-test('evaluate: a hold ignores any stop or target it was logged with and expires at the horizon', () => {
+test('evaluate: from scoring version 4 a hold is closed by its stop on a close, never by a target', () => {
+  const bars = [bar('2026-09-02', 99, 112, 93, 94), bar('2026-09-03', 93, 96, 92, 95)];
+  const out = evaluateRecommendation(rec({ action: 'hold', horizon_days: 10, scoring_version: 4 }), bars, egx);
+  assert.equal(out.status, 'hit_stop');
+  assert.equal(out.exit_price, 93);
+  assert.equal(out.return_pct, -7);
+  assert.equal(isWin({ ...out, action: 'hold' }), false);
+  // An intraday dip that closes above the stop keeps it open.
+  const dip = evaluateRecommendation(rec({ action: 'hold', horizon_days: 10, scoring_version: 4 }), [bar('2026-09-02', 100, 101, 92, 97)], egx);
+  assert.equal(dip.status, 'open');
+});
+
+test('evaluate: a hold before version 4 ignores any stop or target it was logged with and expires at the horizon', () => {
   const bars = [bar('2026-09-02', 99, 100, 93, 94), bar('2026-09-03', 94, 112, 93, 98)];
   const out = evaluateRecommendation(rec({ action: 'hold', horizon_days: 2 }), bars, egx);
   assert.equal(out.status, 'expired');
@@ -133,6 +145,7 @@ test('evaluate: a hold ignores any stop or target it was logged with and expires
   assert.equal(out.sessions_elapsed, 2);
   const early = evaluateRecommendation(rec({ action: 'hold', horizon_days: 5 }), bars, egx);
   assert.equal(early.status, 'open');
+  assert.equal(evaluateRecommendation(rec({ action: 'hold', horizon_days: 2, scoring_version: 3 }), bars, egx).status, 'expired');
 });
 
 test('evaluate: no level touched by the horizon expires at that close', () => {
@@ -189,12 +202,14 @@ test('recommendationRow: levels on the wrong side are dropped; sell gets no leve
   assert.equal(sell.horizon_days, 20); // a sell is judged over a shorter span than a hold
 });
 
-test('recommendationRow: a hold carries no stop or target and the style horizon', () => {
+test('recommendationRow: a hold carries the position\'s stop, no target, and the style horizon', () => {
   const hold = recommendationRow({ userId: 'u', code: 'X', action: 'hold', levels: { refPrice: 100, target: 120, stop: 97, horizonSessions: 18 }, style: 'medium', source: 's' });
   assert.equal(hold.action, 'hold');
   assert.equal(hold.target_price, null);
-  assert.equal(hold.stop_price, null);
+  assert.equal(hold.stop_price, 97);
   assert.equal(hold.horizon_days, 20);
+  // A stop at or above the price is on the wrong side and dropped.
+  assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'hold', levels: { refPrice: 100, stop: 101 }, style: 'medium', source: 's' }).stop_price, null);
 });
 
 test('isWin: holds are judged against the index', () => {
@@ -331,6 +346,7 @@ test('isLegacy: only a call stamped with an older scoring version; no stamp at a
   assert.equal(isLegacy({ scoring_version: 1 }), true);
   assert.equal(isLegacy({ scoring_version: 2 }), true);
   assert.equal(isLegacy({ scoring_version: 3 }), false);
+  assert.equal(isLegacy({ scoring_version: 4 }), false);
   assert.equal(isLegacy({}), false);
   assert.equal(isLegacy({ scoring_version: null }), false);
 });
@@ -400,7 +416,7 @@ test('recommendationRow: a sell or reduce carries its fall target but never a st
   // A fall target above the price is on the wrong side and dropped; none given means none logged.
   assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'exit', levels: { ...levels, fallTarget: 105 }, style: 'medium', source: 's' }).target_price, null);
   assert.equal(recommendationRow({ userId: 'u', code: 'X', action: 'exit', levels: { refPrice: 100 }, style: 'medium', source: 's' }).target_price, null);
-  // A hold still keeps the longer horizon and no levels; a buy is unchanged.
+  // A hold still keeps the longer horizon and no target; a buy is unchanged.
   const hold = recommendationRow({ userId: 'u', code: 'X', action: 'hold', levels, style: 'long', source: 's' });
   assert.equal(hold.horizon_days, 60);
   assert.equal(hold.target_price, null);

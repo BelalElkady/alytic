@@ -341,7 +341,9 @@ export function styleRecommendation(
     };
   }
 
-  if (fallback.action === "buy_more") return fallback;
+  // R7 (trailing its index) needs index history the page doesn't have — the
+  // server's verdict stands, like a leader's buy_more.
+  if (fallback.action === "buy_more" || fallback.action === "trim_weak") return fallback;
 
   // 5. Nothing to do.
   const trailNote =

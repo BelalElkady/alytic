@@ -74,6 +74,8 @@ const OVERRIDES = {
     sizing: { riskPerTradePct: 1, maxPositionPct: 10 },
     // A speculator's stop is the trade; a fundamental thesis doesn't rescue it.
     stop: { fundamentalHold: { allowed: false } },
+    // A speculator's position that trails the market is cut early.
+    relativeWeakness: { minLagPts: 2, sellFraction: 0.5 },
   },
   medium: {
     trailing: { trailPct: 8, activateAtProfitPct: 12 },
@@ -94,6 +96,8 @@ const OVERRIDES = {
     // One close under a trailing stop is too thin a reason to sell a long-term
     // holding: the first is a warning, a second close under it is the exit.
     stop: { confirmCloses: 2, fundamentalHold: { maxSessionsUnder: 20 } },
+    // Two weeks of lagging the market is noise to a long-term holder.
+    relativeWeakness: { enabled: false },
   },
 };
 
@@ -117,5 +121,6 @@ export function rulesForStyle(base, styleKey) {
     entry: { ...base.entry, ...overrides.entry },
     sizing: { ...base.sizing, ...overrides.sizing },
     targets: { ...base.targets, ...overrides.targets },
+    relativeWeakness: { ...base.relativeWeakness, ...overrides.relativeWeakness },
   };
 }
