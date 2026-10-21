@@ -19,8 +19,15 @@ env:
   VITE_GOOGLE_CLIENT_ID: 195473370514-g5cejs7ikunbattrktchlrsfhpl98ka0.apps.googleusercontent.com
 
 jobs:
+  # Nothing reaches the server unless the full test suite passes on this
+  # commit (against the test Supabase project, never production).
+  tests:
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
   build:
     name: Build and validate
+    needs: tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
