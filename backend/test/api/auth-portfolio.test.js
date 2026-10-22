@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import '../helpers/env.js';
 
-import { startServer, request, sessionFrom, registerUser, uniqueEmail, uniquePhone } from '../helpers/server.js';
+import { startServer, request, sessionFrom, registerUser, tokenEmailedTo, uniqueEmail, uniquePhone } from '../helpers/server.js';
 import { getUserByEmail, getUserUsage, putUserUsage } from '../../src/db.js';
 import { TIERS } from '../../src/billing/plans.js';
 import { writeBars, synthBars } from '../helpers/bars.js';
@@ -324,8 +324,11 @@ test('email verification completes over HTTP', async () => {
     body: { email, password: 'Passw0rd!123', name: 'ف', phone: uniquePhone() },
   });
   assert.equal(reg.status, 201);
-  const token = (await getUserByEmail(email)).verification_token;
-  assert.ok(token, 'the created row carries a verification token');
+  const token = await tokenEmailedTo(email, 'verify-email');
+  assert.ok(token, 'registration emails a verification link');
+  const row = await getUserByEmail(email);
+  assert.equal(row.verification_token, null, 'the raw token is never stored');
+  assert.match(row.verification_token_hash, /^[0-9a-f]{64}$/);
   const res = await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } });
   assert.equal(res.status, 200);
   assert.equal(res.body.user.emailVerified ?? res.body.user.email_verified, true);

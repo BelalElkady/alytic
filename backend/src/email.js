@@ -20,6 +20,14 @@ const SMTP_PORT = Number(process.env.RESEND_SMTP_PORT ?? 465);
 
 export const emailAvailable = () => Boolean(RESEND_API_KEY);
 
+/**
+ * Under `node --test` only, every email that would have been sent. The
+ * database keeps just a hash of each verification and reset token, so tests
+ * read the raw token from the link in here (tokenEmailedTo in
+ * test/helpers/server.js), the same way a user gets it.
+ */
+export const testOutbox = [];
+
 let transporter = null;
 function getTransporter() {
   transporter ??= nodemailer.createTransport({
@@ -40,6 +48,7 @@ function getTransporter() {
  */
 export async function sendEmail({ to, subject, html }) {
   if (!emailAvailable()) {
+    if (process.env.NODE_TEST_CONTEXT) testOutbox.push({ to, subject, html });
     console.log(`[email] (RESEND_API_KEY غير مضبوط) كان هيتبعت لـ ${to}: ${subject}`);
     return;
   }

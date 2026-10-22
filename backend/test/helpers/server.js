@@ -83,6 +83,17 @@ export const uniqueEmail = () => testEmail('t');
 export const uniquePhone = () =>
   `01${['0', '1', '2', '5'][crypto.randomInt(4)]}${String(crypto.randomInt(100_000_000)).padStart(8, '0')}`;
 
+/**
+ * The token in the newest `/verify-email` or `/reset-password` link emailed to
+ * `email`, from the test outbox in email.js. The database keeps only its hash,
+ * so this is the one place a test can get the raw token, just like a user.
+ */
+export async function tokenEmailedTo(email, page) {
+  const { testOutbox } = await import('../../src/email.js');
+  const mail = testOutbox.findLast((m) => m.to === email && m.html.includes(`/${page}?token=`));
+  return mail?.html.match(/\?token=([0-9a-f]+)/)?.[1] ?? null;
+}
+
 /** Register a fresh user over HTTP, then sign in; returns { user, cookie, email, raw }.
  *
  * Registration itself never signs anyone in (and never reveals whether an
@@ -103,8 +114,7 @@ export async function registerUser(baseUrl, email = uniqueEmail(), { verify = tr
   assert.equal(sessionFrom(raw.setCookies), null, 'register must not set a session cookie');
 
   if (verify) {
-    const { getUserByEmail } = await import('../../src/db.js');
-    const token = (await getUserByEmail(email)).verification_token;
+    const token = await tokenEmailedTo(email, 'verify-email');
     const verified = await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } });
     assert.equal(verified.status, 200, `verify failed: ${verified.text}`);
   }

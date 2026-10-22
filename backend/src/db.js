@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { platformDb, supabase } from './supabaseClient.js';
 import { currentTenant } from './tenancy/context.js';
 import { canonicalEmail } from './emailIdentity.js';
@@ -20,6 +21,16 @@ export class DuplicateUserError extends Error {
     super(`duplicate user ${field}`);
     this.field = field;
   }
+}
+
+/**
+ * Verification and reset links are stored only as this hash (issue #159): the
+ * raw token lives in the email alone, so a leaked users table opens no
+ * account. The functions below take the raw token and hash it here, on write
+ * and on lookup alike; `null` clears the column.
+ */
+function hashToken(token) {
+  return token == null ? null : crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
 function mustUnlessDuplicate(result, context) {
@@ -99,7 +110,7 @@ export async function getUserByGoogleId(googleId) {
 }
 
 export async function getUserByVerificationToken(token) {
-  const { data, error } = await supabase.from('users').select('*').eq('verification_token', token).maybeSingle();
+  const { data, error } = await supabase.from('users').select('*').eq('verification_token_hash', hashToken(token)).maybeSingle();
   if (error) throw new Error(`getUserByVerificationToken: ${error.message}`);
   return data;
 }
@@ -116,7 +127,7 @@ export async function createUser(user) {
     password_hash: user.passwordHash,
     google_id: user.googleId ?? null,
     email_verified: Boolean(user.emailVerified),
-    verification_token: user.verificationToken ?? null,
+    verification_token_hash: hashToken(user.verificationToken),
     verification_token_expires: user.verificationTokenExpires ?? null,
     is_admin: Boolean(user.isAdmin),
     created_at: user.createdAt,
@@ -163,21 +174,21 @@ export async function countUsers() {
 
 export async function setVerificationToken(id, token, expiresAt) {
   must(
-    await supabase.from('users').update({ verification_token: token, verification_token_expires: expiresAt }).eq('id', id),
+    await supabase.from('users').update({ verification_token_hash: hashToken(token), verification_token_expires: expiresAt }).eq('id', id),
     'setVerificationToken',
   );
   forgetSessionUser(id);
 }
 
 export async function getUserByResetToken(token) {
-  const { data, error } = await supabase.from('users').select('*').eq('reset_token', token).maybeSingle();
+  const { data, error } = await supabase.from('users').select('*').eq('reset_token_hash', hashToken(token)).maybeSingle();
   if (error) throw new Error(`getUserByResetToken: ${error.message}`);
   return data;
 }
 
 export async function setResetToken(id, token, expiresAt) {
   must(
-    await supabase.from('users').update({ reset_token: token, reset_token_expires: expiresAt }).eq('id', id),
+    await supabase.from('users').update({ reset_token_hash: hashToken(token), reset_token_expires: expiresAt }).eq('id', id),
     'setResetToken',
   );
   forgetSessionUser(id);
@@ -187,7 +198,7 @@ export async function setResetToken(id, token, expiresAt) {
 export async function setUserPassword(id, { salt, hash }) {
   must(
     await supabase.from('users')
-      .update({ password_salt: salt, password_hash: hash, reset_token: null, reset_token_expires: null })
+      .update({ password_salt: salt, password_hash: hash, reset_token_hash: null, reset_token_expires: null })
       .eq('id', id),
     'setUserPassword',
   );
@@ -197,7 +208,7 @@ export async function setUserPassword(id, { salt, hash }) {
 export async function markEmailVerified(id) {
   must(
     await supabase.from('users')
-      .update({ email_verified: true, verification_token: null, verification_token_expires: null })
+      .update({ email_verified: true, verification_token_hash: null, verification_token_expires: null })
       .eq('id', id),
     'markEmailVerified',
   );

@@ -892,3 +892,29 @@ end $$;
 
 -- To check the result (every row should show rowsecurity = true):
 --   select tablename, rowsecurity from pg_tables where schemaname = 'public' order by 1;
+
+-- ============================================================
+-- Verification and reset tokens are stored hashed (issue #159)
+-- ============================================================
+-- The app keeps only the SHA-256 hash (hex) of each emailed token (hashToken
+-- in db.js), so a leaked users table holds no usable link. The updates move
+-- any raw token still in the old columns into the hashed ones, so links
+-- already in inboxes keep working, and blank the old columns. Re-running is a
+-- no-op once they are empty; run it again after the deploy to sweep up tokens
+-- the old code wrote in between. The old columns and their indexes are no
+-- longer read or written.
+alter table users add column if not exists verification_token_hash text;
+alter table users add column if not exists reset_token_hash text;
+
+update users
+set verification_token_hash = encode(sha256(convert_to(verification_token, 'UTF8')), 'hex'),
+    verification_token = null
+where verification_token is not null;
+
+update users
+set reset_token_hash = encode(sha256(convert_to(reset_token, 'UTF8')), 'hex'),
+    reset_token = null
+where reset_token is not null;
+
+create index if not exists idx_users_verification_token_hash on users(verification_token_hash) where verification_token_hash is not null;
+create index if not exists idx_users_reset_token_hash on users(reset_token_hash) where reset_token_hash is not null;
