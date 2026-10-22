@@ -73,5 +73,9 @@ One closed session's net buying or selling per investor group (Egyptians, Arabs,
 _Avoid_: Order flow, fund flows
 
 **Track record**:
-How Recommendations performed once resolved: hit rate, returns, and returns against EGX30. Labelled "سجل الأداء".
+How Recommendations performed once resolved: hit rate, returns, and returns against each Recommendation's Benchmark, or against one index the User picks with the «مقابل» selector (EGX30, EGX70, EGX33 or EGX100). Labelled "سجل الأداء".
 _Avoid_: Backtest (it only covers calls that were actually issued, never simulated ones)
+
+**Benchmark**:
+The index a Recommendation is measured against, fixed when it's issued from its stock's membership: EGX30 if the stock is in it, else EGX70 if it's in that, else EGX100. A hold Recommendation counts as a win if its stock did at least as well as its Benchmark.
+_Avoid_: Market (when meaning this index), EGX30 (when meaning a stock's own index)
