@@ -66,6 +66,10 @@ export const tone = (value: unknown) => {
 export const isoDay = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
+/** The calendar day (Cairo) of a timestamp, as YYYY-MM-DD — the day the backend files daily closes under. */
+export const cairoDay = (ms = Date.now()) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(ms);
+
 export const arDay = (iso?: string | null) => {
   if (!iso) return "—";
   const date = new Date(`${iso}T00:00:00`);

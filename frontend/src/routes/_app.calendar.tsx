@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { post } from "@/lib/api";
-import { fmt, int, isoDay, pct, signed, tone } from "@/lib/format";
+import { cairoDay, fmt, int, isoDay, pct, signed, tone } from "@/lib/format";
 import { siteUrl, siteName } from "@/lib/seo";
 import { useDesk } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -79,8 +79,10 @@ const YEARS = Array.from({ length: 11 }, (_, index) => CURRENT_YEAR - 5 + index)
 
 function CalendarPage() {
   const { log, reloadLog } = useDesk();
-  const [month, setMonth] = useState(() => new Date());
-  const [selected, setSelected] = useState(() => isoDay(new Date()));
+  // Open on today in Cairo, the day daily closes are filed under, not the
+  // browser's own day (a visitor east of Cairo is a day ahead around midnight).
+  const [selected, setSelected] = useState(() => cairoDay());
+  const [month, setMonth] = useState(() => new Date(`${selected}T12:00:00`));
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
