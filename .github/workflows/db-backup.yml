@@ -102,9 +102,12 @@ jobs:
                etc/systemd/system/alytic-backend.service etc/systemd/system/alytic-frontend.service \
                2>/dev/null || true' > "$RUNNER_TEMP/vps-config.tar.gz"
           rm -f ~/.ssh/deploy_key
+          # List to a file, not a pipe: grep -q exits on the first match, tar
+          # then dies on SIGPIPE, and pipefail turns that into a false failure.
+          tar tzf "$RUNNER_TEMP/vps-config.tar.gz" > "$RUNNER_TEMP/vps-config.list"
           echo "Captured:"
-          tar tzf "$RUNNER_TEMP/vps-config.tar.gz"
-          if ! tar tzf "$RUNNER_TEMP/vps-config.tar.gz" | grep -qx 'opt/alytic/backend/.env'; then
+          cat "$RUNNER_TEMP/vps-config.list"
+          if ! grep -qx 'opt/alytic/backend/.env' "$RUNNER_TEMP/vps-config.list"; then
             echo "::error::backend .env was not captured (missing, or not readable by $DEPLOY_USER)."
             exit 1
           fi
