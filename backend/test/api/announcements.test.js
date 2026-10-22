@@ -19,9 +19,9 @@ test.after(() => ctx.close());
 
 // registerUser() always runs the full register -> verify -> login cycle, but
 // `register` is a silent no-op for an email that already has an account (see
-// auth.js) and `markEmailVerified` clears verification_token once consumed —
-// so a second full registerUser() call for the same email would try to
-// verify with an already-spent (now null) token and fail. Several tests in
+// auth.js) and `markEmailVerified` clears verification_token_hash once
+// consumed — so a second full registerUser() call for the same email would
+// try to verify with the first, already-spent emailed token and fail. Several tests in
 // this file share one fixed platform-admin email, so this memoizes the
 // account: register+verify happens once, and later calls just log back in
 // (login never re-checks email_verified — see auth.js).

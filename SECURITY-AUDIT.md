@@ -44,7 +44,6 @@ Method: full read of the API, auth, billing gates, upload paths, proxy and deplo
 
 ## Not changed, worth doing next
 
-- **Hash verification and reset tokens at rest.** They are stored in plaintext, so a database leak exposes any unexpired link. Left alone because the existing tests read the raw token from the row; hash with SHA-256 and update those tests together.
 - **Server-side session revocation.** Sessions are stateless for 30 days. A password change invalidates them, but logout does not revoke a stolen cookie. A `sessions_valid_after` column on `users` would fix it.
 - **Two-factor authentication for admin accounts**, since one admin login controls billing, user deletion and published content.
 - **Pin the third-party deploy actions** (`appleboy/scp-action`, `appleboy/ssh-action`) to commit SHAs. They hold the server SSH key. Dependabot will now propose updates.
