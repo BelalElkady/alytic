@@ -58,6 +58,14 @@ jobs:
     name: Database suites (schema, backend, E2E)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Playwright's image already has Chromium and the system libraries it
+    # needs, so E2E no longer waits on Ubuntu's package mirrors for them (one
+    # run spent 10 minutes there). Keep the tag on the @playwright/test version
+    # in package-lock.json; if they drift, the install step below fetches the
+    # matching browser. --ipc=host: Chromium runs out of shared memory without it.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
     concurrency:
       group: test-database
       cancel-in-progress: false
@@ -69,6 +77,10 @@ jobs:
       RUN_E2E: ${{ format('{0}', inputs.e2e) != 'false' }}
     steps:
       - uses: actions/checkout@v4
+
+      # The image has no psql (schema and cleanup steps) or unzip (setup-bun).
+      - name: Install psql and unzip
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-client unzip
 
       # Both files are idempotent (`if not exists`, guarded alters), so
       # re-applying them every run keeps the test database on exactly the
@@ -108,9 +120,11 @@ jobs:
           (cd frontend && bun install --frozen-lockfile)
           npm ci
 
+      # A no-op when the image matches package-lock.json; otherwise downloads
+      # the right Chromium (the image's system libraries still cover it).
       - name: Install Playwright browsers
         if: env.RUN_E2E == 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Run E2E tests
         if: env.RUN_E2E == 'true'
