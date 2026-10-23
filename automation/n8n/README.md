@@ -35,6 +35,16 @@ WhatsApp Trigger → Parse Meta Event → Report Event → Has Reply? → Send R
 - The schedule fires every 30 minutes, all day. The backend returns an empty list outside 10:00–21:00 Cairo time, so nothing goes out at night.
 - Every incoming WhatsApp message goes to the backend. Its answer decides whether to reply (opt-out confirmation, support chat pointer, survey thanks).
 
+### Stage 2: real messages on the test project
+
+Before production, send every template to the team's own phones from a test backend:
+
+1. In a test copy of `backend/.env`: `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` set to the test project (`qfxuejkbnrdszycqxvdx`), plus `WHATSAPP_AUTOMATION_SECRET`, `WHATSAPP_LAUNCH_AT` (any past date), `WHATSAPP_ALLOWED_PHONES` (the team's numbers) and `N8N_WHATSAPP_WEBHOOK_URL` (the test workflow's Event Webhook URL). Outside production the backend only ever messages numbers on that list.
+2. Apply the "WhatsApp lifecycle messages" block of `backend/supabase/schema.sql` to the test project, start the backend, and switch the steps on in the admin tab "رسايل واتساب".
+3. `npm --prefix backend run whatsapp:seed-test-users -- --phones +2010...,+2011...` creates one user per lifecycle point on those phones (`--points` picks which).
+4. Duplicate the workflow in n8n, point Fetch Due, Report Result and Report Event at the test backend, and run Fetch Due by hand between 10:00 and 21:00 Cairo time.
+5. Check: each template arrives with the right values; replying "إيقاف" stops everything after it; delivered/read come back on the admin tab; running Fetch Due again sends nothing twice.
+
 ### Changing it
 
 Edit in n8n, export (⋯ → Download), replace the file here, and open a PR. Before committing, check the export has no tokens in it, only credential names.
