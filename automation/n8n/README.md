@@ -23,7 +23,7 @@ WhatsApp Trigger → Parse Meta Event → Report Event → Has Reply? → Send R
    | **WhatsApp Cloud API token** (Header Auth) | Name `Authorization`, value `Bearer <Meta System User permanent token>` | Send Template, Send Reply |
    | **WhatsApp app (trigger)** (WhatsApp OAuth / trigger API) | Meta app ID and app secret | WhatsApp Trigger |
 
-3. In **Send Template** and **Send Reply**, replace `REPLACE_PHONE_NUMBER_ID` with the number's ID from WhatsApp Manager → API Setup.
+3. The sending number is not set in n8n: put its Phone Number ID (WhatsApp Manager → API Setup) in the backend's `WHATSAPP_PHONE_NUMBER_ID`. The backend sends it with every message and reply, and Send Template / Send Reply build their URL from it.
 4. The URLs point at production (`https://egxpert.com`). To test against a test backend, change the host in Fetch Due, Report Result and Report Event.
 5. Activate the workflow. Then:
    - Copy **Event Webhook**'s production URL into `N8N_WHATSAPP_WEBHOOK_URL` in `backend/.env`.

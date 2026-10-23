@@ -17,6 +17,7 @@ import { setUserRole, supabase } from '../../src/db.js';
 const SECRET = 'whatsapp-push-secret';
 process.env.WHATSAPP_AUTOMATION_SECRET = SECRET;
 process.env.WHATSAPP_LAUNCH_AT = '2026-01-01T00:00:00Z';
+process.env.WHATSAPP_PHONE_NUMBER_ID = '123456789012345';
 
 // The fake n8n: records every push; answers 500 while `failing` is set.
 const pushes = [];
@@ -88,6 +89,7 @@ test('confirming the email pushes one trial_welcome with the secret', async () =
   assert.equal(sent[0].headers.authorization, `Bearer ${SECRET}`);
   assert.equal(sent[0].body.request.template.name, 'trial_welcome');
   assert.ok(sent[0].body.messageId);
+  assert.equal(sent[0].body.phoneNumberId, '123456789012345');
 });
 
 test('a user without a phone gets the welcome when the phone is saved, once', async () => {
