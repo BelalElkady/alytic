@@ -32,6 +32,7 @@ WhatsApp Trigger → Parse Meta Event → Report Event → Has Reply? → Send R
 ### Behaviour worth knowing
 
 - Messages go out one at a time through **Loop Items**: each is sent and reported to the backend before the next, so Meta's delivery updates always find their message. A failed send keeps the loop going. The failure is reported to the backend as `failed` and isn't retried; the backend never re-sends a step.
+- On production every eligible user can be messaged, unless the backend has `WHATSAPP_ALLOWLIST_ONLY=true`, which keeps it to `WHATSAPP_ALLOWED_PHONES` (a pilot on the team's numbers).
 - The schedule fires every 30 minutes, all day. The backend returns an empty list outside 10:00–21:00 Cairo time, so nothing goes out at night.
 - Every incoming WhatsApp message goes to the backend. Its answer decides whether to reply (opt-out confirmation, support chat pointer, survey thanks).
 

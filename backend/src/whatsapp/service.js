@@ -24,11 +24,11 @@ import { normalizePhone } from '../phone.js';
 import { currentTenant } from '../tenancy/context.js';
 import { defaultTenant } from '../tenancy/registry.js';
 import { dueStepFor, isEligible, launchGate } from './eligibility.js';
+import { sendingScope } from './scope.js';
 import { buildRequest } from './render.js';
 import { DEFAULT_STEPS, STEP_KEYS, SURVEY_ANSWERS, inSendWindow, isStopWord } from './steps.js';
 
 const HOUR_MS = 60 * 60 * 1000;
-const PRODUCTION_PROJECT = 'xssjwnevhbpcdmtbatiy';
 /** Most items one /due call hands n8n; the rest wait for the next run. */
 export const DUE_BATCH = 50;
 
@@ -39,19 +39,15 @@ export const REPLIES = {
 };
 
 /**
- * Real users can only be messaged from production. Anywhere else (a laptop,
- * CI, a backend pointed at the backup copy) only the team's numbers in
- * WHATSAPP_ALLOWED_PHONES are claimed, and with no list nothing is.
+ * Real users can only be messaged from production, and there only once
+ * WHATSAPP_ALLOWLIST_ONLY is off. Anywhere else (a laptop, CI, a backend
+ * pointed at the backup copy), or during a production pilot, only the
+ * numbers in WHATSAPP_ALLOWED_PHONES are claimed, and with no list nothing
+ * is. See scope.js.
  */
-export function isLiveSending() {
-  return process.env.NODE_ENV === 'production' && String(process.env.SUPABASE_URL ?? '').includes(PRODUCTION_PROJECT);
-}
+export const isLiveSending = () => sendingScope().live;
 
-function allowedPhones() {
-  return new Set(String(process.env.WHATSAPP_ALLOWED_PHONES ?? '').split(',').map((p) => normalizePhone(p)).filter(Boolean));
-}
-
-export const phoneAllowed = (phone) => isLiveSending() || allowedPhones().has(phone);
+export const phoneAllowed = (phone) => sendingScope().allows(phone);
 
 /** WHATSAPP_LAUNCH_AT as a Date; null (nothing sends) until it is set. */
 export function launchAt() {
@@ -111,7 +107,7 @@ export async function claimDue(now = new Date()) {
   // uses the wall clock even when `now` is moved for a test.
   await failStaleWhatsappMessages(new Date(Date.now() - 2 * HOUR_MS).toISOString());
   if (!inSendWindow(now)) return [];
-  if (!phoneNumberId() || (!isLiveSending() && allowedPhones().size === 0)) return [];
+  if (!phoneNumberId() || !sendingScope().canSend) return [];
   const steps = await mergedSteps();
   const launch = launchAt();
   const items = [];
@@ -209,7 +205,8 @@ export async function stepsOverview(now = new Date()) {
       return { key, ...steps[key], counts: tally };
     }),
     surveyAnswers: answers,
-    liveSending: isLiveSending(),
+    // False while messages are limited to the allowlist (test backends and a production pilot).
+    liveSending: sendingScope().everyone,
     // For the admin page's preview: the plan an offer is on, and its full price.
     plans: Object.fromEntries(Object.entries(PLANS).map(([key, plan]) => [key, { label: plan.label.split(' — ')[0], priceEgp: plan.priceEgp }])),
   };
