@@ -27,3 +27,13 @@ test('each message is reported before the next one is sent', () => {
   assert.equal(node('Send Template').parameters.options.batching, undefined, 'no batch-wide send');
   assert.match(node('Build Result').parameters.jsCode, /\$\('Loop Items'\)\.item\.json\.messageId/);
 });
+
+// The Phone Number ID lives in backend/.env (WHATSAPP_PHONE_NUMBER_ID) and
+// arrives with every item, so the workflow never hard-codes it.
+test('the Graph API URLs take the phone number id from the backend', () => {
+  assert.doesNotMatch(JSON.stringify(workflow), /REPLACE_PHONE_NUMBER_ID/);
+  assert.match(node('Send Template').parameters.url, /\{\{ \$json\.phoneNumberId \}\}/);
+  assert.match(node('Send Reply').parameters.url, /\{\{ \$json\.reply\.phoneNumberId \}\}/);
+  const kept = node('Message').parameters.assignments.assignments.map((a) => a.name);
+  assert.ok(kept.includes('phoneNumberId'), 'the Message node keeps phoneNumberId for Send Template');
+});

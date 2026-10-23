@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## EGXpert WhatsApp lifecycle\nThe backend decides who gets which step and builds the Graph API body. This workflow only delivers and reports back.\n\n**Before activating** (see automation/n8n/README.md):\n1. Replace `REPLACE_PHONE_NUMBER_ID` in *Send Template* and *Send Reply*.\n2. Attach the three credentials.\n3. Copy the *Event Webhook* production URL into the backend's `N8N_WHATSAPP_WEBHOOK_URL`.",
+        "content": "## EGXpert WhatsApp lifecycle\nThe backend decides who gets which step and builds the Graph API body. This workflow only delivers and reports back.\n\n**Before activating** (see automation/n8n/README.md):\n1. Attach the three credentials.\n2. Copy the *Event Webhook* production URL into the backend's `N8N_WHATSAPP_WEBHOOK_URL`.\n\nThe sending number comes from the backend's `WHATSAPP_PHONE_NUMBER_ID`, with every item.",
         "height": 300,
         "width": 420
       },
@@ -110,6 +110,12 @@
               "name": "request",
               "value": "={{ $json.request ?? $json.body.request }}",
               "type": "object"
+            },
+            {
+              "id": "a1d5c0e2-0f43-4c6b-b1a8-6a1f6e2d3c03",
+              "name": "phoneNumberId",
+              "value": "={{ $json.phoneNumberId ?? $json.body.phoneNumberId }}",
+              "type": "string"
             }
           ]
         },
@@ -127,7 +133,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://graph.facebook.com/v21.0/REPLACE_PHONE_NUMBER_ID/messages",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.phoneNumberId }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -294,7 +300,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://graph.facebook.com/v21.0/REPLACE_PHONE_NUMBER_ID/messages",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.reply.phoneNumberId }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,

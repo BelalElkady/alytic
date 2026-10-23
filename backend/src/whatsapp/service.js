@@ -64,6 +64,14 @@ export const isSendingTenant = (tenant) => Boolean(tenant) && tenant.id === defa
 
 const appUrl = () => defaultTenant()?.appUrl ?? '';
 
+/**
+ * The WhatsApp number the messages go out from: its Phone Number ID in
+ * WhatsApp Manager (API Setup). Kept here, not in n8n, and handed to n8n with
+ * every item and reply, so the workflow holds no account-specific values.
+ * Unset: nothing is claimed, pushed or replied.
+ */
+const phoneNumberId = () => String(process.env.WHATSAPP_PHONE_NUMBER_ID ?? '').trim();
+
 /** The admin page's settings over the code defaults, per step. */
 export async function mergedSteps() {
   const rows = new Map((await getWhatsappSteps()).map((row) => [row.key, row]));
@@ -94,7 +102,7 @@ async function claim({ user, subscription, sent = [], step, cycleKey, steps, now
     existingOfferExpiresAt,
   });
   const row = await insertWhatsappMessage({ userId: user.id, step, cycleKey, phone: user.phone, renderedParams, offerExpiresAt });
-  return row ? { messageId: row.id, request } : null;
+  return row ? { messageId: row.id, phoneNumberId: phoneNumberId(), request } : null;
 }
 
 /** Everything due at `now`, claimed so a second call can't hand it out again. */
@@ -103,7 +111,7 @@ export async function claimDue(now = new Date()) {
   // uses the wall clock even when `now` is moved for a test.
   await failStaleWhatsappMessages(new Date(Date.now() - 2 * HOUR_MS).toISOString());
   if (!inSendWindow(now)) return [];
-  if (!isLiveSending() && allowedPhones().size === 0) return [];
+  if (!phoneNumberId() || (!isLiveSending() && allowedPhones().size === 0)) return [];
   const steps = await mergedSteps();
   const launch = launchAt();
   const items = [];
@@ -120,7 +128,7 @@ export async function claimDue(now = new Date()) {
 
 /** Claims one event step for a user (see pushStep). Null when it can't or already went out. */
 export async function claimStep({ user, subscription, step, now = new Date() }) {
-  if (!phoneAllowed(user.phone)) return null;
+  if (!phoneNumberId() || !phoneAllowed(user.phone)) return null;
   const steps = await mergedSteps();
   if (!steps[step]?.enabled) return null;
   return claim({ user, subscription, step, cycleKey: '', steps, now });
@@ -219,6 +227,9 @@ export function recordResult({ messageId, status, metaMessageId, error }) {
   return setWhatsappMessageResult(messageId, { status, metaMessageId, error });
 }
 
+/** The reply n8n sends back on the same number; none when the number isn't configured. */
+const replyWith = (to, text) => (phoneNumberId() ? { reply: { to, text, phoneNumberId: phoneNumberId() } } : {});
+
 /** A Meta event relayed by n8n. Returns the reply n8n should send, if any. */
 export async function handleMetaEvent(event, now = new Date()) {
   if (event.type === 'status') {
@@ -236,12 +247,12 @@ export async function handleMetaEvent(event, now = new Date()) {
 
   if (isStopWord(event.text)) {
     if (user) await setWhatsappOptOut(user.id, true);
-    return { reply: { to, text: REPLIES.optOut } };
+    return replyWith(to, REPLIES.optOut);
   }
-  if (SURVEY_ANSWERS.includes(String(event.text).trim())) return { reply: { to, text: REPLIES.surveyThanks } };
+  if (SURVEY_ANSWERS.includes(String(event.text).trim())) return replyWith(to, REPLIES.surveyThanks);
 
   const last = await lastAutoReplyAt(phone);
   if (last && now.getTime() - new Date(last).getTime() < 24 * HOUR_MS) return {};
   await markWhatsappInboundAutoReplied(inbound.id);
-  return { reply: { to, text: REPLIES.supportPointer(appUrl()) } };
+  return replyWith(to, REPLIES.supportPointer(appUrl()));
 }

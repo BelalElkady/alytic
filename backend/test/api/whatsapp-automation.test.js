@@ -16,6 +16,7 @@ import { supabase } from '../../src/db.js';
 const SECRET = 'whatsapp-test-secret';
 process.env.WHATSAPP_AUTOMATION_SECRET = SECRET;
 process.env.WHATSAPP_LAUNCH_AT = '2026-01-01T00:00:00Z';
+process.env.WHATSAPP_PHONE_NUMBER_ID = '123456789012345';
 const allowed = new Set();
 const allow = (phone) => {
   allowed.add(phone);
@@ -77,6 +78,7 @@ test('/due claims a fresh user once, and never a phone off the allowlist', async
   const item = itemFor(first, listed.user.phone);
   assert.ok(item, 'the allowlisted user is due');
   assert.equal(item.request.template.name, 'trial_welcome');
+  assert.equal(item.phoneNumberId, '123456789012345', 'n8n sends from the number in WHATSAPP_PHONE_NUMBER_ID');
   assert.equal(itemFor(first, unlisted.user.phone), undefined, 'the unlisted user is never claimed');
   assert.equal((await messagesOf(unlisted.user.id)).length, 0);
 
@@ -106,6 +108,7 @@ test('a stop word in any spacing or case opts the user out', async () => {
     assert.equal(res.status, 200, res.text);
     assert.equal(res.body.reply.text, 'تمام، مش هنبعتلك رسايل تاني. تقدر ترجّعها من الإعدادات.');
     assert.equal(res.body.reply.to, toOf(account.user.phone));
+    assert.equal(res.body.reply.phoneNumberId, '123456789012345');
     const { data: row } = await supabase.from('users').select('whatsapp_opt_out_at').eq('id', account.user.id).single();
     assert.ok(row.whatsapp_opt_out_at, `"${text}" opts out`);
     assert.equal(itemFor(await due(), account.user.phone), undefined, 'nothing is due after opting out');
@@ -148,4 +151,15 @@ test('a queued row with no result for 2 hours turns failed', async () => {
 test('/result and /events reject malformed bodies', async () => {
   assert.equal((await post('result', { messageId: 'not-a-uuid', status: 'sent' })).status, 400);
   assert.equal((await post('events', { type: 'nope' })).status, 400);
+});
+
+test('without WHATSAPP_PHONE_NUMBER_ID nothing is handed out', async () => {
+  const account = await trialUser();
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+  try {
+    assert.equal(itemFor(await due(), account.user.phone), undefined);
+  } finally {
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '123456789012345';
+  }
+  assert.ok(itemFor(await due(), account.user.phone), 'claimed once the id is back');
 });

@@ -105,10 +105,10 @@ On `trial_welcome` and `paid_welcome` the backend claims the message (inserts th
 Claims and returns everything due right now, at most 50 per call:
 
 ```json
-{ "items": [ { "messageId": "uuid", "request": { /* Graph API body, ready to send */ } } ] }
+{ "items": [ { "messageId": "uuid", "phoneNumberId": "123456789012345", "request": { /* Graph API body, ready to send */ } } ] }
 ```
 
-`request` is the exact body for `POST https://graph.facebook.com/v21.0/{phone-number-id}/messages`:
+`phoneNumberId` is `WHATSAPP_PHONE_NUMBER_ID` from the backend's environment (the sending number, from WhatsApp Manager → API Setup); without it nothing is claimed, pushed or replied, and n8n holds no account-specific value. `request` is the exact body for `POST https://graph.facebook.com/v21.0/{phoneNumberId}/messages`:
 
 ```json
 {
@@ -146,7 +146,7 @@ One Meta event per call, already reshaped by n8n:
 - `message`: stored in `whatsapp_inbound`, and matched to a user by phone. Stop words (`إيقاف`, `ايقاف`, `stop`, `الغاء`, `إلغاء`), compared after trimming, set `whatsapp_opt_out_at`. The answer can include a reply for n8n to send (free-form text is allowed within 24 hours of the user's message):
 
 ```json
-{ "reply": { "to": "201012345678", "text": "تمام، مش هنبعتلك رسايل تاني. تقدر ترجّعها من الإعدادات." } }
+{ "reply": { "to": "201012345678", "text": "تمام، مش هنبعتلك رسايل تاني. تقدر ترجّعها من الإعدادات.", "phoneNumberId": "123456789012345" } }
 ```
 
   Any other text gets a reply pointing to the support chat on the site, at most once per user every 24 hours. A survey button answer is stored and answered with "شكراً، وصلنا ردك 🙏".
