@@ -21,7 +21,9 @@
     "test:api": "node scripts/run-tests.mjs \"test/api/*.test.js\"",
     "cleanup:test-data": "node scripts/cleanup-test-data.js",
     "security:check": "node scripts/security-check.mjs",
-    "security:audit": "npm audit --omit=dev --audit-level=high"
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "whatsapp:dry-run": "node scripts/whatsapp-dry-run.mjs",
+    "whatsapp:seed-test-users": "node scripts/seed-whatsapp-test-users.mjs"
   },
   "dependencies": {
     "@sentry/node": "^11.8.0",
@@ -37,6 +39,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "pg": "^8.23.1",
     "playwright-core": "^1.63.0"
   }
 }
