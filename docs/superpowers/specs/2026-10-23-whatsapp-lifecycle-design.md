@@ -202,6 +202,8 @@ The subscribe link opens the in-app support chat, where subscriptions already ha
 ### Safety guard (every environment except production)
 `WHATSAPP_ALLOWED_PHONES` (comma-separated E.164) is required whenever `NODE_ENV` isn't `production` or the Supabase URL isn't the production project. Outside production the backend claims and sends **only** to numbers on that list and skips every other user. If the variable is missing, `/due` returns nothing and the event push is off. This is what makes it safe to point the flow at data that contains real phones.
 
+`WHATSAPP_ALLOWLIST_ONLY=true` applies the same list on production, for a pilot on the team's numbers before everyone. Remove it to message every eligible user. The test clock (`?at=`) stays off on production either way.
+
 ### Stage 1: dry run on the backup copy (real data, nothing sent)
 `npm --prefix backend run whatsapp:dry-run -- --at "2026-11-02T11:00:00+02:00"` reads the `backup` schema of `qfxuejkbnrdszycqxvdx` (last night's copy of production) through `BACKUP_DATABASE_URL`, read-only. It runs the same `dueStepFor()` the endpoints use, for the given moment, against those users and the default step config. It prints the number of users per step and per reason they were skipped (no phone, unconfirmed, opted out, grace period, staff, …), plus up to 10 user ids per step. **It never prints phones and never writes or sends anything.** Run it for a few moments (launch day, launch + 3 days, a holiday) and check the counts make sense before anything is sent.
 
