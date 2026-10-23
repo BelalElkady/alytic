@@ -332,12 +332,15 @@ test('email verification completes over HTTP', async () => {
   const res = await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } });
   assert.equal(res.status, 200);
   assert.equal(res.body.user.emailVerified ?? res.body.user.email_verified, true);
+  const verified = await getUserByEmail(email);
+  assert.ok(verified.email_verified_at, 'confirming starts the trial clock');
 });
 
 test('the free trial stays locked until the email is confirmed', async () => {
   const { cookie } = await registerUser(baseUrl, uniqueEmail(), { verify: false });
   const me = await request(baseUrl, 'GET', '/api/auth/me', { cookie });
-  assert.equal(me.body.user.trialActive, true, 'the clock still runs from signup');
+  assert.equal(me.body.user.trialActive, true, 'an unconfirmed trial is shown as not yet started');
+  assert.equal(me.body.user.trialDaysLeft, me.body.user.trialDaysTotal, 'the clock starts at confirmation, not signup');
   assert.equal(me.body.user.hasAccess, false);
   assert.equal(me.body.user.awaitingEmailVerification, true);
 
