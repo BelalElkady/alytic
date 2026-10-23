@@ -22,7 +22,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listRelatedBlogPosts, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listRelatedBlogPosts, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, listWhatsappMessagesForUsers, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
 import { currentSession, fetchAndSaveInvestorFlows, fetchSlot } from '../investorFlows.js';
 import { TIER_KEYS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, tiersFor, isLocked, WHATSAPP_NUMBER } from '../billing/plans.js';
 import { lockableFeatureFor } from '../billing/features.js';
@@ -65,7 +65,7 @@ import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatfo
 import { mountPlatformRoutes } from './platform.js';
 import { trialInfo } from '../billing/trial.js';
 import { mountWhatsappRoutes } from '../whatsapp/routes.js';
-import { pushStep } from '../whatsapp/service.js';
+import { pushStep, whatsappSummaries } from '../whatsapp/service.js';
 import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFromScanRow, recordRecommendationPrices, trackRecord, HORIZON_BUCKETS, COMPARISONS } from '../recommendations.js';
 
 // Where the public contact form's messages and support-chat alerts land is
@@ -1142,7 +1142,7 @@ app.get('/api/indices/heatmap', analysisLimiter, wrap(async (_req, res) => {
 // WhatsApp / email follow-up boxes — that is their job — and nothing else: no
 // other writes, no support inbox, no blog, no indices. It is an allowlist on
 // purpose, so a new /api/admin route is closed to marketers until someone adds it here.
-const MARKETER_READS = new Set(['GET /users', 'GET /online']);
+const MARKETER_READS = new Set(['GET /users', 'GET /online', 'GET /whatsapp/steps']);
 const isMarketerAllowed = (req) =>
   MARKETER_READS.has(`${req.method} ${req.path}`) || (req.method === 'POST' && /^\/users\/[^/]+\/follow-up$/.test(req.path));
 app.use('/api/admin', (req, res, next) => {
@@ -1494,6 +1494,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     getAllSubscriptions(),
     getAllFollowUps(),
   ]);
+  const whatsappByUser = whatsappSummaries(await listWhatsappMessagesForUsers(users.map((u) => u.id)));
   // The usage/credits figures below live on the User, not the Portfolio
   // blob — getAllUsers reads them in its own query, as each row's `usage`.
   // A User can hold more than one Portfolio (#103); grouped and ordinal-sorted
@@ -1547,6 +1548,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       trialEndsAt: trial.trialEndsAt.toISOString(),
       tier,
       followUp: followUpOf(followUpByUser.get(u.id)),
+      whatsapp: whatsappByUser.get(u.id) ?? null,
       subscription: subscription && {
         plan: subscription.plan,
         tier: subscription.tier,
