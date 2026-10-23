@@ -66,6 +66,7 @@ import {
 import { LockedPage } from "@/components/desk/locked-feature";
 import { PAGE_LABELS, lockFor, pageKeyForPath } from "@/lib/feature-lock";
 import { useDesk } from "@/lib/store";
+import { WHATSAPP_NOTICE } from "@/lib/whatsapp";
 import { useTenant } from "@/lib/tenant";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -325,7 +326,7 @@ function VerifyEmailBanner() {
  * default) until it's filled in, the same way it would have been required
  * at registration.
  */
-function RequirePhoneDialog() {
+export function RequirePhoneDialog() {
   const { user, updatePhone } = useDesk();
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
@@ -374,6 +375,7 @@ function RequirePhoneDialog() {
               أي دولة — اكتب الرقم بكود الدولة (مثال: +966 5x xxx xxxx). الأرقام المصرية تتكتب
               01xxxxxxxxx.
             </p>
+            <p className="text-[12px] text-muted-foreground">{WHATSAPP_NOTICE}</p>
           </div>
           {error && (
             <p role="alert" className="rounded-md bg-down-soft px-3 py-2 text-[13px] text-down">

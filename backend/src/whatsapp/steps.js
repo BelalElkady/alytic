@@ -56,6 +56,16 @@ export const stepParamsSchema = (key) => PARAM_SCHEMAS[key] ?? z.object({});
 /** Template names as WhatsApp Manager allows them. */
 export const TEMPLATE_NAME = /^[a-z0-9_]{1,512}$/;
 
+/**
+ * What the admin page saves for one step. An enabled renewal must say what's
+ * new: Meta rejects an empty template parameter, which would fail the offer
+ * for every lapsed user due in that run.
+ */
+export const stepInputSchema = (key) =>
+  z
+    .object({ enabled: z.boolean(), templateName: z.string().regex(TEMPLATE_NAME), params: stepParamsSchema(key) })
+    .refine((input) => key !== 'renewal' || !input.enabled || input.params.whatsNew.trim().length > 0);
+
 /** The quick-reply buttons on the survey template — an incoming message with one of these texts is an answer. */
 export const SURVEY_ANSWERS = ['السعر', 'مش محتاجه دلوقتي', 'فيه حاجة ناقصة'];
 

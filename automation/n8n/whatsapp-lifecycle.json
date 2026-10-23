@@ -11,7 +11,10 @@
       "name": "Setup",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-40, -380]
+      "position": [
+        -40,
+        -380
+      ]
     },
     {
       "parameters": {
@@ -24,23 +27,37 @@
       "name": "Event Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [440, -160],
+      "position": [
+        440,
+        -160
+      ],
       "webhookId": "5f0c1c9e-7a4b-4c55-8f8e-2f6d1b7a9e11",
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE", "name": "Alytic automation secret" }
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "Alytic automation secret"
+        }
       }
     },
     {
       "parameters": {
         "rule": {
-          "interval": [{ "field": "minutes", "minutesInterval": 30 }]
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
         }
       },
       "id": "0b7f2a51-4d0e-4b43-9a7e-0d3c8d1f0a03",
       "name": "Every 30 min",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 60]
+      "position": [
+        0,
+        60
+      ]
     },
     {
       "parameters": {
@@ -53,9 +70,15 @@
       "name": "Fetch Due",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [220, 60],
+      "position": [
+        220,
+        60
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE", "name": "Alytic automation secret" }
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "Alytic automation secret"
+        }
       }
     },
     {
@@ -67,7 +90,10 @@
       "name": "Split Items",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
-      "position": [440, 60]
+      "position": [
+        440,
+        60
+      ]
     },
     {
       "parameters": {
@@ -93,7 +119,10 @@
       "name": "Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [660, -40]
+      "position": [
+        660,
+        -40
+      ]
     },
     {
       "parameters": {
@@ -104,30 +133,37 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.request) }}",
-        "options": {
-          "batching": { "batch": { "batchSize": 1, "batchInterval": 1000 } }
-        }
+        "options": {}
       },
       "id": "0b7f2a51-4d0e-4b43-9a7e-0d3c8d1f0a07",
       "name": "Send Template",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, -40],
+      "position": [
+        1100,
+        -40
+      ],
       "onError": "continueRegularOutput",
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE", "name": "WhatsApp Cloud API token" }
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "WhatsApp Cloud API token"
+        }
       }
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Turns Meta's answer (or the error n8n kept going past) into the\n// /result body. The messageId comes from the Message node, since the\n// HTTP response replaced this item's JSON.\nconst messageId = $('Message').item.json.messageId;\nconst metaMessageId = $json.messages?.[0]?.id;\nif (metaMessageId) {\n  return { json: { messageId, status: 'sent', metaMessageId } };\n}\nconst error = $json.error?.message ?? $json.error ?? 'no message id in the Graph API response';\nreturn { json: { messageId, status: 'failed', error: String(typeof error === 'string' ? error : JSON.stringify(error)).slice(0, 500) } };"
+        "jsCode": "// Turns Meta's answer (or the error n8n kept going past) into the\n// /result body. The messageId comes from the Loop Items node, since the\n// HTTP response replaced this item's JSON.\nconst messageId = $('Loop Items').item.json.messageId;\nconst metaMessageId = $json.messages?.[0]?.id;\nif (metaMessageId) {\n  return { json: { messageId, status: 'sent', metaMessageId } };\n}\nconst error = $json.error?.message ?? $json.error ?? 'no message id in the Graph API response';\nreturn { json: { messageId, status: 'failed', error: String(typeof error === 'string' ? error : JSON.stringify(error)).slice(0, 500) } };"
       },
       "id": "0b7f2a51-4d0e-4b43-9a7e-0d3c8d1f0a08",
       "name": "Build Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, -40]
+      "position": [
+        1320,
+        -40
+      ]
     },
     {
       "parameters": {
@@ -144,26 +180,40 @@
       "name": "Report Result",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, -40],
+      "position": [
+        1540,
+        -40
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE", "name": "Alytic automation secret" }
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "Alytic automation secret"
+        }
       }
     },
     {
       "parameters": {
-        "updates": ["messages"]
+        "updates": [
+          "messages"
+        ]
       },
       "id": "0b7f2a51-4d0e-4b43-9a7e-0d3c8d1f0a10",
       "name": "WhatsApp Trigger",
       "type": "n8n-nodes-base.whatsAppTrigger",
       "typeVersion": 1,
-      "position": [0, 360],
+      "position": [
+        0,
+        360
+      ],
       "webhookId": "9c3e7b2d-1a6f-4e08-b5d4-3f2a8c6e1d22",
       "credentials": {
-        "whatsAppTriggerApi": { "id": "REPLACE", "name": "WhatsApp app (trigger)" }
+        "whatsAppTriggerApi": {
+          "id": "REPLACE",
+          "name": "WhatsApp app (trigger)"
+        }
       }
     },
     {
@@ -174,7 +224,10 @@
       "name": "Parse Meta Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 360]
+      "position": [
+        220,
+        360
+      ]
     },
     {
       "parameters": {
@@ -191,24 +244,38 @@
       "name": "Report Event",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 360],
+      "position": [
+        440,
+        360
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE", "name": "Alytic automation secret" }
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "Alytic automation secret"
+        }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "c7e1a2b3-5d4f-4e6a-9b8c-0d1e2f3a4b01",
               "leftValue": "={{ $json.reply?.text ?? '' }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
@@ -219,7 +286,10 @@
       "name": "Has Reply?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [660, 360]
+      "position": [
+        660,
+        360
+      ]
     },
     {
       "parameters": {
@@ -236,46 +306,178 @@
       "name": "Send Reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 340],
+      "position": [
+        880,
+        340
+      ],
       "onError": "continueRegularOutput",
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE", "name": "WhatsApp Cloud API token" }
+        "httpHeaderAuth": {
+          "id": "REPLACE",
+          "name": "WhatsApp Cloud API token"
+        }
       }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "0b7f2a51-4d0e-4b43-9a7e-0d3c8d1f0a15",
+      "name": "Loop Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        880,
+        -160
+      ]
     }
   ],
   "connections": {
     "Event Webhook": {
-      "main": [[{ "node": "Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Every 30 min": {
-      "main": [[{ "node": "Fetch Due", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Due": {
-      "main": [[{ "node": "Split Items", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Split Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Split Items": {
-      "main": [[{ "node": "Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Message": {
-      "main": [[{ "node": "Send Template", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Loop Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Send Template": {
-      "main": [[{ "node": "Build Result", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Result": {
-      "main": [[{ "node": "Report Result", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Report Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "WhatsApp Trigger": {
-      "main": [[{ "node": "Parse Meta Event", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Parse Meta Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Meta Event": {
-      "main": [[{ "node": "Report Event", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Report Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Report Event": {
-      "main": [[{ "node": "Has Reply?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Has Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Has Reply?": {
-      "main": [[{ "node": "Send Reply", "type": "main", "index": 0 }], []]
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Loop Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report Result": {
+      "main": [
+        [
+          {
+            "node": "Loop Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
