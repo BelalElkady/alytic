@@ -99,7 +99,9 @@ async function claim({ user, subscription, sent = [], step, cycleKey, steps, now
 
 /** Everything due at `now`, claimed so a second call can't hand it out again. */
 export async function claimDue(now = new Date()) {
-  await failStaleWhatsappMessages(new Date(now.getTime() - 2 * HOUR_MS).toISOString());
+  // Staleness is real elapsed time since the claim (n8n never reported), so it
+  // uses the wall clock even when `now` is moved for a test.
+  await failStaleWhatsappMessages(new Date(Date.now() - 2 * HOUR_MS).toISOString());
   if (!inSendWindow(now)) return [];
   if (!isLiveSending() && allowedPhones().size === 0) return [];
   const steps = await mergedSteps();
