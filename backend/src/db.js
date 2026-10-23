@@ -1665,13 +1665,13 @@ export async function markWhatsappInboundAutoReplied(id) {
   );
 }
 
-/** When this user last got the automatic support-chat pointer, or null. */
-export async function lastAutoReplyAt(userId) {
+/** When this number last got the automatic support-chat pointer, or null. Keyed by phone so numbers with no account are limited too. */
+export async function lastAutoReplyAt(phone) {
   const data = must(
     await supabase
       .from('whatsapp_inbound')
       .select('auto_replied_at')
-      .eq('user_id', userId)
+      .eq('phone', phone)
       .not('auto_replied_at', 'is', null)
       .order('auto_replied_at', { ascending: false })
       .limit(1),

@@ -64,6 +64,7 @@ import { currentTenant, runWithTenant } from '../tenancy/context.js';
 import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
 import { mountPlatformRoutes } from './platform.js';
 import { trialInfo } from '../billing/trial.js';
+import { mountWhatsappRoutes } from '../whatsapp/routes.js';
 import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFromScanRow, recordRecommendationPrices, trackRecord, HORIZON_BUCKETS, COMPARISONS } from '../recommendations.js';
 
 // Where the public contact form's messages and support-chat alerts land is
@@ -634,7 +635,11 @@ app.use('/api', async (req, res, next) => {
     req.path === '/cron/blog-generate' ||
     req.path === '/cron/daily-close' ||
     req.path === '/cron/stop-plan-generate' ||
-    req.path === '/cron/investor-flows'
+    req.path === '/cron/investor-flows' ||
+    // n8n's WhatsApp calls: public paths, protected by WHATSAPP_AUTOMATION_SECRET (see whatsapp/routes.js).
+    req.path === '/automation/whatsapp/due' ||
+    req.path === '/automation/whatsapp/result' ||
+    req.path === '/automation/whatsapp/events'
   ) return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
@@ -1268,6 +1273,10 @@ app.use('/api/platform', (req, res, next) => {
   next();
 });
 mountPlatformRoutes(app, { wrap });
+
+// WhatsApp lifecycle messages: n8n's endpoints, the user's opt-out switch and
+// the admin step settings. See whatsapp/routes.js.
+mountWhatsappRoutes(app, { wrap });
 
 // How subscribers' live prices are doing: oanor on or off, quota used this
 // period, whether they've silently fallen back to TradingView and why. The
