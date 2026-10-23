@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { arDay, exact, int, signed, tone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { STYLE_LABEL, walletCapital, type AdminUserBehavior, type AdminUserRow } from "@/routes/_app.admin";
+import { STATUS_LABEL, STEP_TITLE } from "@/components/admin/whatsapp-tab";
 
 type EditorProps = { row: AdminUserRow; onChanged: () => void; readOnly: boolean };
 
@@ -197,6 +198,30 @@ function Style({ row }: { row: AdminUserRow }) {
   );
 }
 
+// ---------- WhatsApp lifecycle ----------
+
+const offerDate = new Intl.DateTimeFormat("ar-EG", { day: "numeric", month: "long", timeZone: "Africa/Cairo" });
+
+/** The discount this user was offered on WhatsApp and can still claim — what the Admin accepts at Activation. */
+function WhatsappOffer({ row }: { row: AdminUserRow }) {
+  const offer = row.whatsapp?.offer;
+  if (!offer) return null;
+  return (
+    <Badge variant="outline" className="border-up/50 text-up">
+      عرض ساري: خصم {offer.discountPct}٪ لحد {offerDate.format(new Date(offer.expiresAt))}
+    </Badge>
+  );
+}
+
+function WhatsappLast({ row }: { row: AdminUserRow }) {
+  if (!row.whatsapp) return null;
+  return (
+    <p className="text-[12px] text-muted-foreground">
+      آخر رسالة: {STEP_TITLE[row.whatsapp.lastStep] ?? row.whatsapp.lastStep} · {STATUS_LABEL[row.whatsapp.lastStatus] ?? row.whatsapp.lastStatus}
+    </p>
+  );
+}
+
 // ---------- follow-up ----------
 
 export type FollowUpChannel = "whatsapp" | "email";
@@ -341,6 +366,7 @@ function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: 
       <SameNetworkWarning row={row} onOpen={onOpen} />
       <Section title="الاشتراك والرصيد">
         <Renewal row={row} />
+        <WhatsappOffer row={row} />
         <div className="grid gap-3 sm:grid-cols-2">
           <E.Subscription row={row} onChanged={onChanged} readOnly={readOnly} />
           <E.Credits row={row} onChanged={onChanged} readOnly={readOnly} />
@@ -359,6 +385,7 @@ function Detail({ row, p, onOpen }: { row: AdminUserRow; p: Props; onOpen: (id: 
             </label>
           ))}
         </div>
+        <WhatsappLast row={row} />
         <dl className="tabular-nums grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
           <dt className="text-muted-foreground">البريد</dt>
           <dd className="truncate">{row.email}</dd>

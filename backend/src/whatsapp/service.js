@@ -18,6 +18,7 @@ import {
   upsertWhatsappStep,
   whatsappStepCounts,
 } from '../db.js';
+import { PLANS } from '../billing/plans.js';
 import { trialInfo } from '../billing/trial.js';
 import { normalizePhone } from '../phone.js';
 import { currentTenant } from '../tenancy/context.js';
@@ -199,6 +200,8 @@ export async function stepsOverview(now = new Date()) {
     }),
     surveyAnswers: answers,
     liveSending: isLiveSending(),
+    // For the admin page's preview: the plan an offer is on, and its full price.
+    plans: Object.fromEntries(Object.entries(PLANS).map(([key, plan]) => [key, { label: plan.label.split(' — ')[0], priceEgp: plan.priceEgp }])),
   };
 }
 
