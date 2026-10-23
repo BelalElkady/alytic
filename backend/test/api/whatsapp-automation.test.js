@@ -22,6 +22,16 @@ const allow = (phone) => {
   process.env.WHATSAPP_ALLOWED_PHONES = [...allowed].join(',');
 };
 
+// Every step is off by default. Suites share the database, so each one that
+// needs steps switches them on itself; none switches them off.
+await supabase.from('whatsapp_steps').upsert(
+  ['trial_welcome', 'trial_stoploss', 'trial_ending', 'trial_ended', 'paid_welcome', 'survey', 'renewal'].map((key) => ({
+    key,
+    enabled: true,
+    template_name: key,
+  })),
+);
+
 const ctx = await startServer();
 const { baseUrl } = ctx;
 test.after(() => ctx.close());
