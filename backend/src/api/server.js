@@ -70,17 +70,32 @@ import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFr
 // (see tenancy/registry.js). For the original site those come from
 // CONTACT_EMAIL and SUPPORT_NOTIFY_EMAIL in .env, as before.
 
-// Every account is on a 5-trading-day free trial from the moment it's created
-// — the window is derived from users.created_at rather than stored, so there
-// is nothing to reset or backfill. The trial runs in 24-hour slices from the
-// signup moment; a slice that starts on a Friday, Saturday or EGX bank holiday
+// Every account is on a 5-trading-day free trial from the moment its email is
+// confirmed — the window is derived from users.email_verified_at rather than
+// stored, so there is nothing to reset. A user who takes a few days to click
+// the link still gets the whole trial. The trial runs in 24-hour slices from
+// that moment; a slice that starts on a Friday, Saturday or EGX bank holiday
 // (isTradingDay) doesn't count and just pushes the end out by a day, so
-// signing up before a weekend doesn't burn trial days on a closed market.
+// verifying before a weekend doesn't burn trial days on a closed market.
 const TRIAL_DAYS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * When the trial clock started. Takes a session user or a raw users row. An
+ * unconfirmed account's trial hasn't started, so it is shown as starting now
+ * (a full, still-locked trial — see trialUsable). A confirmed account with no
+ * timestamp predates the column and falls back to created_at, which is also
+ * what the column's backfill wrote.
+ */
+function trialStartOf(user) {
+  const verifiedAt = user.emailVerifiedAt ?? user.email_verified_at;
+  if (verifiedAt) return new Date(verifiedAt).getTime();
+  if (user.emailVerified ?? user.email_verified) return new Date(user.createdAt ?? user.created_at).getTime();
+  return Date.now();
+}
+
 function trialInfo(user) {
   const now = Date.now();
-  let sliceStart = new Date(user.createdAt ?? user.created_at).getTime();
+  let sliceStart = trialStartOf(user);
   let counted = 0;
   let daysLeft = 0;
   while (counted < TRIAL_DAYS) {
@@ -157,8 +172,8 @@ async function accessInfo(user) {
   const exempt = !suspended && (Boolean(user.isAdmin) || Boolean(user.isMarketer) || user.id === 'local');
   // The free trial only counts once the email is confirmed: an unconfirmed
   // address costs nothing to invent, so honoring the trial before then would
-  // let anyone mint a fresh one with a throwaway. The clock still runs from
-  // signup (see trialInfo) — this only withholds access until verification.
+  // let anyone mint a fresh one with a throwaway. The clock starts at
+  // confirmation too (see trialInfo), so waiting costs the user nothing.
   // A paid plan or staff account doesn't depend on it.
   const trialUsable = trial.trialActive && Boolean(user.emailVerified);
   // Which set of feature caps (see TIERS in src/billing/plans.js) this
@@ -196,7 +211,8 @@ async function periodStartFor(userId) {
   const user = await getUserById(userId);
   const existing = await getSubscription(userId);
   const candidates = [Date.now()];
-  if (user) candidates.push(trialInfo({ createdAt: user.created_at }).trialEndsAt.getTime());
+  // An unconfirmed account has no trial running, so there is none to credit.
+  if (user?.email_verified) candidates.push(trialInfo(user).trialEndsAt.getTime());
   if (existing) candidates.push(new Date(existing.current_period_end).getTime());
   return new Date(Math.max(...candidates));
 }
@@ -1523,7 +1539,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     const profile = pf ? behaviorProfile(pf, { capital: (pf.cash ?? 0) + positionsValue }) : null;
     const chosenStyle = STYLE_KEYS.includes(pf?.settings?.investStyle) ? pf.settings.investStyle : null;
     const subscription = subscriptionByUser.get(u.id);
-    const trial = trialInfo({ createdAt: u.created_at });
+    const trial = trialInfo(u);
     const subscriptionActive = Boolean(subscription) && new Date(subscription.current_period_end).getTime() > Date.now();
     // Same resolution as accessInfo() for this user's own request — see its
     // comment on why staff/CLI get the top tier rather than a bypass.

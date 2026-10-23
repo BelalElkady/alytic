@@ -918,3 +918,18 @@ where reset_token is not null;
 
 create index if not exists idx_users_verification_token_hash on users(verification_token_hash) where verification_token_hash is not null;
 create index if not exists idx_users_reset_token_hash on users(reset_token_hash) where reset_token_hash is not null;
+
+-- ============================================================
+-- The free trial starts when the email is confirmed
+-- ============================================================
+-- trialInfo (src/api/server.js) counts the 5 trading days from
+-- email_verified_at instead of created_at, so a user who confirms late still
+-- gets the whole trial. Set once, on the first confirmation (verify link,
+-- Google signup or Google link) and never moved. The backfill gives every
+-- already-confirmed account its created_at, so no running trial changes;
+-- unconfirmed accounts stay null until they confirm. Run this before
+-- deploying the code that writes the column. Re-running is a no-op.
+alter table users add column if not exists email_verified_at timestamptz;
+
+update users set email_verified_at = created_at
+where email_verified and email_verified_at is null;

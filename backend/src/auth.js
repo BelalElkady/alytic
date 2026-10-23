@@ -190,6 +190,7 @@ function publicUser(user) {
     phone: user.phone ?? null,
     createdAt: user.created_at ?? user.createdAt,
     emailVerified: Boolean(user.email_verified ?? user.emailVerified),
+    emailVerifiedAt: user.email_verified_at ?? user.emailVerifiedAt ?? null,
     isAdmin: Boolean(user.is_admin ?? user.isAdmin),
     isMarketer: Boolean(user.is_marketer ?? user.isMarketer),
     isSuspended: Boolean(user.is_suspended ?? user.isSuspended),
@@ -426,7 +427,7 @@ export async function verifyEmail({ token }) {
   }
   await markEmailVerified(user.id);
   await sendRegistrationConfirmedEmail(user);
-  return { user: publicUser({ ...user, email_verified: true }) };
+  return { user: publicUser({ ...user, email_verified: true, email_verified_at: new Date().toISOString() }) };
 }
 
 /** Fills in the phone number for an already-signed-in user — the path a Google account (which never collects one) has to take to satisfy the same requirement as a normal registration. */

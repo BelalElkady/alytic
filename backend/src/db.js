@@ -135,6 +135,8 @@ export async function createUser(user) {
   // Only sent when true, so signups keep working on a database that hasn't had
   // the is_marketer column applied yet.
   if (user.isMarketer) row.is_marketer = true;
+  // A Google signup arrives already confirmed, so its trial starts now.
+  if (user.emailVerified) row.email_verified_at = user.createdAt;
   // The User's Portfolio is created by the database, not here: the
   // users_create_primary_portfolio trigger (supabase/schema.sql) inserts it
   // in this same statement, so an account can never exist without one —
@@ -212,7 +214,16 @@ export async function markEmailVerified(id) {
       .eq('id', id),
     'markEmailVerified',
   );
+  await stampEmailVerifiedAt(id);
   forgetSessionUser(id);
+}
+
+/** Starts the trial clock (see trialInfo in api/server.js) the first time an address is confirmed; a later re-confirmation never moves it. */
+async function stampEmailVerifiedAt(id) {
+  must(
+    await supabase.from('users').update({ email_verified_at: new Date().toISOString() }).eq('id', id).is('email_verified_at', null),
+    'stampEmailVerifiedAt',
+  );
 }
 
 /** Attaches a Google account to an existing email/password user (same email on both). Google already confirmed the address. */
@@ -221,6 +232,7 @@ export async function linkGoogleAccount(id, googleId) {
     await supabase.from('users').update({ google_id: googleId, email_verified: true }).eq('id', id),
     'linkGoogleAccount',
   );
+  await stampEmailVerifiedAt(id);
   forgetSessionUser(id);
 }
 
@@ -878,7 +890,7 @@ export async function getAllUsers() {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('users')
-      .select(`id, email, name, phone, is_admin, is_marketer, is_suspended, suspension_message, email_verified, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
+      .select(`id, email, name, phone, is_admin, is_marketer, is_suspended, suspension_message, email_verified, email_verified_at, google_id, created_at, last_login_at, last_seen_at, signup_ip, last_login_ip, ${USER_USAGE_COLUMNS}`)
       .order('created_at', { ascending: false })
       .order('id')
       .range(from, from + 999);
