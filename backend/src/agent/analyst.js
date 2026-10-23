@@ -15,6 +15,7 @@ import { MODEL_CHAIN, requestStructuredOR } from './clientOpenRouter.js';
 import { PortfolioReviewSchema, StockVerdictSchema } from './schemas.js';
 import { analystSystemPrompt } from './prompts/system.js';
 import { crossCheckIndicators } from './crosscheck.js';
+import { attachRuleChecks } from './ruleCheck.js';
 import RULES from '../config/rules.js';
 import { portfolioStructure, portfolioClassificationSummary } from '../scoring/portfolio.js';
 import { DEFAULT_STYLE } from '../config/styles.js';
@@ -592,7 +593,11 @@ Remember: these numbers are final — judge them, do not recompute them.`;
 
   // Every holding was sent to the model; quietVerdict only covers one it
   // skipped, so no card is left without a verdict. reviewDepth tells them apart.
-  const aiVerdicts = (data.verdicts ?? []).map((v) => ({ ...v, reviewDepth: v.reviewDepth ?? 'full' }));
+  const aiVerdicts = attachRuleChecks(
+    (data.verdicts ?? []).map((v) => ({ ...v, reviewDepth: v.reviewDepth ?? 'full' })),
+    held,
+    'portfolio_review',
+  );
   const aiCodes = new Set(aiVerdicts.map((v) => v.code));
   const weightOf = new Map(structure.weights.map((w) => [w.code, w]));
   const localVerdicts = quietHeld
@@ -725,7 +730,8 @@ Give me the verdict for ${code}. Remember: these numbers are final — judge the
     feature: 'stock_review',
   });
 
-  return { ...data, code, reviewDepth: 'full', _meta: { model: raw.model, asOf: target.asOf ?? null, usage: raw.usage } };
+  const [verdict] = attachRuleChecks([{ ...data, code, reviewDepth: 'full' }], [target], 'stock_review');
+  return { ...verdict, _meta: { model: raw.model, asOf: target.asOf ?? null, usage: raw.usage } };
 }
 
 /**
