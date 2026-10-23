@@ -196,6 +196,9 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
                       <p className="text-[12px] text-muted-foreground">
                         أي دولة — اكتب الرقم بكود الدولة (مثال: +966 5x xxx xxxx). الأرقام المصرية تتكتب 01xxxxxxxxx.
                       </p>
+                      <p className="text-[12px] text-muted-foreground">
+                        هنبعتلك على واتساب رسايل عن حسابك وتجربتك. تقدر توقفها في أي وقت.
+                      </p>
                     </div>
                   )}
                   <div className="space-y-1.5">

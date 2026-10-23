@@ -1,12 +1,12 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ api: vi.fn() }));
+const mocks = vi.hoisted(() => ({ api: vi.fn(), patch: vi.fn() }));
 
 vi.mock("./api", () => ({
     api: mocks.api,
     post: vi.fn().mockResolvedValue({}),
-    patch: vi.fn().mockResolvedValue({}),
+    patch: mocks.patch,
     del: vi.fn().mockResolvedValue({}),
     ApiError: class extends Error {
         status: number;
@@ -74,5 +74,37 @@ describe("DeskProvider portfolio summary refresh", () => {
             await desk?.reloadPortfolio();
         });
         expect(mocks.api).toHaveBeenCalledWith("/api/portfolios");
+    });
+});
+describe("DeskProvider WhatsApp switch", () => {
+    beforeEach(() => {
+        desk = undefined;
+        mocks.api.mockReset();
+        mocks.patch.mockReset();
+        mocks.api.mockImplementation(async (path: string) => {
+            if (path === "/api/auth/me") return { user: { email: "wa@test.local", hasAccess: true, tier: "trader", whatsappEnabled: true } };
+            if (path === "/api/universe") return { stocks: [], aiAvailable: false };
+            if (path === "/api/indices") return { indices: {} };
+            if (path === "/api/portfolio") return { positions: {}, cash: 1000, settings: { investStyle: "medium" }, trades: [] };
+            if (path === "/api/portfolios") return { portfolios: savedPortfolios, activePortfolioId: 1, cap: 3 };
+            if (path === "/api/log") return { log: {} };
+            throw new Error(`Unexpected API request: ${path}`);
+        });
+        mocks.patch.mockResolvedValue({ whatsappEnabled: false });
+    });
+
+    it("turning WhatsApp off saves it and updates the user", async () => {
+        render(
+            <DeskProvider>
+                <CaptureDesk />
+            </DeskProvider>,
+        );
+        await waitFor(() => expect(desk?.user?.whatsappEnabled).toBe(true));
+
+        await act(async () => {
+            await desk?.setWhatsappEnabled(false);
+        });
+        expect(mocks.patch).toHaveBeenCalledWith("/api/account/whatsapp", { enabled: false });
+        expect(desk?.user?.whatsappEnabled).toBe(false);
     });
 });

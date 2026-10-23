@@ -103,6 +103,8 @@ export type User = {
   email: string;
   phone?: string | null;
   emailVerified?: boolean;
+  /** Lifecycle messages on WhatsApp; on unless the user switched them off (or replied "إيقاف"). */
+  whatsappEnabled?: boolean;
   isAdmin?: boolean;
   /** Read-only view of the admin users table and nothing else (see backend MARKETER_READS). */
   isMarketer?: boolean;
@@ -181,6 +183,7 @@ type DeskValue = {
   markEmailVerified: () => void;
   updatePhone: (phone: string) => Promise<void>;
   updateName: (name: string) => Promise<void>;
+  setWhatsappEnabled: (enabled: boolean) => Promise<void>;
   refreshUser: () => Promise<User | null>;
   pf: Portfolio;
   rows: Row[];
@@ -714,6 +717,11 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  const setWhatsappEnabled = useCallback(async (enabled: boolean) => {
+    const result = await patchRequest<{ whatsappEnabled: boolean }>("/api/account/whatsapp", { enabled });
+    setUser((previous) => (previous ? { ...previous, whatsappEnabled: result.whatsappEnabled } : previous));
+  }, []);
+
   // Persists the choice under the same key activePortfolioHeader() reads, so
   // every subsequent request (including this reload) is scoped to it.
   //
@@ -821,6 +829,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     markEmailVerified,
     updatePhone,
     updateName,
+    setWhatsappEnabled,
     refreshUser,
     pf,
     rows,
