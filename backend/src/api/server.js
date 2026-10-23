@@ -3279,23 +3279,15 @@ app.post('/api/snapshot', wrap(async (req, res) => {
 
 /**
  * Run at 14:30 Cairo by startDailyCloseScheduler() below, and as a backup by
- * both .github/workflows/daily-close-cron.yml (over the VPS's loopback
- * interface, same pattern as /api/cron/blog-generate) and an external cron
- * pinger hitting this route's public URL directly — GitHub Actions' own
- * `schedule` trigger has silently skipped whole days (see the comment above
- * that workflow's cron block), so a second, independently-hosted backup
- * covers the case where GitHub drops the run entirely rather than just
- * running it late. The external pinger is gated by the same X-Cron-Secret
- * check below, same as the other two callers.
- * GitHub Actions cron is UTC-only and Cairo alternates between EET (UTC+2)
- * and EEST (UTC+3) across the year, so that workflow fires at both possible
- * UTC times for 14:30 Cairo and this endpoint no-ops if the session hasn't
- * closed yet in Cairo — that keeps the trigger correct across DST without the
- * workflow's cron schedule needing manual updates twice a year. There's no
- * upper bound: GitHub routinely starts scheduled runs 30-60+ minutes late, and
- * a narrow window around 14:30 turned those late runs into silent no-ops.
- * Re-running later the same day just overwrites today's entry with the same
- * closing prices.
+ * an external cron pinger hitting this route's public URL, gated by the
+ * X-Cron-Secret check below. A GitHub Actions workflow used to be a second
+ * backup; it was removed in October 2026: GitHub started its scheduled runs
+ * hours late or dropped them, it failed every run for weeks without a close
+ * going missing, and it cost a fifth of the repo's Actions minutes.
+ * The endpoint no-ops if the session hasn't closed yet in Cairo, and has no
+ * upper bound, so a caller on a UTC clock or running late is still correct
+ * across DST. Re-running later the same day just overwrites today's entry
+ * with the same closing prices.
  * Snapshots every user with open positions, the same as each of them
  * clicking "سجّل إغلاق اليوم" used to. Skipped on Fridays, Saturdays and
  * EGX bank holidays — there's no session, so no close to record.
@@ -3313,9 +3305,9 @@ app.post('/api/cron/daily-close', cronLimiter, wrap(async (req, res) => {
   if (!safeEqual(req.get('X-Cron-Secret'), DAILY_CLOSE_CRON_SECRET)) {
     return res.status(403).json({ error: 'forbidden' });
   }
-  // `force` is what a hand-started run of the workflow sends: it skips the
-  // holiday and 14:30 checks, same as the admin button below. The scheduled
-  // runs never send it, so a real holiday still records nothing.
+  // `force` skips the holiday and 14:30 checks, same as the admin button
+  // below. Scheduled callers never send it, so a real holiday still records
+  // nothing.
   res.json(await runDailyCloseForAllSites({ force: req.body?.force === true }));
 }));
 
@@ -3421,9 +3413,9 @@ async function runDailyClose({ force = false } = {}) {
 /**
  * The primary 14:30 trigger, running inside this long-lived process. GitHub's
  * scheduled runs can't be trusted with the time: on 2026-09-14 both 14:30 runs
- * were dropped and the first backup started at 20:00 Cairo. The workflow stays
- * as a backup — a later run just overwrites today's entry with the same
- * closing prices. Checks the Cairo clock every 30 seconds, so it's DST-proof
+ * were dropped and the first backup started at 20:00 Cairo. The external cron
+ * pinger is the backup now — a later run just overwrites today's entry with
+ * the same closing prices. Checks the Cairo clock every 30 seconds, so it's DST-proof
  * the same way the endpoint is. Only the in-memory date guards against a
  * second run, so a restart after 14:30 on a trading day records once more;
  * that is the same harmless overwrite as a backup run.
