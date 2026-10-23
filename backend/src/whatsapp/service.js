@@ -14,6 +14,9 @@ import {
   setWhatsappMessageResult,
   setWhatsappOptOut,
   setWhatsappStatusByMetaId,
+  surveyAnswerCounts,
+  upsertWhatsappStep,
+  whatsappStepCounts,
 } from '../db.js';
 import { trialInfo } from '../billing/trial.js';
 import { normalizePhone } from '../phone.js';
@@ -156,6 +159,56 @@ export async function pushStep(userId, step) {
     throw err;
   }
 }
+
+/** Where each offer step put its discount in the template params (see render.js). */
+const DISCOUNT_PARAM = { trial_ending: 2, trial_ended: 1, renewal: 3 };
+
+/**
+ * Per user, for the admin users list: the last step sent and its status, and
+ * the offer still running (so the Admin accepts the lower amount at
+ * Activation). `messages` is listWhatsappMessagesForUsers' output, newest first.
+ */
+export function whatsappSummaries(messages, now = new Date()) {
+  const byUser = new Map();
+  for (const row of messages) {
+    let summary = byUser.get(row.user_id);
+    if (!summary) {
+      summary = { lastStep: row.step, lastStatus: row.status, offer: null };
+      byUser.set(row.user_id, summary);
+    }
+    const expires = row.offer_expires_at ? new Date(row.offer_expires_at) : null;
+    if (!summary.offer && expires && expires.getTime() > now.getTime() && row.status !== 'failed') {
+      summary.offer = { discountPct: Number(row.rendered_params?.[DISCOUNT_PARAM[row.step]] ?? 0), expiresAt: expires.toISOString() };
+    }
+  }
+  return byUser;
+}
+
+/** The admin page's data: each step's settings with its 30-day counts, and the survey answers. */
+export async function stepsOverview(now = new Date()) {
+  const [steps, counts, answers] = await Promise.all([
+    mergedSteps(),
+    whatsappStepCounts(new Date(now.getTime() - 30 * 24 * HOUR_MS).toISOString()),
+    surveyAnswerCounts(SURVEY_ANSWERS),
+  ]);
+  return {
+    steps: STEP_KEYS.map((key) => {
+      const tally = { sent: 0, delivered: 0, read: 0, failed: 0 };
+      for (const row of counts) if (row.step === key && row.status in tally) tally[row.status] = row.count;
+      return { key, ...steps[key], counts: tally };
+    }),
+    surveyAnswers: answers,
+    liveSending: isLiveSending(),
+  };
+}
+
+/** Saves an Admin's change to one step; `input` is already validated by the route. */
+export async function saveStep(key, { enabled, templateName, params }, updatedBy) {
+  await upsertWhatsappStep({ key, enabled, templateName, params, updatedBy });
+  return { key, ...(await mergedSteps())[key] };
+}
+
+export const setWhatsappEnabled = (userId, enabled) => setWhatsappOptOut(userId, !enabled);
 
 export function recordResult({ messageId, status, metaMessageId, error }) {
   return setWhatsappMessageResult(messageId, { status, metaMessageId, error });

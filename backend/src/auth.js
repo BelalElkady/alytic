@@ -191,6 +191,7 @@ function publicUser(user) {
     createdAt: user.created_at ?? user.createdAt,
     emailVerified: Boolean(user.email_verified ?? user.emailVerified),
     emailVerifiedAt: user.email_verified_at ?? user.emailVerifiedAt ?? null,
+    whatsappEnabled: !(user.whatsapp_opt_out_at ?? user.whatsappOptOutAt),
     isAdmin: Boolean(user.is_admin ?? user.isAdmin),
     isMarketer: Boolean(user.is_marketer ?? user.isMarketer),
     isSuspended: Boolean(user.is_suspended ?? user.isSuspended),

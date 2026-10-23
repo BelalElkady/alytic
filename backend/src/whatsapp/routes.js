@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
 import { safeEqual } from '../security.js';
-import { claimDue, handleMetaEvent, isLiveSending, isSendingTenant, recordResult } from './service.js';
+import { claimDue, handleMetaEvent, isLiveSending, isSendingTenant, recordResult, saveStep, setWhatsappEnabled, stepsOverview } from './service.js';
+import { STEP_KEYS, TEMPLATE_NAME, stepParamsSchema } from './steps.js';
 
 /**
  * The WhatsApp lifecycle routes. The /api/automation/whatsapp/* paths are on
@@ -33,6 +34,15 @@ const eventSchema = z.discriminatedUnion('type', [
 ]);
 
 const BAD_BODY = 'بيانات الطلب مش صحيحة';
+
+const switchSchema = z.object({ enabled: z.boolean() });
+
+const stepSchema = (key) =>
+  z.object({
+    enabled: z.boolean(),
+    templateName: z.string().regex(TEMPLATE_NAME),
+    params: stepParamsSchema(key),
+  });
 
 /** n8n's bearer secret. Answers 401 for anything else, including an unset secret. */
 function automationOnly(req, res, next) {
@@ -68,5 +78,27 @@ export function mountWhatsappRoutes(app, { wrap }) {
     if (!parsed.success) return res.status(400).json({ error: BAD_BODY });
     if (!isSendingTenant(req.tenant)) return res.json({});
     res.json(await handleMetaEvent(parsed.data, clockOf(req)));
+  }));
+
+  // The user's own switch in settings. Never behind the paywall: stopping
+  // messages must work for a lapsed account too.
+  app.patch('/api/account/whatsapp', wrap(async (req, res) => {
+    const parsed = switchSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'اختار تشغيل أو إيقاف الرسايل' });
+    await setWhatsappEnabled(req.user.id, parsed.data.enabled);
+    res.json({ whatsappEnabled: parsed.data.enabled });
+  }));
+
+  // The admin page. GET is on MARKETER_READS in server.js; PUT is Admins only.
+  app.get('/api/admin/whatsapp/steps', wrap(async (_req, res) => {
+    res.json(await stepsOverview());
+  }));
+
+  app.put('/api/admin/whatsapp/steps/:key', wrap(async (req, res) => {
+    const { key } = req.params;
+    if (!STEP_KEYS.includes(key)) return res.status(404).json({ error: 'الخطوة دي مش موجودة' });
+    const parsed = stepSchema(key).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'بيانات الخطوة مش صحيحة' });
+    res.json({ step: await saveStep(key, parsed.data, req.user.id) });
   }));
 }
