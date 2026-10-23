@@ -65,6 +65,7 @@ import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatfo
 import { mountPlatformRoutes } from './platform.js';
 import { trialInfo } from '../billing/trial.js';
 import { mountWhatsappRoutes } from '../whatsapp/routes.js';
+import { pushStep } from '../whatsapp/service.js';
 import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFromScanRow, recordRecommendationPrices, trackRecord, HORIZON_BUCKETS, COMPARISONS } from '../recommendations.js';
 
 // Where the public contact form's messages and support-chat alerts land is
@@ -287,6 +288,14 @@ const wrap = (fn) => (req, res) => runWithTenant(req.tenant ?? currentTenant() ?
   res.status(status).json({ error: message });
 });
 
+/** Fires a WhatsApp event step without holding up the response; a failure is logged, never shown to the user. */
+const pushWhatsappStep = (userId, step) => {
+  pushStep(userId, step).catch((err) => {
+    console.error(`whatsapp push ${step} failed:`, err.message);
+    Sentry.captureException(err);
+  });
+};
+
 /**
  * The caller's address as recorded on the users table (signup_ip /
  * last_login_ip). With 'trust proxy' set above this is the real client behind
@@ -323,6 +332,7 @@ app.post('/api/auth/google', loginLimiter, wrap(async (req, res) => {
 
 app.post('/api/auth/verify', loginLimiter, wrap(async (req, res) => {
   const result = await verifyEmail(req.body ?? {});
+  pushWhatsappStep(result.user.id, 'trial_welcome');
   res.json(result);
 }));
 
@@ -955,6 +965,7 @@ app.post('/api/support/messages/image', chatLimiter, express.raw({ type: SUPPORT
 // gated behind a session.
 app.post('/api/account/phone', wrap(async (req, res) => {
   const result = await updatePhone({ userId: req.user.id, phone: req.body?.phone });
+  pushWhatsappStep(req.user.id, 'trial_welcome');
   res.json({ user: result.user });
 }));
 
@@ -1695,6 +1706,7 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
     action: 'grant',
     grantedBy: req.user.id,
   });
+  pushWhatsappStep(target.id, 'paid_welcome');
   res.json({ ok: true, subscription: { plan: plan?.key ?? 'custom', tier, currentPeriodEnd: currentPeriodEnd.toISOString(), active: true } });
 }));
 

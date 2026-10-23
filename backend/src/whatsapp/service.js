@@ -1,10 +1,13 @@
 import {
   failStaleWhatsappMessages,
+  getSubscription,
+  getUserById,
   getUserByPhone,
   getWhatsappSteps,
   insertWhatsappInbound,
   insertWhatsappMessage,
   lastAutoReplyAt,
+  listSubscriptionGrants,
   listWhatsappCandidates,
   markWhatsappFollowUpIfEmpty,
   markWhatsappInboundAutoReplied,
@@ -12,9 +15,11 @@ import {
   setWhatsappOptOut,
   setWhatsappStatusByMetaId,
 } from '../db.js';
+import { trialInfo } from '../billing/trial.js';
 import { normalizePhone } from '../phone.js';
+import { currentTenant } from '../tenancy/context.js';
 import { defaultTenant } from '../tenancy/registry.js';
-import { dueStepFor } from './eligibility.js';
+import { dueStepFor, isEligible } from './eligibility.js';
 import { buildRequest } from './render.js';
 import { DEFAULT_STEPS, STEP_KEYS, SURVEY_ANSWERS, inSendWindow, isStopWord } from './steps.js';
 
@@ -113,6 +118,43 @@ export async function claimStep({ user, subscription, step, now = new Date() }) 
   const steps = await mergedSteps();
   if (!steps[step]?.enabled) return null;
   return claim({ user, subscription, step, cycleKey: '', steps, now });
+}
+
+/**
+ * Pushes an event step (trial_welcome, paid_welcome) to n8n's webhook right
+ * away. Callers fire and forget: it never throws into a user's request. A push
+ * n8n refuses is marked failed and not retried — a missed welcome beats a
+ * double one.
+ */
+export async function pushStep(userId, step) {
+  const url = process.env.N8N_WHATSAPP_WEBHOOK_URL;
+  if (!url || !launchAt() || !isSendingTenant(currentTenant())) return;
+  const user = await getUserById(userId);
+  if (!user || isEligible(user)) return;
+  const subscription = await getSubscription(userId);
+
+  if (step === 'trial_welcome') {
+    // Only while the trial runs: a user who adds a phone months later is not "new".
+    if (subscription || !trialInfo(user).trialActive) return;
+  } else if (step === 'paid_welcome') {
+    const grants = await listSubscriptionGrants(userId, { limit: 5 });
+    if (!subscription || grants.filter((g) => g.action === 'grant').length > 1) return;
+  }
+
+  const item = await claimStep({ user, subscription, step });
+  if (!item) return;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.WHATSAPP_AUTOMATION_SECRET ?? ''}` },
+      body: JSON.stringify(item),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`n8n answered ${res.status}`);
+  } catch (err) {
+    await recordResult({ messageId: item.messageId, status: 'failed', error: `push: ${err.message}` });
+    throw err;
+  }
 }
 
 export function recordResult({ messageId, status, metaMessageId, error }) {
