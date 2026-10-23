@@ -217,7 +217,7 @@ The backend runs against the test project (`public` schema) with `WHATSAPP_ALLOW
 
 1. Merge PR #196 (the trial clock).
 2. Testing stages 1 and 2 above pass.
-3. Apply the schema to production, then deploy the backend with every step `enabled = false`.
+3. Apply the trial-clock and WhatsApp blocks of `schema.sql` to **every tenant database** (production and each white-label client, see `WHITE-LABEL.md`) and the test project, **before merging**: a merge to `main` deploys at once, and the code reads the new columns and tables on every site. Every step ships `enabled = false`.
 4. Meta setup and template approval. Import the n8n workflow and point it at production.
 5. Publish the announcement and set `WHATSAPP_LAUNCH_AT`.
 6. Enable `trial_welcome` and `paid_welcome` first, watch delivery for a few days, then enable the rest.

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Separator } from "@/components/ui/separator";
 import { useDesk } from "@/lib/store";
+import { WHATSAPP_NOTICE } from "@/lib/whatsapp";
 import { useTenant } from "@/lib/tenant";
 
 const PERKS = [
@@ -196,9 +197,7 @@ export function AuthScreen({ initialMode = "login" }: { initialMode?: "login" | 
                       <p className="text-[12px] text-muted-foreground">
                         أي دولة — اكتب الرقم بكود الدولة (مثال: +966 5x xxx xxxx). الأرقام المصرية تتكتب 01xxxxxxxxx.
                       </p>
-                      <p className="text-[12px] text-muted-foreground">
-                        هنبعتلك على واتساب رسايل عن حسابك وتجربتك. تقدر توقفها في أي وقت.
-                      </p>
+                      <p className="text-[12px] text-muted-foreground">{WHATSAPP_NOTICE}</p>
                     </div>
                   )}
                   <div className="space-y-1.5">

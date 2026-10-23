@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DEFAULT_STEPS, inSendWindow, isStopWord, stepParamsSchema } from '../../src/whatsapp/steps.js';
-import { dueStepFor, isEligible } from '../../src/whatsapp/eligibility.js';
+import { DEFAULT_STEPS, inSendWindow, isStopWord, stepInputSchema, stepParamsSchema } from '../../src/whatsapp/steps.js';
+import { dueStepFor, isEligible, launchGate } from '../../src/whatsapp/eligibility.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const at = (iso) => new Date(iso);
@@ -122,4 +122,26 @@ test('offer params are validated per step', () => {
   assert.equal(stepParamsSchema('trial_ending').safeParse({ discountPct: 95, validDays: 3, plan: 'long_yearly' }).success, false);
   assert.equal(stepParamsSchema('trial_ending').safeParse({ discountPct: 20, validDays: 3, plan: 'gold' }).success, false);
   assert.equal(stepParamsSchema('renewal').safeParse({ discountPct: 20, validDays: 7, plan: 'long_yearly', whatsNew: 'سطر\nتاني' }).success, false);
+});
+
+test('launchGate holds back everything before launch and old users during the grace period', () => {
+  const launchAt = at('2026-10-21T10:00:00+03:00');
+  const old = user({ created_at: '2026-09-01T00:00:00Z' });
+  assert.equal(launchGate(user(), null, at('2026-10-22T12:00:00+03:00')), 'not_launched');
+  assert.equal(launchGate(user(), launchAt, at('2026-10-20T12:00:00+03:00')), 'not_launched', 'a launch time in the future has not launched yet');
+  assert.equal(launchGate(old, launchAt, at('2026-10-22T12:00:00+03:00')), 'grace');
+  assert.equal(launchGate(old, launchAt, at('2026-10-25T12:00:00+03:00')), null);
+  assert.equal(launchGate(user(), launchAt, at('2026-10-22T12:00:00+03:00')), null);
+});
+
+test('dueStepFor sends nothing while launch is still in the future', () => {
+  assert.deepEqual(due({ launchAt: at('2026-12-01T10:00:00+02:00') }), { skip: 'not_launched' });
+});
+
+test('an enabled renewal needs its whatsNew text; a disabled one may leave it empty', () => {
+  const params = { discountPct: 20, validDays: 7, plan: 'long_yearly', whatsNew: '' };
+  assert.equal(stepInputSchema('renewal').safeParse({ enabled: true, templateName: 'renewal', params }).success, false);
+  assert.equal(stepInputSchema('renewal').safeParse({ enabled: false, templateName: 'renewal', params }).success, true);
+  assert.equal(stepInputSchema('renewal').safeParse({ enabled: true, templateName: 'renewal', params: { ...params, whatsNew: 'محافظ متعددة' } }).success, true);
+  assert.equal(stepInputSchema('trial_ending').safeParse({ enabled: true, templateName: 'Trial Ending', params: { discountPct: 0, validDays: 3, plan: 'long_yearly' } }).success, false);
 });

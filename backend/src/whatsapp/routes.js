@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { safeEqual } from '../security.js';
 import { claimDue, handleMetaEvent, isLiveSending, isSendingTenant, recordResult, saveStep, setWhatsappEnabled, stepsOverview } from './service.js';
-import { STEP_KEYS, TEMPLATE_NAME, stepParamsSchema } from './steps.js';
+import { STEP_KEYS, stepInputSchema } from './steps.js';
 
 /**
  * The WhatsApp lifecycle routes. The /api/automation/whatsapp/* paths are on
@@ -37,12 +37,6 @@ const BAD_BODY = 'بيانات الطلب مش صحيحة';
 
 const switchSchema = z.object({ enabled: z.boolean() });
 
-const stepSchema = (key) =>
-  z.object({
-    enabled: z.boolean(),
-    templateName: z.string().regex(TEMPLATE_NAME),
-    params: stepParamsSchema(key),
-  });
 
 /** n8n's bearer secret. Answers 401 for anything else, including an unset secret. */
 function automationOnly(req, res, next) {
@@ -97,8 +91,11 @@ export function mountWhatsappRoutes(app, { wrap }) {
   app.put('/api/admin/whatsapp/steps/:key', wrap(async (req, res) => {
     const { key } = req.params;
     if (!STEP_KEYS.includes(key)) return res.status(404).json({ error: 'الخطوة دي مش موجودة' });
-    const parsed = stepSchema(key).safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'بيانات الخطوة مش صحيحة' });
+    const parsed = stepInputSchema(key).safeParse(req.body);
+    if (!parsed.success) {
+      const emptyNews = key === 'renewal' && req.body?.enabled === true && !String(req.body?.params?.whatsNew ?? '').trim();
+      return res.status(400).json({ error: emptyNews ? 'اكتب الجديد من آخر مرة قبل ما تشغّل عرض التجديد' : 'بيانات الخطوة مش صحيحة' });
+    }
     res.json({ step: await saveStep(key, parsed.data, req.user.id) });
   }));
 }

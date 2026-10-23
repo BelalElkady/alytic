@@ -8,7 +8,7 @@ Delivers EGXpert's WhatsApp lifecycle messages. The backend decides who gets whi
 
 ```
 Event Webhook ─────────────────────────┐
-Every 30 min → Fetch Due → Split Items ┴→ Message → Send Template → Build Result → Report Result
+Every 30 min → Fetch Due → Split Items ┴→ Message → Loop Items ⇄ (Send Template → Build Result → Report Result)
 WhatsApp Trigger → Parse Meta Event → Report Event → Has Reply? → Send Reply
 ```
 
@@ -31,7 +31,7 @@ WhatsApp Trigger → Parse Meta Event → Report Event → Has Reply? → Send R
 
 ### Behaviour worth knowing
 
-- **Send Template** sends one message per second and keeps going if one fails. The failure is reported to the backend as `failed` and isn't retried; the backend never re-sends a step.
+- Messages go out one at a time through **Loop Items**: each is sent and reported to the backend before the next, so Meta's delivery updates always find their message. A failed send keeps the loop going. The failure is reported to the backend as `failed` and isn't retried; the backend never re-sends a step.
 - The schedule fires every 30 minutes, all day. The backend returns an empty list outside 10:00–21:00 Cairo time, so nothing goes out at night.
 - Every incoming WhatsApp message goes to the backend. Its answer decides whether to reply (opt-out confirmation, support chat pointer, survey thanks).
 

@@ -23,7 +23,7 @@ import { trialInfo } from '../billing/trial.js';
 import { normalizePhone } from '../phone.js';
 import { currentTenant } from '../tenancy/context.js';
 import { defaultTenant } from '../tenancy/registry.js';
-import { dueStepFor, isEligible } from './eligibility.js';
+import { dueStepFor, isEligible, launchGate } from './eligibility.js';
 import { buildRequest } from './render.js';
 import { DEFAULT_STEPS, STEP_KEYS, SURVEY_ANSWERS, inSendWindow, isStopWord } from './steps.js';
 
@@ -132,9 +132,9 @@ export async function claimStep({ user, subscription, step, now = new Date() }) 
  */
 export async function pushStep(userId, step) {
   const url = process.env.N8N_WHATSAPP_WEBHOOK_URL;
-  if (!url || !launchAt() || !isSendingTenant(currentTenant())) return;
+  if (!url || !isSendingTenant(currentTenant())) return;
   const user = await getUserById(userId);
-  if (!user || isEligible(user)) return;
+  if (!user || isEligible(user) || launchGate(user, launchAt(), new Date())) return;
   const subscription = await getSubscription(userId);
 
   if (step === 'trial_welcome') {

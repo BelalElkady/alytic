@@ -20,6 +20,18 @@ export function isEligible(user) {
   return null;
 }
 
+/**
+ * The launch rules every step obeys, scheduled or pushed: nothing before
+ * WHATSAPP_LAUNCH_AT, and a user who signed up before it waits GRACE_DAYS
+ * (the announcement's window to switch messages off). Null when clear.
+ */
+export function launchGate(user, launchAt, now) {
+  if (!launchAt || now.getTime() < launchAt.getTime()) return 'not_launched';
+  const createdAt = new Date(pick(user, 'createdAt', 'created_at')).getTime();
+  if (createdAt < launchAt.getTime() && now.getTime() < launchAt.getTime() + GRACE_DAYS * DAY_MS) return 'grace';
+  return null;
+}
+
 /** The trial step due right now (the latest one whose time has come), or a reason there is none. */
 function trialStepDue(user, now) {
   const trial = trialInfo(user, now.getTime());
@@ -43,12 +55,11 @@ function trialStepDue(user, now) {
  * paid_welcome is never returned — it is pushed on Activation.
  */
 export function dueStepFor({ user, subscription, sent, steps, launchAt, now }) {
-  if (!launchAt) return { skip: 'not_launched' };
+  if (!launchAt || now.getTime() < launchAt.getTime()) return { skip: 'not_launched' };
   const ineligible = isEligible(user);
   if (ineligible) return { skip: ineligible };
-
-  const createdAt = new Date(pick(user, 'createdAt', 'created_at')).getTime();
-  if (createdAt < launchAt.getTime() && now.getTime() < launchAt.getTime() + GRACE_DAYS * DAY_MS) return { skip: 'grace' };
+  const held = launchGate(user, launchAt, now);
+  if (held) return { skip: held };
 
   let step;
   let cycleKey = '';
