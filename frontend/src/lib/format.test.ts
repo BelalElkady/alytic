@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { arDay, clamp, fmt, int, isoDay, pct, signed, tone } from "./format";
+import { arDay, cairoDay, clamp, fmt, int, isoDay, pct, signed, tone } from "./format";
 
 describe("fmt", () => {
   it("shows up to 3 decimals exactly, without padding", () => {
@@ -79,6 +79,12 @@ describe("tone", () => {
 describe("isoDay / arDay", () => {
   it("isoDay gives YYYY-MM-DD", () => {
     expect(isoDay(new Date("2026-02-15T10:00:00Z"))).toBe("2026-02-15");
+  });
+
+  it("cairoDay is the Cairo date whatever the machine's timezone", () => {
+    // 22:30 UTC is already the next day in Cairo (UTC+2 or +3).
+    expect(cairoDay(Date.parse("2026-10-21T22:30:00Z"))).toBe("2026-10-22");
+    expect(cairoDay(Date.parse("2026-02-15T10:00:00Z"))).toBe("2026-02-15");
   });
 
   it("arDay formats a Cairo-readable date", () => {

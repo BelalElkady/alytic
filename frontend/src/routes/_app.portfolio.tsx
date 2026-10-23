@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApiError, api, post } from "@/lib/api";
-import { arDay, fmt, int, pct, signed, tone } from "@/lib/format";
+import { arDay, cairoDay, fmt, int, pct, signed, tone } from "@/lib/format";
 import { STYLE_RULES, styleRecommendation, useActiveInvestStyle, type StyleKey } from "@/lib/invest-style";
 import { POSITION_SORT_OPTIONS, sortPositions, usePositionSort, type PositionSortKey } from "@/lib/position-sort";
 import { siteName, siteUrl } from "@/lib/seo";
@@ -113,8 +113,6 @@ const AI_ACTION_TONE: Record<string, string> = {
 // pf.recommendationsLeft.
 /** Where browsers used to keep their own copy of each stock's verdict (see clearLocalVerdicts). */
 const LEGACY_REVIEW_STORAGE_PREFIX = "alytic-stock-review:";
-/** The calendar day (Cairo) of a timestamp, as YYYY-MM-DD — what arDay() takes. */
-const cairoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(ms);
 const isFromToday = (at: number | null | undefined) => at != null && cairoDay(at) === cairoDay(Date.now());
 // Short on purpose: /api/review/status already holds each request open until
 // the job finishes (up to 15s), so this is only the gap between long-polls.
