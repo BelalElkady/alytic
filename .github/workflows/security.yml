@@ -1,11 +1,10 @@
 name: Security
 
-# Runs on every push and pull request, and weekly so a newly published advisory
-# against an unchanged dependency still gets noticed.
+# Runs on pull requests (not again on the push to main when one merges), and
+# weekly so a newly published advisory against an unchanged dependency still
+# gets noticed.
 on:
   pull_request:
-  push:
-    branches: [main]
   schedule:
     - cron: '23 3 * * 1'
   workflow_dispatch: {}
