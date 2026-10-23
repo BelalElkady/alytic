@@ -38,6 +38,8 @@ Note: §3 of the chat design put `trial_stoploss` in Meta's utility category. Me
 
 **Joining late.** For the trial steps, a user only ever gets the latest step that's currently due, and nothing is sent if a later step already went out. A user who's mid-trial at launch joins at the step matching their day. An existing Never-subscribed user gets `survey` only. An Active subscriber gets nothing.
 
+**Only confirmed users with a phone.** This is the gate before every other rule: a user who hasn't confirmed their email, or has no phone, gets nothing until both are true. In the backup copy of 2026-10-22: 572 users, 516 confirmed, 417 confirmed with a phone, and 410 of those eligible once staff and suspended accounts are excluded. The 99 confirmed users without a phone (mostly Google sign-ups that skipped the phone step) and the 56 unconfirmed users with a phone are left out.
+
 **Rules every step shares.** A user gets a step only if all of these hold: phone present, `email_verified_at` set, `whatsapp_opt_out_at` null, not suspended, not Admin/Marketer/`local`, the step is enabled, the request's tenant is the main site (`defaultTenant()`; on any white-label host `/due` returns nothing and events are ignored), and the user was created after `WHATSAPP_LAUNCH_AT` or that moment is at least 3 days ago (grace period for the announcement).
 
 **Send window.** `/due` returns nothing outside 10:00–21:00 Cairo time. Event steps go out immediately, because the user has just acted.
@@ -197,17 +199,28 @@ The subscribe link opens the in-app support chat, where subscriptions already ha
 
 ## Testing
 
+### Safety guard (every environment except production)
+`WHATSAPP_ALLOWED_PHONES` (comma-separated E.164) is required whenever `NODE_ENV` isn't `production` or the Supabase URL isn't the production project. Outside production the backend claims and sends **only** to numbers on that list and skips every other user. If the variable is missing, `/due` returns nothing and the event push is off. This is what makes it safe to point the flow at data that contains real phones.
+
+### Stage 1: dry run on the backup copy (real data, nothing sent)
+`npm --prefix backend run whatsapp:dry-run -- --at "2026-11-02T11:00:00+02:00"` reads the `backup` schema of `qfxuejkbnrdszycqxvdx` (last night's copy of production) through `BACKUP_DATABASE_URL`, read-only. It runs the same `dueStepFor()` the endpoints use, for the given moment, against those users and the default step config. It prints the number of users per step and per reason they were skipped (no phone, unconfirmed, opted out, grace period, staff, …), plus up to 10 user ids per step. **It never prints phones and never writes or sends anything.** Run it for a few moments (launch day, launch + 3 days, a holiday) and check the counts make sense before anything is sent.
+
+### Stage 2: real messages on the test project, team phones only
+The backend runs against the test project (`public` schema) with `WHATSAPP_ALLOWED_PHONES` set to the team's numbers. A seed script creates test users with those numbers at each point of the lifecycle (just confirmed, trading day 2, last trial day, trial ended, Never subscribed, Expired). A copy of the n8n workflow points at that backend. Check that each template arrives with the right values, "إيقاف" stops everything after it, delivered/read statuses come back, and a re-run sends nothing twice.
+
+### Automated
 - **Unit (pure function `dueStepFor(user, subscription, sent, now)`):** fixed dates that include a weekend and an EGX holiday; each step's timing; late join; Never subscribed goes to `survey` only; Expired gets `renewal` once per lapse; the grace period; the send window; opt-out; suspended and staff users.
-- **API:** the secret is required on all three automation paths; a double claim inserts once; a stale `queued` row turns `failed`; `إيقاف` opts out and returns the reply; status never moves backwards; Marketer can read but not write; a white-label tenant gets an empty `/due`.
-- No real Meta calls in tests. n8n is checked by hand against the test project with your own number.
+- **API:** the secret is required on all three automation paths; a double claim inserts once; a stale `queued` row turns `failed`; `إيقاف` opts out and returns the reply; status never moves backwards; Marketer can read but not write; a white-label tenant gets an empty `/due`; outside production a user whose phone isn't on `WHATSAPP_ALLOWED_PHONES` is never claimed, and a missing list sends nothing.
+- No real Meta calls in automated tests.
 
 ## Rollout
 
 1. Merge PR #196 (the trial clock).
-2. Apply the schema, then deploy the backend with every step `enabled = false`.
-3. Meta setup and template approval. Import the n8n workflow and point it at production.
-4. Publish the announcement and set `WHATSAPP_LAUNCH_AT`.
-5. Enable `trial_welcome` and `paid_welcome` first, watch delivery for a few days, then enable the rest.
+2. Testing stages 1 and 2 above pass.
+3. Apply the schema to production, then deploy the backend with every step `enabled = false`.
+4. Meta setup and template approval. Import the n8n workflow and point it at production.
+5. Publish the announcement and set `WHATSAPP_LAUNCH_AT`.
+6. Enable `trial_welcome` and `paid_welcome` first, watch delivery for a few days, then enable the rest.
 
 ## Out of scope
 
