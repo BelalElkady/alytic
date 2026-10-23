@@ -23,14 +23,34 @@ import { useTestDatabase } from '../test/helpers/test-database.js';
 // Before supabaseClient.js loads: it reads SUPABASE_URL at import time.
 useTestDatabase();
 const { supabase } = await import('../src/supabaseClient.js');
+const { USER_ACTOR_COLUMNS } = await import('../src/db.js');
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+// Keeps each `in.(...)` filter well inside PostgREST's URL length limit.
+const ID_CHUNK = 100;
 const runId = process.env.TEST_RUN_ID;
 
-async function remove(describe, query) {
-  const { data, error } = await query.select('id');
-  if (error) throw new Error(`cleanup-test-data (${describe}): ${error.message}`);
-  console.log(`[cleanup-test-data] deleted ${data.length} ${describe}`);
+// Test admins grant subscriptions, credits and the like to other test users,
+// and those "who acted" columns don't cascade, so they're cleared before the
+// users go — the same order deleteUser uses.
+// Selects a chunk at a time until nothing matches, so a backlog past
+// PostgREST's 1000-row select cap still goes in one run.
+async function remove(describe, filter) {
+  let deleted = 0;
+  for (;;) {
+    const { data: users, error } = await filter(supabase.from('users').select('id')).limit(ID_CHUNK);
+    if (error) throw new Error(`cleanup-test-data (${describe}): ${error.message}`);
+    if (users.length === 0) break;
+    const ids = users.map((u) => u.id);
+    for (const [table, column] of USER_ACTOR_COLUMNS) {
+      const { error: clearError } = await supabase.from(table).update({ [column]: null }).in(column, ids);
+      if (clearError) throw new Error(`cleanup-test-data (${table}.${column}): ${clearError.message}`);
+    }
+    const { error: deleteError } = await supabase.from('users').delete().in('id', ids);
+    if (deleteError) throw new Error(`cleanup-test-data (${describe}): ${deleteError.message}`);
+    deleted += ids.length;
+  }
+  console.log(`[cleanup-test-data] deleted ${deleted} ${describe}`);
 }
 
 // Uploaded files (announcement, blog and support images, brand assets) have
@@ -49,12 +69,12 @@ async function emptyStorage() {
 await emptyStorage();
 
 if (!runId) {
-  await remove('test user(s)', supabase.from('users').delete().ilike('email', '%@test.local'));
+  await remove('test user(s)', (q) => q.ilike('email', '%@test.local'));
 } else {
   if (!/^[a-z0-9]+$/i.test(runId)) throw new Error(`cleanup-test-data: unexpected TEST_RUN_ID "${runId}"`);
-  await remove(`test user(s) from run ${runId}`, supabase.from('users').delete().ilike('email', `%-${runId}-%@test.local`));
+  await remove(`test user(s) from run ${runId}`, (q) => q.ilike('email', `%-${runId}-%@test.local`));
   await remove(
     'stale test user(s) older than a day',
-    supabase.from('users').delete().ilike('email', '%@test.local').lt('created_at', new Date(Date.now() - STALE_AFTER_MS).toISOString()),
+    (q) => q.ilike('email', '%@test.local').lt('created_at', new Date(Date.now() - STALE_AFTER_MS).toISOString()),
   );
 }
