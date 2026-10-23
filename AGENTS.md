@@ -17,7 +17,7 @@ Arabic-first EGX investing desk, sold as EGXpert and as white-label sites. Use t
 - Tests: `npm test` (all three layers), `npm --prefix backend test`, `bun run --cwd frontend test`, `npm run test:e2e`. Isolation and fixtures: `TESTING.md`.
 - Frontend: `bun run --cwd frontend lint`, `bun run --cwd frontend build`.
 - Security: `npm --prefix backend run security:check`.
-- A push to `main` runs the tests and deploys to production (`.github/workflows/deploy.yml`). Work on a branch and open a PR.
+- Tests and security checks run on pull requests only; a push to `main` deploys to production without running them again (`.github/workflows/deploy.yml`). Work on a branch and open a PR, and merge only once its checks pass.
 
 ## Security rules
 

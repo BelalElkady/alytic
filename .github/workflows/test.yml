@@ -8,7 +8,8 @@ name: Tests
 on:
   pull_request:
   workflow_dispatch:
-  # deploy.yml calls this and only deploys when it passes.
+  # Not run on pushes to main: a PR has to pass before it merges, and
+  # deploy.yml no longer runs the suite again. Kept callable for reuse.
   workflow_call:
     inputs:
       e2e:
