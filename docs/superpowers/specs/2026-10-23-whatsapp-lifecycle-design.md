@@ -172,7 +172,7 @@ Note: §3 of the chat design said HMAC for the event push. A bearer secret over 
 ## Meta setup (you)
 
 1. Verify the business in Meta Business Manager, add a WhatsApp Business number on the Cloud API (one not already used in the WhatsApp app), and create a System User with a permanent token (`whatsapp_business_messaging`, `whatsapp_business_management`).
-2. Submit the seven templates below in WhatsApp Manager, in Arabic (`ar`), each with the footer "ابعت إيقاف لو مش عايز رسايل تاني".
+2. Submit the templates for the steps you will switch on, in Arabic (`ar`), each with the footer "ابعت إيقاف لو مش عايز رسايل تاني". To start (see Rollout, cost): `trial_welcome` and `trial_ending`. The other drafts are kept below for later.
 3. Point the app's webhook at the n8n WhatsApp Trigger URL and subscribe to `messages`.
 
 ### Template drafts
@@ -220,7 +220,7 @@ The backend runs against the test project (`public` schema) with `WHATSAPP_ALLOW
 3. Apply the trial-clock and WhatsApp blocks of `schema.sql` to **every tenant database** (production and each white-label client, see `WHITE-LABEL.md`) and the test project, **before merging**: a merge to `main` deploys at once, and the code reads the new columns and tables on every site. Every step ships `enabled = false`.
 4. Meta setup and template approval. Import the n8n workflow and point it at production.
 5. Publish the announcement and set `WHATSAPP_LAUNCH_AT`.
-6. Enable `trial_welcome` and `paid_welcome` first, watch delivery for a few days, then enable the rest.
+6. Switch on only `trial_welcome` (utility, cheap) and `trial_ending` (the discount offer, the step most likely to convert). Every other step stays off. Decided 2026-10-24 to keep Meta's per-message cost to about one marketing template per trial user; the other steps can be switched on later from the admin tab without code changes. `paid_welcome` is a cheap utility template and a candidate to add next.
 
 ## Out of scope
 
