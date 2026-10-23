@@ -47,8 +47,18 @@ const allow = (phone) => {
   process.env.WHATSAPP_ALLOWED_PHONES = [...allowed].join(',');
 };
 const pushesTo = (phone) => pushes.filter((p) => p.body.request.to === phone.replace(/^\+/, ''));
-/** Pushes are fire-and-forget; give the one in flight a moment to land. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+/** Pushes are fire-and-forget: wait (up to 5 s) until `check` holds, then return its last value. */
+async function eventually(check) {
+  let value;
+  for (let waited = 0; waited < 5000; waited += 100) {
+    value = await check();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return value;
+}
+/** For "nothing was pushed": long enough for a push that was going to happen to land. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 1500));
 
 // Every step is off by default; the pushes need theirs switched on.
 await supabase.from('whatsapp_steps').upsert([
@@ -71,6 +81,7 @@ test('confirming the email pushes one trial_welcome with the secret', async () =
   await request(baseUrl, 'POST', '/api/auth/register', { body: { email, password: 'Passw0rd!123', name: 'منى', phone } });
   const token = await tokenEmailedTo(email, 'verify-email');
   assert.equal((await request(baseUrl, 'POST', '/api/auth/verify', { body: { token } })).status, 200);
+  await eventually(() => pushesTo(normalizePhone(phone)).length > 0);
   await settle();
   const sent = pushesTo(normalizePhone(phone));
   assert.equal(sent.length, 1);
@@ -120,9 +131,11 @@ test('n8n failing does not fail the user’s request', async () => {
     const account = await registerUser(baseUrl);
     allow(account.user.phone);
     assert.equal((await activate(actor, account.user.id)).status, 200);
-    await settle();
-    const { data: rows } = await supabase.from('whatsapp_messages').select('status').eq('user_id', account.user.id).eq('step', 'paid_welcome');
-    assert.equal(rows[0]?.status, 'failed', 'a push n8n refused is marked failed, never retried');
+    const status = await eventually(async () => {
+      const { data: rows } = await supabase.from('whatsapp_messages').select('status').eq('user_id', account.user.id).eq('step', 'paid_welcome');
+      return rows[0]?.status === 'failed' ? 'failed' : null;
+    });
+    assert.equal(status, 'failed', 'a push n8n refused is marked failed, never retried');
   } finally {
     failing = false;
   }
