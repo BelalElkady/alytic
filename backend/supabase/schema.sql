@@ -992,6 +992,7 @@ create table if not exists whatsapp_inbound (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_whatsapp_inbound_user on whatsapp_inbound(user_id, created_at desc);
+create index if not exists idx_whatsapp_inbound_phone on whatsapp_inbound(phone, auto_replied_at desc);
 
 alter table whatsapp_steps enable row level security;
 alter table whatsapp_messages enable row level security;
