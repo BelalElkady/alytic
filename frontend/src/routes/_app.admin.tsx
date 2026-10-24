@@ -51,6 +51,7 @@ import { PublishedPostsTab } from "@/components/admin/blog-published-tab";
 import { LivePricesTab, useLivePricesAlert } from "@/components/admin/live-prices-tab";
 import { PlatformTab } from "@/components/admin/platform-tab";
 import { TiersTab } from "@/components/admin/tiers-tab";
+import { WhatsappTab } from "@/components/admin/whatsapp-tab";
 import { UniverseChangesPanel } from "@/components/admin/universe-changes";
 import { RENEWAL_LABEL, UsersScreen, renewalStatus, type FollowUpChannel } from "@/components/admin/users-screen";
 import { SupportTab } from "@/components/admin/support-tab";
@@ -190,6 +191,7 @@ function AdminPage() {
         {isPlatformAdmin && <TabsTrigger value="platform">العملاء</TabsTrigger>}
         {isPlatformAdmin && <TabsTrigger value="tiers">الباقات</TabsTrigger>}
         {isPlatformAdmin && <TabsTrigger value="announcements">تنبيهات الميزات</TabsTrigger>}
+        {isPlatformAdmin && <TabsTrigger value="whatsapp">رسايل واتساب</TabsTrigger>}
         {isPlatformAdmin && (
           <TabsTrigger value="live-prices" className="relative">
             الأسعار اللحظية
@@ -223,6 +225,11 @@ function AdminPage() {
       {isPlatformAdmin && (
         <TabsContent value="announcements">
           <AnnouncementsTab />
+        </TabsContent>
+      )}
+      {isPlatformAdmin && (
+        <TabsContent value="whatsapp">
+          <WhatsappTab />
         </TabsContent>
       )}
       {isPlatformAdmin && (
@@ -638,6 +645,12 @@ export type AdminUserRow = {
   tier: Tier | null;
   /** When an admin ticked each follow-up box in the users table; null = not followed up on that channel yet. */
   followUp: { whatsappAt: string | null; emailAt: string | null };
+  /** The last lifecycle WhatsApp step and the offer still running, if any (backend whatsappSummaries); null = none sent. */
+  whatsapp: {
+    lastStep: string;
+    lastStatus: string;
+    offer: { discountPct: number; expiresAt: string } | null;
+  } | null;
   subscription: AdminSubscription | null;
   portfolio: AdminUserPortfolio | null;
   /** Every live Portfolio, primary first — empty only for a User with none. */

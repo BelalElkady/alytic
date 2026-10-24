@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { post } from "@/lib/api";
 import {
   INVEST_STYLES,
@@ -148,7 +149,20 @@ function CreditRow({
 }
 
 function SettingsPage() {
-  const { reload, pf, user, updateName, updatePhone } = useDesk();
+  const { reload, pf, user, updateName, updatePhone, setWhatsappEnabled } = useDesk();
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
+
+  const chooseWhatsapp = async (next: boolean) => {
+    setSavingWhatsapp(true);
+    try {
+      await setWhatsappEnabled(next);
+      toast.success(next ? "هنبعتلك رسايل واتساب تاني" : "مش هنبعتلك رسايل واتساب");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "تعذر الحفظ");
+    } finally {
+      setSavingWhatsapp(false);
+    }
+  };
   const [armed, setArmed] = useState(false);
   const [resetting, setResetting] = useState(false);
   const { style, inferred } = useActiveInvestStyle(pf?.trades);
@@ -213,6 +227,18 @@ function SettingsPage() {
             placeholder="+20 10 1234 5678"
             ltr
             onSave={updatePhone}
+          />
+        </div>
+      </Panel>
+
+      <Panel title="رسايل واتساب" description="نصايح وتنبيهات عن حسابك وتجربتك والعروض. بتوصلك على الرقم المسجّل.">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="whatsapp-messages">ابعتولي رسايل واتساب</Label>
+          <Switch
+            id="whatsapp-messages"
+            checked={user?.whatsappEnabled !== false}
+            disabled={savingWhatsapp}
+            onCheckedChange={(next) => void chooseWhatsapp(next)}
           />
         </div>
       </Panel>

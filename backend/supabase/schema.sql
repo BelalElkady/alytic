@@ -933,3 +933,67 @@ alter table users add column if not exists email_verified_at timestamptz;
 
 update users set email_verified_at = created_at
 where email_verified and email_verified_at is null;
+
+-- ============================================================
+-- WhatsApp lifecycle messages
+-- ============================================================
+-- Design: docs/superpowers/specs/2026-10-23-whatsapp-lifecycle-design.md.
+-- Run on the test project first, then on production before deploying the
+-- code that reads these tables. Re-running is a no-op.
+--
+-- whatsapp_opt_out_at: null means messages are allowed (opt-in by notice);
+-- set by the "إيقاف" reply or the settings switch.
+alter table users add column if not exists whatsapp_opt_out_at timestamptz;
+
+-- The admin page's per-step settings. A step with no row uses the defaults in
+-- src/whatsapp/steps.js (switched off).
+create table if not exists whatsapp_steps (
+  key text primary key,
+  enabled boolean not null default false,
+  template_name text not null,
+  template_lang text not null default 'ar',
+  params jsonb not null default '{}',
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+
+-- One row per step sent to a user: append-only except the delivery status
+-- (status, meta_message_id, error, updated_at). The unique key is what stops
+-- a step going out twice; cycle_key is '' except for renewal, where it is the
+-- lapsed period's end date, so each lapse gets its own offer.
+create table if not exists whatsapp_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references users(id) on delete cascade,
+  step text not null,
+  cycle_key text not null default '',
+  phone text not null,
+  rendered_params jsonb not null,
+  offer_expires_at timestamptz,
+  status text not null default 'queued' check (status in ('queued', 'sent', 'delivered', 'read', 'failed')),
+  meta_message_id text,
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, step, cycle_key)
+);
+create index if not exists idx_whatsapp_messages_meta on whatsapp_messages(meta_message_id) where meta_message_id is not null;
+create index if not exists idx_whatsapp_messages_user on whatsapp_messages(user_id, created_at desc);
+
+-- Every WhatsApp message a user sends us (opt-outs, survey answers, anything
+-- else). auto_replied_at marks the rows we answered with the support-chat
+-- pointer, which goes out at most once a day per user.
+create table if not exists whatsapp_inbound (
+  id uuid primary key default gen_random_uuid(),
+  user_id text references users(id) on delete set null,
+  phone text not null,
+  text text not null,
+  meta_message_id text unique,
+  auto_replied_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_whatsapp_inbound_user on whatsapp_inbound(user_id, created_at desc);
+create index if not exists idx_whatsapp_inbound_phone on whatsapp_inbound(phone, auto_replied_at desc);
+
+alter table whatsapp_steps enable row level security;
+alter table whatsapp_messages enable row level security;
+alter table whatsapp_inbound enable row level security;

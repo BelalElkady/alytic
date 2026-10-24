@@ -1520,4 +1520,243 @@ export async function countRecommendations() {
   return count ?? 0;
 }
 
+// ---- WhatsApp lifecycle messages ----------------------------------------------
+// See src/whatsapp/ and the "WhatsApp lifecycle messages" block in
+// supabase/schema.sql.
+
+/** Pages through a query 1000 rows at a time — `build(from, to)` returns the ranged query. */
+async function allPages(build, context) {
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const data = must(await build(from, from + 999), context);
+    rows.push(...data);
+    if (data.length < 1000) return rows;
+  }
+}
+
+export async function getWhatsappSteps() {
+  return must(await supabase.from('whatsapp_steps').select('*'), 'getWhatsappSteps');
+}
+
+export async function upsertWhatsappStep({ key, enabled, templateName, params, updatedBy }) {
+  return must(
+    await supabase
+      .from('whatsapp_steps')
+      .upsert(
+        { key, enabled, template_name: templateName, params, updated_by: updatedBy ?? null, updated_at: new Date().toISOString() },
+        { onConflict: 'key' },
+      )
+      .select('*')
+      .single(),
+    'upsertWhatsappStep',
+  );
+}
+
+/** Claims a step for a user. Null when that (user, step, cycle) was already claimed — the unique key is the guard against sending twice. */
+export async function insertWhatsappMessage({ userId, step, cycleKey = '', phone, renderedParams, offerExpiresAt }) {
+  const result = await supabase
+    .from('whatsapp_messages')
+    .insert({
+      user_id: userId,
+      step,
+      cycle_key: cycleKey,
+      phone,
+      rendered_params: renderedParams,
+      offer_expires_at: offerExpiresAt ? new Date(offerExpiresAt).toISOString() : null,
+    })
+    .select('*')
+    .single();
+  if (result.error?.code === '23505') return null;
+  return must(result, 'insertWhatsappMessage');
+}
+
+/** The previous statuses each status may replace, so a late "delivered" never overwrites "read". */
+const WHATSAPP_STATUS_FROM = {
+  sent: ['queued'],
+  delivered: ['queued', 'sent'],
+  read: ['queued', 'sent', 'delivered'],
+  failed: ['queued', 'sent'],
+};
+
+async function updateWhatsappStatus(column, value, { status, metaMessageId, error }) {
+  const patch = { status, updated_at: new Date().toISOString() };
+  if (metaMessageId) patch.meta_message_id = metaMessageId;
+  if (error) patch.error = String(error).slice(0, 500);
+  const data = must(
+    await supabase
+      .from('whatsapp_messages')
+      .update(patch)
+      .eq(column, value)
+      .in('status', WHATSAPP_STATUS_FROM[status] ?? [])
+      .select('*'),
+    'updateWhatsappStatus',
+  );
+  return data[0] ?? null;
+}
+
+/** n8n's report after a send: sent (with Meta's id) or failed. */
+export function setWhatsappMessageResult(id, { status, metaMessageId, error }) {
+  return updateWhatsappStatus('id', id, { status, metaMessageId, error });
+}
+
+/** A delivery update from Meta. Returns the updated row, or null when the status would move backwards or the id is unknown. */
+export function setWhatsappStatusByMetaId(metaMessageId, status, error) {
+  return updateWhatsappStatus('meta_message_id', metaMessageId, { status, error });
+}
+
+/** Queued rows n8n never reported on turn failed; they are never retried. Returns how many. */
+export async function failStaleWhatsappMessages(olderThanIso) {
+  const data = must(
+    await supabase
+      .from('whatsapp_messages')
+      .update({ status: 'failed', error: 'no result from n8n', updated_at: new Date().toISOString() })
+      .eq('status', 'queued')
+      .lt('created_at', olderThanIso)
+      .select('id'),
+    'failStaleWhatsappMessages',
+  );
+  return data.length;
+}
+
+/** Every step sent to these users, newest first. */
+export async function listWhatsappMessagesForUsers(userIds) {
+  if (!userIds.length) return [];
+  const rows = [];
+  for (let i = 0; i < userIds.length; i += 200) {
+    const chunk = userIds.slice(i, i + 200);
+    rows.push(
+      ...must(
+        await supabase
+          .from('whatsapp_messages')
+          .select('id, user_id, step, cycle_key, status, offer_expires_at, rendered_params, created_at')
+          .in('user_id', chunk)
+          .order('created_at', { ascending: false }),
+        'listWhatsappMessagesForUsers',
+      ),
+    );
+  }
+  return rows;
+}
+
+/** How many of each step reached each status since `sinceIso` — for the admin page. */
+export async function whatsappStepCounts(sinceIso) {
+  const rows = await allPages(
+    (from, to) => supabase.from('whatsapp_messages').select('step, status').gte('created_at', sinceIso).order('id').range(from, to),
+    'whatsappStepCounts',
+  );
+  const counts = new Map();
+  for (const { step, status } of rows) {
+    const key = `${step}|${status}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts].map(([key, count]) => {
+    const [step, status] = key.split('|');
+    return { step, status, count };
+  });
+}
+
+/** Stores one incoming WhatsApp message. Null when Meta re-delivered one we already have. */
+export async function insertWhatsappInbound({ userId, phone, text, metaMessageId }) {
+  const result = await supabase
+    .from('whatsapp_inbound')
+    .insert({ user_id: userId ?? null, phone, text: String(text ?? ''), meta_message_id: metaMessageId ?? null })
+    .select('*')
+    .single();
+  if (result.error?.code === '23505') return null;
+  return must(result, 'insertWhatsappInbound');
+}
+
+export async function markWhatsappInboundAutoReplied(id) {
+  must(
+    await supabase.from('whatsapp_inbound').update({ auto_replied_at: new Date().toISOString() }).eq('id', id),
+    'markWhatsappInboundAutoReplied',
+  );
+}
+
+/** When this number last got the automatic support-chat pointer, or null. Keyed by phone so numbers with no account are limited too. */
+export async function lastAutoReplyAt(phone) {
+  const data = must(
+    await supabase
+      .from('whatsapp_inbound')
+      .select('auto_replied_at')
+      .eq('phone', phone)
+      .not('auto_replied_at', 'is', null)
+      .order('auto_replied_at', { ascending: false })
+      .limit(1),
+    'lastAutoReplyAt',
+  );
+  return data[0]?.auto_replied_at ?? null;
+}
+
+/** How many incoming messages match each survey answer label. */
+export async function surveyAnswerCounts(labels) {
+  if (!labels.length) return [];
+  const rows = must(await supabase.from('whatsapp_inbound').select('text').in('text', labels), 'surveyAnswerCounts');
+  return labels.map((text) => ({ text, count: rows.filter((r) => r.text === text).length }));
+}
+
+export async function setWhatsappOptOut(userId, optedOut) {
+  must(
+    await supabase.from('users').update({ whatsapp_opt_out_at: optedOut ? new Date().toISOString() : null }).eq('id', userId),
+    'setWhatsappOptOut',
+  );
+  forgetSessionUser(userId);
+}
+
+/**
+ * Ticks the WhatsApp follow-up box when a lifecycle message is delivered, so
+ * the team doesn't reach the same user by hand — but never overwrites a tick
+ * someone already made.
+ */
+export async function markWhatsappFollowUpIfEmpty(userId) {
+  const now = new Date().toISOString();
+  must(
+    await supabase
+      .from('user_follow_ups')
+      .upsert({ user_id: userId, updated_by: 'whatsapp-bot', updated_at: now }, { onConflict: 'user_id', ignoreDuplicates: true }),
+    'markWhatsappFollowUpIfEmpty',
+  );
+  must(
+    await supabase
+      .from('user_follow_ups')
+      .update({ whatsapp_at: now, updated_by: 'whatsapp-bot', updated_at: now })
+      .eq('user_id', userId)
+      .is('whatsapp_at', null),
+    'markWhatsappFollowUpIfEmpty',
+  );
+}
+
+/**
+ * Everyone who could get a lifecycle step: confirmed, with a phone, not opted
+ * out. Each row carries its subscription (or null) and the steps already
+ * sent — what dueStepFor needs. The finer rules (staff, suspended, grace)
+ * are dueStepFor's.
+ */
+export async function listWhatsappCandidates() {
+  const users = await allPages(
+    (from, to) =>
+      supabase
+        .from('users')
+        .select('id, name, phone, is_admin, is_marketer, is_suspended, email_verified, email_verified_at, whatsapp_opt_out_at, created_at')
+        .not('email_verified_at', 'is', null)
+        .not('phone', 'is', null)
+        .is('whatsapp_opt_out_at', null)
+        .order('id')
+        .range(from, to),
+    'listWhatsappCandidates',
+  );
+  const subscriptions = new Map((await getAllSubscriptions()).map((row) => [row.user_id, row]));
+  const sent = await allPages(
+    (from, to) =>
+      supabase.from('whatsapp_messages').select('user_id, step, cycle_key, offer_expires_at, created_at').order('id').range(from, to),
+    'listWhatsappCandidates',
+  );
+  const sentByUser = new Map();
+  for (const row of sent) {
+    if (!sentByUser.has(row.user_id)) sentByUser.set(row.user_id, []);
+    sentByUser.get(row.user_id).push(row);
+  }
+  return users.map((user) => ({ ...user, subscription: subscriptions.get(user.id) ?? null, sent: sentByUser.get(user.id) ?? [] }));
+}
+
 export { supabase };

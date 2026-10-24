@@ -22,7 +22,7 @@ import { analyzeTicker, analyzeMany } from '../analyze.js';
 import { positionSize } from '../scoring/risk.js';
 import { ALL_CODES, UNIVERSE, lookup, toYahoo, registerCustomStocks } from '../config/universe.js';
 import { INDICES_AS_OF, UPLOADABLE_INDICES, codesForIndex, effectiveIndices } from '../config/indices.js';
-import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listRelatedBlogPosts, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
+import { getAllIndexOverrides, setIndexOverride, clearIndexOverride, getAllCustomStocks, addCustomStocks, getAllUsers, getAllPortfolios, listPublishedBlogPosts, listAllPublishedBlogSlugs, getPublishedBlogPostBySlug, listRelatedBlogPosts, listBlogPosts, countBlogPosts, insertManualBlogPost, setBlogPostStatus, updateBlogPost, deleteBlogPost, getUserById, deleteUser, setUserRole, setUserSuspended, roleOf, USER_ROLES, getSubscription, getAllSubscriptions, getAllFollowUps, listWhatsappMessagesForUsers, setUserFollowUp, FOLLOW_UP_CHANNELS, putSubscription, deleteSubscription, recordSubscriptionGrant, listSubscriptionGrants, recordCreditsGrant, listCreditsGrants, listSupportMessages, insertSupportMessage, markSupportMessagesRead, listRecentSupportMessages, touchUserSeen, countUsersSeenSince, countUsers, countRecommendations, getUserUsage, primaryPortfolioIdFor, getPortfolioById, listPortfoliosForUser, listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncementForUser, dismissAnnouncement, getInvestorFlows, saveInvestorFlows } from '../db.js';
 import { currentSession, fetchAndSaveInvestorFlows, fetchSlot } from '../investorFlows.js';
 import { TIER_KEYS, addMonths, plansFor, addonsFor, planForTenant, instapayFor, portfolioCapFor, tiersFor, isLocked, WHATSAPP_NUMBER } from '../billing/plans.js';
 import { lockableFeatureFor } from '../billing/features.js';
@@ -63,6 +63,9 @@ import { securityHeaders, originGuard, safeEqual, sniffImageType, mediaTypeOf, s
 import { currentTenant, runWithTenant } from '../tenancy/context.js';
 import { activeTenants, canEditIndices, defaultTenant, isPlatformAdmin, isPlatformAdminEmail, normalizeHost, publicTenant, startTenantRegistry, tenantForHost } from '../tenancy/registry.js';
 import { mountPlatformRoutes } from './platform.js';
+import { trialInfo } from '../billing/trial.js';
+import { mountWhatsappRoutes } from '../whatsapp/routes.js';
+import { pushStep, whatsappSummaries } from '../whatsapp/service.js';
 import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFromScanRow, recordRecommendationPrices, trackRecord, HORIZON_BUCKETS, COMPARISONS } from '../recommendations.js';
 
 // Where the public contact form's messages and support-chat alerts land is
@@ -70,48 +73,8 @@ import { logRecommendations, levelsFromAnalysis, levelsFromOpportunity, levelsFr
 // (see tenancy/registry.js). For the original site those come from
 // CONTACT_EMAIL and SUPPORT_NOTIFY_EMAIL in .env, as before.
 
-// Every account is on a 5-trading-day free trial from the moment its email is
-// confirmed — the window is derived from users.email_verified_at rather than
-// stored, so there is nothing to reset. A user who takes a few days to click
-// the link still gets the whole trial. The trial runs in 24-hour slices from
-// that moment; a slice that starts on a Friday, Saturday or EGX bank holiday
-// (isTradingDay) doesn't count and just pushes the end out by a day, so
-// verifying before a weekend doesn't burn trial days on a closed market.
-const TRIAL_DAYS = 5;
-const DAY_MS = 24 * 60 * 60 * 1000;
-/**
- * When the trial clock started. Takes a session user or a raw users row. An
- * unconfirmed account's trial hasn't started, so it is shown as starting now
- * (a full, still-locked trial — see trialUsable). A confirmed account with no
- * timestamp predates the column and falls back to created_at, which is also
- * what the column's backfill wrote.
- */
-function trialStartOf(user) {
-  const verifiedAt = user.emailVerifiedAt ?? user.email_verified_at;
-  if (verifiedAt) return new Date(verifiedAt).getTime();
-  if (user.emailVerified ?? user.email_verified) return new Date(user.createdAt ?? user.created_at).getTime();
-  return Date.now();
-}
-
-function trialInfo(user) {
-  const now = Date.now();
-  let sliceStart = trialStartOf(user);
-  let counted = 0;
-  let daysLeft = 0;
-  while (counted < TRIAL_DAYS) {
-    if (isTradingDay(cairoDateOf(sliceStart))) {
-      counted += 1;
-      if (sliceStart + DAY_MS > now) daysLeft += 1;
-    }
-    sliceStart += DAY_MS;
-  }
-  return {
-    trialDaysTotal: TRIAL_DAYS,
-    trialDaysLeft: daysLeft,
-    trialActive: sliceStart > now,
-    trialEndsAt: new Date(sliceStart),
-  };
-}
+// The trial calendar (5 trading days from email confirmation) lives in
+// billing/trial.js, shared with the WhatsApp lifecycle steps.
 
 /**
  * Everything the client needs to know about what this account may do, and the
@@ -325,6 +288,14 @@ const wrap = (fn) => (req, res) => runWithTenant(req.tenant ?? currentTenant() ?
   res.status(status).json({ error: message });
 });
 
+/** Fires a WhatsApp event step without holding up the response; a failure is logged, never shown to the user. */
+const pushWhatsappStep = (userId, step) => {
+  pushStep(userId, step).catch((err) => {
+    console.error(`whatsapp push ${step} failed:`, err.message);
+    Sentry.captureException(err);
+  });
+};
+
 /**
  * The caller's address as recorded on the users table (signup_ip /
  * last_login_ip). With 'trust proxy' set above this is the real client behind
@@ -361,6 +332,7 @@ app.post('/api/auth/google', loginLimiter, wrap(async (req, res) => {
 
 app.post('/api/auth/verify', loginLimiter, wrap(async (req, res) => {
   const result = await verifyEmail(req.body ?? {});
+  pushWhatsappStep(result.user.id, 'trial_welcome');
   res.json(result);
 }));
 
@@ -673,7 +645,11 @@ app.use('/api', async (req, res, next) => {
     req.path === '/cron/blog-generate' ||
     req.path === '/cron/daily-close' ||
     req.path === '/cron/stop-plan-generate' ||
-    req.path === '/cron/investor-flows'
+    req.path === '/cron/investor-flows' ||
+    // n8n's WhatsApp calls: public paths, protected by WHATSAPP_AUTOMATION_SECRET (see whatsapp/routes.js).
+    req.path === '/automation/whatsapp/due' ||
+    req.path === '/automation/whatsapp/result' ||
+    req.path === '/automation/whatsapp/events'
   ) return next();
   const user = await userFromRequest(req);
   if (!user) return res.status(401).json({ error: 'سجّل الدخول الأول' });
@@ -989,6 +965,7 @@ app.post('/api/support/messages/image', chatLimiter, express.raw({ type: SUPPORT
 // gated behind a session.
 app.post('/api/account/phone', wrap(async (req, res) => {
   const result = await updatePhone({ userId: req.user.id, phone: req.body?.phone });
+  pushWhatsappStep(req.user.id, 'trial_welcome');
   res.json({ user: result.user });
 }));
 
@@ -1165,7 +1142,7 @@ app.get('/api/indices/heatmap', analysisLimiter, wrap(async (_req, res) => {
 // WhatsApp / email follow-up boxes — that is their job — and nothing else: no
 // other writes, no support inbox, no blog, no indices. It is an allowlist on
 // purpose, so a new /api/admin route is closed to marketers until someone adds it here.
-const MARKETER_READS = new Set(['GET /users', 'GET /online']);
+const MARKETER_READS = new Set(['GET /users', 'GET /online', 'GET /whatsapp/steps']);
 const isMarketerAllowed = (req) =>
   MARKETER_READS.has(`${req.method} ${req.path}`) || (req.method === 'POST' && /^\/users\/[^/]+\/follow-up$/.test(req.path));
 app.use('/api/admin', (req, res, next) => {
@@ -1307,6 +1284,10 @@ app.use('/api/platform', (req, res, next) => {
   next();
 });
 mountPlatformRoutes(app, { wrap });
+
+// WhatsApp lifecycle messages: n8n's endpoints, the user's opt-out switch and
+// the admin step settings. See whatsapp/routes.js.
+mountWhatsappRoutes(app, { wrap });
 
 // How subscribers' live prices are doing: oanor on or off, quota used this
 // period, whether they've silently fallen back to TradingView and why. The
@@ -1513,6 +1494,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
     getAllSubscriptions(),
     getAllFollowUps(),
   ]);
+  const whatsappByUser = whatsappSummaries(await listWhatsappMessagesForUsers(users.map((u) => u.id)));
   // The usage/credits figures below live on the User, not the Portfolio
   // blob — getAllUsers reads them in its own query, as each row's `usage`.
   // A User can hold more than one Portfolio (#103); grouped and ordinal-sorted
@@ -1566,6 +1548,7 @@ app.get('/api/admin/users', wrap(async (req, res) => {
       trialEndsAt: trial.trialEndsAt.toISOString(),
       tier,
       followUp: followUpOf(followUpByUser.get(u.id)),
+      whatsapp: whatsappByUser.get(u.id) ?? null,
       subscription: subscription && {
         plan: subscription.plan,
         tier: subscription.tier,
@@ -1725,6 +1708,7 @@ app.post('/api/admin/users/:id/subscription', wrap(async (req, res) => {
     action: 'grant',
     grantedBy: req.user.id,
   });
+  pushWhatsappStep(target.id, 'paid_welcome');
   res.json({ ok: true, subscription: { plan: plan?.key ?? 'custom', tier, currentPeriodEnd: currentPeriodEnd.toISOString(), active: true } });
 }));
 
