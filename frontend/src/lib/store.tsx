@@ -657,7 +657,9 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
     const onVisible = () => {
-      if (!document.hidden) void refreshUser();
+      // A background re-read: offline on wake-up (or a server blip) just
+      // keeps the current user until the next focus tries again.
+      if (!document.hidden) void refreshUser().catch(() => { });
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
